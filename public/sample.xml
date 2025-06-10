@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LogisticARInvoices xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00">
+  <CustomerInvoice xmlns="">
+    <Protocol>
+      <SourceSystem>DEP</SourceSystem>
+      <TechnicalContact>himal.mitha@msc.com</TechnicalContact>
+    </Protocol>
+    <Header>
+      <CompanyCode>6425</CompanyCode>
+      <DocumentType>XL</DocumentType>
+      <DocumentDate>20200513</DocumentDate>
+      <PostingDate>20200513</PostingDate>
+      <TransactionCurrency>ZAR</TransactionCurrency>
+      <Reference>FDI0152020</Reference>
+      <EntityDocNbr>FDI0152020</EntityDocNbr>
+    </Header>
+    <CustomerOpenItem>
+      <CustomerNbr>6423</CustomerNbr>
+      <AmntTransactCur>372.60</AmntTransactCur>
+      <ProfitCenter>ZADURB220</ProfitCenter>
+      <PmtBlock>A</PmtBlock>
+      <BaselineDate>20200513</BaselineDate>
+      <DueDate>20200513</DueDate>
+      <AssignmentNbr>FDI0152020</AssignmentNbr>
+      <REF_KEY3>1001</REF_KEY3>
+    </CustomerOpenItem>
+    <OtherItems>
+      <OtherItem>
+        <IncomeRebateCode>I</IncomeRebateCode>
+        <CompanyCode>6425</CompanyCode>
+        <AmntTransacCur>-324.00</AmntTransacCur>
+        <TaxCode>O7</TaxCode>
+        <TaxAmntDocCur>-48.60</TaxAmntDocCur>
+        <BaseUnitMeasure>DAY</BaseUnitMeasure>
+        <Qty>3</Qty>
+        <ProfitCenter>ZADURB220</ProfitCenter>
+        <ReferencePeriod>05.2020</ReferencePeriod>
+        <Service>FCL047</Service>
+        <ServiceCountry>ZA</ServiceCountry>
+        <ClientType>THIRDP</ClientType>
+        <BusinessType>A</BusinessType>
+        <FullEmpty>FULL</FullEmpty>
+        <CtrISOcode>45G1</CtrISOcode>
+        <AssignmentNbr>FDI0152020</AssignmentNbr>
+        <LineItemText>R108,00 MSC0160 - 50117</LineItemText>
+        <BL>MEDUUS392899</BL>
+        <CtrNbr>MSCU7803314</CtrNbr>
+        <REF_KEY2>R108,00</REF_KEY2>
+        <REF_KEY3>MSC0160 - 50117</REF_KEY3>
+      </OtherItem>
+    </OtherItems>
+  </CustomerInvoice>
+</LogisticARInvoices>
