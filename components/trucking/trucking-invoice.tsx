@@ -1,848 +1,954 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import type React from "react"
+import { useState, useEffect, useMemo } from "react"
+import { useDispatch } from "react-redux"
+import { useAppSelector } from "@/lib/hooks"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Truck, FileText, Plus, Check, Download, Mail, Edit2, Eye, FileWarning } from "lucide-react" // Added Eye, Trash2, FileWarning
-import { Separator } from "@/components/ui/separator"
-import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
-import { useToast } from "@/hooks/use-toast"
-import { useAppDispatch, useAppSelector } from "@/lib/hooks"
-import { markExcelAsProcessed, type ExcelRecord } from "@/lib/features/excel/excelSlice"
-import { createInvoice, type Invoice } from "@/lib/features/invoice/invoiceSlice" // Added updateInvoice
-import { markRecordsAsInvoiced } from "@/lib/features/records/recordsSlice"
+import { Textarea } from "@/components/ui/textarea"
+import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { generateInvoiceXML } from "@/lib/xml-generator"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-  DialogTrigger, // Added DialogTrigger
-} from "@/components/ui/dialog"
+  FileText,
+  ListChecks,
+  UserCheck,
+  FileSignature,
+  Send,
+  AlertCircle,
+  CheckCircle2,
+  ChevronRight,
+  ChevronLeft,
+  Search,
+  Truck,
+  RouteIcon as RouteIconLucide,
+  UserIcon as UserIconLucide,
+  Download,
+} from "lucide-react"
+import {
+  addInvoice,
+  markRecordsAsInvoiced,
+  selectInvoicesByModule,
+  selectPendingRecordsByModule, // This selector should target state.records.individualRecords
+  type InvoiceRecord as PersistedInvoiceRecord,
+  type ExcelRecord as IndividualExcelRecord, // Use the type from recordsSlice
+} from "@/lib/features/records/recordsSlice"
+import {
+  selectTruckingDrivers,
+  selectTruckingRoutes,
+  selectTruckingVehicles,
+  selectModuleCustomFields,
+  type CustomFieldConfig,
+} from "@/lib/features/config/configSlice"
+import { generateInvoiceXML } from "@/lib/xml-generator"
+import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features/invoice/invoiceSlice"
+import { useToast } from "@/hooks/use-toast"
+import { useRouter } from "next/navigation"
+import saveAs from "file-saver"
 
-interface TruckingRecordData extends ExcelRecord {
-  fecha: string
-  cliente: string
-  desde: string
-  hacia: string
-  contenedor: string
-  tamaño: string
-  bl?: string
-  driver?: string
-  tarifa: number
-  gastosPuerto: number
-  otrosGastos: number
-  totalRate: number
+type InvoiceStep = "select" | "create" | "review" | "confirm"
+
+interface TruckingFormData {
+  invoiceNumber: string
+  issueDate: string
+  dueDate: string
+  clientName: string
+  clientRuc: string
+  clientAddress: string
+  driverId: string
+  vehicleId: string
+  routeId: string
+  description: string
+  subtotal: number
+  taxAmount: number
+  total: number
+  currency: string
+  [customFieldId: string]: any
 }
 
-export function TruckingInvoice() {
-  const [selectedExcelIds, setSelectedExcelIds] = useState<string[]>([])
-  const [invoiceDetails, setInvoiceDetails] = useState({
-    invoiceNumber: `TRK-INV-${Date.now().toString().slice(-6)}`,
-    client: "",
-    date: new Date().toISOString().split("T")[0],
-    currency: "USD",
-    driver: "",
-    vehicle: "",
-    paymentTerms: "NET 30",
-    notes: "Servicios de transporte terrestre según detalle.",
-  })
-  const [currentStep, setCurrentStep] = useState<"select" | "create" | "preview">("select")
-  const [generatedInvoicePreview, setGeneratedInvoicePreview] = useState<Invoice | null>(null)
-  const [isFinalizing, setIsFinalizing] = useState(false)
-  const [showXmlModal, setShowXmlModal] = useState(false)
-  const [xmlContent, setXmlContent] = useState("")
-  const [invoiceToView, setInvoiceToView] = useState<Invoice | null>(null) // For viewing existing invoice details
+const getNewInvoiceState = (): TruckingFormData => ({
+  invoiceNumber: `F-TRK-${Date.now().toString().slice(-5)}`,
+  issueDate: new Date().toISOString().split("T")[0],
+  dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+  clientName: "",
+  clientRuc: "",
+  clientAddress: "",
+  driverId: "",
+  vehicleId: "",
+  routeId: "",
+  description: "",
+  subtotal: 0,
+  taxAmount: 0,
+  total: 0,
+  currency: "USD",
+})
 
-  const dispatch = useAppDispatch()
-  const { files: allExcelFiles } = useAppSelector((state) => state.excel)
-  const { invoices: allInvoices } = useAppSelector((state) => state.invoice)
+export default function TruckingInvoice() {
+  const dispatch = useDispatch()
+  const router = useRouter()
   const { toast } = useToast()
 
-  const truckingInvoices = useMemo(
-    () =>
-      allInvoices
-        .filter((inv) => inv.module === "trucking")
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [allInvoices],
+  // Fetch individual pending records for "trucking"
+  const pendingTruckingRecords: IndividualExcelRecord[] = useAppSelector((state) =>
+    selectPendingRecordsByModule(state, "trucking"),
   )
-  const availableExcelsForInvoicing = allExcelFiles.filter(
-    (excel) => excel.status === "pendiente" && excel.module === "trucking",
-  )
+  const truckingGeneratedInvoices = useAppSelector((state) => selectInvoicesByModule(state, "trucking"))
 
-  const selectedExcelObjects = useMemo(() => {
-    return allExcelFiles.filter((excelFile) => selectedExcelIds.includes(excelFile.id))
-  }, [selectedExcelIds, allExcelFiles])
+  const configuredDrivers = useAppSelector(selectTruckingDrivers)
+  const configuredRoutes = useAppSelector(selectTruckingRoutes)
+  const configuredVehicles = useAppSelector(selectTruckingVehicles)
+  const truckingCustomFields = useAppSelector((state) => selectModuleCustomFields(state, "trucking"))
 
-  const recordsForInvoicing = useMemo(() => {
-    return selectedExcelObjects.flatMap((excelFile) =>
-      excelFile.records.map((record) => ({
-        ...record,
-        excelId: excelFile.id,
-        uniqueDisplayId: `disp-${excelFile.id}-${record.id}`,
-      })),
-    ) as TruckingRecordData[]
-  }, [selectedExcelObjects])
+  const [currentStep, setCurrentStep] = useState<InvoiceStep>("select")
+  const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([])
+  const [formData, setFormData] = useState<TruckingFormData>(() => getNewInvoiceState())
+  const [searchTerm, setSearchTerm] = useState("")
+  const [generatedXml, setGeneratedXml] = useState<string | null>(null)
 
-  const { subtotal, tax, total } = useMemo(() => {
-    const currentSubtotal = recordsForInvoicing.reduce((sum, record) => sum + (record.totalRate || 0), 0)
-    const currentTax = currentSubtotal * 0.07
-    const currentTotal = currentSubtotal + currentTax
-    return { subtotal: currentSubtotal, tax: currentTax, total: currentTotal }
-  }, [recordsForInvoicing])
-
-  const handleExcelSelectionChange = (excelId: string, checked: boolean | string) => {
-    if (typeof checked === "boolean") {
-      setSelectedExcelIds((prev) => (checked ? [...prev, excelId] : prev.filter((id) => id !== excelId)))
-    }
-  }
-
-  const proceedToCreateStep = () => {
-    if (selectedExcelIds.length === 0) {
-      toast({ title: "Error", description: "Selecciona al menos un archivo Excel.", variant: "destructive" })
-      return
-    }
-    if (!invoiceDetails.client && selectedExcelObjects.length > 0 && selectedExcelObjects[0].records.length > 0) {
-      const firstRecordClient = (selectedExcelObjects[0].records[0] as TruckingRecordData).cliente
-      if (firstRecordClient) {
-        setInvoiceDetails((prev) => ({ ...prev, client: firstRecordClient }))
-      }
-    }
-    setCurrentStep("create")
-  }
-
-  const handleCreateInvoiceDraft = () => {
-    if (!invoiceDetails.client) {
-      toast({ title: "Error de Validación", description: "El campo 'Cliente' es obligatorio.", variant: "destructive" })
-      return
-    }
-    if (recordsForInvoicing.length === 0) {
-      toast({ title: "Error", description: "No hay registros seleccionados.", variant: "destructive" })
-      return
-    }
-
-    const draftInvoice: Invoice = {
-      id: `TEMP-INV-${Date.now()}`,
-      invoiceNumber: invoiceDetails.invoiceNumber,
-      module: "trucking",
-      client: invoiceDetails.client,
-      date: invoiceDetails.date,
-      currency: invoiceDetails.currency,
-      records: recordsForInvoicing.map((r) => ({ ...r, id: r.id.toString() })),
-      subtotal,
-      tax,
-      total,
-      status: "borrador",
-      createdAt: new Date().toISOString(),
-      excelIds: selectedExcelIds,
-      driver: invoiceDetails.driver,
-      vehicle: invoiceDetails.vehicle,
-      paymentTerms: invoiceDetails.paymentTerms,
-      notes: invoiceDetails.notes,
-    }
-    setGeneratedInvoicePreview(draftInvoice)
-    setCurrentStep("preview")
-    toast({ title: "Borrador Creado", description: "Revisa los detalles." })
-  }
-
-  const handleFinalizeInvoice = async () => {
-    if (!generatedInvoicePreview) return
-    setIsFinalizing(true)
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-      const finalInvoiceId = generatedInvoicePreview.id.startsWith("TEMP-")
-        ? `TRK-INV-${Date.now().toString().slice(-6)}`
-        : generatedInvoicePreview.id
-
-      const xmlData = generateInvoiceXML({
-        ...generatedInvoicePreview,
-        id: finalInvoiceId,
-        invoiceNumber: generatedInvoicePreview.invoiceNumber,
-      })
-
-      const finalizedInvoiceData: Invoice = {
-        ...generatedInvoicePreview,
-        id: finalInvoiceId,
-        status: "creada",
-        xmlData: xmlData,
-      }
-
-      dispatch(createInvoice(finalizedInvoiceData))
-      dispatch(markExcelAsProcessed(selectedExcelIds))
-      const recordIdsToUpdate: string[] = selectedExcelObjects.flatMap((excelFile) =>
-        excelFile.records.map((record) => `TRK-REC-${excelFile.id}-${record.id}`),
+  const filteredPendingRecords = useMemo(() => {
+    if (!searchTerm) return pendingTruckingRecords
+    const lowerSearch = searchTerm.toLowerCase()
+    return pendingTruckingRecords.filter((record) => {
+      const data = record.data as Record<string, any> // Cast record.data for easier access
+      return (
+        String(data.cliente || "")
+          .toLowerCase()
+          .includes(lowerSearch) ||
+        String(data.ruc || "")
+          .toLowerCase()
+          .includes(lowerSearch) ||
+        String(data.contenedor || "")
+          .toLowerCase()
+          .includes(lowerSearch) ||
+        String(data.bl || "")
+          .toLowerCase()
+          .includes(lowerSearch) ||
+        String(data.driverExcel || "")
+          .toLowerCase()
+          .includes(lowerSearch) ||
+        String(record.id).toLowerCase().includes(lowerSearch)
       )
-      dispatch(markRecordsAsInvoiced({ recordIds: recordIdsToUpdate, invoiceId: finalInvoiceId }))
+    })
+  }, [pendingTruckingRecords, searchTerm])
 
-      toast({ title: "¡Factura Finalizada!", description: `${finalizedInvoiceData.invoiceNumber} creada.` })
-      setSelectedExcelIds([])
-      setInvoiceDetails({
-        invoiceNumber: `TRK-INV-${Date.now().toString().slice(-6)}`,
-        client: "",
-        date: new Date().toISOString().split("T")[0],
-        currency: "USD",
-        driver: "",
-        vehicle: "",
-        paymentTerms: "NET 30",
-        notes: "Servicios de transporte terrestre según detalle.",
+  const selectedRecordDetails: IndividualExcelRecord[] = useMemo(() => {
+    return pendingTruckingRecords.filter((record) => selectedRecordIds.includes(record.id))
+  }, [selectedRecordIds, pendingTruckingRecords])
+
+  const selectedRecordDetailsString = useMemo(() => JSON.stringify(selectedRecordDetails), [selectedRecordDetails])
+  const truckingCustomFieldsString = useMemo(() => JSON.stringify(truckingCustomFields), [truckingCustomFields])
+
+  useEffect(() => {
+    // Parse the stringified dependencies back to objects for use inside the effect
+    const currentSelectedDetails: IndividualExcelRecord[] = JSON.parse(selectedRecordDetailsString)
+    const currentCustomFields: CustomFieldConfig[] = JSON.parse(truckingCustomFieldsString)
+
+    if (currentSelectedDetails.length > 0) {
+      const firstSelectedRecordData = currentSelectedDetails[0].data as Record<string, any>
+      const subtotalCalc = currentSelectedDetails.reduce((sum, record) => sum + record.totalValue, 0)
+      const taxCalc = subtotalCalc * 0.07
+      const totalCalc = subtotalCalc + taxCalc
+
+      setFormData((prev) => {
+        const newFormData = { ...prev }
+
+        newFormData.clientName = String(firstSelectedRecordData?.cliente || "")
+        newFormData.clientRuc = String(firstSelectedRecordData?.ruc || "")
+        newFormData.clientAddress = String(firstSelectedRecordData?.clientAddress || "")
+        newFormData.description = `Servicios de transporte terrestre (${currentSelectedDetails.length} registros)`
+        newFormData.subtotal = subtotalCalc
+        newFormData.taxAmount = taxCalc
+        newFormData.total = totalCalc
+
+        currentCustomFields.forEach((cf) => {
+          const excelKeyGuess = cf.label
+            .toLowerCase()
+            .replace(/\s+/g, "_")
+            .replace(/[^\w_]/g, "")
+          const derivedValue = firstSelectedRecordData?.[excelKeyGuess]
+          newFormData[cf.id] = derivedValue !== undefined ? derivedValue : prev[cf.id] || ""
+        })
+        return newFormData
       })
-      setGeneratedInvoicePreview(null)
-      setCurrentStep("select") // Go back to select step to see the new invoice in the list
-    } catch (error) {
-      console.error("Error finalizing invoice:", error)
-      toast({ title: "Error al Finalizar", description: "No se pudo finalizar.", variant: "destructive" })
-    } finally {
-      setIsFinalizing(false)
-    }
-  }
-
-  const handleViewXmlOfExisting = (invoice: Invoice) => {
-    if (invoice.xmlData) {
-      setXmlContent(invoice.xmlData)
-      setShowXmlModal(true)
     } else {
-      // Generate on the fly if somehow missing (shouldn't happen for 'creada' status)
-      const tempXml = generateInvoiceXML(invoice)
-      setXmlContent(tempXml)
-      setShowXmlModal(true)
-      toast({ title: "XML Generado al Vuelo", description: "El XML no estaba pre-guardado." })
+      setFormData((prev) => ({
+        ...prev,
+        clientName: "",
+        clientRuc: "",
+        clientAddress: "",
+        description: "",
+        subtotal: 0,
+        taxAmount: 0,
+        total: 0,
+        ...Object.fromEntries(currentCustomFields.map((cf) => [cf.id, ""])),
+      }))
+    }
+  }, [selectedRecordDetailsString, truckingCustomFieldsString]) // Effect depends on stable strings
+
+  const handleRecordSelectionChange = (recordId: string, checked: boolean | string) =>
+    setSelectedRecordIds((prev) => (checked ? [...prev, recordId] : prev.filter((id) => id !== recordId)))
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target
+    setFormData((prev) => {
+      const newState = { ...prev, [name]: value }
+      if (name === "subtotal") {
+        const newSub = Number.parseFloat(value) || 0
+        newState.subtotal = newSub
+        newState.taxAmount = newSub * 0.07
+        newState.total = newState.subtotal + newState.taxAmount
+      }
+      return newState
+    })
+  }
+
+  const handleCustomFieldChange = (fieldId: string, value: string | number | Date) =>
+    setFormData((prev) => ({ ...prev, [fieldId]: value }))
+
+  const validateStep = (step: InvoiceStep): boolean => {
+    if (step === "select" && selectedRecordIds.length === 0) {
+      toast({
+        title: "Error de Selección",
+        description: "Debe seleccionar al menos un registro individual.",
+        variant: "destructive",
+      })
+      return false
+    }
+    if (step === "create") {
+      const requiredFields: (keyof TruckingFormData)[] = ["clientName", "clientRuc", "driverId", "vehicleId", "routeId"]
+      for (const field of requiredFields) {
+        if (!formData[field]) {
+          toast({
+            title: "Campos Incompletos",
+            description: `El campo '${field.replace("Id", "")}' es obligatorio.`,
+            variant: "destructive",
+          })
+          return false
+        }
+      }
+      if (formData.total <= 0) {
+        toast({
+          title: "Monto Inválido",
+          description: "El total de la factura debe ser mayor a cero.",
+          variant: "destructive",
+        })
+        return false
+      }
+      if (
+        !/^([NnJjVvEeGgPEpe](?:-\d{1,8})(?:-\d{1,6})?|\d{1,9}[PEepenNpiiav]{0,2}(?:-\d{1,4})?(?:-\d{1,6})?|\d{1,12})$/.test(
+          formData.clientRuc,
+        )
+      ) {
+        toast({
+          title: "RUC/Cédula Inválido",
+          description: "Formato de RUC/Cédula no válido para Panamá.",
+          variant: "destructive",
+        })
+        return false
+      }
+    }
+    return true
+  }
+
+  const nextStep = () => {
+    if (!validateStep(currentStep)) return
+
+    if (currentStep === "select") {
+      if (selectedRecordDetails.length === 0) {
+        toast({
+          title: "Sin Selección",
+          description: "Por favor, seleccione al menos un registro para facturar.",
+          variant: "destructive",
+        })
+        return
+      }
+      setCurrentStep("create")
+    } else if (currentStep === "create") {
+      const lineItemsForXml: InvoiceLineItemForXml[] = selectedRecordDetails.map((rec) => {
+        const recData = rec.data as Record<string, any>
+        const lineItemCustomFields: Record<string, any> = {}
+        truckingCustomFields.forEach((cf) => {
+          const excelKeyGuess = cf.label
+            .toLowerCase()
+            .replace(/\s+/g, "_")
+            .replace(/[^\w_]/g, "")
+          if (recData && recData[excelKeyGuess] !== undefined) {
+            lineItemCustomFields[cf.id] = recData[excelKeyGuess]
+          }
+        })
+
+        return {
+          id: rec.id, // Use the unique ID of the individual record
+          description: recData.description || `Servicio de ${recData.tamaño || ""} Cont. ${recData.contenedor || ""}`,
+          quantity: recData.quantity || 1,
+          unitPrice: recData.tarifa || rec.totalValue, // Use tarifa from Excel data or totalValue of record
+          totalPrice: rec.totalValue, // Use the calculated totalValue for the line item
+          serviceCode: recData.serviceCode || "TRK-STD",
+          unit: recData.unit || "VIAJE",
+          blNumber: recData.bl || "",
+          containerNumber: recData.contenedor || "",
+          containerSize: recData.tamaño || "",
+          containerType: recData.tipoContenedor || "",
+          containerIsoCode: recData.containerIsoCode || "",
+          fullEmptyStatus: recData.fullEmptyStatus || "",
+          ...lineItemCustomFields,
+        }
+      })
+
+      const invoiceLevelCustomFields: Record<string, any> = {}
+      truckingCustomFields.forEach((cf) => {
+        if (formData[cf.id] !== undefined && formData[cf.id] !== "") {
+          invoiceLevelCustomFields[cf.id] = formData[cf.id]
+        }
+      })
+
+      const xmlPayload: InvoiceForXmlPayload = {
+        id: `XML-${formData.invoiceNumber}-${Date.now()}`,
+        module: "trucking",
+        invoiceNumber: formData.invoiceNumber,
+        client: formData.clientRuc,
+        clientName: formData.clientName,
+        date: formData.issueDate,
+        dueDate: formData.dueDate,
+        currency: formData.currency,
+        total: formData.total,
+        records: lineItemsForXml,
+        status: "generated",
+        driverId: formData.driverId,
+        vehicleId: formData.vehicleId,
+        routeId: formData.routeId,
+        ...invoiceLevelCustomFields,
+      }
+      try {
+        const generated = generateInvoiceXML(xmlPayload)
+        setGeneratedXml(generated)
+        setCurrentStep("review")
+      } catch (e: any) {
+        console.error("XML Generation Error:", e)
+        toast({ title: "Error al Generar XML", description: e.message || String(e), variant: "destructive" })
+      }
+    } else if (currentStep === "review") {
+      setCurrentStep("confirm")
     }
   }
 
-  const handleViewInvoiceDetails = (invoice: Invoice) => {
-    setInvoiceToView(invoice)
-    // setShowInvoiceDetailModal(true); // You'll need a new modal for this
+  const prevStep = () => {
+    if (currentStep === "create") setCurrentStep("select")
+    else if (currentStep === "review") setCurrentStep("create")
+    else if (currentStep === "confirm") setCurrentStep("review")
   }
 
-  // Step 1: Select Excel Files & View Existing Invoices
-  if (currentStep === "select") {
-    return (
-      <div className="p-6 space-y-8">
-        <div className="flex items-center gap-3">
-          <Truck className="h-8 w-8 text-blue-500" />
-          <div>
-            <h1 className="text-3xl font-bold">Facturación - Trucking</h1>
-            <p className="text-muted-foreground">Selecciona Excel para nueva factura o gestiona existentes.</p>
-          </div>
-        </div>
+  const handleFinalizeInvoice = () => {
+    if (!generatedXml) {
+      toast({ title: "Error", description: "XML no generado. No se puede finalizar.", variant: "destructive" })
+      return
+    }
+    const driver = configuredDrivers.find((d) => d.id === formData.driverId)
+    const vehicle = configuredVehicles.find((v) => v.id === formData.vehicleId)
+    const route = configuredRoutes.find((r) => r.id === formData.routeId)
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Stats Cards */}
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm font-medium text-muted-foreground">Excel Pendientes</p>
-              <p className="text-2xl font-bold">{availableExcelsForInvoicing.length}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm font-medium text-muted-foreground">Facturas Creadas (Trucking)</p>
-              <p className="text-2xl font-bold">{truckingInvoices.length}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm font-medium text-muted-foreground">Excel Seleccionados</p>
-              <p className="text-2xl font-bold">{selectedExcelIds.length}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm font-medium text-muted-foreground">Total Estimado (Nueva)</p>
-              <p className="text-2xl font-bold">${total.toFixed(2)}</p>
-            </CardContent>
-          </Card>
-        </div>
+    const invoiceDetails: PersistedInvoiceRecord["details"] = {
+      driverId: formData.driverId,
+      driverName: driver?.name,
+      vehicleId: formData.vehicleId,
+      vehicleInfo: vehicle ? `${vehicle.plate} (${vehicle.model})` : undefined,
+      routeId: formData.routeId,
+      routeName: route?.name,
+    }
+    truckingCustomFields.forEach((cf) => {
+      if (formData[cf.id] !== undefined && formData[cf.id] !== "") invoiceDetails[cf.id] = formData[cf.id]
+    })
 
-        {/* Section to Create New Invoice */}
+    const newInvoice: PersistedInvoiceRecord = {
+      id: `TRK-INV-${Date.now().toString().slice(-6)}`,
+      module: "trucking",
+      invoiceNumber: formData.invoiceNumber,
+      clientName: formData.clientName,
+      clientRuc: formData.clientRuc,
+      issueDate: formData.issueDate,
+      dueDate: formData.dueDate,
+      currency: formData.currency,
+      subtotal: formData.subtotal,
+      taxAmount: formData.taxAmount,
+      totalAmount: formData.total,
+      status: "generada",
+      xmlData: generatedXml,
+      relatedRecordIds: selectedRecordIds, // These are IDs of IndividualExcelRecord
+      notes: formData.description,
+      details: invoiceDetails,
+      createdAt: new Date().toISOString(),
+    }
+    dispatch(addInvoice(newInvoice))
+    dispatch(markRecordsAsInvoiced({ recordIds: selectedRecordIds, invoiceId: newInvoice.id }))
+
+    toast({
+      title: "Factura Finalizada",
+      description: `${newInvoice.invoiceNumber} guardada con éxito.`,
+      className: "bg-green-600 text-white",
+    })
+    setSelectedRecordIds([])
+    setFormData(getNewInvoiceState())
+    setGeneratedXml(null)
+    setCurrentStep("select")
+    router.push("/trucking/records")
+  }
+
+  const handleDownloadXml = () => {
+    if (generatedXml) {
+      const blob = new Blob([generatedXml], { type: "application/xml;charset=utf-8" })
+      saveAs(blob, `${formData.invoiceNumber || "factura"}.xml`)
+      toast({ title: "XML Descargado", description: "El archivo XML ha sido descargado." })
+    } else {
+      toast({ title: "Error", description: "No hay XML generado para descargar.", variant: "destructive" })
+    }
+  }
+
+  const progressValue =
+    currentStep === "select" ? 25 : currentStep === "create" ? 50 : currentStep === "review" ? 75 : 100
+
+  return (
+    <div className="container mx-auto p-4">
+      <header className="mb-6">
+        <h1 className="text-3xl font-bold flex items-center">
+          <FileText className="mr-2 h-8 w-8" />
+          Gestión de Facturas de Trucking
+        </h1>
+        <p className="text-muted-foreground">
+          Crea, revisa y finaliza facturas para el módulo de transporte terrestre.
+        </p>
+      </header>
+      <div className="mb-8">
+        <Progress value={progressValue} className="w-full" />
+        <div className="flex justify-between text-sm text-muted-foreground mt-1">
+          <span className={currentStep === "select" ? "font-bold text-primary" : ""}>1. Seleccionar Registros</span>
+          <span className={currentStep === "create" ? "font-bold text-primary" : ""}>2. Crear Factura</span>
+          <span className={currentStep === "review" ? "font-bold text-primary" : ""}>3. Revisar XML</span>
+          <span className={currentStep === "confirm" ? "font-bold text-primary" : ""}>4. Confirmar</span>
+        </div>
+      </div>
+      {currentStep === "select" && (
         <Card>
           <CardHeader>
-            <CardTitle>Crear Nueva Factura</CardTitle>
-            <CardDescription>
-              Selecciona uno o más archivos Excel pendientes para generar una nueva factura.
-            </CardDescription>
+            <CardTitle className="flex items-center">
+              <ListChecks className="mr-2 h-6 w-6" />
+              Seleccionar Registros Individuales Pendientes
+            </CardTitle>
+            <CardDescription>Elige los servicios de Excel para incluir en la factura.</CardDescription>
           </CardHeader>
           <CardContent>
-            {availableExcelsForInvoicing.length === 0 ? (
-              <Alert variant="default">
-                <FileWarning className="h-4 w-4" />
-                <AlertTitle>No hay Excel pendientes</AlertTitle>
-                <AlertDescription>
-                  Sube nuevos archivos en "Subir Excel - Trucking" para poder facturarlos.
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
-                {availableExcelsForInvoicing.map((excel) => (
-                  <Card
-                    key={excel.id}
-                    className={`p-3 border rounded-lg transition-all ${selectedExcelIds.includes(excel.id) ? "border-primary ring-1 ring-primary" : "hover:shadow-sm"}`}
-                  >
-                    <div className="flex items-start space-x-3">
-                      <Checkbox
-                        id={`excel-${excel.id}`}
-                        checked={selectedExcelIds.includes(excel.id)}
-                        onCheckedChange={(checked) => handleExcelSelectionChange(excel.id, checked)}
-                        className="mt-1"
-                      />
-                      <Label htmlFor={`excel-${excel.id}`} className="flex-1 cursor-pointer">
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium">{excel.filename}</span>
-                          <Badge variant={excel.status === "pendiente" ? "warning" : "default"}>{excel.status}</Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Subido: {new Date(excel.uploadDate).toLocaleDateString()} | {excel.records.length} registros |
-                          Valor: ${excel.totalValue?.toFixed(2) || "0.00"}
-                        </p>
-                      </Label>
-                    </div>
-                  </Card>
-                ))}
+            <div className="mb-4">
+              <Label htmlFor="searchRecords" className="sr-only">
+                Buscar Registros
+              </Label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="searchRecords"
+                  type="search"
+                  placeholder="Buscar por cliente, RUC, contenedor, BL, ID de registro..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-8 w-full"
+                />
               </div>
-            )}
-          </CardContent>
-          {availableExcelsForInvoicing.length > 0 && (
-            <CardFooter className="border-t pt-4">
-              <Button
-                onClick={proceedToCreateStep}
-                disabled={selectedExcelIds.length === 0}
-                className="w-full md:w-auto ml-auto"
-              >
-                Continuar a Detalles de Factura ({selectedExcelIds.length} Excel sel.) <Plus className="ml-2 h-4 w-4" />
-              </Button>
-            </CardFooter>
-          )}
-        </Card>
-
-        {/* Section to List Existing Invoices */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Facturas de Trucking Existentes</CardTitle>
-            <CardDescription>Lista de todas las facturas generadas para el módulo de Trucking.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {truckingInvoices.length === 0 ? (
-              <Alert variant="default">
-                <FileWarning className="h-4 w-4" />
-                <AlertTitle>No hay facturas creadas</AlertTitle>
-                <AlertDescription>Aún no se han generado facturas para el módulo de Trucking.</AlertDescription>
-              </Alert>
-            ) : (
-              <div className="max-h-[400px] overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead># Factura</TableHead>
-                      <TableHead>Cliente</TableHead>
-                      <TableHead>Fecha</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead>Estado</TableHead>
-                      <TableHead className="text-center">Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {truckingInvoices.map((invoice) => (
-                      <TableRow key={invoice.id}>
-                        <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
-                        <TableCell>{invoice.client}</TableCell>
-                        <TableCell>{new Date(invoice.date).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-right">
-                          ${invoice.total.toFixed(2)} {invoice.currency}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              invoice.status === "creada"
-                                ? "success"
-                                : invoice.status === "borrador"
-                                  ? "warning"
-                                  : "default"
-                            }
-                          >
-                            {invoice.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-center space-x-1">
-                          <Dialog>
-                            {" "}
-                            {/* Wrap button in Dialog for viewing details */}
-                            <DialogTrigger asChild>
-                              <Button variant="ghost" size="icon" onClick={() => handleViewInvoiceDetails(invoice)}>
-                                <Eye className="h-4 w-4" />
-                                <span className="sr-only">Ver Detalles</span>
-                              </Button>
-                            </DialogTrigger>
-                            {/* Content for this dialog will be in the new InvoiceDetailModal */}
-                          </Dialog>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleViewXmlOfExisting(invoice)}
-                            title="Ver XML"
-                          >
-                            <FileText className="h-4 w-4" />
-                            <span className="sr-only">Ver XML</span>
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => toast({ title: "Simulación", description: "Descarga PDF simulada." })}
-                            title="Descargar PDF"
-                          >
-                            <Download className="h-4 w-4" />
-                            <span className="sr-only">Descargar PDF</span>
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        {/* Modal for Viewing Invoice Details */}
-        {invoiceToView && (
-          <Dialog open={!!invoiceToView} onOpenChange={() => setInvoiceToView(null)}>
-            <DialogContent className="max-w-3xl">
-              <DialogHeader>
-                <DialogTitle>Detalle Factura #{invoiceToView.invoiceNumber}</DialogTitle>
-                <DialogDescription>
-                  Cliente: {invoiceToView.client} - Fecha: {new Date(invoiceToView.date).toLocaleDateString()}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="mt-4 space-y-4 max-h-[70vh] overflow-y-auto p-1">
-                <div className="grid md:grid-cols-2 gap-4 p-3 border rounded-lg bg-muted/30">
-                  <div>
-                    <h4 className="font-semibold text-sm">DE:</h4>
-                    <p className="text-xs">Trucking Services Panama Demo</p>
-                    <p className="text-xs">Edificio Inteligente, Piso 20, Ciudad de Panamá</p>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-sm">PARA:</h4>
-                    <p className="text-xs font-medium">{invoiceToView.client}</p>
-                    <p className="text-xs">Términos: {invoiceToView.paymentTerms}</p>
-                  </div>
-                </div>
-                <h4 className="font-semibold">Servicios Incluidos:</h4>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-xs">Fecha</TableHead>
-                      <TableHead className="text-xs">Desde/Hacia</TableHead>
-                      <TableHead className="text-xs">Contenedor</TableHead>
-                      <TableHead className="text-xs text-right">Monto</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {invoiceToView.records.map((record, index) => {
-                      const recData = record as TruckingRecordData
-                      return (
-                        <TableRow key={recData.uniqueDisplayId || index}>
-                          <TableCell className="text-xs">{recData.fecha}</TableCell>
-                          <TableCell className="text-xs">
-                            {recData.desde} → {recData.hacia}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {recData.contenedor} ({recData.tamaño})
-                          </TableCell>
-                          <TableCell className="text-xs text-right">${(recData.totalRate || 0).toFixed(2)}</TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-                <div className="flex justify-end mt-4">
-                  <div className="w-full max-w-xs space-y-1">
-                    <div className="flex justify-between text-sm">
-                      <span>Subtotal:</span> <span>${invoiceToView.subtotal.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>ITBMS (7%):</span> <span>${invoiceToView.tax.toFixed(2)}</span>
-                    </div>
-                    <Separator />
-                    <div className="flex justify-between font-bold">
-                      <span>TOTAL:</span>{" "}
-                      <span>
-                        ${invoiceToView.total.toFixed(2)} {invoiceToView.currency}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                {invoiceToView.notes && (
-                  <p className="text-xs text-muted-foreground border-t pt-2 mt-2">Notas: {invoiceToView.notes}</p>
-                )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setInvoiceToView(null)}>
-                  Cerrar
-                </Button>
-                <Button
-                  onClick={() => {
-                    handleViewXmlOfExisting(invoiceToView)
-                    setInvoiceToView(null)
-                  }}
-                >
-                  Ver XML
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
-
-        {/* XML Preview Modal (reused) */}
-        <Dialog open={showXmlModal} onOpenChange={setShowXmlModal}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Vista Previa del XML de Factura</DialogTitle>
-            </DialogHeader>
-            <div className="mt-4 max-h-[60vh] overflow-y-auto rounded-md bg-muted p-4">
-              <pre className="text-sm whitespace-pre-wrap break-all">
-                <code>{xmlContent}</code>
-              </pre>
             </div>
-            <DialogFooter>
-              <Button onClick={() => setShowXmlModal(false)}>Cerrar</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-    )
-  }
-
-  // Step 2: Create Invoice Details (Copied from previous version, ensure consistency)
-  if (currentStep === "create") {
-    return (
-      <div className="p-6 space-y-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Truck className="h-8 w-8 text-blue-500" />
-          <div>
-            <h1 className="text-3xl font-bold">Crear Factura - Trucking (Paso 2 de 3)</h1>
-            <p className="text-muted-foreground">Completa los detalles de la factura y revisa los servicios.</p>
-          </div>
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-6">
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>Información de la Factura</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="invoice-number">Número de Factura</Label>
-                  <Input
-                    id="invoice-number"
-                    value={invoiceDetails.invoiceNumber}
-                    onChange={(e) => setInvoiceDetails({ ...invoiceDetails, invoiceNumber: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="date">Fecha de Factura</Label>
-                  <Input
-                    id="date"
-                    type="date"
-                    value={invoiceDetails.date}
-                    onChange={(e) => setInvoiceDetails({ ...invoiceDetails, date: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="client">Cliente *</Label>
-                  <Select
-                    value={invoiceDetails.client}
-                    onValueChange={(value) => setInvoiceDetails({ ...invoiceDetails, client: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar cliente" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[...new Set(recordsForInvoicing.map((r) => r.cliente))].map((clientName) => (
-                        <SelectItem key={clientName} value={clientName}>
-                          {clientName}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="Otro Cliente">Otro Cliente (Especificar)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="currency">Moneda</Label>
-                  <Select
-                    value={invoiceDetails.currency}
-                    onValueChange={(value) => setInvoiceDetails({ ...invoiceDetails, currency: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="USD">USD - Dólar Estadounidense</SelectItem>
-                      <SelectItem value="PAB">PAB - Balboa Panameño</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="driver">Driver Principal (Opcional)</Label>
-                  <Input
-                    id="driver"
-                    value={invoiceDetails.driver}
-                    onChange={(e) => setInvoiceDetails({ ...invoiceDetails, driver: e.target.value })}
-                    placeholder="Nombre del conductor"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="vehicle">Vehículo (Opcional)</Label>
-                  <Input
-                    id="vehicle"
-                    value={invoiceDetails.vehicle}
-                    onChange={(e) => setInvoiceDetails({ ...invoiceDetails, vehicle: e.target.value })}
-                    placeholder="Placa o ID del vehículo"
-                  />
-                </div>
-                <div className="space-y-1.5 md:col-span-2">
-                  <Label htmlFor="paymentTerms">Términos de Pago</Label>
-                  <Input
-                    id="paymentTerms"
-                    value={invoiceDetails.paymentTerms}
-                    onChange={(e) => setInvoiceDetails({ ...invoiceDetails, paymentTerms: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1.5 md:col-span-2">
-                  <Label htmlFor="notes">Notas Adicionales</Label>
-                  <Input
-                    id="notes"
-                    value={invoiceDetails.notes}
-                    onChange={(e) => setInvoiceDetails({ ...invoiceDetails, notes: e.target.value })}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Resumen Financiero</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="flex justify-between">
-                  <span>Subtotal:</span> <span>${subtotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>ITBMS (7%):</span> <span>${tax.toFixed(2)}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between font-bold text-lg">
-                  <span>TOTAL:</span>{" "}
-                  <span>
-                    ${total.toFixed(2)} {invoiceDetails.currency}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-            <Button onClick={handleCreateInvoiceDraft} className="w-full" size="lg">
-              Continuar al Paso 3: Vista Previa
-            </Button>
-            <Button onClick={() => setCurrentStep("select")} variant="outline" className="w-full">
-              Volver a Selección de Excel
-            </Button>
-          </div>
-        </div>
-
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>Servicios Incluidos ({recordsForInvoicing.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {recordsForInvoicing.length > 0 ? (
-              <div className="max-h-[400px] overflow-y-auto">
+            {filteredPendingRecords.length > 0 ? (
+              <div className="max-h-[400px] overflow-y-auto border rounded-md">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-[50px]">Sel.</TableHead>
+                      <TableHead>ID Registro</TableHead>
                       <TableHead>Fecha</TableHead>
                       <TableHead>Cliente</TableHead>
-                      <TableHead>Desde/Hacia</TableHead>
-                      <TableHead>Contenedor</TableHead>
-                      <TableHead className="text-right">Total Servicio</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {recordsForInvoicing.map((record) => (
-                      <TableRow key={record.uniqueDisplayId}>
-                        <TableCell>{record.fecha}</TableCell>
-                        <TableCell>{record.cliente}</TableCell>
-                        <TableCell>
-                          {record.desde} → {record.hacia}
-                        </TableCell>
-                        <TableCell>
-                          {record.contenedor} ({record.tamaño})
-                        </TableCell>
-                        <TableCell className="text-right">${record.totalRate.toFixed(2)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            ) : (
-              <p className="text-muted-foreground">No hay servicios para mostrar.</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  // Step 3: Preview and Finalize Invoice (Copied from previous version, ensure consistency)
-  if (currentStep === "preview" && generatedInvoicePreview) {
-    return (
-      <div className="p-6 space-y-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Truck className="h-8 w-8 text-blue-500" />
-          <div>
-            <h1 className="text-3xl font-bold">Crear Factura - Trucking (Paso 3 de 3)</h1>
-            <p className="text-muted-foreground">Revisa la factura y finaliza para guardarla.</p>
-          </div>
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-6">
-          <Card className="lg:col-span-2">
-            <CardHeader className="flex flex-row justify-between items-center">
-              <CardTitle>Factura #{generatedInvoicePreview.invoiceNumber}</CardTitle>
-              <Badge variant={generatedInvoicePreview.status === "borrador" ? "warning" : "success"}>
-                {generatedInvoicePreview.status}
-              </Badge>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid md:grid-cols-2 gap-6 p-4 border rounded-lg">
-                <div>
-                  <h3 className="font-semibold text-sm text-muted-foreground">DE:</h3>
-                  <p>Trucking Services Panama Demo</p>
-                  <p>Edificio Inteligente, Piso 20</p>
-                  <p>Ciudad de Panamá, Panamá</p>
-                  <p>RUC: 123456-7-890123 DV 45</p>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-sm text-muted-foreground">PARA:</h3>
-                  <p className="font-semibold">{generatedInvoicePreview.client}</p>
-                  <p>Fecha: {new Date(generatedInvoicePreview.date).toLocaleDateString()}</p>
-                  <p>Moneda: {generatedInvoicePreview.currency}</p>
-                  <p>Términos: {generatedInvoicePreview.paymentTerms}</p>
-                </div>
-              </div>
-              <Separator />
-              <h3 className="font-semibold">Detalle de Servicios:</h3>
-              <div className="max-h-[300px] overflow-y-auto border rounded-md">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Fecha</TableHead>
-                      <TableHead>Desde/Hacia</TableHead>
+                      <TableHead>RUC/Cédula</TableHead>
                       <TableHead>Contenedor</TableHead>
                       <TableHead className="text-right">Monto</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {generatedInvoicePreview.records.map((record, index) => {
-                      const recData = record as TruckingRecordData
+                    {filteredPendingRecords.map((record) => {
+                      const data = record.data as Record<string, any> // Cast for easier access
                       return (
-                        <TableRow key={recData.uniqueDisplayId || index}>
-                          <TableCell>{recData.fecha}</TableCell>
+                        <TableRow
+                          key={record.id}
+                          className={selectedRecordIds.includes(record.id) ? "bg-muted/50" : ""}
+                          onClick={() => handleRecordSelectionChange(record.id, !selectedRecordIds.includes(record.id))}
+                          style={{ cursor: "pointer" }}
+                        >
                           <TableCell>
-                            {recData.desde} → {recData.hacia}
+                            <Checkbox checked={selectedRecordIds.includes(record.id)} readOnly />
                           </TableCell>
-                          <TableCell>
-                            {recData.contenedor} ({recData.tamaño})
-                          </TableCell>
-                          <TableCell className="text-right">${recData.totalRate.toFixed(2)}</TableCell>
+                          <TableCell className="font-medium">{record.id.split("-").pop()}</TableCell>
+                          <TableCell>{data.fecha}</TableCell>
+                          <TableCell>{String(data.cliente || "N/A")}</TableCell>
+                          <TableCell>{String(data.ruc || "N/A")}</TableCell>
+                          <TableCell>{String(data.contenedor || "N/A")}</TableCell>
+                          <TableCell className="text-right">$ {record.totalValue.toFixed(2)}</TableCell>
                         </TableRow>
                       )
                     })}
                   </TableBody>
                 </Table>
               </div>
-              <Separator />
-              <div className="flex justify-end">
-                <div className="w-full max-w-xs space-y-2">
-                  <div className="flex justify-between">
-                    <span>Subtotal:</span> <span>${generatedInvoicePreview.subtotal.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>ITBMS (7%):</span> <span>${generatedInvoicePreview.tax.toFixed(2)}</span>
-                  </div>
-                  <Separator />
-                  <div className="flex justify-between font-bold text-xl">
-                    <span>TOTAL:</span>{" "}
-                    <span>
-                      ${generatedInvoicePreview.total.toFixed(2)} {generatedInvoicePreview.currency}
-                    </span>
-                  </div>
+            ) : (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>No hay registros individuales pendientes</AlertTitle>
+                <AlertDescription>
+                  No se encontraron registros individuales pendientes para Trucking. Puedes{" "}
+                  <Button variant="link" className="p-0 h-auto" onClick={() => router.push("/trucking/upload")}>
+                    cargar nuevos desde un Excel
+                  </Button>
+                  .
+                </AlertDescription>
+              </Alert>
+            )}
+            {truckingGeneratedInvoices.length > 0 && (
+              <div className="mt-8">
+                <h3 className="text-lg font-semibold mb-2">Facturas de Trucking Ya Generadas</h3>
+                <div className="max-h-[200px] overflow-y-auto border rounded-md">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nº Factura</TableHead>
+                        <TableHead>Cliente</TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead>Estado</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {truckingGeneratedInvoices.map((invoice) => (
+                        <TableRow key={invoice.id}>
+                          <TableCell>{invoice.invoiceNumber}</TableCell>
+                          <TableCell>{invoice.clientName}</TableCell>
+                          <TableCell>{new Date(invoice.issueDate).toLocaleDateString()}</TableCell>
+                          <TableCell className="text-right">$ {invoice.totalAmount.toFixed(2)}</TableCell>
+                          <TableCell>
+                            <span
+                              className={`px-2 py-1 text-xs font-semibold rounded-full ${invoice.status === "generada" ? "bg-blue-100 text-blue-700" : invoice.status === "transmitida" ? "bg-green-100 text-green-700" : invoice.status === "anulada" ? "bg-red-100 text-red-700" : invoice.status === "pagada" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-700"}`}
+                            >
+                              {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1).replace("_", " ")}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
               </div>
-              {generatedInvoicePreview.notes && (
-                <>
-                  <Separator />
+            )}
+          </CardContent>
+        </Card>
+      )}
+      {currentStep === "create" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <FileSignature className="mr-2 h-6 w-6" />
+              Crear Factura de Trucking
+            </CardTitle>
+            <CardDescription>
+              Completa los detalles. Algunos campos se prellenan desde los registros seleccionados.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <fieldset className="space-y-4">
+                <legend className="text-lg font-semibold mb-2 border-b pb-1">Datos Generales</legend>
+                <div>
+                  <Label htmlFor="invoiceNumber">Número Factura</Label>
+                  <Input
+                    id="invoiceNumber"
+                    name="invoiceNumber"
+                    value={formData.invoiceNumber}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <h4 className="font-semibold text-sm">Notas:</h4>
-                    <p className="text-sm text-muted-foreground">{generatedInvoicePreview.notes}</p>
+                    <Label htmlFor="issueDate">Fecha Emisión</Label>
+                    <Input
+                      id="issueDate"
+                      name="issueDate"
+                      type="date"
+                      value={formData.issueDate}
+                      onChange={handleInputChange}
+                      required
+                    />
                   </div>
-                </>
+                  <div>
+                    <Label htmlFor="dueDate">Fecha Vencimiento</Label>
+                    <Input
+                      id="dueDate"
+                      name="dueDate"
+                      type="date"
+                      value={formData.dueDate}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="currency">Moneda</Label>
+                  <Select
+                    name="currency"
+                    value={formData.currency}
+                    onValueChange={(value) => handleInputChange({ target: { name: "currency", value } } as any)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="USD">USD</SelectItem>
+                      <SelectItem value="PAB">PAB</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </fieldset>
+              <fieldset className="space-y-4">
+                <legend className="text-lg font-semibold mb-2 border-b pb-1">Datos del Cliente</legend>
+                <div>
+                  <Label htmlFor="clientName">Nombre Cliente</Label>
+                  <Input
+                    id="clientName"
+                    name="clientName"
+                    value={formData.clientName}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="clientRuc">RUC/Cédula</Label>
+                  <Input
+                    id="clientRuc"
+                    name="clientRuc"
+                    value={formData.clientRuc}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="clientAddress">Dirección</Label>
+                  <Input
+                    id="clientAddress"
+                    name="clientAddress"
+                    value={formData.clientAddress}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </fieldset>
+            </div>
+            <fieldset className="space-y-4">
+              <legend className="text-lg font-semibold mb-2 border-b pb-1">Detalles Servicio Transporte</legend>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="driverId" className="flex items-center">
+                    <UserIconLucide className="mr-1 h-4 w-4" />
+                    Conductor
+                  </Label>
+                  <Select
+                    name="driverId"
+                    value={formData.driverId}
+                    onValueChange={(value) => handleInputChange({ target: { name: "driverId", value } } as any)}
+                    required
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {configuredDrivers.map((d) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="vehicleId" className="flex items-center">
+                    <Truck className="mr-1 h-4 w-4" />
+                    Vehículo
+                  </Label>
+                  <Select
+                    name="vehicleId"
+                    value={formData.vehicleId}
+                    onValueChange={(value) => handleInputChange({ target: { name: "vehicleId", value } } as any)}
+                    required
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {configuredVehicles.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          {v.plate} ({v.model})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="routeId" className="flex items-center">
+                    <RouteIconLucide className="mr-1 h-4 w-4" />
+                    Ruta
+                  </Label>
+                  <Select
+                    name="routeId"
+                    value={formData.routeId}
+                    onValueChange={(value) => handleInputChange({ target: { name: "routeId", value } } as any)}
+                    required
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {configuredRoutes.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </fieldset>
+
+            {truckingCustomFields.length > 0 && (
+              <fieldset className="space-y-4">
+                <legend className="text-lg font-semibold mb-2 border-b pb-1">Campos Personalizados (Trucking)</legend>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {truckingCustomFields.map((field: CustomFieldConfig) => (
+                    <div key={field.id}>
+                      <Label htmlFor={field.id}>{field.label}</Label>
+                      <Input
+                        id={field.id}
+                        name={field.id}
+                        type={field.type}
+                        value={formData[field.id] || ""}
+                        onChange={(e) =>
+                          handleCustomFieldChange(
+                            field.id,
+                            field.type === "number" ? Number.parseFloat(e.target.value) || "" : e.target.value,
+                          )
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+
+            <fieldset className="space-y-4">
+              <legend className="text-lg font-semibold mb-2 border-b pb-1">Notas y Montos</legend>
+              <div>
+                <Label htmlFor="description">Descripción / Notas Adicionales</Label>
+                <Textarea
+                  id="description"
+                  name="description"
+                  value={formData.description}
+                  onChange={handleInputChange}
+                  rows={3}
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="subtotal">Subtotal ({formData.currency})</Label>
+                  <Input
+                    id="subtotal"
+                    name="subtotal"
+                    type="number"
+                    value={formData.subtotal.toFixed(2)}
+                    onChange={handleInputChange}
+                    step="0.01"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="taxAmount">ITBMS (7%) ({formData.currency})</Label>
+                  <Input
+                    id="taxAmount"
+                    name="taxAmount"
+                    type="number"
+                    value={formData.taxAmount.toFixed(2)}
+                    readOnly
+                    disabled
+                    className="bg-muted/50"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="total">Total ({formData.currency})</Label>
+                  <Input
+                    id="total"
+                    name="total"
+                    type="number"
+                    value={formData.total.toFixed(2)}
+                    readOnly
+                    disabled
+                    className="bg-muted/50 font-bold"
+                  />
+                </div>
+              </div>
+            </fieldset>
+          </CardContent>
+        </Card>
+      )}
+      {currentStep === "review" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <UserCheck className="mr-2 h-6 w-6" />
+              Revisar Factura y XML
+            </CardTitle>
+            <CardDescription>Verifica los datos y el XML generado. Puedes descargarlo para revisión.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 border rounded-md bg-muted/20">
+              <div>
+                <h3 className="font-semibold mb-1">Factura Nº: {formData.invoiceNumber}</h3>
+                <p>
+                  <strong>Cliente:</strong> {formData.clientName}
+                </p>
+                <p>
+                  <strong>RUC/Cédula:</strong> {formData.clientRuc}
+                </p>
+                <p>
+                  <strong>Dirección:</strong> {formData.clientAddress || "N/A"}
+                </p>
+                <p>
+                  <strong>Fecha Emisión:</strong> {new Date(formData.issueDate).toLocaleDateString()}
+                </p>
+                <p>
+                  <strong>Fecha Venc.:</strong> {new Date(formData.dueDate).toLocaleDateString()}
+                </p>
+                <p>
+                  <strong>Moneda:</strong> {formData.currency}
+                </p>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-1">Detalles Transporte:</h3>
+                <p>
+                  <strong>Conductor:</strong> {configuredDrivers.find((d) => d.id === formData.driverId)?.name || "N/A"}
+                </p>
+                <p>
+                  <strong>Vehículo:</strong>{" "}
+                  {configuredVehicles.find((v) => v.id === formData.vehicleId)?.plate || "N/A"}
+                </p>
+                <p>
+                  <strong>Ruta:</strong> {configuredRoutes.find((r) => r.id === formData.routeId)?.name || "N/A"}
+                </p>
+              </div>
+              {truckingCustomFields.filter((cf) => formData[cf.id] !== undefined && formData[cf.id] !== "").length >
+                0 && (
+                <div className="md:col-span-2">
+                  <h3 className="font-semibold mb-1">Campos Personalizados:</h3>
+                  {truckingCustomFields.map((cf) =>
+                    formData[cf.id] !== undefined && formData[cf.id] !== "" ? (
+                      <p key={cf.id}>
+                        <strong>{cf.label}:</strong> {String(formData[cf.id])}
+                      </p>
+                    ) : null,
+                  )}
+                </div>
               )}
-            </CardContent>
-          </Card>
+              <div className="md:col-span-2">
+                <h3 className="font-semibold mb-1">Registros Individuales Incluidos:</h3>
+                <ul className="list-disc list-inside text-sm max-h-24 overflow-y-auto">
+                  {selectedRecordDetails.map((r) => {
+                    const data = r.data as Record<string, any>
+                    return (
+                      <li key={r.id}>
+                        ID: {r.id.split("-").pop()} - {data.cliente} - {data.contenedor} ({data.tamaño}) - $
+                        {r.totalValue.toFixed(2)}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            </div>
+            <div className="text-right space-y-1 mt-4">
+              <p>
+                <strong>Subtotal:</strong> {formData.currency} {formData.subtotal.toFixed(2)}
+              </p>
+              <p>
+                <strong>ITBMS (7%):</strong> {formData.currency} {formData.taxAmount.toFixed(2)}
+              </p>
+              <p className="text-xl font-bold">
+                <strong>Total:</strong> {formData.currency} {formData.total.toFixed(2)}
+              </p>
+            </div>
+            <div className="mt-4">
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="font-semibold">XML Generado:</h3>
+                <Button onClick={handleDownloadXml} variant="outline" size="sm" disabled={!generatedXml}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Descargar XML
+                </Button>
+              </div>
+              <Textarea
+                value={generatedXml || "Error al generar XML o XML no disponible."}
+                readOnly
+                rows={15}
+                className="font-mono text-xs bg-muted/30"
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {currentStep === "confirm" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Send className="mr-2 h-6 w-6" />
+              Confirmar y Finalizar Factura
+            </CardTitle>
+            <CardDescription>Estás a punto de finalizar y guardar la factura.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Alert variant="default" className="bg-blue-50 border-blue-200 text-blue-700">
+              <CheckCircle2 className="h-5 w-5 text-blue-600" />
+              <AlertTitle>Confirmación Final</AlertTitle>
+              <AlertDescription>
+                Al hacer clic en "Finalizar Factura", se guardará la factura y los registros individuales seleccionados
+                se marcarán como facturados.
+              </AlertDescription>
+            </Alert>
+            <div className="mt-6 text-center">
+              <p className="text-lg">
+                Total a Facturar:{" "}
+                <strong className="text-2xl">
+                  {formData.currency} {formData.total.toFixed(2)}
+                </strong>
+              </p>
+            </div>
+          </CardContent>
+          <CardFooter className="justify-center">
+            <Button onClick={handleFinalizeInvoice} size="lg" className="bg-green-600 hover:bg-green-700">
+              <CheckCircle2 className="mr-2 h-5 w-5" />
+              Finalizar Factura
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
 
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Acciones de Factura</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button onClick={handleFinalizeInvoice} className="w-full" disabled={isFinalizing} size="lg">
-                  {isFinalizing ? <Check className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
-                  {isFinalizing ? "Finalizando..." : "Finalizar y Guardar Factura"}
-                </Button>
-                <Button onClick={() => setCurrentStep("create")} variant="outline" className="w-full">
-                  <Edit2 className="mr-2 h-4 w-4" /> Volver a Editar Detalles
-                </Button>
-                <Separator className="my-3" />
-                <Button
-                  onClick={() => handleViewXmlOfExisting(generatedInvoicePreview)}
-                  variant="secondary"
-                  className="w-full"
-                >
-                  <FileText className="mr-2 h-4 w-4" /> Ver XML Generado
-                </Button>
-                <Button
-                  onClick={() => toast({ title: "Simulación", description: "Descarga PDF simulada." })}
-                  variant="outline"
-                  className="w-full"
-                >
-                  <Download className="mr-2 h-4 w-4" /> Descargar PDF (Sim)
-                </Button>
-                <Button
-                  onClick={() => toast({ title: "Simulación", description: "Envío por email simulado." })}
-                  variant="outline"
-                  className="w-full"
-                >
-                  <Mail className="mr-2 h-4 w-4" /> Enviar por Email (Sim)
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+      <div className="mt-8 flex justify-between">
+        <Button onClick={prevStep} disabled={currentStep === "select"} variant="outline">
+          <ChevronLeft className="mr-2 h-4 w-4" />
+          Anterior
+        </Button>
+        {currentStep !== "confirm" ? (
+          <Button onClick={nextStep} disabled={currentStep === "select" && selectedRecordIds.length === 0}>
+            Siguiente
+            <ChevronRight className="ml-2 h-4 w-4" />
+          </Button>
+        ) : null}
       </div>
-    )
-  }
-
-  return (
-    <div className="p-6">
-      <p>Cargando estado de facturación...</p>
     </div>
   )
 }

@@ -6,152 +6,156 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Truck, Upload, FileSpreadsheet, Eye, Plus, Check, AlertCircle } from "lucide-react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
+import { Truck, Upload, FileSpreadsheet, Eye, Plus, Check } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
-import { addExcelFile, setLoading, type ExcelRecord } from "@/lib/features/excel/excelSlice"
-import { addRecords } from "@/lib/features/records/recordsSlice"
+import { addExcelFile, setLoading as setExcelLoading } from "@/lib/features/excel/excelSlice"
+import {
+  addRecords,
+  setLoading as setRecordsLoading,
+  type ExcelRecord as IndividualExcelRecord,
+} from "@/lib/features/records/recordsSlice"
 
-// Define a more specific type for transport service records
-interface TransportServiceRecord extends ExcelRecord {
-  id: number // Original ID from Excel
+// Define a more specific type for trucking service records, extending the base ExcelRecord
+interface TruckingServiceRecordData {
+  // These are the raw columns from the Excel file
   fecha: string
   cliente: string
+  ruc: string
   desde: string
   hacia: string
   contenedor: string
   tamaño: string
+  tipoContenedor: string
   bl?: string
-  driver?: string
+  driverExcel?: string
   tarifa: number
-  gastosPuerto: number
-  otrosGastos: number
-  totalRate: number
+  gastosPuerto?: number
+  otrosGastos?: number
+  numero_de_sello?: string
+  temperatura_carga_c?: number
+  [key: string]: any
 }
 
 export function TruckingUpload() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [excelType, setExcelType] = useState<string>("transport-services") // Default to transport-services
-  const [previewData, setPreviewData] = useState<TransportServiceRecord[]>([])
+  const excelTypeForTrucking = "Servicios de Transporte Terrestre"
+  const [previewData, setPreviewData] = useState<TruckingServiceRecordData[]>([])
   const [showPreviewModal, setShowPreviewModal] = useState(false)
   const [showManualEntryModal, setShowManualEntryModal] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
-  const [manualEntryData, setManualEntryData] = useState<Partial<TransportServiceRecord>>({
+
+  const initialManualEntry: Partial<TruckingServiceRecordData> = {
     fecha: new Date().toISOString().split("T")[0],
     cliente: "",
+    ruc: "",
     desde: "",
     hacia: "",
     contenedor: "",
-    tamaño: "20'",
+    tamaño: "20",
+    tipoContenedor: "DV",
     tarifa: 0,
     gastosPuerto: 0,
     otrosGastos: 0,
-  })
+  }
+  const [manualEntryData, setManualEntryData] = useState(initialManualEntry)
 
   const dispatch = useAppDispatch()
-  const { files: allExcelFiles, loading } = useAppSelector((state) => state.excel)
+  const { files: allExcelFiles, loading: excelLoading } = useAppSelector((state) => state.excel)
+  const { loading: recordsLoading } = useAppSelector((state) => state.records)
   const truckingExcels = allExcelFiles.filter((f) => f.module === "trucking")
   const { toast } = useToast()
 
-  const excelTypes = [
-    { value: "transport-services", label: "Servicios de Transporte", description: "Servicios de transporte terrestre" },
-    // Add other types if needed, but for the demo, this one is key
-  ]
-
-  const mockTransportServicesData: TransportServiceRecord[] = [
+  const mockTruckingExcelData: TruckingServiceRecordData[] = [
     {
-      id: 1,
-      fecha: "2024-05-15",
-      cliente: "MSC Logistics",
-      desde: "MIT",
-      hacia: "PSA",
-      contenedor: "MSCU7326823",
-      tamaño: "40'",
-      bl: "MEDUL6827090",
-      driver: "Luis Matos",
-      tarifa: 120.0,
-      gastosPuerto: 25.0,
-      otrosGastos: 15.0,
-      totalRate: 160.0,
+      fecha: "2024-07-10",
+      cliente: "Importadora Del Mar S.A.",
+      ruc: "155678901-2-2020",
+      desde: "Puerto Balboa",
+      hacia: "Ciudad de Panamá",
+      contenedor: "MSCU1234567",
+      tamaño: "40",
+      tipoContenedor: "HC",
+      bl: "MSCA001",
+      driverExcel: "Carlos Perez",
+      tarifa: 180,
+      gastosPuerto: 35,
+      otrosGastos: 10,
+      numero_de_sello: "SEALPA001",
+      temperatura_carga_c: 4,
     },
     {
-      id: 2,
-      fecha: "2024-05-16",
-      cliente: "MSC Logistics",
-      desde: "PSA",
-      hacia: "CCT",
-      contenedor: "CTWU1601508",
-      tamaño: "20'",
-      bl: "7336875A",
-      driver: "Luis Matos",
-      tarifa: 85.0,
-      gastosPuerto: 20.0,
-      otrosGastos: 10.0,
-      totalRate: 115.0,
+      fecha: "2024-07-11",
+      cliente: "Logística Total PTY",
+      ruc: "8-NT-12345",
+      desde: "Zona Libre Colón",
+      hacia: "Aeropuerto Tocumen",
+      contenedor: "CMAU7654321",
+      tamaño: "20",
+      tipoContenedor: "DV",
+      bl: "CMAA002",
+      driverExcel: "Ana Rodriguez",
+      tarifa: 130,
+      gastosPuerto: 20,
+      otrosGastos: 5,
+      numero_de_sello: "SEALPA002",
     },
     {
-      id: 3,
-      fecha: "2024-05-17",
-      cliente: "Global Shipping Co.",
-      desde: "MIT",
-      hacia: "BLB",
-      contenedor: "GLOB1234567",
-      tamaño: "45' HC",
-      bl: "GLOB001234",
-      driver: "Carlos Rodriguez",
-      tarifa: 150.0,
-      gastosPuerto: 30.0,
-      otrosGastos: 20.0,
-      totalRate: 200.0,
+      fecha: "2024-07-12",
+      cliente: "Importadora Del Mar S.A.",
+      ruc: "155678901-2-2020",
+      desde: "Puerto Balboa",
+      hacia: "Colón",
+      contenedor: "MSCU9876543",
+      tamaño: "40",
+      tipoContenedor: "DV",
+      bl: "MSCA003",
+      driverExcel: "Carlos Perez",
+      tarifa: 160,
+      gastosPuerto: 30,
+      otrosGastos: 10,
+      numero_de_sello: "SEALPA003",
     },
     {
-      id: 4,
-      fecha: "2024-05-18",
-      cliente: "SeaFreight International",
-      desde: "CCT",
-      hacia: "MIT",
-      contenedor: "SFIU9876543",
-      tamaño: "40' HC",
-      bl: "SFIU005678",
-      driver: "Ana Gomez",
-      tarifa: 135.0,
-      gastosPuerto: 28.0,
-      otrosGastos: 12.0,
-      totalRate: 175.0,
-    },
-    {
-      id: 5,
-      fecha: "2024-05-19",
-      cliente: "MSC Logistics",
-      desde: "BLB",
-      hacia: "PSA",
-      contenedor: "MSCU1122334",
-      tamaño: "20'",
-      bl: "MEDUL6827099",
-      driver: "Luis Matos",
-      tarifa: 90.0,
-      gastosPuerto: 22.0,
-      otrosGastos: 13.0,
-      totalRate: 125.0,
+      fecha: "2024-07-13",
+      cliente: "Transportes Rápidos S.A.",
+      ruc: "9-RT-67890",
+      desde: "Puerto Manzanillo",
+      hacia: "David",
+      contenedor: "TRSU1122334",
+      tamaño: "20",
+      tipoContenedor: "RF",
+      bl: "TRSA001",
+      driverExcel: "Pedro Gómez",
+      tarifa: 250,
+      gastosPuerto: 40,
+      otrosGastos: 15,
+      temperatura_carga_c: -18,
     },
   ]
 
   useEffect(() => {
-    if (selectedFile && excelType === "transport-services") {
-      // Simulate reading data for preview
-      setPreviewData(mockTransportServicesData)
+    if (selectedFile) {
+      // In a real scenario, you'd parse selectedFile here.
+      // For simulation, we use mock data.
+      setPreviewData(mockTruckingExcelData)
       toast({
-        title: "Vista previa generada",
-        description: `Mostrando ${mockTransportServicesData.length} registros simulados para ${selectedFile.name}`,
+        title: "Vista Previa Generada (Simulación)",
+        description: `Mostrando ${mockTruckingExcelData.length} registros simulados.`,
       })
     } else {
       setPreviewData([])
     }
-  }, [selectedFile, excelType, toast])
+  }, [selectedFile, toast]) // mockTruckingExcelData is stable, toast is stable
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -162,13 +166,9 @@ export function TruckingUpload() {
       ) {
         setSelectedFile(file)
       } else {
-        toast({
-          title: "Archivo no válido",
-          description: "Por favor, selecciona un archivo Excel (.xlsx o .xls).",
-          variant: "destructive",
-        })
+        toast({ title: "Archivo no válido", description: "Solo archivos Excel (.xlsx, .xls).", variant: "destructive" })
         setSelectedFile(null)
-        event.target.value = "" // Clear the input
+        event.target.value = "" // Reset file input
       }
     } else {
       setSelectedFile(null)
@@ -176,115 +176,120 @@ export function TruckingUpload() {
   }
 
   const handleProcessFile = async () => {
-    if (!selectedFile || !excelType || previewData.length === 0) {
+    if (!selectedFile || previewData.length === 0) {
       toast({
-        title: "Error de Validación",
-        description: "Debes seleccionar un archivo Excel, un tipo de Excel y tener datos en la vista previa.",
+        title: "Error",
+        description: "Selecciona un archivo y asegúrate que tenga datos para previsualizar.",
         variant: "destructive",
       })
       return
     }
-
     setIsProcessing(true)
-    dispatch(setLoading(true))
-
+    dispatch(setExcelLoading(true))
+    dispatch(setRecordsLoading(true))
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000)) // Simulate processing
+      // Simulate async processing (e.g., file parsing, API calls)
+      await new Promise((resolve) => setTimeout(resolve, 1000))
 
       const excelId = `TRK-EXL-${Date.now().toString().slice(-6)}`
-      const totalValue = previewData.reduce((sum, record) => sum + record.totalRate, 0)
+      const uploadDate = new Date().toISOString()
 
+      // 1. Create individual records for recordsSlice
+      const individualRecordsToSave: IndividualExcelRecord[] = previewData.map((row, index) => {
+        const totalRate = (row.tarifa || 0) + (row.gastosPuerto || 0) + (row.otrosGastos || 0)
+        return {
+          id: `TRK-REC-${excelId}-${index + 1}`, // Unique ID for each record
+          excelId: excelId,
+          module: "trucking",
+          type: excelTypeForTrucking, // e.g., "Servicios de Transporte Terrestre"
+          status: "pendiente", // Initial status for individual record
+          totalValue: totalRate,
+          createdAt: uploadDate,
+          data: {
+            // This is the raw row data from Excel (TruckingServiceRecordData)
+            ...row,
+            // If you added calculated fields to row like `totalRate` earlier, they'd be here.
+            // It's generally better to keep `data` as close to original row + essential derived values.
+          },
+        }
+      })
+      dispatch(addRecords(individualRecordsToSave))
+
+      // 2. Create ExcelFile entry for excelSlice (metadata about the file itself)
       const excelFilePayload = {
         id: excelId,
         filename: selectedFile.name,
-        uploadDate: new Date().toISOString(),
-        status: "pendiente" as const,
-        type: excelType,
+        uploadDate: uploadDate,
+        status: "procesado" as const, // Mark file as processed since records are extracted
+        type: excelTypeForTrucking,
         module: "trucking" as const,
-        records: previewData as ExcelRecord[], // Cast to base type
-        totalValue,
+        recordIds: individualRecordsToSave.map((rec) => rec.id), // Store IDs of individual records
+        totalValue: individualRecordsToSave.reduce((sum, rec) => sum + rec.totalValue, 0),
+        metadata: {
+          clientName: previewData[0]?.cliente, // Example metadata
+          ruc: previewData[0]?.ruc,
+        },
       }
       dispatch(addExcelFile(excelFilePayload))
 
-      const serviceRecordsPayload = previewData.map((record) => ({
-        id: `TRK-REC-${excelId}-${record.id}`, // Globally unique record ID
-        module: "trucking" as const,
-        type: excelType, // e.g., "transport-services"
-        date: record.fecha,
-        client: record.cliente,
-        status: "pendiente" as const,
-        totalValue: record.totalRate,
-        data: record, // Store the full original record data
-        excelId: excelId,
-      }))
-      dispatch(addRecords(serviceRecordsPayload))
-
       toast({
-        title: "¡Excel Procesado Exitosamente!",
-        description: `Se han guardado ${previewData.length} registros. Ahora puedes crear facturas con estos datos desde la sección 'Crear Factura'.`,
+        title: "Excel Procesado",
+        description: `${individualRecordsToSave.length} registros individuales guardados y listos para facturar.`,
         duration: 5000,
       })
-
-      setSelectedFile(null)
-      setPreviewData([])
+      setSelectedFile(null) // Clear selected file
+      setPreviewData([]) // Clear preview data
       const fileInput = document.getElementById("file-upload") as HTMLInputElement
-      if (fileInput) fileInput.value = ""
-    } catch (error) {
-      console.error("Error processing file:", error)
-      toast({
-        title: "Error Inesperado",
-        description: "Hubo un problema al procesar el archivo. Intenta de nuevo o revisa la consola.",
-        variant: "destructive",
-      })
+      if (fileInput) fileInput.value = "" // Reset file input
+    } catch (error: any) {
+      toast({ title: "Error Procesando Archivo", description: error.message || String(error), variant: "destructive" })
     } finally {
       setIsProcessing(false)
-      dispatch(setLoading(false))
+      dispatch(setExcelLoading(false))
+      dispatch(setRecordsLoading(false))
     }
   }
 
-  const handleManualInputChange = (field: keyof TransportServiceRecord, value: string | number) => {
+  const handleManualInputChange = (field: keyof TruckingServiceRecordData, value: string | number) => {
     setManualEntryData((prev) => ({ ...prev, [field]: value }))
   }
 
   const handleAddManualEntry = () => {
-    if (!manualEntryData.cliente || !manualEntryData.tarifa) {
-      toast({ title: "Error", description: "Cliente y Tarifa son requeridos.", variant: "destructive" })
+    if (!manualEntryData.cliente || !manualEntryData.ruc || !manualEntryData.tarifa) {
+      toast({
+        title: "Error",
+        description: "Cliente, RUC y Tarifa son requeridos para entrada manual.",
+        variant: "destructive",
+      })
       return
     }
-    const newEntry: TransportServiceRecord = {
-      id: previewData.length + 1 + Date.now(), // More unique ID for preview
+    const newEntry: TruckingServiceRecordData = {
       fecha: manualEntryData.fecha || new Date().toISOString().split("T")[0],
       cliente: manualEntryData.cliente!,
+      ruc: manualEntryData.ruc!,
       desde: manualEntryData.desde || "N/A",
       hacia: manualEntryData.hacia || "N/A",
       contenedor: manualEntryData.contenedor || "N/A",
-      tamaño: manualEntryData.tamaño || "N/A",
+      tamaño: manualEntryData.tamaño || "20",
+      tipoContenedor: manualEntryData.tipoContenedor || "DV",
       tarifa: Number(manualEntryData.tarifa) || 0,
       gastosPuerto: Number(manualEntryData.gastosPuerto) || 0,
       otrosGastos: Number(manualEntryData.otrosGastos) || 0,
-      totalRate:
-        (Number(manualEntryData.tarifa) || 0) +
-        (Number(manualEntryData.gastosPuerto) || 0) +
-        (Number(manualEntryData.otrosGastos) || 0),
-      driver: manualEntryData.driver || "N/A",
-      bl: manualEntryData.bl || "N/A",
+      driverExcel: manualEntryData.driverExcel,
+      bl: manualEntryData.bl,
+      numero_de_sello: manualEntryData.numero_de_sello,
+      temperatura_carga_c: manualEntryData.temperatura_carga_c,
     }
+    // Add to previewData. These will be processed if user clicks "Procesar y Guardar Excel"
+    // Or, if you want to add them directly as individual records:
+    // dispatch(addRecords([{ id: `MAN-TRK-${Date.now()}`, ...newEntry, module:"trucking", type:"Manual", status:"pendiente", totalValue: newEntry.tarifa, createdAt: new Date().toISOString(), data: newEntry, excelId: "MANUAL" }]))
     setPreviewData((prev) => [...prev, newEntry])
     setShowManualEntryModal(false)
-    setManualEntryData({
-      // Reset form
-      fecha: new Date().toISOString().split("T")[0],
-      cliente: "",
-      desde: "",
-      hacia: "",
-      contenedor: "",
-      tamaño: "20'",
-      tarifa: 0,
-      gastosPuerto: 0,
-      otrosGastos: 0,
-    })
-    toast({ title: "Entrada Manual Agregada", description: "El registro se añadió a la vista previa." })
+    setManualEntryData(initialManualEntry)
+    toast({ title: "Entrada Manual Agregada a Vista Previa" })
   }
+
+  const isLoading = excelLoading || recordsLoading || isProcessing
 
   return (
     <div className="p-6 space-y-6">
@@ -294,9 +299,7 @@ export function TruckingUpload() {
         </div>
         <div>
           <h1 className="text-3xl font-bold">Subir Excel - Trucking</h1>
-          <p className="text-muted-foreground">
-            Importa datos de servicios de transporte terrestre desde archivos Excel
-          </p>
+          <p className="text-muted-foreground">Importa datos de servicios de transporte terrestre (simulación).</p>
         </div>
       </div>
 
@@ -305,7 +308,7 @@ export function TruckingUpload() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Excel Cargados (Trucking)</p>
+                <p className="text-sm font-medium text-muted-foreground">Excel Cargados</p>
                 <p className="text-2xl font-bold">{truckingExcels.length}</p>
               </div>
               <FileSpreadsheet className="h-8 w-8 text-blue-500" />
@@ -316,7 +319,7 @@ export function TruckingUpload() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Pendientes de Facturar</p>
+                <p className="text-sm font-medium text-muted-foreground">Pendientes Facturar (Archivos)</p>
                 <p className="text-2xl font-bold">{truckingExcels.filter((f) => f.status === "pendiente").length}</p>
               </div>
               <Upload className="h-8 w-8 text-orange-500" />
@@ -327,7 +330,7 @@ export function TruckingUpload() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Procesados (Facturados)</p>
+                <p className="text-sm font-medium text-muted-foreground">Procesados (Archivos)</p>
                 <p className="text-2xl font-bold">{truckingExcels.filter((f) => f.status === "procesado").length}</p>
               </div>
               <Check className="h-8 w-8 text-green-500" />
@@ -339,29 +342,16 @@ export function TruckingUpload() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Cargar Archivo Excel</CardTitle>
-            <CardDescription>Selecciona el tipo de datos y sube tu archivo Excel (.xlsx o .xls)</CardDescription>
+            <CardTitle>Cargar Archivo Excel (Simulación)</CardTitle>
+            <CardDescription>
+              Sube tu archivo de Servicios de Transporte (.xlsx o .xls). Se usarán datos de prueba.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="excel-type">Tipo de Excel</Label>
-              <Select value={excelType} onValueChange={setExcelType} disabled={isProcessing}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona el tipo de datos" />
-                </SelectTrigger>
-                <SelectContent>
-                  {excelTypes.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      <div>
-                        <div className="font-medium">{type.label}</div>
-                        <div className="text-sm text-muted-foreground">{type.description}</div>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="excel-type-fixed">Tipo de Excel (Fijo para Trucking)</Label>
+              <Input id="excel-type-fixed" value={excelTypeForTrucking} readOnly disabled className="bg-muted/50" />
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="file-upload">Archivo Excel</Label>
               <Input
@@ -369,28 +359,19 @@ export function TruckingUpload() {
                 type="file"
                 accept=".xlsx,.xls"
                 onChange={handleFileChange}
-                disabled={!excelType || isProcessing}
+                disabled={isLoading}
               />
               {selectedFile && (
                 <p className="text-sm text-muted-foreground">Archivo seleccionado: {selectedFile.name}</p>
               )}
             </div>
-
-            {!excelType && (
-              <Alert variant="default">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Selecciona un Tipo de Excel</AlertTitle>
-                <AlertDescription>Por favor, elige un tipo de Excel para poder cargar un archivo.</AlertDescription>
-              </Alert>
-            )}
-
             <div className="flex gap-2">
               <Button
                 onClick={handleProcessFile}
-                disabled={!selectedFile || !excelType || previewData.length === 0 || isProcessing || loading}
+                disabled={!selectedFile || previewData.length === 0 || isLoading}
                 className="flex-1"
               >
-                {isProcessing || loading ? (
+                {isLoading ? (
                   <>
                     <Upload className="mr-2 h-4 w-4 animate-spin" />
                     Procesando...
@@ -398,40 +379,27 @@ export function TruckingUpload() {
                 ) : (
                   <>
                     <Upload className="mr-2 h-4 w-4" />
-                    Procesar y Guardar
+                    Procesar y Guardar Registros
                   </>
                 )}
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => setShowManualEntryModal(true)}
-                disabled={!excelType || isProcessing}
-              >
+              <Button variant="outline" onClick={() => setShowManualEntryModal(true)} disabled={isLoading}>
                 <Plus className="mr-2 h-4 w-4" />
-                Entrada Manual
+                Entrada Manual (a Vista Previa)
               </Button>
             </div>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader>
-            <CardTitle>Tipos de Excel Soportados</CardTitle>
-            <CardDescription>Para la demo, nos enfocaremos en "Servicios de Transporte".</CardDescription>
+            <CardTitle>Columnas Esperadas (Ejemplo de Simulación)</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {excelTypes.map((type) => (
-              <div
-                key={type.value}
-                className="flex items-start space-x-3 p-2 rounded-md border border-transparent hover:border-primary/50 transition-colors"
-              >
-                <FileSpreadsheet className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                <div>
-                  <div className="font-medium text-sm">{type.label}</div>
-                  <div className="text-xs text-muted-foreground">{type.description}</div>
-                </div>
-              </div>
-            ))}
+          <CardContent className="text-sm space-y-1">
+            <p>
+              Fecha, Cliente, RUC, Desde, Hacia, Contenedor, Tamaño, TipoContenedor, BL, DriverExcel, Tarifa,
+              GastosPuerto, OtrosGastos, Numero_De_Sello, Temperatura_Carga_C.
+            </p>
+            <p className="text-xs text-muted-foreground">Estos son los campos usados en los datos de simulación.</p>
           </CardContent>
         </Card>
       </div>
@@ -440,14 +408,14 @@ export function TruckingUpload() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span>Vista Previa de Datos ({previewData.length} registros)</span>
+              Vista Previa de Datos a Procesar ({previewData.length} registros)
               <Button variant="outline" size="sm" onClick={() => setShowPreviewModal(true)}>
                 <Eye className="mr-2 h-4 w-4" />
-                Ver Todos los Detalles
+                Ver Detalles Completos
               </Button>
             </CardTitle>
             <CardDescription>
-              Mostrando los primeros 5 registros. Haz clic en "Ver Todos los Detalles" para la tabla completa.
+              Estos son los datos (simulados) que se guardarán como registros individuales. Primeros 5 mostrados.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -457,23 +425,23 @@ export function TruckingUpload() {
                   <TableRow>
                     <TableHead>Fecha</TableHead>
                     <TableHead>Cliente</TableHead>
-                    <TableHead>Desde</TableHead>
-                    <TableHead>Hacia</TableHead>
+                    <TableHead>RUC</TableHead>
                     <TableHead>Contenedor</TableHead>
-                    <TableHead>Driver</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead>Sello</TableHead>
+                    <TableHead className="text-right">Total Calculado</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {previewData.slice(0, 5).map((row) => (
-                    <TableRow key={row.id}>
+                  {previewData.slice(0, 5).map((row, index) => (
+                    <TableRow key={index}>
                       <TableCell>{row.fecha}</TableCell>
                       <TableCell>{row.cliente}</TableCell>
-                      <TableCell>{row.desde}</TableCell>
-                      <TableCell>{row.hacia}</TableCell>
+                      <TableCell>{row.ruc}</TableCell>
                       <TableCell>{row.contenedor}</TableCell>
-                      <TableCell>{row.driver || "N/A"}</TableCell>
-                      <TableCell className="text-right">${row.totalRate.toFixed(2)}</TableCell>
+                      <TableCell>{row.numero_de_sello || "N/A"}</TableCell>
+                      <TableCell className="text-right">
+                        ${((row.tarifa || 0) + (row.gastosPuerto || 0) + (row.otrosGastos || 0)).toFixed(2)}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -484,190 +452,96 @@ export function TruckingUpload() {
       )}
 
       <Dialog open={showPreviewModal} onOpenChange={setShowPreviewModal}>
-        <DialogContent className="max-w-4xl max-h-[85vh]">
+        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>
-              Vista Detallada - {excelTypes.find((t) => t.value === excelType)?.label || "Datos"}
-            </DialogTitle>
-            <DialogDescription>Todos los registros cargados en la vista previa.</DialogDescription>
+            <DialogTitle>Vista Detallada de Datos a Procesar - {excelTypeForTrucking}</DialogTitle>
+            <DialogDescription>Registros (simulados) en la vista previa.</DialogDescription>
           </DialogHeader>
-          <div className="overflow-y-auto pr-2">
-            <Table>
+          <div className="overflow-y-auto flex-grow pr-2 mt-4">
+            <Table size="sm">
               <TableHeader>
                 <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Desde</TableHead>
-                  <TableHead>Hacia</TableHead>
-                  <TableHead>Contenedor</TableHead>
-                  <TableHead>Tamaño</TableHead>
-                  <TableHead>BL</TableHead>
-                  <TableHead>Driver</TableHead>
-                  <TableHead className="text-right">Tarifa</TableHead>
-                  <TableHead className="text-right">G. Puerto</TableHead>
-                  <TableHead className="text-right">Otros G.</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
+                  {Object.keys(previewData[0] || {}).map((key) => (
+                    <TableHead key={key} className={typeof previewData[0]?.[key] === "number" ? "text-right" : ""}>
+                      {key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                    </TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {previewData.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell>{row.id}</TableCell>
-                    <TableCell>{row.fecha}</TableCell>
-                    <TableCell>{row.cliente}</TableCell>
-                    <TableCell>{row.desde}</TableCell>
-                    <TableCell>{row.hacia}</TableCell>
-                    <TableCell>{row.contenedor}</TableCell>
-                    <TableCell>{row.tamaño}</TableCell>
-                    <TableCell>{row.bl || "N/A"}</TableCell>
-                    <TableCell>{row.driver || "N/A"}</TableCell>
-                    <TableCell className="text-right">${row.tarifa.toFixed(2)}</TableCell>
-                    <TableCell className="text-right">${row.gastosPuerto.toFixed(2)}</TableCell>
-                    <TableCell className="text-right">${row.otrosGastos.toFixed(2)}</TableCell>
-                    <TableCell className="text-right">${row.totalRate.toFixed(2)}</TableCell>
+                {previewData.map((row, index) => (
+                  <TableRow key={index}>
+                    {Object.entries(row).map(([key, val]) => (
+                      <TableCell key={key} className={typeof val === "number" ? "text-right" : ""}>
+                        {typeof val === "number"
+                          ? (val as number).toFixed(2)
+                          : String(val !== null && val !== undefined ? val : "N/A")}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setShowPreviewModal(false)}>
+              Cerrar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={showManualEntryModal} onOpenChange={setShowManualEntryModal}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Entrada Manual de Servicio de Transporte</DialogTitle>
+            <DialogTitle>Entrada Manual de Servicio de Transporte (a Vista Previa)</DialogTitle>
             <DialogDescription>Completa los campos para agregar un nuevo registro a la vista previa.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto pr-3">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="manual-fecha">Fecha</Label>
-                <Input
-                  id="manual-fecha"
-                  type="date"
-                  value={manualEntryData.fecha}
-                  onChange={(e) => handleManualInputChange("fecha", e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="manual-cliente">Cliente *</Label>
-                <Input
-                  id="manual-cliente"
-                  value={manualEntryData.cliente}
-                  onChange={(e) => handleManualInputChange("cliente", e.target.value)}
-                  placeholder="Nombre del Cliente"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="manual-desde">Desde</Label>
-                <Input
-                  id="manual-desde"
-                  value={manualEntryData.desde}
-                  onChange={(e) => handleManualInputChange("desde", e.target.value)}
-                  placeholder="Origen"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="manual-hacia">Hacia</Label>
-                <Input
-                  id="manual-hacia"
-                  value={manualEntryData.hacia}
-                  onChange={(e) => handleManualInputChange("hacia", e.target.value)}
-                  placeholder="Destino"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="manual-contenedor">Contenedor</Label>
-                <Input
-                  id="manual-contenedor"
-                  value={manualEntryData.contenedor}
-                  onChange={(e) => handleManualInputChange("contenedor", e.target.value)}
-                  placeholder="Ej: MSCU1234567"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="manual-tamaño">Tamaño Cont.</Label>
-                <Select
-                  value={manualEntryData.tamaño}
-                  onValueChange={(value) => handleManualInputChange("tamaño", value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="20'">20'</SelectItem>
-                    <SelectItem value="40'">40'</SelectItem>
-                    <SelectItem value="40' HC">40' HC</SelectItem>
-                    <SelectItem value="45' HC">45' HC</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="manual-driver">Driver</Label>
-                <Input
-                  id="manual-driver"
-                  value={manualEntryData.driver}
-                  onChange={(e) => handleManualInputChange("driver", e.target.value)}
-                  placeholder="Nombre del Driver"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="manual-bl">BL (Opcional)</Label>
-                <Input
-                  id="manual-bl"
-                  value={manualEntryData.bl}
-                  onChange={(e) => handleManualInputChange("bl", e.target.value)}
-                  placeholder="Número de BL"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="manual-tarifa">Tarifa *</Label>
-                <Input
-                  id="manual-tarifa"
-                  type="number"
-                  value={manualEntryData.tarifa}
-                  onChange={(e) => handleManualInputChange("tarifa", Number.parseFloat(e.target.value))}
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="manual-gastosPuerto">Gastos Puerto</Label>
-                <Input
-                  id="manual-gastosPuerto"
-                  type="number"
-                  value={manualEntryData.gastosPuerto}
-                  onChange={(e) => handleManualInputChange("gastosPuerto", Number.parseFloat(e.target.value))}
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="manual-otrosGastos">Otros Gastos</Label>
-                <Input
-                  id="manual-otrosGastos"
-                  type="number"
-                  value={manualEntryData.otrosGastos}
-                  onChange={(e) => handleManualInputChange("otrosGastos", Number.parseFloat(e.target.value))}
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3 py-4 pr-3">
+            {Object.keys(initialManualEntry).map((key) => {
+              const fieldKey = key as keyof TruckingServiceRecordData
+              const label = key.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
+              const isRequired = ["cliente", "ruc", "tarifa"].includes(key)
+              return (
+                <div className="space-y-1.5" key={key}>
+                  <Label htmlFor={`manual-${key}`}>
+                    {label}
+                    {isRequired ? " *" : ""}
+                  </Label>
+                  <Input
+                    id={`manual-${key}`}
+                    type={
+                      typeof initialManualEntry[fieldKey] === "number" ||
+                      key.includes("tarifa") ||
+                      key.includes("gastos")
+                        ? "number"
+                        : key.includes("fecha")
+                          ? "date"
+                          : "text"
+                    }
+                    value={manualEntryData[fieldKey] || ""}
+                    onChange={(e) =>
+                      handleManualInputChange(
+                        fieldKey,
+                        typeof initialManualEntry[fieldKey] === "number" ||
+                          key.includes("tarifa") ||
+                          key.includes("gastos")
+                          ? Number.parseFloat(e.target.value) || 0
+                          : e.target.value,
+                      )
+                    }
+                    placeholder={label}
+                  />
+                </div>
+              )
+            })}
           </div>
-          <div className="flex justify-end gap-2 pt-4 border-t">
+          <DialogFooter className="pt-4 border-t">
             <Button variant="outline" onClick={() => setShowManualEntryModal(false)}>
               Cancelar
             </Button>
             <Button onClick={handleAddManualEntry}>Agregar a Vista Previa</Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

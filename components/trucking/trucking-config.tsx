@@ -9,9 +9,8 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Truck, Save, Plus, Edit, Trash2, MapPin, DollarSign, Clock } from "lucide-react"
+import { Truck, Save, Plus, Edit, Trash2, MapPin, Clock, Settings } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -21,178 +20,173 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { toast } from "@/hooks/use-toast"
+import { useAppDispatch, useAppSelector } from "@/lib/hooks"
+import {
+  addDriver,
+  updateDriver,
+  deleteDriver,
+  addVehicle,
+  updateVehicle,
+  deleteVehicle,
+  addRoute,
+  updateRoute,
+  deleteRoute,
+  addCustomField,
+  updateCustomField,
+  deleteCustomField,
+  selectTruckingDrivers,
+  selectTruckingVehicles,
+  selectTruckingRoutes,
+  selectModuleCustomFields,
+  type Driver,
+  type Vehicle,
+  type Route,
+  type CustomFieldConfig,
+  type CustomFieldType,
+} from "@/lib/features/config/configSlice"
 
 export function TruckingConfig() {
+  const dispatch = useAppDispatch()
+  const drivers = useAppSelector(selectTruckingDrivers)
+  const vehicles = useAppSelector(selectTruckingVehicles)
+  const routes = useAppSelector(selectTruckingRoutes)
+  const truckingCustomFields = useAppSelector((state) => selectModuleCustomFields(state, "trucking"))
+
+  // General settings (still local state for now, could be moved to Redux configSlice if needed)
   const [autoCalculateRates, setAutoCalculateRates] = useState(true)
   const [requireDriverSignature, setRequireDriverSignature] = useState(true)
   const [enableGPSTracking, setEnableGPSTracking] = useState(false)
   const [autoGenerateInvoice, setAutoGenerateInvoice] = useState(true)
+  const [defaultCurrency, setDefaultCurrency] = useState("USD")
+  const [invoicePrefix, setInvoicePrefix] = useState("TRK-")
+  const [maxWaitTime, setMaxWaitTime] = useState(2)
+  const [overtimeRate, setOvertimeRate] = useState(50)
+  const [weekendSurcharge, setWeekendSurcharge] = useState(25)
+  const [nightSurcharge, setNightSurcharge] = useState(30)
+  const [holidaySurcharge, setHolidaySurcharge] = useState(50)
+  const [expressSurcharge, setExpressSurcharge] = useState(40)
+
+  // Dialog states
   const [showNewRouteDialog, setShowNewRouteDialog] = useState(false)
-  const [showNewContainerDialog, setShowNewContainerDialog] = useState(false)
+  const [showNewVehicleDialog, setShowNewVehicleDialog] = useState(false)
   const [showNewDriverDialog, setShowNewDriverDialog] = useState(false)
+  const [showNewCustomFieldDialog, setShowNewCustomFieldDialog] = useState(false)
+
   const [editingItem, setEditingItem] = useState<any>(null)
-  const [editDialogType, setEditDialogType] = useState<"route" | "container" | "driver" | null>(null)
+  const [editDialogType, setEditDialogType] = useState<"route" | "vehicle" | "driver" | "customField" | null>(null)
 
-  const [routes, setRoutes] = useState([
-    { id: "1", from: "MIT", to: "PSA", distance: "15 km", baseRate: 120, currency: "USD" },
-    { id: "2", from: "PSA", to: "BLB", distance: "22 km", baseRate: 180, currency: "USD" },
-    { id: "3", from: "CCT", to: "MIT", distance: "18 km", baseRate: 150, currency: "USD" },
-    { id: "4", from: "BLB", to: "CCT", distance: "25 km", baseRate: 200, currency: "USD" },
-  ])
-
-  const [containerTypes, setContainerTypes] = useState([
-    { id: "1", type: "20'", description: "Contenedor 20 pies", multiplier: 1.0, active: true },
-    { id: "2", type: "40'", description: "Contenedor 40 pies", multiplier: 1.5, active: true },
-    { id: "3", type: "45'", description: "Contenedor 45 pies", multiplier: 1.8, active: true },
-    { id: "4", type: "20' HC", description: "Contenedor 20 pies High Cube", multiplier: 1.2, active: false },
-  ])
-
-  const [drivers, setDrivers] = useState([
-    { id: "1", name: "Luis Matos", license: "LIC001", phone: "+507 6123-4567", status: "Activo", rating: 4.8 },
-    { id: "2", name: "Carlos Rodríguez", license: "LIC002", phone: "+507 6234-5678", status: "Activo", rating: 4.6 },
-    { id: "3", name: "Miguel Santos", license: "LIC003", phone: "+507 6345-6789", status: "Inactivo", rating: 4.2 },
-  ])
-
-  // Form states
-  const [newRoute, setNewRoute] = useState({
-    from: "",
-    to: "",
-    distance: "",
-    baseRate: "",
-    currency: "USD",
+  // Form states for new items
+  const [newRoute, setNewRoute] = useState<Omit<Route, "id">>({
+    name: "",
+    origin: "",
+    destination: "",
+    distance: 0,
   })
-
-  const [newContainer, setNewContainer] = useState({
-    type: "",
-    description: "",
-    multiplier: "",
-    active: true,
+  const [newVehicle, setNewVehicle] = useState<Omit<Vehicle, "id">>({
+    plate: "",
+    model: "",
+    capacity: "",
   })
-
-  const [newDriver, setNewDriver] = useState({
+  const [newDriver, setNewDriver] = useState<Omit<Driver, "id">>({
     name: "",
     license: "",
-    phone: "",
-    status: "Activo",
-    rating: "4.5",
+    contact: "",
+  })
+  const [newCustomField, setNewCustomField] = useState<Omit<CustomFieldConfig, "id" | "module">>({
+    label: "",
+    type: "text",
+    options: [],
   })
 
-  const handleSaveConfig = () => {
+  const handleSaveGeneralConfig = () => {
     toast({
-      title: "Configuración guardada",
-      description: "Los cambios han sido guardados exitosamente.",
+      title: "Configuración General Guardada",
+      description: "Los ajustes generales han sido guardados exitosamente.",
     })
+    // In a real app, you'd dispatch actions to save these to Redux or a backend
   }
 
   const handleAddRoute = () => {
-    if (newRoute.from && newRoute.to && newRoute.distance && newRoute.baseRate) {
-      const id = (routes.length + 1).toString()
-      setRoutes([...routes, { id, ...newRoute, baseRate: Number(newRoute.baseRate) }])
-      setNewRoute({ from: "", to: "", distance: "", baseRate: "", currency: "USD" })
+    if (newRoute.name && newRoute.origin && newRoute.destination && newRoute.distance > 0) {
+      dispatch(addRoute({ id: `route-${Date.now()}`, ...newRoute }))
+      setNewRoute({ name: "", origin: "", destination: "", distance: 0 })
       setShowNewRouteDialog(false)
-      toast({
-        title: "Ruta agregada",
-        description: `Ruta ${newRoute.from} - ${newRoute.to} agregada exitosamente.`,
-      })
+      toast({ title: "Ruta Agregada", description: `Ruta '${newRoute.name}' agregada exitosamente.` })
+    } else {
+      toast({ title: "Error", description: "Complete todos los campos de la ruta.", variant: "destructive" })
     }
   }
 
-  const handleAddContainer = () => {
-    if (newContainer.type && newContainer.description && newContainer.multiplier) {
-      const id = (containerTypes.length + 1).toString()
-      setContainerTypes([
-        ...containerTypes,
-        {
-          id,
-          ...newContainer,
-          multiplier: Number(newContainer.multiplier),
-          active: newContainer.active,
-        },
-      ])
-      setNewContainer({ type: "", description: "", multiplier: "", active: true })
-      setShowNewContainerDialog(false)
-      toast({
-        title: "Tipo de contenedor agregado",
-        description: `Tipo de contenedor ${newContainer.type} agregado exitosamente.`,
-      })
+  const handleAddVehicle = () => {
+    if (newVehicle.plate && newVehicle.model && newVehicle.capacity) {
+      dispatch(addVehicle({ id: `vehicle-${Date.now()}`, ...newVehicle }))
+      setNewVehicle({ plate: "", model: "", capacity: "" })
+      setShowNewVehicleDialog(false)
+      toast({ title: "Vehículo Agregado", description: `Vehículo '${newVehicle.plate}' agregado exitosamente.` })
+    } else {
+      toast({ title: "Error", description: "Complete todos los campos del vehículo.", variant: "destructive" })
     }
   }
 
   const handleAddDriver = () => {
-    if (newDriver.name && newDriver.license && newDriver.phone) {
-      const id = (drivers.length + 1).toString()
-      setDrivers([
-        ...drivers,
-        {
-          id,
-          ...newDriver,
-          rating: Number(newDriver.rating),
-        },
-      ])
-      setNewDriver({ name: "", license: "", phone: "", status: "Activo", rating: "4.5" })
+    if (newDriver.name && newDriver.license && newDriver.contact) {
+      dispatch(addDriver({ id: `driver-${Date.now()}`, ...newDriver }))
+      setNewDriver({ name: "", license: "", contact: "" })
       setShowNewDriverDialog(false)
+      toast({ title: "Driver Agregado", description: `Driver '${newDriver.name}' agregado exitosamente.` })
+    } else {
+      toast({ title: "Error", description: "Complete todos los campos del driver.", variant: "destructive" })
+    }
+  }
+
+  const handleAddCustomField = () => {
+    if (newCustomField.label && newCustomField.type) {
+      dispatch(addCustomField({ id: `trucking-cf-${Date.now()}`, module: "trucking", ...newCustomField }))
+      setNewCustomField({ label: "", type: "text", options: [] })
+      setShowNewCustomFieldDialog(false)
+      toast({ title: "Campo Personalizado Agregado", description: `Campo '${newCustomField.label}' agregado.` })
+    } else {
       toast({
-        title: "Driver agregado",
-        description: `Driver ${newDriver.name} agregado exitosamente.`,
+        title: "Error",
+        description: "Complete todos los campos del campo personalizado.",
+        variant: "destructive",
       })
     }
   }
 
   const handleEditItem = () => {
-    if (editDialogType === "route" && editingItem) {
-      setRoutes(
-        routes.map((route) =>
-          route.id === editingItem.id ? { ...editingItem, baseRate: Number(editingItem.baseRate) } : route,
-        ),
-      )
-      toast({
-        title: "Ruta actualizada",
-        description: `Ruta ${editingItem.from} - ${editingItem.to} actualizada exitosamente.`,
-      })
-    } else if (editDialogType === "container" && editingItem) {
-      setContainerTypes(
-        containerTypes.map((container) =>
-          container.id === editingItem.id ? { ...editingItem, multiplier: Number(editingItem.multiplier) } : container,
-        ),
-      )
-      toast({
-        title: "Tipo de contenedor actualizado",
-        description: `Tipo de contenedor ${editingItem.type} actualizado exitosamente.`,
-      })
-    } else if (editDialogType === "driver" && editingItem) {
-      setDrivers(
-        drivers.map((driver) =>
-          driver.id === editingItem.id ? { ...editingItem, rating: Number(editingItem.rating) } : driver,
-        ),
-      )
-      toast({
-        title: "Driver actualizado",
-        description: `Driver ${editingItem.name} actualizado exitosamente.`,
-      })
+    if (!editingItem) return
+
+    if (editDialogType === "route") {
+      dispatch(updateRoute(editingItem))
+      toast({ title: "Ruta Actualizada", description: `Ruta '${editingItem.name}' actualizada.` })
+    } else if (editDialogType === "vehicle") {
+      dispatch(updateVehicle(editingItem))
+      toast({ title: "Vehículo Actualizado", description: `Vehículo '${editingItem.plate}' actualizado.` })
+    } else if (editDialogType === "driver") {
+      dispatch(updateDriver(editingItem))
+      toast({ title: "Driver Actualizado", description: `Driver '${editingItem.name}' actualizado.` })
+    } else if (editDialogType === "customField") {
+      dispatch(updateCustomField(editingItem))
+      toast({ title: "Campo Personalizado Actualizado", description: `Campo '${editingItem.label}' actualizado.` })
     }
     setEditingItem(null)
     setEditDialogType(null)
   }
 
-  const handleDeleteItem = (type: "route" | "container" | "driver", id: string) => {
+  const handleDeleteItem = (type: "route" | "vehicle" | "driver" | "customField", id: string) => {
     if (type === "route") {
-      setRoutes(routes.filter((route) => route.id !== id))
-      toast({
-        title: "Ruta eliminada",
-        description: "La ruta ha sido eliminada exitosamente.",
-      })
-    } else if (type === "container") {
-      setContainerTypes(containerTypes.filter((container) => container.id !== id))
-      toast({
-        title: "Tipo de contenedor eliminado",
-        description: "El tipo de contenedor ha sido eliminado exitosamente.",
-      })
+      dispatch(deleteRoute(id))
+      toast({ title: "Ruta Eliminada", description: "La ruta ha sido eliminada." })
+    } else if (type === "vehicle") {
+      dispatch(deleteVehicle(id))
+      toast({ title: "Vehículo Eliminado", description: "El vehículo ha sido eliminado." })
     } else if (type === "driver") {
-      setDrivers(drivers.filter((driver) => driver.id !== id))
-      toast({
-        title: "Driver eliminado",
-        description: "El driver ha sido eliminado exitosamente.",
-      })
+      dispatch(deleteDriver(id))
+      toast({ title: "Driver Eliminado", description: "El driver ha sido eliminado." })
+    } else if (type === "customField") {
+      dispatch(deleteCustomField(id))
+      toast({ title: "Campo Personalizado Eliminado", description: "El campo personalizado ha sido eliminado." })
     }
   }
 
@@ -209,22 +203,26 @@ export function TruckingConfig() {
       </div>
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 md:w-auto md:inline-grid">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 md:w-auto md:inline-grid">
           <TabsTrigger value="general">
-            <Truck className="h-4 w-4 mr-2" />
+            <Settings className="h-4 w-4 mr-2" />
             General
           </TabsTrigger>
           <TabsTrigger value="routes">
             <MapPin className="h-4 w-4 mr-2" />
             Rutas
           </TabsTrigger>
-          <TabsTrigger value="rates">
-            <DollarSign className="h-4 w-4 mr-2" />
-            Tarifas
+          <TabsTrigger value="vehicles">
+            <Truck className="h-4 w-4 mr-2" />
+            Vehículos
           </TabsTrigger>
           <TabsTrigger value="drivers">
             <Clock className="h-4 w-4 mr-2" />
             Drivers
+          </TabsTrigger>
+          <TabsTrigger value="custom-fields">
+            <Plus className="h-4 w-4 mr-2" />
+            Campos Personalizados
           </TabsTrigger>
         </TabsList>
 
@@ -283,7 +281,7 @@ export function TruckingConfig() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="default-currency">Moneda Predeterminada</Label>
-                    <Select defaultValue="USD">
+                    <Select value={defaultCurrency} onValueChange={setDefaultCurrency}>
                       <SelectTrigger id="default-currency">
                         <SelectValue placeholder="Seleccionar moneda" />
                       </SelectTrigger>
@@ -295,21 +293,85 @@ export function TruckingConfig() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="invoice-prefix">Prefijo de Factura</Label>
-                    <Input id="invoice-prefix" defaultValue="TRK-" />
+                    <Input
+                      id="invoice-prefix"
+                      value={invoicePrefix}
+                      onChange={(e) => setInvoicePrefix(e.target.value)}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="max-wait-time">Tiempo Máximo de Espera (horas)</Label>
-                    <Input id="max-wait-time" type="number" defaultValue="2" />
+                    <Input
+                      id="max-wait-time"
+                      type="number"
+                      value={maxWaitTime}
+                      onChange={(e) => setMaxWaitTime(Number(e.target.value))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="overtime-rate">Tarifa por Hora Extra (%)</Label>
-                    <Input id="overtime-rate" type="number" defaultValue="50" />
+                    <Input
+                      id="overtime-rate"
+                      type="number"
+                      value={overtimeRate}
+                      onChange={(e) => setOvertimeRate(Number(e.target.value))}
+                    />
                   </div>
                 </div>
               </div>
-              <Button onClick={handleSaveConfig}>
+              <Button onClick={handleSaveGeneralConfig}>
                 <Save className="mr-2 h-4 w-4" />
                 Guardar Configuración
+              </Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Configuración de Tarifas Especiales</CardTitle>
+              <CardDescription>Configurar recargos por condiciones especiales.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="weekend-surcharge">Recargo Fin de Semana (%)</Label>
+                  <Input
+                    id="weekend-surcharge"
+                    type="number"
+                    value={weekendSurcharge}
+                    onChange={(e) => setWeekendSurcharge(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="night-surcharge">Recargo Nocturno (%)</Label>
+                  <Input
+                    id="night-surcharge"
+                    type="number"
+                    value={nightSurcharge}
+                    onChange={(e) => setNightSurcharge(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="holiday-surcharge">Recargo Feriados (%)</Label>
+                  <Input
+                    id="holiday-surcharge"
+                    type="number"
+                    value={holidaySurcharge}
+                    onChange={(e) => setHolidaySurcharge(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="express-surcharge">Recargo Servicio Express (%)</Label>
+                  <Input
+                    id="express-surcharge"
+                    type="number"
+                    value={expressSurcharge}
+                    onChange={(e) => setExpressSurcharge(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+              <Button onClick={handleSaveGeneralConfig}>
+                <Save className="mr-2 h-4 w-4" />
+                Guardar Tarifas Especiales
               </Button>
             </CardContent>
           </Card>
@@ -319,7 +381,7 @@ export function TruckingConfig() {
           <Card>
             <CardHeader>
               <CardTitle>Gestión de Rutas</CardTitle>
-              <CardDescription>Configurar rutas disponibles y sus tarifas base</CardDescription>
+              <CardDescription>Configurar rutas disponibles y sus distancias.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex justify-end">
@@ -331,22 +393,20 @@ export function TruckingConfig() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Desde</TableHead>
-                    <TableHead>Hacia</TableHead>
-                    <TableHead>Distancia</TableHead>
-                    <TableHead>Tarifa Base</TableHead>
-                    <TableHead>Moneda</TableHead>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Origen</TableHead>
+                    <TableHead>Destino</TableHead>
+                    <TableHead>Distancia (km)</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {routes.map((route) => (
                     <TableRow key={route.id}>
-                      <TableCell className="font-medium">{route.from}</TableCell>
-                      <TableCell>{route.to}</TableCell>
-                      <TableCell>{route.distance}</TableCell>
-                      <TableCell>${route.baseRate}</TableCell>
-                      <TableCell>{route.currency}</TableCell>
+                      <TableCell className="font-medium">{route.name}</TableCell>
+                      <TableCell>{route.origin}</TableCell>
+                      <TableCell>{route.destination}</TableCell>
+                      <TableCell>{route.distance} km</TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-1 justify-end">
                           <Button
@@ -372,53 +432,47 @@ export function TruckingConfig() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="rates" className="space-y-4">
+        <TabsContent value="vehicles" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Tipos de Contenedor y Multiplicadores</CardTitle>
-              <CardDescription>Configurar tipos de contenedor y sus multiplicadores de tarifa</CardDescription>
+              <CardTitle>Gestión de Vehículos</CardTitle>
+              <CardDescription>Administrar la flota de vehículos de transporte.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex justify-end">
-                <Button onClick={() => setShowNewContainerDialog(true)}>
+                <Button onClick={() => setShowNewVehicleDialog(true)}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Nuevo Tipo
+                  Nuevo Vehículo
                 </Button>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead>Multiplicador</TableHead>
-                    <TableHead>Estado</TableHead>
+                    <TableHead>Placa</TableHead>
+                    <TableHead>Modelo</TableHead>
+                    <TableHead>Capacidad</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {containerTypes.map((container) => (
-                    <TableRow key={container.id}>
-                      <TableCell className="font-medium">{container.type}</TableCell>
-                      <TableCell>{container.description}</TableCell>
-                      <TableCell>{container.multiplier}x</TableCell>
-                      <TableCell>
-                        <Badge variant={container.active ? "success" : "secondary"}>
-                          {container.active ? "Activo" : "Inactivo"}
-                        </Badge>
-                      </TableCell>
+                  {vehicles.map((vehicle) => (
+                    <TableRow key={vehicle.id}>
+                      <TableCell className="font-medium">{vehicle.plate}</TableCell>
+                      <TableCell>{vehicle.model}</TableCell>
+                      <TableCell>{vehicle.capacity}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-1 justify-end">
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => {
-                              setEditingItem(container)
-                              setEditDialogType("container")
+                              setEditingItem(vehicle)
+                              setEditDialogType("vehicle")
                             }}
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDeleteItem("container", container.id)}>
+                          <Button variant="ghost" size="sm" onClick={() => handleDeleteItem("vehicle", vehicle.id)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -429,44 +483,13 @@ export function TruckingConfig() {
               </Table>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Configuración de Tarifas Especiales</CardTitle>
-              <CardDescription>Configurar tarifas especiales por cliente o tipo de servicio</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="weekend-surcharge">Recargo Fin de Semana (%)</Label>
-                  <Input id="weekend-surcharge" type="number" defaultValue="25" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="night-surcharge">Recargo Nocturno (%)</Label>
-                  <Input id="night-surcharge" type="number" defaultValue="30" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="holiday-surcharge">Recargo Feriados (%)</Label>
-                  <Input id="holiday-surcharge" type="number" defaultValue="50" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="express-surcharge">Recargo Servicio Express (%)</Label>
-                  <Input id="express-surcharge" type="number" defaultValue="40" />
-                </div>
-              </div>
-              <Button onClick={handleSaveConfig}>
-                <Save className="mr-2 h-4 w-4" />
-                Guardar Tarifas
-              </Button>
-            </CardContent>
-          </Card>
         </TabsContent>
 
         <TabsContent value="drivers" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Gestión de Drivers</CardTitle>
-              <CardDescription>Administrar drivers y sus datos</CardDescription>
+              <CardDescription>Administrar drivers y sus datos de contacto.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex justify-end">
@@ -480,9 +503,7 @@ export function TruckingConfig() {
                   <TableRow>
                     <TableHead>Nombre</TableHead>
                     <TableHead>Licencia</TableHead>
-                    <TableHead>Teléfono</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Rating</TableHead>
+                    <TableHead>Contacto</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -491,11 +512,7 @@ export function TruckingConfig() {
                     <TableRow key={driver.id}>
                       <TableCell className="font-medium">{driver.name}</TableCell>
                       <TableCell>{driver.license}</TableCell>
-                      <TableCell>{driver.phone}</TableCell>
-                      <TableCell>
-                        <Badge variant={driver.status === "Activo" ? "success" : "secondary"}>{driver.status}</Badge>
-                      </TableCell>
-                      <TableCell>⭐ {driver.rating}</TableCell>
+                      <TableCell>{driver.contact}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-1 justify-end">
                           <Button
@@ -520,9 +537,63 @@ export function TruckingConfig() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="custom-fields" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Campos Personalizados - Trucking</CardTitle>
+              <CardDescription>Define campos adicionales para registros y facturas de Trucking.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex justify-end">
+                <Button onClick={() => setShowNewCustomFieldDialog(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nuevo Campo
+                </Button>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Etiqueta</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Opciones</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {truckingCustomFields.map((field) => (
+                    <TableRow key={field.id}>
+                      <TableCell className="font-medium">{field.label}</TableCell>
+                      <TableCell>{field.type}</TableCell>
+                      <TableCell>{field.options?.join(", ") || "-"}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex gap-1 justify-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setEditingItem(field)
+                              setEditDialogType("customField")
+                            }}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleDeleteItem("customField", field.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
-      {/* Modal para nueva ruta */}
+      {/* Modals for Add/Edit */}
+      {/* New Route Dialog */}
       <Dialog open={showNewRouteDialog} onOpenChange={setShowNewRouteDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -531,67 +602,49 @@ export function TruckingConfig() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="from" className="text-right">
-                Desde
+              <Label htmlFor="new-route-name" className="text-right">
+                Nombre
               </Label>
               <Input
-                id="from"
-                value={newRoute.from}
-                onChange={(e) => setNewRoute({ ...newRoute, from: e.target.value })}
+                id="new-route-name"
+                value={newRoute.name}
+                onChange={(e) => setNewRoute({ ...newRoute, name: e.target.value })}
                 className="col-span-3"
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="to" className="text-right">
-                Hacia
+              <Label htmlFor="new-route-origin" className="text-right">
+                Origen
               </Label>
               <Input
-                id="to"
-                value={newRoute.to}
-                onChange={(e) => setNewRoute({ ...newRoute, to: e.target.value })}
+                id="new-route-origin"
+                value={newRoute.origin}
+                onChange={(e) => setNewRoute({ ...newRoute, origin: e.target.value })}
                 className="col-span-3"
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="distance" className="text-right">
-                Distancia
+              <Label htmlFor="new-route-destination" className="text-right">
+                Destino
               </Label>
               <Input
-                id="distance"
-                value={newRoute.distance}
-                onChange={(e) => setNewRoute({ ...newRoute, distance: e.target.value })}
+                id="new-route-destination"
+                value={newRoute.destination}
+                onChange={(e) => setNewRoute({ ...newRoute, destination: e.target.value })}
                 className="col-span-3"
-                placeholder="ej. 15 km"
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="baseRate" className="text-right">
-                Tarifa Base
+              <Label htmlFor="new-route-distance" className="text-right">
+                Distancia (km)
               </Label>
               <Input
-                id="baseRate"
+                id="new-route-distance"
                 type="number"
-                value={newRoute.baseRate}
-                onChange={(e) => setNewRoute({ ...newRoute, baseRate: e.target.value })}
+                value={newRoute.distance}
+                onChange={(e) => setNewRoute({ ...newRoute, distance: Number(e.target.value) })}
                 className="col-span-3"
               />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="currency" className="text-right">
-                Moneda
-              </Label>
-              <Select
-                value={newRoute.currency}
-                onValueChange={(value) => setNewRoute({ ...newRoute, currency: value })}
-              >
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Seleccionar moneda" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="USD">USD - Dólar Estadounidense</SelectItem>
-                  <SelectItem value="PAB">PAB - Balboa Panameño</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </div>
           <DialogFooter>
@@ -603,75 +656,58 @@ export function TruckingConfig() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal para nuevo tipo de contenedor */}
-      <Dialog open={showNewContainerDialog} onOpenChange={setShowNewContainerDialog}>
+      {/* New Vehicle Dialog */}
+      <Dialog open={showNewVehicleDialog} onOpenChange={setShowNewVehicleDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Agregar Nuevo Tipo de Contenedor</DialogTitle>
-            <DialogDescription>Complete los detalles para agregar un nuevo tipo de contenedor.</DialogDescription>
+            <DialogTitle>Agregar Nuevo Vehículo</DialogTitle>
+            <DialogDescription>Complete los detalles para agregar un nuevo vehículo.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="type" className="text-right">
-                Tipo
+              <Label htmlFor="new-vehicle-plate" className="text-right">
+                Placa
               </Label>
               <Input
-                id="type"
-                value={newContainer.type}
-                onChange={(e) => setNewContainer({ ...newContainer, type: e.target.value })}
-                className="col-span-3"
-                placeholder="ej. 20'"
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="description" className="text-right">
-                Descripción
-              </Label>
-              <Input
-                id="description"
-                value={newContainer.description}
-                onChange={(e) => setNewContainer({ ...newContainer, description: e.target.value })}
+                id="new-vehicle-plate"
+                value={newVehicle.plate}
+                onChange={(e) => setNewVehicle({ ...newVehicle, plate: e.target.value })}
                 className="col-span-3"
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="multiplier" className="text-right">
-                Multiplicador
+              <Label htmlFor="new-vehicle-model" className="text-right">
+                Modelo
               </Label>
               <Input
-                id="multiplier"
-                type="number"
-                step="0.1"
-                value={newContainer.multiplier}
-                onChange={(e) => setNewContainer({ ...newContainer, multiplier: e.target.value })}
+                id="new-vehicle-model"
+                value={newVehicle.model}
+                onChange={(e) => setNewVehicle({ ...newVehicle, model: e.target.value })}
                 className="col-span-3"
-                placeholder="ej. 1.5"
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="active" className="text-right">
-                Activo
+              <Label htmlFor="new-vehicle-capacity" className="text-right">
+                Capacidad
               </Label>
-              <div className="flex items-center space-x-2 col-span-3">
-                <Switch
-                  id="active"
-                  checked={newContainer.active}
-                  onCheckedChange={(checked) => setNewContainer({ ...newContainer, active: checked })}
-                />
-                <Label htmlFor="active">{newContainer.active ? "Activo" : "Inactivo"}</Label>
-              </div>
+              <Input
+                id="new-vehicle-capacity"
+                value={newVehicle.capacity}
+                onChange={(e) => setNewVehicle({ ...newVehicle, capacity: e.target.value })}
+                className="col-span-3"
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewContainerDialog(false)}>
+            <Button variant="outline" onClick={() => setShowNewVehicleDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleAddContainer}>Guardar</Button>
+            <Button onClick={handleAddVehicle}>Guardar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Modal para nuevo driver */}
+      {/* New Driver Dialog */}
       <Dialog open={showNewDriverDialog} onOpenChange={setShowNewDriverDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -680,65 +716,35 @@ export function TruckingConfig() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="name" className="text-right">
+              <Label htmlFor="new-driver-name" className="text-right">
                 Nombre
               </Label>
               <Input
-                id="name"
+                id="new-driver-name"
                 value={newDriver.name}
                 onChange={(e) => setNewDriver({ ...newDriver, name: e.target.value })}
                 className="col-span-3"
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="license" className="text-right">
+              <Label htmlFor="new-driver-license" className="text-right">
                 Licencia
               </Label>
               <Input
-                id="license"
+                id="new-driver-license"
                 value={newDriver.license}
                 onChange={(e) => setNewDriver({ ...newDriver, license: e.target.value })}
                 className="col-span-3"
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="phone" className="text-right">
-                Teléfono
+              <Label htmlFor="new-driver-contact" className="text-right">
+                Contacto
               </Label>
               <Input
-                id="phone"
-                value={newDriver.phone}
-                onChange={(e) => setNewDriver({ ...newDriver, phone: e.target.value })}
-                className="col-span-3"
-                placeholder="ej. +507 6123-4567"
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="status" className="text-right">
-                Estado
-              </Label>
-              <Select value={newDriver.status} onValueChange={(value) => setNewDriver({ ...newDriver, status: value })}>
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Seleccionar estado" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Activo">Activo</SelectItem>
-                  <SelectItem value="Inactivo">Inactivo</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="rating" className="text-right">
-                Rating
-              </Label>
-              <Input
-                id="rating"
-                type="number"
-                step="0.1"
-                min="1"
-                max="5"
-                value={newDriver.rating}
-                onChange={(e) => setNewDriver({ ...newDriver, rating: e.target.value })}
+                id="new-driver-contact"
+                value={newDriver.contact}
+                onChange={(e) => setNewDriver({ ...newDriver, contact: e.target.value })}
                 className="col-span-3"
               />
             </div>
@@ -752,268 +758,265 @@ export function TruckingConfig() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal para editar ruta */}
-      <Dialog
-        open={editDialogType === "route" && !!editingItem}
-        onOpenChange={() => {
-          if (editDialogType === "route") {
-            setEditingItem(null)
-            setEditDialogType(null)
-          }
-        }}
-      >
+      {/* New Custom Field Dialog */}
+      <Dialog open={showNewCustomFieldDialog} onOpenChange={setShowNewCustomFieldDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Editar Ruta</DialogTitle>
-            <DialogDescription>Modifique los detalles de la ruta.</DialogDescription>
+            <DialogTitle>Agregar Campo Personalizado</DialogTitle>
+            <DialogDescription>Define un nuevo campo para el módulo de Trucking.</DialogDescription>
           </DialogHeader>
-          {editingItem && editDialogType === "route" && (
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-from" className="text-right">
-                  Desde
-                </Label>
-                <Input
-                  id="edit-from"
-                  value={editingItem.from}
-                  onChange={(e) => setEditingItem({ ...editingItem, from: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-to" className="text-right">
-                  Hacia
-                </Label>
-                <Input
-                  id="edit-to"
-                  value={editingItem.to}
-                  onChange={(e) => setEditingItem({ ...editingItem, to: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-distance" className="text-right">
-                  Distancia
-                </Label>
-                <Input
-                  id="edit-distance"
-                  value={editingItem.distance}
-                  onChange={(e) => setEditingItem({ ...editingItem, distance: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-baseRate" className="text-right">
-                  Tarifa Base
-                </Label>
-                <Input
-                  id="edit-baseRate"
-                  type="number"
-                  value={editingItem.baseRate}
-                  onChange={(e) => setEditingItem({ ...editingItem, baseRate: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-currency" className="text-right">
-                  Moneda
-                </Label>
-                <Select
-                  value={editingItem.currency}
-                  onValueChange={(value) => setEditingItem({ ...editingItem, currency: value })}
-                >
-                  <SelectTrigger className="col-span-3">
-                    <SelectValue placeholder="Seleccionar moneda" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="USD">USD - Dólar Estadounidense</SelectItem>
-                    <SelectItem value="PAB">PAB - Balboa Panameño</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="new-cf-label" className="text-right">
+                Etiqueta
+              </Label>
+              <Input
+                id="new-cf-label"
+                value={newCustomField.label}
+                onChange={(e) => setNewCustomField({ ...newCustomField, label: e.target.value })}
+                className="col-span-3"
+              />
             </div>
-          )}
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="new-cf-type" className="text-right">
+                Tipo
+              </Label>
+              <Select
+                value={newCustomField.type}
+                onValueChange={(value: CustomFieldType) => setNewCustomField({ ...newCustomField, type: value })}
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Seleccionar tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="text">Texto</SelectItem>
+                  <SelectItem value="number">Número</SelectItem>
+                  <SelectItem value="date">Fecha</SelectItem>
+                  <SelectItem value="select">Selección (Dropdown)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {newCustomField.type === "select" && (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="new-cf-options" className="text-right">
+                  Opciones (separadas por coma)
+                </Label>
+                <Input
+                  id="new-cf-options"
+                  value={newCustomField.options?.join(", ") || ""}
+                  onChange={(e) =>
+                    setNewCustomField({ ...newCustomField, options: e.target.value.split(",").map((s) => s.trim()) })
+                  }
+                  className="col-span-3"
+                />
+              </div>
+            )}
+          </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setEditingItem(null)
-                setEditDialogType(null)
-              }}
-            >
+            <Button variant="outline" onClick={() => setShowNewCustomFieldDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleEditItem}>Guardar Cambios</Button>
+            <Button onClick={handleAddCustomField}>Guardar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Modal para editar tipo de contenedor */}
+      {/* Edit Item Dialog (Generic) */}
       <Dialog
-        open={editDialogType === "container" && !!editingItem}
+        open={!!editingItem && !!editDialogType}
         onOpenChange={() => {
-          if (editDialogType === "container") {
-            setEditingItem(null)
-            setEditDialogType(null)
-          }
+          setEditingItem(null)
+          setEditDialogType(null)
         }}
       >
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Editar Tipo de Contenedor</DialogTitle>
-            <DialogDescription>Modifique los detalles del tipo de contenedor.</DialogDescription>
+            <DialogTitle>
+              Editar{" "}
+              {editDialogType === "route"
+                ? "Ruta"
+                : editDialogType === "vehicle"
+                  ? "Vehículo"
+                  : editDialogType === "driver"
+                    ? "Driver"
+                    : "Campo Personalizado"}
+            </DialogTitle>
+            <DialogDescription>Modifique los detalles del elemento.</DialogDescription>
           </DialogHeader>
-          {editingItem && editDialogType === "container" && (
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-type" className="text-right">
-                  Tipo
-                </Label>
-                <Input
-                  id="edit-type"
-                  value={editingItem.type}
-                  onChange={(e) => setEditingItem({ ...editingItem, type: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-description" className="text-right">
-                  Descripción
-                </Label>
-                <Input
-                  id="edit-description"
-                  value={editingItem.description}
-                  onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-multiplier" className="text-right">
-                  Multiplicador
-                </Label>
-                <Input
-                  id="edit-multiplier"
-                  type="number"
-                  step="0.1"
-                  value={editingItem.multiplier}
-                  onChange={(e) => setEditingItem({ ...editingItem, multiplier: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-active" className="text-right">
-                  Activo
-                </Label>
-                <div className="flex items-center space-x-2 col-span-3">
-                  <Switch
-                    id="edit-active"
-                    checked={editingItem.active}
-                    onCheckedChange={(checked) => setEditingItem({ ...editingItem, active: checked })}
+          <div className="grid gap-4 py-4">
+            {editDialogType === "route" && editingItem && (
+              <>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-route-name" className="text-right">
+                    Nombre
+                  </Label>
+                  <Input
+                    id="edit-route-name"
+                    value={editingItem.name}
+                    onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
+                    className="col-span-3"
                   />
-                  <Label htmlFor="edit-active">{editingItem.active ? "Activo" : "Inactivo"}</Label>
                 </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setEditingItem(null)
-                setEditDialogType(null)
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button onClick={handleEditItem}>Guardar Cambios</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal para editar driver */}
-      <Dialog
-        open={editDialogType === "driver" && !!editingItem}
-        onOpenChange={() => {
-          if (editDialogType === "driver") {
-            setEditingItem(null)
-            setEditDialogType(null)
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Editar Driver</DialogTitle>
-            <DialogDescription>Modifique los detalles del driver.</DialogDescription>
-          </DialogHeader>
-          {editingItem && editDialogType === "driver" && (
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-name" className="text-right">
-                  Nombre
-                </Label>
-                <Input
-                  id="edit-name"
-                  value={editingItem.name}
-                  onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-license" className="text-right">
-                  Licencia
-                </Label>
-                <Input
-                  id="edit-license"
-                  value={editingItem.license}
-                  onChange={(e) => setEditingItem({ ...editingItem, license: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-phone" className="text-right">
-                  Teléfono
-                </Label>
-                <Input
-                  id="edit-phone"
-                  value={editingItem.phone}
-                  onChange={(e) => setEditingItem({ ...editingItem, phone: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-status" className="text-right">
-                  Estado
-                </Label>
-                <Select
-                  value={editingItem.status}
-                  onValueChange={(value) => setEditingItem({ ...editingItem, status: value })}
-                >
-                  <SelectTrigger className="col-span-3">
-                    <SelectValue placeholder="Seleccionar estado" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Activo">Activo</SelectItem>
-                    <SelectItem value="Inactivo">Inactivo</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-rating" className="text-right">
-                  Rating
-                </Label>
-                <Input
-                  id="edit-rating"
-                  type="number"
-                  step="0.1"
-                  min="1"
-                  max="5"
-                  value={editingItem.rating}
-                  onChange={(e) => setEditingItem({ ...editingItem, rating: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-            </div>
-          )}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-route-origin" className="text-right">
+                    Origen
+                  </Label>
+                  <Input
+                    id="edit-route-origin"
+                    value={editingItem.origin}
+                    onChange={(e) => setEditingItem({ ...editingItem, origin: e.target.value })}
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-route-destination" className="text-right">
+                    Destino
+                  </Label>
+                  <Input
+                    id="edit-route-destination"
+                    value={editingItem.destination}
+                    onChange={(e) => setEditingItem({ ...editingItem, destination: e.target.value })}
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-route-distance" className="text-right">
+                    Distancia (km)
+                  </Label>
+                  <Input
+                    id="edit-route-distance"
+                    type="number"
+                    value={editingItem.distance}
+                    onChange={(e) => setEditingItem({ ...editingItem, distance: Number(e.target.value) })}
+                    className="col-span-3"
+                  />
+                </div>
+              </>
+            )}
+            {editDialogType === "vehicle" && editingItem && (
+              <>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-vehicle-plate" className="text-right">
+                    Placa
+                  </Label>
+                  <Input
+                    id="edit-vehicle-plate"
+                    value={editingItem.plate}
+                    onChange={(e) => setEditingItem({ ...editingItem, plate: e.target.value })}
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-vehicle-model" className="text-right">
+                    Modelo
+                  </Label>
+                  <Input
+                    id="edit-vehicle-model"
+                    value={editingItem.model}
+                    onChange={(e) => setEditingItem({ ...editingItem, model: e.target.value })}
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-vehicle-capacity" className="text-right">
+                    Capacidad
+                  </Label>
+                  <Input
+                    id="edit-vehicle-capacity"
+                    value={editingItem.capacity}
+                    onChange={(e) => setEditingItem({ ...editingItem, capacity: e.target.value })}
+                    className="col-span-3"
+                  />
+                </div>
+              </>
+            )}
+            {editDialogType === "driver" && editingItem && (
+              <>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-driver-name" className="text-right">
+                    Nombre
+                  </Label>
+                  <Input
+                    id="edit-driver-name"
+                    value={editingItem.name}
+                    onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-driver-license" className="text-right">
+                    Licencia
+                  </Label>
+                  <Input
+                    id="edit-driver-license"
+                    value={editingItem.license}
+                    onChange={(e) => setEditingItem({ ...editingItem, license: e.target.value })}
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-driver-contact" className="text-right">
+                    Contacto
+                  </Label>
+                  <Input
+                    id="edit-driver-contact"
+                    value={editingItem.contact}
+                    onChange={(e) => setEditingItem({ ...editingItem, contact: e.target.value })}
+                    className="col-span-3"
+                  />
+                </div>
+              </>
+            )}
+            {editDialogType === "customField" && editingItem && (
+              <>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-cf-label" className="text-right">
+                    Etiqueta
+                  </Label>
+                  <Input
+                    id="edit-cf-label"
+                    value={editingItem.label}
+                    onChange={(e) => setEditingItem({ ...editingItem, label: e.target.value })}
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="edit-cf-type" className="text-right">
+                    Tipo
+                  </Label>
+                  <Select
+                    value={editingItem.type}
+                    onValueChange={(value: CustomFieldType) => setEditingItem({ ...editingItem, type: value })}
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Seleccionar tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="text">Texto</SelectItem>
+                      <SelectItem value="number">Número</SelectItem>
+                      <SelectItem value="date">Fecha</SelectItem>
+                      <SelectItem value="select">Selección (Dropdown)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {editingItem.type === "select" && (
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="edit-cf-options" className="text-right">
+                      Opciones (separadas por coma)
+                    </Label>
+                    <Input
+                      id="edit-cf-options"
+                      value={editingItem.options?.join(", ") || ""}
+                      onChange={(e) =>
+                        setEditingItem({ ...editingItem, options: e.target.value.split(",").map((s) => s.trim()) })
+                      }
+                      className="col-span-3"
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
           <DialogFooter>
             <Button
               variant="outline"

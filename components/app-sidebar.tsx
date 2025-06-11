@@ -16,6 +16,7 @@ import {
   SidebarMenuButton,
   SidebarMenuBadge,
   SidebarSeparator,
+  SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import {
@@ -57,7 +58,7 @@ const mainNavItems: NavItem[] = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard },
   {
     title: "Trucking",
-    href: "/trucking", // Main dashboard for Trucking
+    href: "/trucking",
     icon: Truck,
     children: [
       { title: "Subir Excel", href: "/trucking/upload", icon: UploadCloud },
@@ -69,7 +70,7 @@ const mainNavItems: NavItem[] = [
   },
   {
     title: "Shipchandler",
-    href: "/shipchandler", // Main dashboard for Shipchandler
+    href: "/shipchandler",
     icon: Ship,
     children: [
       { title: "Subir Excel", href: "/shipchandler/upload", icon: UploadCloud },
@@ -81,7 +82,7 @@ const mainNavItems: NavItem[] = [
   },
   {
     title: "Agency",
-    href: "/agency", // Main dashboard for Agency
+    href: "/agency",
     icon: Anchor,
     children: [
       { title: "Subir Excel", href: "/agency/upload", icon: UploadCloud },
@@ -91,7 +92,6 @@ const mainNavItems: NavItem[] = [
       { title: "Configuración", href: "/agency/config", icon: Settings2 },
     ],
   },
-  // Global Reportes and Configuración are removed as they are now per-module
 ]
 
 const helpNavItems: NavItem[] = [{ title: "Soporte", href: "/support", icon: LifeBuoy }]
@@ -101,21 +101,15 @@ export function AppSidebar() {
 
   const renderNavItems = (items: NavItem[], isSubmenu = false) => {
     return items.map((item) => {
-      // Determine if the current item or one of its children is active
       let isActive = pathname === item.href
       let showChildren = false
 
       if (item.children && item.children.length > 0) {
-        // Parent is active if the current path starts with the parent's href
-        // or if the current path is exactly the parent's href (for module dashboards)
-        const isBasePathMatch = pathname.startsWith(item.href + "/") || pathname === item.href
+        const isParentHrefMatch = pathname === item.href
+        const isChildPathMatch = pathname.startsWith(item.href + "/")
+        const isAnyChildActive = item.children.some((child) => pathname === child.href)
 
-        if (isBasePathMatch) {
-          isActive = true // Parent is active if we are in its section
-          showChildren = true // Show children if we are in the parent's section
-        }
-        // If any child's href is an exact match, ensure parent is also active and children are shown
-        if (item.children.some((child) => pathname === child.href)) {
+        if (isParentHrefMatch || isChildPathMatch || isAnyChildActive) {
           isActive = true
           showChildren = true
         }
@@ -124,13 +118,9 @@ export function AppSidebar() {
       return (
         <React.Fragment key={item.title}>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              isActive={isActive}
-              className={cn(isSubmenu && "pl-8")} // Indent sub-items
-            >
+            <SidebarMenuButton asChild isActive={isActive} className={cn(isSubmenu && "pl-8")}>
               <Link href={item.href}>
-                <item.icon className="mr-2 h-4 w-4 flex-shrink-0" />
+                <item.icon className="h-4 w-4 flex-shrink-0" />
                 <span className="truncate group-data-[collapsible=icon]:hidden">{item.title}</span>
                 {item.badge && (
                   <SidebarMenuBadge className="group-data-[collapsible=icon]:hidden">{item.badge}</SidebarMenuBadge>
@@ -138,35 +128,40 @@ export function AppSidebar() {
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          {item.children &&
-            showChildren && ( // Conditionally render children
-              <SidebarGroupContent className="pl-4 group-data-[collapsible=icon]:hidden">
-                <SidebarMenu>{renderNavItems(item.children, true)}</SidebarMenu>
-              </SidebarGroupContent>
-            )}
+          {item.children && showChildren && (
+            <SidebarGroupContent className="pl-4 group-data-[collapsible=icon]:hidden">
+              <SidebarMenu>{renderNavItems(item.children, true)}</SidebarMenu>
+            </SidebarGroupContent>
+          )}
         </React.Fragment>
       )
     })
   }
 
   return (
-    <Sidebar collapsible="icon" className="border-r">
-      <SidebarHeader className="p-2">
-        <div className="flex h-10 items-center gap-2 group-data-[collapsible=icon]:justify-center">
-          <Briefcase className="h-6 w-6 text-primary flex-shrink-0" />
-          <span className="font-semibold text-lg group-data-[collapsible=icon]:hidden">Facturación</span>
-        </div>
+    // Sidebar is hidden on mobile by default, shown on md+
+    // It takes full height and has a border
+    <Sidebar collapsible="icon" className="hidden h-full border-r bg-muted/20 md:flex md:flex-col">
+      <SidebarHeader className="flex h-14 items-center justify-between border-b px-4">
+        <Link href="/" className="flex items-center gap-2 font-semibold">
+          <Briefcase className="h-6 w-6 text-primary" />
+          <span className="group-data-[collapsible=icon]:hidden">Facturación</span>
+        </Link>
+        {/* Desktop trigger for collapsing/expanding the sidebar itself */}
+        <SidebarTrigger className="hidden md:flex" />
       </SidebarHeader>
-      <SidebarContent className="flex-grow overflow-y-auto">
+      <SidebarContent className="flex-1 overflow-y-auto p-2">
         <SidebarGroup>
-          <SidebarGroupLabel className="select-none group-data-[collapsible=icon]:hidden">Principal</SidebarGroupLabel>
+          <SidebarGroupLabel className="select-none px-2 group-data-[collapsible=icon]:hidden">
+            Principal
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>{renderNavItems(mainNavItems)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <SidebarSeparator />
+        <SidebarSeparator className="my-2" />
         <SidebarGroup>
-          <SidebarGroupLabel className="select-none group-data-[collapsible=icon]:hidden">Ayuda</SidebarGroupLabel>
+          <SidebarGroupLabel className="select-none px-2 group-data-[collapsible=icon]:hidden">Ayuda</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>{renderNavItems(helpNavItems)}</SidebarMenu>
           </SidebarGroupContent>
@@ -197,7 +192,7 @@ export function AppSidebar() {
               <span>Perfil</span>
             </DropdownMenuItem>
             <DropdownMenuItem>
-              <Settings className="mr-2 h-4 w-4" /> {/* General settings icon */}
+              <Settings className="mr-2 h-4 w-4" />
               <span>Configuración</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />

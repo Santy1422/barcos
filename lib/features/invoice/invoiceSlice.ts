@@ -1,114 +1,75 @@
+// This slice is now primarily for defining types related to invoice structure and XML payload.
+// The actual storage of generated invoices is handled by recordsSlice.ts.
+
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit"
-import type { ExcelRecord } from "../excel/excelSlice" // Import ExcelRecord
 
-// Extend InvoiceRecord from ExcelRecord or define common fields
-export interface InvoiceServiceRecord extends ExcelRecord {
-  // Renamed to avoid conflict
-  // Fields specific to how a record appears on an invoice, if different from ExcelRecord
-  // For trucking, ExcelRecord might be sufficient if it contains all necessary fields like 'totalRate'
-  // Ensure 'id' from ExcelRecord is preserved or mapped.
-  // Example:
-  // serviceDescription?: string;
-  // unitPrice?: number;
-  // quantity?: number;
-  // lineTotal?: number;
+// This is the structure for a line item specifically for the XML generation.
+// It should contain all fields needed for the XML schema.
+export interface InvoiceLineItemForXml {
+  id: string // Unique ID for this line item (can be the ExcelRecord.id)
+  description?: string
+  quantity?: number
+  unitPrice?: number
+  totalPrice: number
+  serviceCode?: string
+  unit?: string
+  blNumber?: string
+  containerNumber?: string
+  containerSize?: string
+  containerType?: string
+  containerIsoCode?: string
+  fullEmptyStatus?: "FULL" | "EMPTY"
+  [key: string]: any // To capture any other custom field values for XML
 }
 
-export interface Invoice {
-  id: string
-  invoiceNumber: string
+// Payload for generateInvoiceXML
+export interface InvoiceForXmlPayload {
+  id: string // Unique ID for the XML document
   module: "trucking" | "shipchandler" | "agency"
-  client: string
+  invoiceNumber: string
+  client: string // RUC/Cedula for CustomerNbr
+  clientName?: string
   date: string
+  dueDate?: string
   currency: string
-  records: InvoiceServiceRecord[] // Use the more specific type
-  subtotal: number
-  tax: number
   total: number
-  status: "borrador" | "creada" | "enviada" | "pagada" | "anulada"
-  createdAt: string
-  excelIds: string[] // IDs of Excel files used to create this invoice
-  xmlData?: string
-  // Campos específicos por módulo (Trucking)
-  driver?: string
-  vehicle?: string
-  // Nuevos campos generales de factura
-  paymentTerms?: string
-  notes?: string
-  // Campos para Shipchandler / Agency (ejemplos)
-  vesselName?: string
-  vesselIMO?: string
-  voyageNumber?: string
-  portOfCall?: string
-  eta?: string // Estimated Time of Arrival
-  etd?: string // Estimated Time of Departure
+  records: InvoiceLineItemForXml[] // Line items for XML
+  status: "generated" | "draft" | "finalized" // Contextual status for XML generation
+  // Add any other top-level fields needed for the XML (e.g., driver, vehicle, custom fields)
+  driverId?: string
+  vehicleId?: string
+  routeId?: string
+  [customFieldId: string]: any // For custom fields at invoice level
 }
 
-interface InvoiceState {
-  invoices: Invoice[]
+// This slice no longer manages a state for 'invoices' directly.
+// It could be removed entirely if no other specific invoice-related state is needed,
+// but keeping it for now to hold the XML payload type definitions.
+interface InvoiceStateForXml {
+  currentInvoiceForXml: InvoiceForXmlPayload | null
   loading: boolean
   error: string | null
 }
 
-const initialState: InvoiceState = {
-  invoices: [],
-  loading: false,
-  error: null,
-}
+const initialStateForXml: InvoiceStateForXml = { currentInvoiceForXml: null, loading: false, error: null }
 
-const invoiceSlice = createSlice({
-  name: "invoice",
-  initialState,
+const invoiceForXmlSlice = createSlice({
+  name: "invoiceForXml",
+  initialState: initialStateForXml,
   reducers: {
-    createInvoice: (state, action: PayloadAction<Invoice>) => {
-      // Prevent adding duplicates if this action is somehow dispatched multiple times with the same temp ID
-      const existingIndex = state.invoices.findIndex((inv) => inv.id === action.payload.id)
-      if (existingIndex === -1) {
-        state.invoices.push(action.payload)
-      } else {
-        // If it's an update to an existing draft (e.g. changing ID from temp to final)
-        state.invoices[existingIndex] = action.payload
-      }
+    setCurrentInvoiceForXml: (state, action: PayloadAction<InvoiceForXmlPayload | null>) => {
+      state.currentInvoiceForXml = action.payload
     },
-    updateInvoice: (state, action: PayloadAction<Partial<Invoice> & { id: string }>) => {
-      const index = state.invoices.findIndex((inv) => inv.id === action.payload.id)
-      if (index !== -1) {
-        state.invoices[index] = { ...state.invoices[index], ...action.payload }
-      }
-    },
-    // finalizeInvoice was ambiguous. Renaming to reflect its action on the store.
-    // The actual finalization logic (dispatching to other slices) is in the component.
-    // This action primarily updates the status and XML of an existing invoice.
-    finalizeInvoiceInStore: (state, action: PayloadAction<{ id: string; updates: Partial<Invoice> }>) => {
-      const invoice = state.invoices.find((inv) => inv.id === action.payload.id)
-      if (invoice) {
-        Object.assign(invoice, action.payload.updates) // Apply all updates
-        if (!invoice.status || invoice.status === "borrador") {
-          // Set to 'creada' if it was a draft
-          invoice.status = "creada"
-        }
-      }
-    },
-    // Kept original name for compatibility if used elsewhere, but it's essentially updateInvoice
-    finalizeInvoice: (state, action: PayloadAction<{ id: string; xmlData?: string }>) => {
-      const invoice = state.invoices.find((inv) => inv.id === action.payload.id)
-      if (invoice) {
-        invoice.status = "creada"
-        if (action.payload.xmlData) {
-          invoice.xmlData = action.payload.xmlData
-        }
-      }
-    },
-    setLoading: (state, action: PayloadAction<boolean>) => {
+    setXmlLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload
     },
-    setError: (state, action: PayloadAction<string | null>) => {
+    setXmlError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload
     },
   },
 })
 
-export const { createInvoice, updateInvoice, finalizeInvoiceInStore, finalizeInvoice, setLoading, setError } =
-  invoiceSlice.actions
+export const { setCurrentInvoiceForXml, setXmlLoading, setXmlError } = invoiceForXmlSlice.actions
 
-export default invoiceSlice.reducer
+// The reducer is not added to the main store, as invoice management is centralized in recordsSlice.
+// export default invoiceForXmlSlice.reducer;
