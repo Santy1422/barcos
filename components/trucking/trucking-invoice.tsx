@@ -2,8 +2,7 @@
 
 import type React from "react"
 import { useState, useEffect, useMemo } from "react"
-import { useDispatch } from "react-redux"
-import { useAppSelector } from "@/lib/hooks"
+import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -27,24 +26,26 @@ import {
   Search,
   Truck,
   RouteIcon as RouteIconLucide,
-  UserIcon as UserIconLucide,
   Download,
+  UserIcon as UserIconLucide,
 } from "lucide-react"
 import {
   addInvoice,
   markRecordsAsInvoiced,
   selectInvoicesByModule,
-  selectPendingRecordsByModule, // This selector should target state.records.individualRecords
+  selectPendingRecordsByModule,
   type InvoiceRecord as PersistedInvoiceRecord,
-  type ExcelRecord as IndividualExcelRecord, // Use the type from recordsSlice
+  type ExcelRecord as IndividualExcelRecord,
 } from "@/lib/features/records/recordsSlice"
 import {
-  selectTruckingDrivers,
-  selectTruckingRoutes,
-  selectTruckingVehicles,
-  selectModuleCustomFields,
+  selectModuleCustomFields, // Keep this for custom fields
   type CustomFieldConfig,
-} from "@/lib/features/config/configSlice"
+} from "@/lib/features/config/configSlice" // General config slice for custom fields
+import {
+  selectTruckingConfigDrivers, // New selector for trucking specific drivers
+  selectTruckingConfigRoutes, // New selector for trucking specific routes
+  selectTruckingConfigVehicles, // New selector for trucking specific vehicles
+} from "@/lib/features/trucking-config/truckingConfigSlice" // Trucking specific config
 import { generateInvoiceXML } from "@/lib/xml-generator"
 import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features/invoice/invoiceSlice"
 import { useToast } from "@/hooks/use-toast"
@@ -57,12 +58,12 @@ interface TruckingFormData {
   invoiceNumber: string
   issueDate: string
   dueDate: string
-  clientName: string
-  clientRuc: string
-  clientAddress: string
-  driverId: string
-  vehicleId: string
-  routeId: string
+  clientName: string // From Excel
+  clientRuc: string // From Excel
+  clientAddress: string // From Excel
+  driverId: string // From Trucking Config
+  vehicleId: string // From Trucking Config
+  routeId: string // From Trucking Config
   description: string
   subtotal: number
   taxAmount: number
@@ -89,19 +90,20 @@ const getNewInvoiceState = (): TruckingFormData => ({
 })
 
 export default function TruckingInvoice() {
-  const dispatch = useDispatch()
+  const dispatch = useAppDispatch()
   const router = useRouter()
   const { toast } = useToast()
 
-  // Fetch individual pending records for "trucking"
   const pendingTruckingRecords: IndividualExcelRecord[] = useAppSelector((state) =>
     selectPendingRecordsByModule(state, "trucking"),
   )
   const truckingGeneratedInvoices = useAppSelector((state) => selectInvoicesByModule(state, "trucking"))
 
-  const configuredDrivers = useAppSelector(selectTruckingDrivers)
-  const configuredRoutes = useAppSelector(selectTruckingRoutes)
-  const configuredVehicles = useAppSelector(selectTruckingVehicles)
+  // Use new selectors for trucking specific config
+  const configuredDrivers = useAppSelector(selectTruckingConfigDrivers)
+  const configuredRoutes = useAppSelector(selectTruckingConfigRoutes)
+  const configuredVehicles = useAppSelector(selectTruckingConfigVehicles)
+  // Custom fields can still come from the general config slice or be moved to truckingConfigSlice if preferred
   const truckingCustomFields = useAppSelector((state) => selectModuleCustomFields(state, "trucking"))
 
   const [currentStep, setCurrentStep] = useState<InvoiceStep>("select")
@@ -114,7 +116,7 @@ export default function TruckingInvoice() {
     if (!searchTerm) return pendingTruckingRecords
     const lowerSearch = searchTerm.toLowerCase()
     return pendingTruckingRecords.filter((record) => {
-      const data = record.data as Record<string, any> // Cast record.data for easier access
+      const data = record.data as Record<string, any>
       return (
         String(data.cliente || "")
           .toLowerCase()
@@ -144,7 +146,6 @@ export default function TruckingInvoice() {
   const truckingCustomFieldsString = useMemo(() => JSON.stringify(truckingCustomFields), [truckingCustomFields])
 
   useEffect(() => {
-    // Parse the stringified dependencies back to objects for use inside the effect
     const currentSelectedDetails: IndividualExcelRecord[] = JSON.parse(selectedRecordDetailsString)
     const currentCustomFields: CustomFieldConfig[] = JSON.parse(truckingCustomFieldsString)
 
@@ -159,7 +160,7 @@ export default function TruckingInvoice() {
 
         newFormData.clientName = String(firstSelectedRecordData?.cliente || "")
         newFormData.clientRuc = String(firstSelectedRecordData?.ruc || "")
-        newFormData.clientAddress = String(firstSelectedRecordData?.clientAddress || "")
+        newFormData.clientAddress = String(firstSelectedRecordData?.clientAddress || "") // Assuming clientAddress might be in Excel
         newFormData.description = `Servicios de transporte terrestre (${currentSelectedDetails.length} registros)`
         newFormData.subtotal = subtotalCalc
         newFormData.taxAmount = taxCalc
@@ -188,7 +189,7 @@ export default function TruckingInvoice() {
         ...Object.fromEntries(currentCustomFields.map((cf) => [cf.id, ""])),
       }))
     }
-  }, [selectedRecordDetailsString, truckingCustomFieldsString]) // Effect depends on stable strings
+  }, [selectedRecordDetailsString, truckingCustomFieldsString])
 
   const handleRecordSelectionChange = (recordId: string, checked: boolean | string) =>
     setSelectedRecordIds((prev) => (checked ? [...prev, recordId] : prev.filter((id) => id !== recordId)))
@@ -283,11 +284,11 @@ export default function TruckingInvoice() {
         })
 
         return {
-          id: rec.id, // Use the unique ID of the individual record
+          id: rec.id,
           description: recData.description || `Servicio de ${recData.tamaño || ""} Cont. ${recData.contenedor || ""}`,
           quantity: recData.quantity || 1,
-          unitPrice: recData.tarifa || rec.totalValue, // Use tarifa from Excel data or totalValue of record
-          totalPrice: rec.totalValue, // Use the calculated totalValue for the line item
+          unitPrice: recData.tarifa || rec.totalValue,
+          totalPrice: rec.totalValue,
           serviceCode: recData.serviceCode || "TRK-STD",
           unit: recData.unit || "VIAJE",
           blNumber: recData.bl || "",
@@ -378,7 +379,7 @@ export default function TruckingInvoice() {
       totalAmount: formData.total,
       status: "generada",
       xmlData: generatedXml,
-      relatedRecordIds: selectedRecordIds, // These are IDs of IndividualExcelRecord
+      relatedRecordIds: selectedRecordIds,
       notes: formData.description,
       details: invoiceDetails,
       createdAt: new Date().toISOString(),
@@ -473,7 +474,7 @@ export default function TruckingInvoice() {
                   </TableHeader>
                   <TableBody>
                     {filteredPendingRecords.map((record) => {
-                      const data = record.data as Record<string, any> // Cast for easier access
+                      const data = record.data as Record<string, any>
                       return (
                         <TableRow
                           key={record.id}
@@ -545,6 +546,12 @@ export default function TruckingInvoice() {
               </div>
             )}
           </CardContent>
+          <CardFooter className="justify-end">
+            <Button onClick={nextStep} disabled={selectedRecordIds.length === 0}>
+              Continuar
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </Button>
+          </CardFooter>
         </Card>
       )}
       {currentStep === "create" && (
@@ -614,7 +621,7 @@ export default function TruckingInvoice() {
                 </div>
               </fieldset>
               <fieldset className="space-y-4">
-                <legend className="text-lg font-semibold mb-2 border-b pb-1">Datos del Cliente</legend>
+                <legend className="text-lg font-semibold mb-2 border-b pb-1">Datos del Cliente (desde Excel)</legend>
                 <div>
                   <Label htmlFor="clientName">Nombre Cliente</Label>
                   <Input
@@ -623,6 +630,8 @@ export default function TruckingInvoice() {
                     value={formData.clientName}
                     onChange={handleInputChange}
                     required
+                    readOnly
+                    className="bg-muted/50"
                   />
                 </div>
                 <div>
@@ -633,6 +642,8 @@ export default function TruckingInvoice() {
                     value={formData.clientRuc}
                     onChange={handleInputChange}
                     required
+                    readOnly
+                    className="bg-muted/50"
                   />
                 </div>
                 <div>
@@ -642,12 +653,16 @@ export default function TruckingInvoice() {
                     name="clientAddress"
                     value={formData.clientAddress}
                     onChange={handleInputChange}
+                    readOnly
+                    className="bg-muted/50"
                   />
                 </div>
               </fieldset>
             </div>
             <fieldset className="space-y-4">
-              <legend className="text-lg font-semibold mb-2 border-b pb-1">Detalles Servicio Transporte</legend>
+              <legend className="text-lg font-semibold mb-2 border-b pb-1">
+                Detalles Servicio Transporte (Configurados)
+              </legend>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <Label htmlFor="driverId" className="flex items-center">
@@ -661,7 +676,7 @@ export default function TruckingInvoice() {
                     required
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar..." />
+                      <SelectValue placeholder="Seleccionar Conductor..." />
                     </SelectTrigger>
                     <SelectContent>
                       {configuredDrivers.map((d) => (
@@ -684,7 +699,7 @@ export default function TruckingInvoice() {
                     required
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar..." />
+                      <SelectValue placeholder="Seleccionar Vehículo..." />
                     </SelectTrigger>
                     <SelectContent>
                       {configuredVehicles.map((v) => (
@@ -707,7 +722,7 @@ export default function TruckingInvoice() {
                     required
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar..." />
+                      <SelectValue placeholder="Seleccionar Ruta..." />
                     </SelectTrigger>
                     <SelectContent>
                       {configuredRoutes.map((r) => (
@@ -768,6 +783,8 @@ export default function TruckingInvoice() {
                     value={formData.subtotal.toFixed(2)}
                     onChange={handleInputChange}
                     step="0.01"
+                    readOnly
+                    className="bg-muted/50"
                   />
                 </div>
                 <div>
@@ -797,6 +814,16 @@ export default function TruckingInvoice() {
               </div>
             </fieldset>
           </CardContent>
+          <CardFooter className="justify-end">
+            <Button onClick={prevStep} variant="outline">
+              <ChevronLeft className="mr-2 h-4 w-4" />
+              Anterior
+            </Button>
+            <Button onClick={nextStep} className="ml-2">
+              Siguiente
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </Button>
+          </CardFooter>
         </Card>
       )}
       {currentStep === "review" && (
@@ -899,6 +926,16 @@ export default function TruckingInvoice() {
               />
             </div>
           </CardContent>
+          <CardFooter className="justify-end">
+            <Button onClick={prevStep} variant="outline">
+              <ChevronLeft className="mr-2 h-4 w-4" />
+              Anterior
+            </Button>
+            <Button onClick={nextStep} className="ml-2">
+              Siguiente
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </Button>
+          </CardFooter>
         </Card>
       )}
       {currentStep === "confirm" && (

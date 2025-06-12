@@ -1,4 +1,5 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit"
+import type { RootState } from "@/lib/store" // Import RootState for selectors
 
 // Generic interface for a single record extracted from an Excel row
 export interface ExcelRecord {
@@ -13,7 +14,7 @@ export interface ExcelRecord {
   invoiceId?: string // ID of the invoice if it has been facturado
 }
 
-// Interface for a full Invoice document stored in records (different from XML payload)
+// Interface for a full Invoice document stored in records
 export interface InvoiceRecord {
   id: string // Unique ID for the invoice document
   module: "trucking" | "shipchandler" | "agency"
@@ -26,25 +27,18 @@ export interface InvoiceRecord {
   subtotal: number
   taxAmount: number
   totalAmount: number
-  status: "generada" | "transmitida" | "anulada" | "pagada" // Status of the invoice document
+  status: "generada" | "transmitida" | "anulada" | "pagada"
   xmlData?: string
-  relatedExcelFileIds?: string[] // IDs of Excel files used (for reference)
-  relatedRecordIds: string[] // NEW: IDs of individual records included in this invoice
+  relatedRecordIds: string[] // IDs of individual ExcelRecord items included in this invoice
   notes?: string
   details?: {
-    driverId?: string
-    driverName?: string
-    vehicleId?: string
-    vehicleInfo?: string
-    routeId?: string
-    routeName?: string
-    [key: string]: any // For custom fields
+    [key: string]: any
   }
   createdAt: string
 }
 
 interface RecordsState {
-  individualRecords: ExcelRecord[] // NEW: Stores all individual records from Excels
+  individualRecords: ExcelRecord[] // Stores all individual records from ALL Excels
   invoices: InvoiceRecord[] // Stores generated invoice documents
   loading: boolean
   error: string | null
@@ -61,28 +55,12 @@ const recordsSlice = createSlice({
   name: "records",
   initialState,
   reducers: {
+    // This reducer is key: it adds an array of new individual records to the state.
     addRecords: (state, action: PayloadAction<ExcelRecord[]>) => {
+      // We use push to add the new records without overwriting existing ones.
       state.individualRecords.push(...action.payload)
     },
-    updateRecordStatus: (
-      state,
-      action: PayloadAction<{ id: string; status: ExcelRecord["status"]; invoiceId?: string }>,
-    ) => {
-      const record = state.individualRecords.find((r) => r.id === action.payload.id)
-      if (record) {
-        record.status = action.payload.status
-        if (action.payload.invoiceId) record.invoiceId = action.payload.invoiceId
-      }
-    },
-    addInvoice: (state, action: PayloadAction<InvoiceRecord>) => {
-      state.invoices.push(action.payload)
-    },
-    updateInvoiceStatus: (state, action: PayloadAction<{ id: string; status: InvoiceRecord["status"] }>) => {
-      const invoice = state.invoices.find((inv) => inv.id === action.payload.id)
-      if (invoice) {
-        invoice.status = action.payload.status
-      }
-    },
+    // This reducer marks the selected individual records as "facturado"
     markRecordsAsInvoiced: (state, action: PayloadAction<{ recordIds: string[]; invoiceId: string }>) => {
       action.payload.recordIds.forEach((recordId) => {
         const record = state.individualRecords.find((r) => r.id === recordId)
@@ -91,6 +69,16 @@ const recordsSlice = createSlice({
           record.invoiceId = action.payload.invoiceId
         }
       })
+    },
+    // This reducer adds a completed invoice document to the state.
+    addInvoice: (state, action: PayloadAction<InvoiceRecord>) => {
+      state.invoices.push(action.payload)
+    },
+    updateInvoiceStatus: (state, action: PayloadAction<{ id: string; status: InvoiceRecord["status"] }>) => {
+      const invoice = state.invoices.find((inv) => inv.id === action.payload.id)
+      if (invoice) {
+        invoice.status = action.payload.status
+      }
     },
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload
@@ -101,21 +89,19 @@ const recordsSlice = createSlice({
   },
 })
 
-export const {
-  addRecords,
-  updateRecordStatus,
-  addInvoice,
-  updateInvoiceStatus,
-  markRecordsAsInvoiced,
-  setLoading,
-  setError,
-} = recordsSlice.actions
+export const { addRecords, markRecordsAsInvoiced, addInvoice, updateInvoiceStatus, setLoading, setError } =
+  recordsSlice.actions
 
-export const selectIndividualRecords = (state: { records: RecordsState }) => state.records.individualRecords
-export const selectInvoices = (state: { records: RecordsState }) => state.records.invoices
-export const selectInvoicesByModule = (state: { records: RecordsState }, moduleName: InvoiceRecord["module"]) =>
-  state.records.invoices.filter((invoice) => invoice.module === moduleName)
-export const selectPendingRecordsByModule = (state: { records: RecordsState }, moduleName: ExcelRecord["module"]) =>
+// SELECTORS - These are how components read data from this slice.
+export const selectAllIndividualRecords = (state: RootState) => state.records.individualRecords
+export const selectAllInvoices = (state: RootState) => state.records.invoices
+
+// This is the most important selector for the invoice page.
+// It finds all individual records for a specific module that are still "pendiente".
+export const selectPendingRecordsByModule = (state: RootState, moduleName: ExcelRecord["module"]) =>
   state.records.individualRecords.filter((record) => record.module === moduleName && record.status === "pendiente")
+
+export const selectInvoicesByModule = (state: RootState, moduleName: InvoiceRecord["module"]) =>
+  state.records.invoices.filter((invoice) => invoice.module === moduleName)
 
 export default recordsSlice.reducer
