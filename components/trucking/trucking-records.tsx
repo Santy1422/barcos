@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Truck, Search, Download, Eye, Edit, FileText, FileWarning } from "lucide-react"
 import { useAppSelector } from "@/lib/hooks"
 import {
-  selectIndividualRecords,
-  selectInvoices,
+  selectAllIndividualRecords, // Cambiar de selectIndividualRecords a selectAllIndividualRecords
+  selectAllInvoices, // Cambiar de selectInvoices a selectAllInvoices
   type InvoiceRecord as PersistedInvoiceRecord,
 } from "@/lib/features/records/recordsSlice"
 import { selectExcelFilesByModule } from "@/lib/features/excel/excelSlice"
@@ -29,6 +29,7 @@ import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features
 import { useToast } from "@/hooks/use-toast"
 import { Separator } from "@/components/ui/separator"
 import { selectModuleCustomFields, type CustomFieldConfig } from "@/lib/features/config/configSlice"
+import saveAs from "file-saver"
 
 export function TruckingRecords() {
   const [searchTerm, setSearchTerm] = useState("")
@@ -41,8 +42,8 @@ export function TruckingRecords() {
 
   const { toast } = useToast()
 
-  const allIndividualRecords = useAppSelector(selectIndividualRecords)
-  const allPersistedInvoices = useAppSelector(selectInvoices)
+  const allIndividualRecords = useAppSelector(selectAllIndividualRecords) // Cambiar selectIndividualRecords por selectAllIndividualRecords
+  const allPersistedInvoices = useAppSelector(selectAllInvoices) // Cambiar selectInvoices por selectAllInvoices
   const allExcelFiles = useAppSelector((state) => selectExcelFilesByModule(state, "trucking"))
   const truckingCustomFields = useAppSelector((state) => selectModuleCustomFields(state, "trucking"))
 
@@ -604,3 +605,35 @@ export function TruckingRecords() {
     </div>
   )
 }
+
+// Función para descargar PDF de factura existente
+const handleDownloadPdf = (invoice: PersistedInvoiceRecord) => {
+  if (invoice.pdfData) {
+    saveAs(invoice.pdfData, `${invoice.invoiceNumber}.pdf`)
+    toast({ title: "PDF Descargado", description: "El archivo PDF ha sido descargado." })
+  } else {
+    // Generar PDF si no existe
+    toast({ title: "Generando PDF", description: "Generando PDF de la factura..." })
+    // Aquí podrías regenerar el PDF usando los datos de la factura
+  }
+}
+
+// Actualizar la tabla para incluir el botón de descarga de PDF
+<div className="flex space-x-1">
+  <Button
+    variant="ghost"
+    size="sm"
+    onClick={() => handleViewXmlOfExisting(invoice)}
+    title="Ver XML"
+  >
+    <FileText className="h-4 w-4" />
+  </Button>
+  <Button 
+    variant="ghost" 
+    size="sm" 
+    onClick={() => handleDownloadPdf(invoice)}
+    title="Descargar PDF"
+  >
+    <Download className="h-4 w-4" />
+  </Button>
+</div>

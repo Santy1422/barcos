@@ -105,3 +105,24 @@ export const selectInvoicesByModule = (state: RootState, moduleName: InvoiceReco
   state.records.invoices.filter((invoice) => invoice.module === moduleName)
 
 export default recordsSlice.reducer
+export interface PersistedInvoiceRecord {
+  id: string
+  module: string
+  invoiceNumber: string
+  clientName: string
+  clientRuc: string
+  issueDate: string
+  dueDate: string
+  currency: string
+  subtotal: number
+  taxAmount: number
+  totalAmount: number
+  status: "generada" | "enviada" | "pagada" | "cancelada"
+  xmlData: string
+  pdfData?: Blob // Agregar campo para PDF
+  relatedRecordIds: string[]
+  notes?: string
+  details?: Record<string, any>
+  createdAt: string
+  updatedAt?: string
+}

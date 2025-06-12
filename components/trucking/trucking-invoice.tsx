@@ -40,17 +40,17 @@ import {
 import {
   selectModuleCustomFields, // Keep this for custom fields
   type CustomFieldConfig,
-} from "@/lib/features/config/configSlice" // General config slice for custom fields
-import {
-  selectTruckingConfigDrivers, // New selector for trucking specific drivers
-  selectTruckingConfigRoutes, // New selector for trucking specific routes
-  selectTruckingConfigVehicles, // New selector for trucking specific vehicles
-} from "@/lib/features/trucking-config/truckingConfigSlice" // Trucking specific config
+  selectTruckingDrivers, // Updated import name
+  selectTruckingRoutes, // Updated import name
+  selectTruckingVehicles, // Updated import name
+} from "@/lib/features/config/configSlice" // All imports now from the same file
+// Remove the entire import from trucking-config/truckingConfigSlice
 import { generateInvoiceXML } from "@/lib/xml-generator"
 import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features/invoice/invoiceSlice"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import saveAs from "file-saver"
+import jsPDF from "jspdf"
 
 type InvoiceStep = "select" | "create" | "review" | "confirm"
 
@@ -100,9 +100,9 @@ export default function TruckingInvoice() {
   const truckingGeneratedInvoices = useAppSelector((state) => selectInvoicesByModule(state, "trucking"))
 
   // Use new selectors for trucking specific config
-  const configuredDrivers = useAppSelector(selectTruckingConfigDrivers)
-  const configuredRoutes = useAppSelector(selectTruckingConfigRoutes)
-  const configuredVehicles = useAppSelector(selectTruckingConfigVehicles)
+  const configuredDrivers = useAppSelector(selectTruckingDrivers)
+  const configuredRoutes = useAppSelector(selectTruckingRoutes)
+  const configuredVehicles = useAppSelector(selectTruckingVehicles)
   // Custom fields can still come from the general config slice or be moved to truckingConfigSlice if preferred
   const truckingCustomFields = useAppSelector((state) => selectModuleCustomFields(state, "trucking"))
 
@@ -111,32 +111,87 @@ export default function TruckingInvoice() {
   const [formData, setFormData] = useState<TruckingFormData>(() => getNewInvoiceState())
   const [searchTerm, setSearchTerm] = useState("")
   const [generatedXml, setGeneratedXml] = useState<string | null>(null)
+  const [generatedPdf, setGeneratedPdf] = useState<Blob | null>(null) // Agregar estado para PDF
+  const [activeFilters, setActiveFilters] = useState({
+    dateRange: 'all', // 'today', 'week', 'month', 'all'
+    amountRange: 'all', // 'low', 'medium', 'high', 'all'
+    hasContainer: 'all', // 'yes', 'no', 'all'
+    clientType: 'all' // 'company', 'individual', 'all'
+  })
 
   const filteredPendingRecords = useMemo(() => {
-    if (!searchTerm) return pendingTruckingRecords
-    const lowerSearch = searchTerm.toLowerCase()
-    return pendingTruckingRecords.filter((record) => {
+    let filtered = pendingTruckingRecords.filter((record) => {
       const data = record.data as Record<string, any>
-      return (
-        String(data.cliente || "")
-          .toLowerCase()
-          .includes(lowerSearch) ||
-        String(data.ruc || "")
-          .toLowerCase()
-          .includes(lowerSearch) ||
-        String(data.contenedor || "")
-          .toLowerCase()
-          .includes(lowerSearch) ||
-        String(data.bl || "")
-          .toLowerCase()
-          .includes(lowerSearch) ||
-        String(data.driverExcel || "")
-          .toLowerCase()
-          .includes(lowerSearch) ||
-        String(record.id).toLowerCase().includes(lowerSearch)
-      )
+      const searchableText = [
+        data.cliente,
+        data.ruc,
+        data.contenedor,
+        data.bl,
+        record.id,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+      
+      const matchesSearch = searchTerm === "" || searchableText.includes(searchTerm.toLowerCase())
+      
+      // Date filter
+      let matchesDate = true
+      if (activeFilters.dateRange !== 'all' && data.fecha) {
+        const recordDate = new Date(data.fecha)
+        const today = new Date()
+        const daysDiff = Math.floor((today.getTime() - recordDate.getTime()) / (1000 * 60 * 60 * 24))
+        
+        switch (activeFilters.dateRange) {
+          case 'today':
+            matchesDate = daysDiff === 0
+            break
+          case 'week':
+            matchesDate = daysDiff <= 7
+            break
+          case 'month':
+            matchesDate = daysDiff <= 30
+            break
+        }
+      }
+      
+      // Amount filter
+      let matchesAmount = true
+      if (activeFilters.amountRange !== 'all') {
+        const amount = record.totalValue
+        switch (activeFilters.amountRange) {
+          case 'low':
+            matchesAmount = amount < 500
+            break
+          case 'medium':
+            matchesAmount = amount >= 500 && amount < 2000
+            break
+          case 'high':
+            matchesAmount = amount >= 2000
+            break
+        }
+      }
+      
+      // Container filter
+      let matchesContainer = true
+      if (activeFilters.hasContainer !== 'all') {
+        const hasContainer = data.contenedor && data.contenedor.trim() !== ''
+        matchesContainer = activeFilters.hasContainer === 'yes' ? hasContainer : !hasContainer
+      }
+      
+      // Client type filter (based on RUC length - companies usually have longer RUCs)
+      let matchesClientType = true
+      if (activeFilters.clientType !== 'all' && data.ruc) {
+        const rucLength = data.ruc.toString().length
+        const isCompany = rucLength >= 10 // Assuming companies have RUC with 10+ digits
+        matchesClientType = activeFilters.clientType === 'company' ? isCompany : !isCompany
+      }
+      
+      return matchesSearch && matchesDate && matchesAmount && matchesContainer && matchesClientType
     })
-  }, [pendingTruckingRecords, searchTerm])
+    
+    return filtered
+  }, [pendingTruckingRecords, searchTerm, activeFilters])
 
   const selectedRecordDetails: IndividualExcelRecord[] = useMemo(() => {
     return pendingTruckingRecords.filter((record) => selectedRecordIds.includes(record.id))
@@ -211,6 +266,25 @@ export default function TruckingInvoice() {
   const handleCustomFieldChange = (fieldId: string, value: string | number | Date) =>
     setFormData((prev) => ({ ...prev, [fieldId]: value }))
 
+  // Filter button handler
+  const handleFilterChange = (filterType: keyof typeof activeFilters, value: string) => {
+    setActiveFilters(prev => ({
+      ...prev,
+      [filterType]: value
+    }))
+  }
+
+  // Clear all filters
+  const clearAllFilters = () => {
+    setActiveFilters({
+      dateRange: 'all',
+      amountRange: 'all',
+      hasContainer: 'all',
+      clientType: 'all'
+    })
+    setSearchTerm('')
+  }
+
   const validateStep = (step: InvoiceStep): boolean => {
     if (step === "select" && selectedRecordIds.length === 0) {
       toast({
@@ -221,16 +295,21 @@ export default function TruckingInvoice() {
       return false
     }
     if (step === "create") {
-      const requiredFields: (keyof TruckingFormData)[] = ["clientName", "clientRuc", "driverId", "vehicleId", "routeId"]
-      for (const field of requiredFields) {
-        if (!formData[field]) {
-          toast({
-            title: "Campos Incompletos",
-            description: `El campo '${field.replace("Id", "")}' es obligatorio.`,
-            variant: "destructive",
-          })
-          return false
+      const validateStep = (step: number): boolean => {
+        if (step === 1) {
+          const requiredFields: (keyof TruckingFormData)[] = ["clientName", "clientRuc", "driverId", "vehicleId", "routeId"]
+          const missingFields = requiredFields.filter((field) => !formData[field])
+          if (missingFields.length > 0) {
+            toast({
+              title: "Campos Requeridos",
+              description: `Complete los siguientes campos: ${missingFields.join(", ")}.`,
+              variant: "destructive",
+            })
+            return false
+          }
+          // Validación de RUC/cédula eliminada
         }
+        return true
       }
       if (formData.total <= 0) {
         toast({
@@ -240,18 +319,7 @@ export default function TruckingInvoice() {
         })
         return false
       }
-      if (
-        !/^([NnJjVvEeGgPEpe](?:-\d{1,8})(?:-\d{1,6})?|\d{1,9}[PEepenNpiiav]{0,2}(?:-\d{1,4})?(?:-\d{1,6})?|\d{1,12})$/.test(
-          formData.clientRuc,
-        )
-      ) {
-        toast({
-          title: "RUC/Cédula Inválido",
-          description: "Formato de RUC/Cédula no válido para Panamá.",
-          variant: "destructive",
-        })
-        return false
-      }
+     
     }
     return true
   }
@@ -328,6 +396,11 @@ export default function TruckingInvoice() {
       try {
         const generated = generateInvoiceXML(xmlPayload)
         setGeneratedXml(generated)
+        
+        // Generate PDF as well
+        const pdfBlob = generateInvoicePDF(formData)
+        setGeneratedPdf(pdfBlob)
+        
         setCurrentStep("review")
       } catch (e: any) {
         console.error("XML Generation Error:", e)
@@ -409,6 +482,55 @@ export default function TruckingInvoice() {
     }
   }
 
+  const generateInvoicePDF = (invoiceData: any): Blob => {
+    const doc = new jsPDF()
+    
+    // Configure PDF document
+    doc.setFontSize(20)
+    doc.text('FACTURA DE TRUCKING', 20, 30)
+    
+    doc.setFontSize(12)
+    doc.text(`Número de Factura: ${invoiceData.invoiceNumber}`, 20, 50)
+    doc.text(`Cliente: ${invoiceData.clientName}`, 20, 60)
+    doc.text(`RUC: ${invoiceData.clientRuc}`, 20, 70)
+    doc.text(`Fecha de Emisión: ${new Date(invoiceData.issueDate).toLocaleDateString()}`, 20, 80)
+    doc.text(`Fecha de Vencimiento: ${new Date(invoiceData.dueDate).toLocaleDateString()}`, 20, 90)
+    
+    // Driver and vehicle information
+    const driver = configuredDrivers.find(d => d.id === invoiceData.driverId)
+    const vehicle = configuredVehicles.find(v => v.id === invoiceData.vehicleId)
+    const route = configuredRoutes.find(r => r.id === invoiceData.routeId)
+    
+    if (driver) doc.text(`Conductor: ${driver.name}`, 20, 110)
+    if (vehicle) doc.text(`Vehículo: ${vehicle.plate} (${vehicle.model})`, 20, 120)
+    if (route) doc.text(`Ruta: ${route.name}`, 20, 130)
+    
+    // Financial details
+    doc.text(`Subtotal: ${invoiceData.currency} ${invoiceData.subtotal.toFixed(2)}`, 20, 150)
+    doc.text(`Impuestos: ${invoiceData.currency} ${invoiceData.taxAmount.toFixed(2)}`, 20, 160)
+    doc.setFontSize(14)
+    doc.text(`Total: ${invoiceData.currency} ${invoiceData.total.toFixed(2)}`, 20, 180)
+    
+    // Description
+    if (invoiceData.description) {
+      doc.setFontSize(12)
+      doc.text('Descripción:', 20, 200)
+      const splitDescription = doc.splitTextToSize(invoiceData.description, 170)
+      doc.text(splitDescription, 20, 210)
+    }
+    
+    return new Blob([doc.output('blob')], { type: 'application/pdf' })
+  }
+
+  const handleDownloadPdf = () => {
+    if (generatedPdf) {
+      saveAs(generatedPdf, `${formData.invoiceNumber || "factura"}.pdf`)
+      toast({ title: "PDF Descargado", description: "El archivo PDF ha sido descargado." })
+    } else {
+      toast({ title: "Error", description: "No hay PDF generado para descargar.", variant: "destructive" })
+    }
+  }
+
   const progressValue =
     currentStep === "select" ? 25 : currentStep === "create" ? 50 : currentStep === "review" ? 75 : 100
 
@@ -458,6 +580,149 @@ export default function TruckingInvoice() {
                 />
               </div>
             </div>
+
+            {/* Filter Buttons */}
+            <div className="mb-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium text-muted-foreground">Filtros Rápidos:</h4>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={clearAllFilters}
+                  className="text-xs"
+                >
+                  Limpiar Filtros
+                </Button>
+              </div>
+              
+              {/* Date Range Filter */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Por Fecha:</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {[
+                    { value: 'all', label: 'Todas' },
+                    { value: 'today', label: 'Hoy' },
+                    { value: 'week', label: 'Última Semana' },
+                    { value: 'month', label: 'Último Mes' }
+                  ].map((option) => (
+                    <Button
+                      key={option.value}
+                      variant={activeFilters.dateRange === option.value ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handleFilterChange('dateRange', option.value)}
+                      className="text-xs"
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Amount Range Filter */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Por Monto:</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {[
+                    { value: 'all', label: 'Todos' },
+                    { value: 'low', label: '< $500' },
+                    { value: 'medium', label: '$500 - $2000' },
+                    { value: 'high', label: '> $2000' }
+                  ].map((option) => (
+                    <Button
+                      key={option.value}
+                      variant={activeFilters.amountRange === option.value ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handleFilterChange('amountRange', option.value)}
+                      className="text-xs"
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Container Filter */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Por Contenedor:</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {[
+                    { value: 'all', label: 'Todos' },
+                    { value: 'yes', label: 'Con Contenedor' },
+                    { value: 'no', label: 'Sin Contenedor' }
+                  ].map((option) => (
+                    <Button
+                      key={option.value}
+                      variant={activeFilters.hasContainer === option.value ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handleFilterChange('hasContainer', option.value)}
+                      className="text-xs"
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Client Type Filter */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Por Tipo de Cliente:</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {[
+                    { value: 'all', label: 'Todos' },
+                    { value: 'company', label: 'Empresas' },
+                    { value: 'individual', label: 'Personas' }
+                  ].map((option) => (
+                    <Button
+                      key={option.value}
+                      variant={activeFilters.clientType === option.value ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handleFilterChange('clientType', option.value)}
+                      className="text-xs"
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Active Filters Summary */}
+              {(activeFilters.dateRange !== 'all' || activeFilters.amountRange !== 'all' || 
+                activeFilters.hasContainer !== 'all' || activeFilters.clientType !== 'all' || searchTerm) && (
+                <div className="bg-muted/30 p-3 rounded-md">
+                  <p className="text-xs text-muted-foreground mb-1">Filtros activos:</p>
+                  <div className="flex gap-1 flex-wrap">
+                    {searchTerm && (
+                      <span className="bg-primary/10 text-primary px-2 py-1 rounded text-xs">
+                        Búsqueda: "{searchTerm}"
+                      </span>
+                    )}
+                    {activeFilters.dateRange !== 'all' && (
+                      <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">
+                        Fecha: {activeFilters.dateRange}
+                      </span>
+                    )}
+                    {activeFilters.amountRange !== 'all' && (
+                      <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs">
+                        Monto: {activeFilters.amountRange}
+                      </span>
+                    )}
+                    {activeFilters.hasContainer !== 'all' && (
+                      <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs">
+                        Contenedor: {activeFilters.hasContainer === 'yes' ? 'Con' : 'Sin'}
+                      </span>
+                    )}
+                    {activeFilters.clientType !== 'all' && (
+                      <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs">
+                        Cliente: {activeFilters.clientType === 'company' ? 'Empresas' : 'Personas'}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Mostrando {filteredPendingRecords.length} de {pendingTruckingRecords.length} registros
+                  </p>
+                </div>
+              )}
+            </div>
             {filteredPendingRecords.length > 0 ? (
               <div className="max-h-[400px] overflow-y-auto border rounded-md">
                 <Table>
@@ -500,13 +765,21 @@ export default function TruckingInvoice() {
             ) : (
               <Alert>
                 <AlertCircle className="h-4 w-4" />
-                <AlertTitle>No hay registros individuales pendientes</AlertTitle>
+                <AlertTitle>No hay registros que coincidan con los filtros</AlertTitle>
                 <AlertDescription>
-                  No se encontraron registros individuales pendientes para Trucking. Puedes{" "}
-                  <Button variant="link" className="p-0 h-auto" onClick={() => router.push("/trucking/upload")}>
-                    cargar nuevos desde un Excel
-                  </Button>
-                  .
+                  {pendingTruckingRecords.length === 0 
+                    ? "No se encontraron registros individuales pendientes para Trucking."
+                    : "Intenta ajustar los filtros o la búsqueda para encontrar registros."
+                  }
+                  {pendingTruckingRecords.length === 0 && (
+                    <>
+                      {" "}
+                      <Button variant="link" className="p-0 h-auto" onClick={() => router.push("/trucking/upload")}>
+                        Cargar nuevos desde un Excel
+                      </Button>
+                      .
+                    </>
+                  )}
                 </AlertDescription>
               </Alert>
             )}
@@ -912,11 +1185,17 @@ export default function TruckingInvoice() {
             </div>
             <div className="mt-4">
               <div className="flex justify-between items-center mb-2">
-                <h3 className="font-semibold">XML Generado:</h3>
-                <Button onClick={handleDownloadXml} variant="outline" size="sm" disabled={!generatedXml}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Descargar XML
-                </Button>
+                <h3 className="font-semibold">Archivos Generados:</h3>
+                <div className="flex gap-2">
+                  <Button onClick={handleDownloadXml} variant="outline" size="sm" disabled={!generatedXml}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Descargar XML
+                  </Button>
+                  <Button onClick={handleDownloadPdf} variant="outline" size="sm" disabled={!generatedPdf}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Descargar PDF
+                  </Button>
+                </div>
               </div>
               <Textarea
                 value={generatedXml || "Error al generar XML o XML no disponible."}
@@ -989,3 +1268,5 @@ export default function TruckingInvoice() {
     </div>
   )
 }
+
+
