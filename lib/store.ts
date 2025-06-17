@@ -1,47 +1,29 @@
-import { configureStore, combineReducers } from "@reduxjs/toolkit"
-import excelReducer from "./features/excel/excelSlice"
-import recordsReducer from "./features/records/recordsSlice"
-import supplyOrdersReducer from "./features/supply-orders/supplyOrdersSlice"
-import inventoryReducer from "./features/inventory/inventorySlice"
-import deliveryNotesReducer from "./features/delivery-notes/deliveryNotesSlice"
+import { configureStore } from "@reduxjs/toolkit"
 import configReducer from "./features/config/configSlice"
-import { loadState, saveState } from "./storage"
-
-const rootReducer = combineReducers({
-  excel: excelReducer,
-  records: recordsReducer,
-  supplyOrders: supplyOrdersReducer,
-  inventory: inventoryReducer,
-  deliveryNotes: deliveryNotesReducer,
-  config: configReducer,
-})
-
-// We load the persisted state from localStorage.
-const preloadedState = loadState()
+import recordsReducer from "./features/records/recordsSlice"
+import excelReducer from "./features/excel/excelSlice"
+import invoiceReducer from "./features/invoice/invoiceSlice"
+import deliveryNotesReducer from "./features/delivery-notes/deliveryNotesSlice"
+import inventoryReducer from "./features/inventory/inventorySlice"
+import supplyOrdersReducer from "./features/supply-orders/supplyOrdersSlice"
+import clientsReducer from "./features/clients/clientsSlice"
 
 export const makeStore = () => {
-  const store = configureStore({
-    reducer: rootReducer,
-    // The preloadedState is passed to the store on creation.
-    preloadedState,
+  return configureStore({
+    reducer: {
+      config: configReducer,
+      records: recordsReducer,
+      excel: excelReducer,
+      invoice: invoiceReducer,
+      deliveryNotes: deliveryNotesReducer,
+      inventory: inventoryReducer,
+      supplyOrders: supplyOrdersReducer,
+      clients: clientsReducer
+    },
   })
-
-  // We subscribe to the store updates.
-  // This function will be called every time the state changes.
-  store.subscribe(() => {
-    const state = store.getState()
-    // We create an object with only the parts of the state we want to persist.
-    const stateToPersist = {
-      records: state.records,
-      excel: state.excel,
-    }
-    // And we save it to localStorage.
-    saveState(stateToPersist)
-  })
-
-  return store
 }
 
+export const store = makeStore()
 export type AppStore = ReturnType<typeof makeStore>
-export type RootState = ReturnType<AppStore["getState"]>
-export type AppDispatch = AppStore["dispatch"]
+export type RootState = ReturnType<typeof store.getState>
+export type AppDispatch = typeof store.dispatch

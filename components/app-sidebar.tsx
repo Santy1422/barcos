@@ -2,7 +2,7 @@
 
 import React from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   Sidebar,
   SidebarContent,
@@ -45,6 +45,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import { toast } from "@/hooks/use-toast"
 
 interface NavItem {
   title: string
@@ -61,6 +62,7 @@ const mainNavItems: NavItem[] = [
     href: "/trucking",
     icon: Truck,
     children: [
+      { title: "Clientes", href: "/trucking/clients", icon: Users },
       { title: "Subir Excel", href: "/trucking/upload", icon: UploadCloud },
       { title: "Crear Factura", href: "/trucking/invoice", icon: FilePlus2 },
       { title: "Registros", href: "/trucking/records", icon: ListOrdered },
@@ -73,6 +75,7 @@ const mainNavItems: NavItem[] = [
     href: "/shipchandler",
     icon: Ship,
     children: [
+      { title: "Clientes", href: "/shipchandler/clients", icon: Users },
       { title: "Subir Excel", href: "/shipchandler/upload", icon: UploadCloud },
       { title: "Crear Factura", href: "/shipchandler/invoice", icon: FilePlus2 },
       { title: "Registros", href: "/shipchandler/records", icon: ListOrdered },
@@ -85,6 +88,7 @@ const mainNavItems: NavItem[] = [
     href: "/agency",
     icon: Anchor,
     children: [
+      { title: "Clientes", href: "/agency/clients", icon: Users },
       { title: "Subir Excel", href: "/agency/upload", icon: UploadCloud },
       { title: "Crear Factura", href: "/agency/invoice", icon: FilePlus2 },
       { title: "Registros", href: "/agency/records", icon: ListOrdered },
@@ -98,6 +102,23 @@ const helpNavItems: NavItem[] = [{ title: "Soporte", href: "/support", icon: Lif
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const [userEmail, setUserEmail] = React.useState("")
+
+  React.useEffect(() => {
+    const email = localStorage.getItem("userEmail") || "usuario@ejemplo.com"
+    setUserEmail(email)
+  }, [])
+
+  const handleLogout = () => {
+    localStorage.removeItem("isAuthenticated")
+    localStorage.removeItem("userEmail")
+    toast({
+      title: "Sesión cerrada",
+      description: "Has cerrado sesión correctamente",
+    })
+    router.push("/login")
+  }
 
   const renderNavItems = (items: NavItem[], isSubmenu = false) => {
     return items.map((item) => {
@@ -139,15 +160,12 @@ export function AppSidebar() {
   }
 
   return (
-    // Sidebar is hidden on mobile by default, shown on md+
-    // It takes full height and has a border
     <Sidebar collapsible="icon" className="hidden h-full border-r bg-muted/20 md:flex md:flex-col">
       <SidebarHeader className="flex h-14 items-center justify-between border-b px-4">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <Briefcase className="h-6 w-6 text-primary" />
           <span className="group-data-[collapsible=icon]:hidden">Facturación</span>
         </Link>
-        {/* Desktop trigger for collapsing/expanding the sidebar itself */}
         <SidebarTrigger className="hidden md:flex" />
       </SidebarHeader>
       <SidebarContent className="flex-1 overflow-y-auto p-2">
@@ -176,11 +194,11 @@ export function AppSidebar() {
             >
               <Avatar className="h-8 w-8 flex-shrink-0">
                 <AvatarImage src="/placeholder.svg?height=32&width=32" alt="Usuario" />
-                <AvatarFallback>U</AvatarFallback>
+                <AvatarFallback>{userEmail.charAt(0).toUpperCase()}</AvatarFallback>
               </Avatar>
               <div className="ml-2 truncate group-data-[collapsible=icon]:hidden">
                 <p className="text-sm font-medium">Usuario</p>
-                <p className="text-xs text-muted-foreground">usuario@ejemplo.com</p>
+                <p className="text-xs text-muted-foreground">{userEmail}</p>
               </div>
             </Button>
           </DropdownMenuTrigger>
@@ -196,7 +214,7 @@ export function AppSidebar() {
               <span>Configuración</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={handleLogout}>
               <LogOut className="mr-2 h-4 w-4" />
               <span>Cerrar Sesión</span>
             </DropdownMenuItem>
