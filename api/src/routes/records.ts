@@ -1,0 +1,30 @@
+import { Router } from 'express';
+import recordsControllers from '../controllers/recordsControllers/recordsControllers';
+import { jwtUtils } from "../middlewares/jwtUtils";
+
+const { catchedAsync } = require('../utils');
+
+const router = Router();
+
+// Crear registro
+router.post('/', jwtUtils, catchedAsync(recordsControllers.createRecord));
+
+// Obtener todos los registros
+router.get('/', jwtUtils, catchedAsync(recordsControllers.getAllRecords));
+
+// Obtener registros por módulo
+router.get('/module/:module', jwtUtils, catchedAsync(recordsControllers.getRecordsByModule));
+
+// Obtener registros por estado
+router.get('/status/:status', jwtUtils, catchedAsync(recordsControllers.getRecordsByStatus));
+
+// Obtener registro por ID
+router.get('/:id', jwtUtils, catchedAsync(recordsControllers.getRecordById));
+
+// Actualizar registro
+router.put('/:id', jwtUtils, catchedAsync(recordsControllers.updateRecord));
+
+// Eliminar registro
+router.delete('/:id', jwtUtils, catchedAsync(recordsControllers.deleteRecord));
+
+export default router;

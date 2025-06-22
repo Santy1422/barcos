@@ -1,0 +1,8 @@
+{
+  "/shipchandler/page": "app/shipchandler/page.js",
+  "/trucking/invoice/page": "app/trucking/invoice/page.js",
+  "/trucking/upload/page": "app/trucking/upload/page.js",
+  "/page": "app/page.js",
+  "/agency/clients/page": "app/agency/clients/page.js",
+  "/trucking/page": "app/trucking/page.js"
+}
