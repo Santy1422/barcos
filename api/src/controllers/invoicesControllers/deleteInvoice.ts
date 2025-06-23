@@ -1,11 +1,11 @@
 import { Request, Response } from "express";
-import Invoice from "../../database/invoicesSchema";
+import { invoices } from "../../database";
 
 const deleteInvoice = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     
-    const invoice = await Invoice.findByIdAndDelete(id);
+    const invoice = await invoices.findByIdAndDelete(id);
     
     if (!invoice) {
       return res.status(404).json({

@@ -170,30 +170,3 @@ export const simulateExcelParse = (module: Module, type: ExcelType): any[] => {
 
   return [] // Retorna un array vacío por defecto
 }
-
-function generateSupplyOrderData(count: number = 10): SupplyOrderRecord[] {
-  return Array.from({ length: count }, (_, index) => ({
-    id: index + 1,
-    fecha: faker.date.recent({ days: 30 }).toLocaleDateString(),
-    clientes: faker.helpers.arrayElement(['ALMEIDA KANT', 'SUPERMERCADO XXXXXX', 'DAMICO SHIPPING', 'MARITIME CORP']),
-    desde: faker.helpers.arrayElement(['MIT', 'PSA', 'JCAIN', 'CTB']),
-    subClientes: faker.helpers.arrayElement(['SEB', 'MSC', 'MULTI SERVICES LOGISTICS', 'MAERSK']),
-    hacia: faker.helpers.arrayElement(['BLB', 'CTB', 'CCT', 'BIQUE', 'MIT']),
-    bl: faker.string.alphanumeric(10).toUpperCase(),
-    buque: faker.helpers.arrayElement(['X-PRESS SHANNON', 'MAERSK SHIVLING', 'MSC BIANCA', 'MSC TAYLOR', 'ASPAULI', 'ARSOS']),
-    tamano: faker.helpers.arrayElement(['20', '40', '45']),
-    numeroContenedor: faker.string.alphanumeric(11).toUpperCase(),
-    ptgOrder: faker.number.int({ min: 100000, max: 9999999 }).toString(),
-    status: faker.helpers.arrayElement(['RT', 'IMPORT', 'EXPORT']),
-    voyage: faker.string.alphanumeric(6).toUpperCase(),
-    tarifa: faker.number.float({ min: 15, max: 200, fractionDigits: 2 }),
-    gastosPuerto: faker.helpers.arrayElement(['SEA #505', 'MSC #505', 'MSC 513', '39.00', '']),
-    otrosGastos: faker.number.float({ min: 0, max: 50, fractionDigits: 2 }),
-    jira: faker.helpers.arrayElement(['TRUCK-2834', 'TRUCK-2726', 'TRUCK-2021', '']),
-    fechaFacturacion: faker.date.future({ years: 1 }).toLocaleDateString(),
-    driver: faker.helpers.arrayElement(['Matos Luis', 'García Eric', 'Ramirez Felipe', 'Hidalgo Uribiades', '']),
-    plate: faker.helpers.arrayElement(['AL9139', '', 'BX1234', 'CY5678']),
-    bono: faker.number.float({ min: 0, max: 100, fractionDigits: 2 }),
-    rtContainer: faker.string.alphanumeric(11).toUpperCase()
-  }));
-}

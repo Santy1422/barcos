@@ -9,22 +9,11 @@ import invoicesSchema from './schemas/invoicesSchema';
 import configSchema from './schemas/configSchema';
 import excelFilesSchema from './schemas/excelFilesSchema';
 
-mongoose.set('strictQuery', true);
+mongoose.set('strictQuery', false);
 
 const deploy = userConexion.db_uri;
 
-// Crear conexión principal
-export const conn = mongoose.createConnection(deploy);
-
-// Definir todos los modelos
-export const users = conn.model('users', usersSchema);
-export const clients = conn.model('clients', clientsSchema);
-export const records = conn.model('records', recordsSchema);
-export const invoices = conn.model('invoices', invoicesSchema);
-export const config = conn.model('config', configSchema);
-export const excelFiles = conn.model('excelFiles', excelFilesSchema);
-
-// Conexión principal con manejo de errores mejorado
+// Conexión principal con configuración válida
 mongoose.connect(deploy, {
   maxPoolSize: 10, // Mantener hasta 10 conexiones socket
   serverSelectionTimeoutMS: 5000, // Mantener intentando enviar operaciones por 5 segundos
@@ -36,6 +25,14 @@ mongoose.connect(deploy, {
   console.error("❌ Database connection error:", error);
   process.exit(1);
 });
+
+// Definir todos los modelos usando la conexión por defecto
+export const users = mongoose.model('users', usersSchema);
+export const clients = mongoose.model('clients', clientsSchema);
+export const records = mongoose.model('records', recordsSchema);
+export const invoices = mongoose.model('invoices', invoicesSchema);
+export const config = mongoose.model('config', configSchema);
+export const excelFiles = mongoose.model('excelFiles', excelFilesSchema);
 
 // Manejo de eventos de conexión
 mongoose.connection.on('connected', () => {

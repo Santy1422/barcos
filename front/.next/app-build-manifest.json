@@ -1,5 +1,10 @@
 {
   "pages": {
+    "/trucking/invoice/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/trucking/invoice/page.js"
+    ],
     "/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
@@ -11,40 +16,55 @@
       "static/chunks/main-app.js",
       "static/chunks/app/trucking/upload/page.js"
     ],
-    "/trucking/invoice/page": [
+    "/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/trucking/invoice/page.js"
+      "static/chunks/app/page.js"
     ],
-    "/trucking/records/page": [
+    "/login/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/trucking/records/page.js"
+      "static/chunks/app/login/page.js"
     ],
-    "/agency/clients/page": [
+    "/login/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/agency/clients/page.js"
+      "static/chunks/app/login/layout.js"
     ],
-    "/shipchandler/page": [
+    "/register/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/shipchandler/page.js"
+      "static/chunks/app/register/page.js"
     ],
     "/trucking/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/trucking/page.js"
     ],
-    "/trucking/config/page": [
+    "/subir-excel/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/trucking/config/page.js"
+      "static/chunks/app/subir-excel/page.js"
     ],
-    "/page": [
+    "/shipchandler/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/page.js"
+      "static/chunks/app/shipchandler/page.js"
+    ],
+    "/shipchandler/upload/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/shipchandler/upload/page.js"
+    ],
+    "/trucking/records/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/trucking/records/page.js"
+    ],
+    "/_not-found/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/_not-found/page.js"
     ]
   }
 }

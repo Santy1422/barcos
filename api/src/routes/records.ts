@@ -9,14 +9,17 @@ const router = Router();
 // Crear registro
 router.post('/', jwtUtils, catchedAsync(recordsControllers.createRecord));
 
+// Crear múltiples registros de trucking desde Excel
+router.post('/trucking/bulk', catchedAsync(recordsControllers.createTruckingRecords));
+
 // Obtener todos los registros
-router.get('/', jwtUtils, catchedAsync(recordsControllers.getAllRecords));
+router.get('/', catchedAsync(recordsControllers.getAllRecords));
 
 // Obtener registros por módulo
 router.get('/module/:module', jwtUtils, catchedAsync(recordsControllers.getRecordsByModule));
 
 // Obtener registros por estado
-router.get('/status/:status', jwtUtils, catchedAsync(recordsControllers.getRecordsByStatus));
+router.get('/status/:status', catchedAsync(recordsControllers.getRecordsByStatus));
 
 // Obtener registro por ID
 router.get('/:id', jwtUtils, catchedAsync(recordsControllers.getRecordById));

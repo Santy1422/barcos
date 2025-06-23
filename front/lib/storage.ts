@@ -1,21 +1,24 @@
-import type { RootState } from "./store"
+import type { RootState } from './store'
 
-// This function loads the state from localStorage.
-export const loadState = (): RootState | undefined => {
-  // We use a try-catch block in case localStorage is not available.
+// Esta función carga solo el estado de auth desde localStorage
+export const loadState = (): Partial<RootState> | undefined => {
   try {
     const serializedState = localStorage.getItem("appState")
     if (serializedState === null) {
-      return undefined // No state found
+      return undefined
     }
-    return JSON.parse(serializedState)
+    const state = JSON.parse(serializedState)
+    // Solo retornar el estado de auth para evitar problemas de hidratación
+    return {
+      auth: state.auth
+    }
   } catch (err) {
     console.error("Could not load state from localStorage", err)
     return undefined
   }
 }
 
-// This function saves the state to localStorage.
+// Esta función guarda solo el estado necesario en localStorage
 export const saveState = (state: Partial<RootState>) => {
   try {
     const serializedState = JSON.stringify(state)

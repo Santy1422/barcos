@@ -4,7 +4,7 @@ import React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useAppSelector } from "@/lib/hooks"
-import { selectCurrentUser } from "@/lib/features/auth/authSlice"
+import { logoutAsync, selectCurrentUser } from "@/lib/features/auth/authSlice"
 import {
   Sidebar,
   SidebarContent,
@@ -69,13 +69,8 @@ export function AppSidebar() {
     setUserEmail(email)
   }, [currentUser])
 
-  const handleLogout = () => {
-    localStorage.removeItem("isAuthenticated")
-    localStorage.removeItem("userEmail")
-    toast({
-      title: "Sesión cerrada",
-      description: "Has cerrado sesión correctamente",
-    })
+  const handleLogout = async () => {
+    await dispatch(logoutAsync())
     router.push("/login")
   }
 

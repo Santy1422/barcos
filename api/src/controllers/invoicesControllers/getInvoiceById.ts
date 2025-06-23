@@ -1,11 +1,11 @@
 import { Request, Response } from "express";
-import Invoice from "../../database/invoicesSchema";
+import { invoices } from "../../database";
 
 const getInvoiceById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     
-    const invoice = await Invoice.findById(id)
+    const invoice = await invoices.findById(id)
       .populate('client', 'name email')
       .populate('createdBy', 'name lastName email');
     

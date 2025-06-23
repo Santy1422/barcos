@@ -1,5 +1,5 @@
-import { createSlice, type PayloadAction } from "@reduxjs/toolkit"
-import type { RootState } from "@/lib/store" // Import RootState for selectors
+import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/toolkit"
+import type { RootState } from "@/lib/store"
 
 // Generic interface for a single record extracted from an Excel row
 export interface ExcelRecord {
@@ -37,11 +37,143 @@ export interface InvoiceRecord {
   createdAt: string
 }
 
+// Acciones async para interactuar con el backend
+export const fetchRecordsByModule = createAsyncThunk(
+  'records/fetchByModule',
+  async (module: string, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`/api/records/module/${module}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Error al obtener registros')
+      }
+      
+      const data = await response.json()
+      return data.records || []
+    } catch (error) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
+export const fetchPendingRecords = createAsyncThunk(
+  'records/fetchPending',
+  async (_, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch('http://localhost:8080/api/records/status/pendiente', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Error al obtener registros pendientes')
+      }
+      
+      const data = await response.json()
+      
+      // Transformar los datos del backend al formato esperado por el frontend
+      const transformedRecords = (data.data || []).map((record: any) => ({
+        id: record._id,
+        excelId: record.excelId || '',
+        module: record.module,
+        type: record.type,
+        status: record.status,
+        totalValue: record.totalValue || 0,
+        data: record.data,
+        createdAt: record.createdAt,
+        invoiceId: record.invoiceId
+      }))
+      
+      return transformedRecords
+    } catch (error) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
+export const createTruckingRecords = createAsyncThunk(
+  'records/createTrucking',
+  async ({ excelId, recordsData, createdBy }: {
+    excelId: string
+    recordsData: any[]
+    createdBy: string
+  }, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch('/api/records/trucking/bulk', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          excelId,
+          recordsData,
+          createdBy
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Error al crear registros')
+      }
+      
+      const data = await response.json()
+      return data.records || []
+    } catch (error) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
+export const updateRecordStatus = createAsyncThunk(
+  'records/updateStatus',
+  async ({ recordId, status, invoiceId }: {
+    recordId: string
+    status: string
+    invoiceId?: string
+  }, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`/api/records/${recordId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          status,
+          ...(invoiceId && { invoiceId })
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Error al actualizar registro')
+      }
+      
+      const data = await response.json()
+      return data.record
+    } catch (error) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
 interface RecordsState {
-  individualRecords: ExcelRecord[] // Stores all individual records from ALL Excels
-  invoices: InvoiceRecord[] // Stores generated invoice documents
+  individualRecords: ExcelRecord[]
+  invoices: InvoiceRecord[]
   loading: boolean
   error: string | null
+  fetchingRecords: boolean
+  creatingRecords: boolean
 }
 
 const initialState: RecordsState = {
@@ -49,6 +181,8 @@ const initialState: RecordsState = {
   invoices: [],
   loading: false,
   error: null,
+  fetchingRecords: false,
+  creatingRecords: false,
 }
 
 const recordsSlice = createSlice({
@@ -93,18 +227,91 @@ const recordsSlice = createSlice({
     setError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload
     },
+    clearRecords: (state) => {
+      state.individualRecords = []
+    },
+    setRecords: (state, action: PayloadAction<ExcelRecord[]>) => {
+      state.individualRecords = action.payload
+    }
+  },
+  extraReducers: (builder) => {
+    builder
+      // Fetch records by module
+      .addCase(fetchRecordsByModule.pending, (state) => {
+        state.fetchingRecords = true
+        state.error = null
+      })
+      .addCase(fetchRecordsByModule.fulfilled, (state, action) => {
+        state.fetchingRecords = false
+        state.individualRecords = action.payload
+      })
+      .addCase(fetchRecordsByModule.rejected, (state, action) => {
+        state.fetchingRecords = false
+        state.error = action.payload as string
+      })
+      
+      // Fetch pending records
+      .addCase(fetchPendingRecords.pending, (state) => {
+        state.fetchingRecords = true
+        state.error = null
+      })
+      .addCase(fetchPendingRecords.fulfilled, (state, action) => {
+        state.fetchingRecords = false
+        // Solo actualizar registros pendientes
+        const pendingRecords = action.payload
+        state.individualRecords = [
+          ...state.individualRecords.filter(r => r.status !== 'pendiente'),
+          ...pendingRecords
+        ]
+      })
+      .addCase(fetchPendingRecords.rejected, (state, action) => {
+        state.fetchingRecords = false
+        state.error = action.payload as string
+      })
+      
+      // Create trucking records
+      .addCase(createTruckingRecords.pending, (state) => {
+        state.creatingRecords = true
+        state.error = null
+      })
+      .addCase(createTruckingRecords.fulfilled, (state, action) => {
+        state.creatingRecords = false
+        state.individualRecords.push(...action.payload)
+      })
+      .addCase(createTruckingRecords.rejected, (state, action) => {
+        state.creatingRecords = false
+        state.error = action.payload as string
+      })
+      
+      // Update record status
+      .addCase(updateRecordStatus.fulfilled, (state, action) => {
+        const record = state.individualRecords.find(r => r.id === action.payload.id)
+        if (record) {
+          Object.assign(record, action.payload)
+        }
+      })
   },
 })
 
-export const { addRecords, updateRecord, markRecordsAsInvoiced, addInvoice, updateInvoiceStatus, setLoading, setError } =
-  recordsSlice.actions
+export const { 
+  addRecords, 
+  updateRecord, 
+  markRecordsAsInvoiced, 
+  addInvoice, 
+  updateInvoiceStatus, 
+  setLoading, 
+  setError,
+  clearRecords,
+  setRecords
+} = recordsSlice.actions
 
-// SELECTORS - These are how components read data from this slice.
+// Selectores actualizados
 export const selectAllIndividualRecords = (state: RootState) => state.records.individualRecords
 export const selectAllInvoices = (state: RootState) => state.records.invoices
+export const selectRecordsLoading = (state: RootState) => state.records.fetchingRecords
+export const selectRecordsError = (state: RootState) => state.records.error
+export const selectCreatingRecords = (state: RootState) => state.records.creatingRecords
 
-// This is the most important selector for the invoice page.
-// It finds all individual records for a specific module that are still "pendiente".
 export const selectPendingRecordsByModule = (state: RootState, moduleName: ExcelRecord["module"]) =>
   state.records.individualRecords.filter((record) => record.module === moduleName && record.status === "pendiente")
 

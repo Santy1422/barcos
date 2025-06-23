@@ -1,8 +1,9 @@
 {
-  "/shipchandler/page": "app/shipchandler/page.js",
-  "/trucking/invoice/page": "app/trucking/invoice/page.js",
-  "/trucking/upload/page": "app/trucking/upload/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
   "/page": "app/page.js",
-  "/agency/clients/page": "app/agency/clients/page.js",
-  "/trucking/page": "app/trucking/page.js"
+  "/trucking/records/page": "app/trucking/records/page.js",
+  "/trucking/page": "app/trucking/page.js",
+  "/trucking/upload/page": "app/trucking/upload/page.js",
+  "/subir-excel/page": "app/subir-excel/page.js",
+  "/trucking/invoice/page": "app/trucking/invoice/page.js"
 }

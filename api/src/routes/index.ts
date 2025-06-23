@@ -8,12 +8,12 @@ import excelFiles from './excelFiles';
 import config from './config';
 import dashboard from './dashboard';
 
-router.use('/user', user);
-router.use('/clients', clients);
-router.use('/invoices', invoices);
-router.use('/records', records);
-router.use('/excel-files', excelFiles);
-router.use('/config', config);
-router.use('/dashboard', dashboard);
+router.use('/api/user', user);
+router.use('/api/clients', clients);
+router.use('/api/invoices', invoices);
+router.use('/api/records', records);
+router.use('/api/excel-files', excelFiles);
+router.use('/api/config', config);
+router.use('/api/dashboard', dashboard);
 
 export default router;

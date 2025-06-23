@@ -4,7 +4,6 @@ import getExcelFileById from "./getExcelFileById";
 import deleteExcelFile from "./deleteExcelFile";
 import getExcelFilesByModule from "./getExcelFilesByModule";
 import getExcelFilesByStatus from "./getExcelFilesByStatus";
-import processExcelFile from "./processExcelFile";
 
 const excelFilesControllers = {
   uploadExcelFile,
@@ -13,7 +12,6 @@ const excelFilesControllers = {
   deleteExcelFile,
   getExcelFilesByModule,
   getExcelFilesByStatus,
-  processExcelFile
 };
 
 export default excelFilesControllers;

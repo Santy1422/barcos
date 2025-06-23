@@ -5,9 +5,13 @@ import authReducer from './features/auth/authSlice'
 import configReducer from './features/config/configSlice'
 import excelReducer from './features/excel/excelSlice'
 import clientsReducer from './features/clients/clientsSlice'
+import { loadState, saveState } from './storage'
 
 export const makeStore = () => {
-  return configureStore({
+  // Cargar estado persistido
+  const persistedState = loadState()
+  
+  const store = configureStore({
     reducer: {
       records: recordsReducer,
       invoice: invoiceReducer,
@@ -16,7 +20,18 @@ export const makeStore = () => {
       excel: excelReducer,
       clients: clientsReducer,
     },
+    preloadedState: persistedState
   })
+  
+  // Guardar estado en localStorage cuando cambie
+  store.subscribe(() => {
+    const state = store.getState()
+    saveState({
+      auth: state.auth // Solo persistir el estado de auth
+    })
+  })
+  
+  return store
 }
 
 export const store = makeStore()

@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import Invoice from "../../database/invoicesSchema";
+import { invoices } from "../../database";
 
 const updateInvoice = async (req: Request, res: Response) => {
   try {
@@ -7,10 +7,11 @@ const updateInvoice = async (req: Request, res: Response) => {
     const updateData = req.body;
     
     // Agregar información de auditoría
+    // @ts-ignore
     updateData.updatedBy = req.user?.id;
     updateData.updatedAt = new Date();
     
-    const invoice = await Invoice.findByIdAndUpdate(
+    const invoice = await invoices.findByIdAndUpdate(
       id,
       updateData,
       { new: true, runValidators: true }

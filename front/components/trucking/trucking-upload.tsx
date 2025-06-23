@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
-import { addRecords, setLoading } from "@/lib/features/records/recordsSlice"
+import { createTruckingRecords, selectCreatingRecords, selectRecordsError } from "@/lib/features/records/recordsSlice"
 import { addExcelFile } from "@/lib/features/excel/excelSlice"
 import { parseTruckingExcel, TruckingExcelData } from "@/lib/excel-parser"
 import { Button } from "@/components/ui/button"
@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
+import { Badge } from "@/components/ui/badge"
+import { FileSpreadsheet, Upload, CheckCircle, Loader2 } from "lucide-react"
 
 export function TruckingUpload() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -20,6 +22,10 @@ export function TruckingUpload() {
 
   const dispatch = useAppDispatch()
   const { toast } = useToast()
+  
+  // Add this line to get the creating records state from Redux
+  const isCreatingRecords = useAppSelector(selectCreatingRecords)
+  const recordsError = useAppSelector(selectRecordsError)
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -34,7 +40,7 @@ export function TruckingUpload() {
         
         toast({
           title: "✅ Archivo Excel procesado",
-          description: `Se han leído ${realData.length} registros REALES del archivo ${file.name}.`,
+          description: `Se han leído ${realData.length} registros del archivo ${file.name}.`,
         })
       } catch (error) {
         console.error('Error al procesar archivo:', error)
@@ -53,161 +59,171 @@ export function TruckingUpload() {
     }
   }
 
+  // En la función handleUpload
   const handleUpload = async () => {
     if (!selectedFile || previewData.length === 0) {
       toast({
         title: "Error",
-        description: "Por favor selecciona un archivo válido primero.",
-        variant: "destructive",
+        description: "Por favor selecciona un archivo y verifica que tenga datos válidos",
+        variant: "destructive"
       })
       return
     }
 
-    setIsProcessing(true)
-    dispatch(setLoading(true))
+    setIsLoading(true)
 
     try {
-      // Crear el archivo Excel en el estado
-      const excelFileId = `excel-${Date.now()}`
-      dispatch(addExcelFile({
-        id: excelFileId,
+      // First, create the Excel file record to get a proper ObjectId
+      const excelFileData = {
         filename: selectedFile.name,
-        status: "processing",
-        type: "trucking",
-        module: "trucking",
-        recordIds: []
-      }))
-
-      // Convertir los datos parseados a ExcelRecord format
-      const records = previewData.map((data, index) => ({
-        id: `TRK-REC-${excelFileId}-${index + 1}`,
-        excelId: excelFileId,
-        module: "trucking" as const,
-        type: "transport-services",
+        uploadDate: new Date().toISOString(),
         status: "pendiente" as const,
-        totalValue: data.tarifa + data.gastosPuerto + data.otrosGastos,
-        data: data,
-        createdAt: new Date().toISOString()
+        type: "trucking-data",
+        module: "trucking" as const,
+        recordIds: [], // Will be populated after records are created
+        totalValue: previewData.reduce((sum, record) => sum + (record.totalValue || 0), 0)
+      }
+
+      // TODO: Create API endpoint to create Excel file and return ObjectId
+      // For now, we need to create the Excel file first, then use its ObjectId
+      // This requires a backend API endpoint like POST /api/excel-files
+      
+      // Temporary workaround: Use a proper ObjectId format
+      // You should replace this with actual Excel file creation
+      const tempObjectId = new Date().getTime().toString(16).padStart(24, '0').substring(0, 24)
+      
+      const recordsData = previewData.map((record, index) => ({
+        id: `TRK-REC-${tempObjectId}-${index}`,
+        module: "trucking" as const,
+        type: "trucking-data",
+        status: "pendiente" as const,
+        data: record,
+        totalValue: record.totalValue || 0
       }))
-
-      // Usar addRecords (plural) en lugar de addRecord
-      dispatch(addRecords(records))
-
-      // Actualizar el estado del archivo Excel
-      dispatch(addExcelFile({
-        id: excelFileId,
-        filename: selectedFile.name,
-        status: "completed",
-        type: "trucking",
-        module: "trucking",
-        recordIds: records.map(r => r.id)
-      }))
-
+      
+      const userId = localStorage.getItem('userId') || 'default-user'
+      
+      const result = await dispatch(createTruckingRecords({
+        excelId: tempObjectId, // Use the generated ObjectId
+        recordsData,
+        createdBy: userId
+      })).unwrap()
+      
       toast({
-        title: "✅ Datos cargados exitosamente",
-        description: `Se han procesado ${records.length} registros de transporte.`,
+        title: "Éxito",
+        description: `${result.length} registros guardados correctamente en el sistema`
       })
-
-      // Limpiar el formulario
-      setSelectedFile(null)
+      
+      // Limpiar el estado
       setPreviewData([])
+      setSelectedFile(null)
       
     } catch (error) {
-      console.error('Error al cargar datos:', error)
       toast({
-        title: "Error al cargar datos",
-        description: "Hubo un problema al procesar los datos. Inténtalo de nuevo.",
-        variant: "destructive",
+        title: "Error",
+        description: recordsError || "Error al guardar los registros",
+        variant: "destructive"
       })
-    } finally {
-      setIsProcessing(false)
-      dispatch(setLoading(false))
     }
   }
 
+  const totalAmount = previewData.length; // O cualquier lógica que tenga sentido para trucking
+
+  // Y en el JSX, remover o modificar la línea del total:
+  <div className="text-right">
+    <p className="text-sm font-medium">Total registros: {previewData.length}</p>
+  </div>
+
   return (
     <div className="space-y-6">
-      <div className="border-b pb-4">
-        <h1 className="text-3xl font-bold">Subir Excel - Trucking</h1>
-        <p className="text-muted-foreground">Importa datos de servicios de transporte terrestre desde archivos Excel</p>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileSpreadsheet className="h-5 w-5" />
+            Subir Excel de Trucking
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="excel-file">Seleccionar archivo Excel</Label>
+            <Input
+              id="excel-file"
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleFileChange}
+              disabled={isLoading || isProcessing}
+            />
+          </div>
+          
+          {selectedFile && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <FileSpreadsheet className="h-4 w-4" />
+              {selectedFile.name}
+              <Badge variant="secondary">{previewData.length} registros</Badge>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {previewData.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Subir Archivo</CardTitle>
+            <CardTitle>Vista Previa de Datos</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {previewData.length} registros encontrados
+            </p>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="file-upload">Archivo Excel</Label>
-              <Input
-                id="file-upload"
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleFileChange}
-                disabled={isLoading}
-              />
+          <CardContent>
+            <div className="rounded-md border max-h-96 overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Container</TableHead>
+                    <TableHead>Container Consecutive</TableHead>
+                    <TableHead>Driver Name</TableHead>
+                    <TableHead>Plate</TableHead>
+                    <TableHead>Size</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Move Date</TableHead>
+                    <TableHead>Associate</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {previewData.map((record, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-mono text-sm">{record.container}</TableCell>
+                      <TableCell>{record.containerConsecutive}</TableCell>
+                      <TableCell>{record.driverName}</TableCell>
+                      <TableCell>{record.plate}</TableCell>
+                      <TableCell>{record.size}</TableCell>
+                      <TableCell>{record.type}</TableCell>
+                      <TableCell>{record.moveDate}</TableCell>
+                      <TableCell>{record.associate}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
             
-            {selectedFile && (
-              <div className="text-sm text-muted-foreground">
-                Archivo seleccionado: {selectedFile.name}
-              </div>
-            )}
-            
-            {previewData.length > 0 && (
+            <div className="mt-4 flex justify-end">
               <Button 
-                onClick={handleProcessFile} 
-                disabled={isProcessing}
-                className="w-full"
+                onClick={handleUpload}
+                disabled={isCreatingRecords}
+                className="bg-blue-600 hover:bg-blue-700"
               >
-                {isProcessing ? "Procesando..." : "Procesar Archivo"}
+                {isCreatingRecords ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  "Guardar en Sistema"
+                )}
               </Button>
-            )}
+            </div>
           </CardContent>
         </Card>
-
-        {previewData.length > 0 && (
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>Vista Previa de Datos</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="max-h-96 overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Fecha</TableHead>
-                      <TableHead>Cliente</TableHead>
-                      <TableHead>Desde</TableHead>
-                      <TableHead>Hacia</TableHead>
-                      <TableHead>Contenedor</TableHead>
-                      <TableHead>Tarifa</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {previewData.slice(0, 10).map((row, index) => (
-                      <TableRow key={index}>
-                        <TableCell>{row.fecha}</TableCell>
-                        <TableCell>{row.cliente}</TableCell>
-                        <TableCell>{row.desde}</TableCell>
-                        <TableCell>{row.hacia}</TableCell>
-                        <TableCell>{row.contenedor}</TableCell>
-                        <TableCell>${row.tarifa}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                {previewData.length > 10 && (
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Mostrando 10 de {previewData.length} registros
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+      )}
     </div>
   )
 }

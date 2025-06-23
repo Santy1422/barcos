@@ -9,21 +9,25 @@ export const jwtUtils = (req, res, next) => {
       next(new ClientError('Missing token! Authorization=undefined', 400))
     try {
       const decodedToken = decodeToken(token) as TokenSignature
-      req.user = decodedToken;
+      // Asegurar que req.user tenga tanto id como mongoId para compatibilidad
+      req.user = {
+        ...decodedToken,
+        id: decodedToken.mongoId // Agregar id que apunte al mongoId
+      };
       next();
     } catch (error) {
       next(new ClientError('Token falló al decodificarse!', 400))
     }
 }
-  export type TokenSignature = { id?: string, mongoId: string}
-  
-  export const firmarToken = (payload:TokenSignature) => {
-    return jwt.sign(payload, userConexion.jwtAcces, { expiresIn: '6000h' });
-  };
-  
-  export const decodeToken = (token:string) => {
-      return jwt.verify(token, userConexion.jwtAcces);
-  };
+export type TokenSignature = { id?: string, mongoId: string}
+
+export const firmarToken = (payload:TokenSignature) => {
+  return jwt.sign(payload, userConexion.jwtAcces, { expiresIn: '6000h' });
+};
+
+export const decodeToken = (token:string) => {
+    return jwt.verify(token, userConexion.jwtAcces);
+};
   
   
   

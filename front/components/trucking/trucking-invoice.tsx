@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { TruckingExcelData } from "@/lib/excel-parser"
 import {
   FileText,
   ListChecks,
@@ -28,12 +29,15 @@ import {
   RouteIcon as RouteIconLucide,
   Download,
   UserIcon as UserIconLucide,
+  Loader2,
 } from "lucide-react"
 import {
   addInvoice,
   markRecordsAsInvoiced,
   selectInvoicesByModule,
   selectPendingRecordsByModule,
+  selectRecordsLoading,
+  fetchPendingRecords,
   type InvoiceRecord as PersistedInvoiceRecord,
   type ExcelRecord as IndividualExcelRecord,
 } from "@/lib/features/records/recordsSlice"
@@ -98,6 +102,7 @@ export default function TruckingInvoice() {
     selectPendingRecordsByModule(state, "trucking"),
   )
   const truckingGeneratedInvoices = useAppSelector((state) => selectInvoicesByModule(state, "trucking"))
+  const isLoadingRecords = useAppSelector(selectRecordsLoading)
 
   // Use new selectors for trucking specific config
   const configuredDrivers = useAppSelector(selectTruckingDrivers)
@@ -116,16 +121,21 @@ export default function TruckingInvoice() {
     dateRange: 'all', // 'today', 'week', 'month', 'all'
     amountRange: 'all', // 'low', 'medium', 'high', 'all'
     hasContainer: 'all', // 'yes', 'no', 'all'
-    clientType: 'all' // 'company', 'individual', 'all'
   })
+
+  // Cargar registros pendientes al montar el componente
+  useEffect(() => {
+    dispatch(fetchPendingRecords())
+  }, [dispatch])
 
   const filteredPendingRecords = useMemo(() => {
     let filtered = pendingTruckingRecords.filter((record) => {
       const data = record.data as Record<string, any>
       const searchableText = [
-        data.cliente,
-        data.ruc,
-        data.contenedor,
+        data.container,
+        data.associate,
+        data.driverName,
+        data.plate,
         data.bl,
         record.id,
       ]
@@ -137,20 +147,21 @@ export default function TruckingInvoice() {
       
       // Date filter
       let matchesDate = true
-      if (activeFilters.dateRange !== 'all' && data.fecha) {
-        const recordDate = new Date(data.fecha)
-        const today = new Date()
-        const daysDiff = Math.floor((today.getTime() - recordDate.getTime()) / (1000 * 60 * 60 * 24))
+      if (activeFilters.dateRange !== 'all' && data.moveDate) {
+        const recordDate = new Date(data.moveDate)
+        const now = new Date()
         
         switch (activeFilters.dateRange) {
           case 'today':
-            matchesDate = daysDiff === 0
+            matchesDate = recordDate.toDateString() === now.toDateString()
             break
           case 'week':
-            matchesDate = daysDiff <= 7
+            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+            matchesDate = recordDate >= weekAgo
             break
           case 'month':
-            matchesDate = daysDiff <= 30
+            const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+            matchesDate = recordDate >= monthAgo
             break
         }
       }
@@ -158,16 +169,16 @@ export default function TruckingInvoice() {
       // Amount filter
       let matchesAmount = true
       if (activeFilters.amountRange !== 'all') {
-        const amount = record.totalValue
+        const amount = record.totalValue || 0
         switch (activeFilters.amountRange) {
           case 'low':
-            matchesAmount = amount < 500
+            matchesAmount = amount < 100
             break
           case 'medium':
-            matchesAmount = amount >= 500 && amount < 2000
+            matchesAmount = amount >= 100 && amount < 500
             break
           case 'high':
-            matchesAmount = amount >= 2000
+            matchesAmount = amount >= 500
             break
         }
       }
@@ -175,19 +186,11 @@ export default function TruckingInvoice() {
       // Container filter
       let matchesContainer = true
       if (activeFilters.hasContainer !== 'all') {
-        const hasContainer = data.contenedor && data.contenedor.trim() !== ''
+        const hasContainer = Boolean(data.container)
         matchesContainer = activeFilters.hasContainer === 'yes' ? hasContainer : !hasContainer
       }
       
-      // Client type filter (based on RUC length - companies usually have longer RUCs)
-      let matchesClientType = true
-      if (activeFilters.clientType !== 'all' && data.ruc) {
-        const rucLength = data.ruc.toString().length
-        const isCompany = rucLength >= 10 // Assuming companies have RUC with 10+ digits
-        matchesClientType = activeFilters.clientType === 'company' ? isCompany : !isCompany
-      }
-      
-      return matchesSearch && matchesDate && matchesAmount && matchesContainer && matchesClientType
+      return matchesSearch && matchesDate && matchesAmount && matchesContainer
     })
     
     return filtered
@@ -280,7 +283,6 @@ export default function TruckingInvoice() {
       dateRange: 'all',
       amountRange: 'all',
       hasContainer: 'all',
-      clientType: 'all'
     })
     setSearchTerm('')
   }
@@ -353,18 +355,22 @@ export default function TruckingInvoice() {
 
         return {
           id: rec.id,
-          description: recData.description || `Servicio de ${recData.tamaño || ""} Cont. ${recData.contenedor || ""}`,
-          quantity: recData.quantity || 1,
-          unitPrice: recData.tarifa || rec.totalValue,
+          description: `Servicio de transporte - Container: ${recData.container || "N/A"}`,
+          quantity: 1,
+          unitPrice: rec.totalValue,
           totalPrice: rec.totalValue,
-          serviceCode: recData.serviceCode || "TRK-STD",
-          unit: recData.unit || "VIAJE",
+          serviceCode: "TRK-STD",
+          unit: "VIAJE",
           blNumber: recData.bl || "",
-          containerNumber: recData.contenedor || "",
-          containerSize: recData.tamaño || "",
-          containerType: recData.tipoContenedor || "",
-          containerIsoCode: recData.containerIsoCode || "",
-          fullEmptyStatus: recData.fullEmptyStatus || "",
+          containerNumber: recData.container || "",
+          containerSize: recData.size || "",
+          containerType: recData.type || "",
+          containerIsoCode: recData.type || "",
+          fullEmptyStatus: "",
+          driverName: recData.driverName || "",
+          plate: recData.plate || "",
+          moveDate: recData.moveDate || "",
+          associate: recData.associate || "",
           ...lineItemCustomFields,
         }
       })
@@ -417,59 +423,73 @@ export default function TruckingInvoice() {
     else if (currentStep === "confirm") setCurrentStep("review")
   }
 
-  const handleFinalizeInvoice = () => {
+  const handleFinalizeInvoice = async () => {
     if (!generatedXml) {
       toast({ title: "Error", description: "XML no generado. No se puede finalizar.", variant: "destructive" })
       return
     }
-    const driver = configuredDrivers.find((d) => d.id === formData.driverId)
-    const vehicle = configuredVehicles.find((v) => v.id === formData.vehicleId)
-    const route = configuredRoutes.find((r) => r.id === formData.routeId)
+    
+    try {
+      const driver = configuredDrivers.find((d) => d.id === formData.driverId)
+      const vehicle = configuredVehicles.find((v) => v.id === formData.vehicleId)
+      const route = configuredRoutes.find((r) => r.id === formData.routeId)
 
-    const invoiceDetails: PersistedInvoiceRecord["details"] = {
-      driverId: formData.driverId,
-      driverName: driver?.name,
-      vehicleId: formData.vehicleId,
-      vehicleInfo: vehicle ? `${vehicle.plate} (${vehicle.model})` : undefined,
-      routeId: formData.routeId,
-      routeName: route?.name,
+      const invoiceDetails: PersistedInvoiceRecord["details"] = {
+        driverId: formData.driverId,
+        driverName: driver?.name,
+        vehicleId: formData.vehicleId,
+        vehicleInfo: vehicle ? `${vehicle.plate} (${vehicle.model})` : undefined,
+        routeId: formData.routeId,
+        routeName: route?.name,
+      }
+      truckingCustomFields.forEach((cf) => {
+        if (formData[cf.id] !== undefined && formData[cf.id] !== "") invoiceDetails[cf.id] = formData[cf.id]
+      })
+
+      const newInvoice: PersistedInvoiceRecord = {
+        id: `TRK-INV-${Date.now().toString().slice(-6)}`,
+        module: "trucking",
+        invoiceNumber: formData.invoiceNumber,
+        clientName: formData.clientName,
+        clientRuc: formData.clientRuc,
+        issueDate: formData.issueDate,
+        dueDate: formData.dueDate,
+        currency: formData.currency,
+        subtotal: formData.subtotal,
+        taxAmount: formData.taxAmount,
+        totalAmount: formData.total,
+        status: "generada",
+        xmlData: generatedXml,
+        relatedRecordIds: selectedRecordIds,
+        notes: formData.description,
+        details: invoiceDetails,
+        createdAt: new Date().toISOString(),
+      }
+      
+      dispatch(addInvoice(newInvoice))
+      dispatch(markRecordsAsInvoiced({ recordIds: selectedRecordIds, invoiceId: newInvoice.id }))
+      
+      // Refrescar registros pendientes
+      dispatch(fetchPendingRecords())
+
+      toast({
+        title: "Factura Finalizada",
+        description: `${newInvoice.invoiceNumber} guardada con éxito.`,
+        className: "bg-green-600 text-white",
+      })
+      setSelectedRecordIds([])
+      setFormData(getNewInvoiceState())
+      setGeneratedXml(null)
+      setCurrentStep("select")
+      router.push("/trucking/records")
+    } catch (error) {
+      console.error("Error al finalizar factura:", error)
+      toast({
+        title: "Error",
+        description: "Hubo un problema al finalizar la factura.",
+        variant: "destructive",
+      })
     }
-    truckingCustomFields.forEach((cf) => {
-      if (formData[cf.id] !== undefined && formData[cf.id] !== "") invoiceDetails[cf.id] = formData[cf.id]
-    })
-
-    const newInvoice: PersistedInvoiceRecord = {
-      id: `TRK-INV-${Date.now().toString().slice(-6)}`,
-      module: "trucking",
-      invoiceNumber: formData.invoiceNumber,
-      clientName: formData.clientName,
-      clientRuc: formData.clientRuc,
-      issueDate: formData.issueDate,
-      dueDate: formData.dueDate,
-      currency: formData.currency,
-      subtotal: formData.subtotal,
-      taxAmount: formData.taxAmount,
-      totalAmount: formData.total,
-      status: "generada",
-      xmlData: generatedXml,
-      relatedRecordIds: selectedRecordIds,
-      notes: formData.description,
-      details: invoiceDetails,
-      createdAt: new Date().toISOString(),
-    }
-    dispatch(addInvoice(newInvoice))
-    dispatch(markRecordsAsInvoiced({ recordIds: selectedRecordIds, invoiceId: newInvoice.id }))
-
-    toast({
-      title: "Factura Finalizada",
-      description: `${newInvoice.invoiceNumber} guardada con éxito.`,
-      className: "bg-green-600 text-white",
-    })
-    setSelectedRecordIds([])
-    setFormData(getNewInvoiceState())
-    setGeneratedXml(null)
-    setCurrentStep("select")
-    router.push("/trucking/records")
   }
 
   const handleDownloadXml = () => {
@@ -573,7 +593,7 @@ export default function TruckingInvoice() {
                 <Input
                   id="searchRecords"
                   type="search"
-                  placeholder="Buscar por cliente, RUC, contenedor, BL, ID de registro..."
+                  placeholder="Buscar por contenedor, asociado, conductor, placa, BL, ID de registro..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-8 w-full"
@@ -624,9 +644,9 @@ export default function TruckingInvoice() {
                 <div className="flex gap-2 flex-wrap">
                   {[
                     { value: 'all', label: 'Todos' },
-                    { value: 'low', label: '< $500' },
-                    { value: 'medium', label: '$500 - $2000' },
-                    { value: 'high', label: '> $2000' }
+                    { value: 'low', label: '< $100' },
+                    { value: 'medium', label: '$100 - $500' },
+                    { value: 'high', label: '> $500' }
                   ].map((option) => (
                     <Button
                       key={option.value}
@@ -663,31 +683,11 @@ export default function TruckingInvoice() {
                 </div>
               </div>
 
-              {/* Client Type Filter */}
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Por Tipo de Cliente:</Label>
-                <div className="flex gap-2 flex-wrap">
-                  {[
-                    { value: 'all', label: 'Todos' },
-                    { value: 'company', label: 'Empresas' },
-                    { value: 'individual', label: 'Personas' }
-                  ].map((option) => (
-                    <Button
-                      key={option.value}
-                      variant={activeFilters.clientType === option.value ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => handleFilterChange('clientType', option.value)}
-                      className="text-xs"
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
+
 
               {/* Active Filters Summary */}
               {(activeFilters.dateRange !== 'all' || activeFilters.amountRange !== 'all' || 
-                activeFilters.hasContainer !== 'all' || activeFilters.clientType !== 'all' || searchTerm) && (
+                activeFilters.hasContainer !== 'all' || searchTerm) && (
                 <div className="bg-muted/30 p-3 rounded-md">
                   <p className="text-xs text-muted-foreground mb-1">Filtros activos:</p>
                   <div className="flex gap-1 flex-wrap">
@@ -711,11 +711,6 @@ export default function TruckingInvoice() {
                         Contenedor: {activeFilters.hasContainer === 'yes' ? 'Con' : 'Sin'}
                       </span>
                     )}
-                    {activeFilters.clientType !== 'all' && (
-                      <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs">
-                        Cliente: {activeFilters.clientType === 'company' ? 'Empresas' : 'Personas'}
-                      </span>
-                    )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
                     Mostrando {filteredPendingRecords.length} de {pendingTruckingRecords.length} registros
@@ -723,39 +718,55 @@ export default function TruckingInvoice() {
                 </div>
               )}
             </div>
-            {filteredPendingRecords.length > 0 ? (
+            {isLoadingRecords ? (
+              <div className="flex justify-center items-center p-8">
+                <Loader2 className="h-8 w-8 animate-spin" />
+                <span className="ml-2">Cargando registros...</span>
+              </div>
+            ) : filteredPendingRecords.length > 0 ? (
               <div className="max-h-[400px] overflow-y-auto border rounded-md">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[50px]">Sel.</TableHead>
-                      <TableHead>ID Registro</TableHead>
-                      <TableHead>Fecha</TableHead>
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={selectedRecordIds.length === filteredPendingRecords.length && filteredPendingRecords.length > 0}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedRecordIds(filteredPendingRecords.map(r => r.id))
+                            } else {
+                              setSelectedRecordIds([])
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead>Código</TableHead>
+                      <TableHead>Descripción</TableHead>
+                      <TableHead>Cantidad</TableHead>
+                      <TableHead>Precio Unit.</TableHead>
+                      <TableHead>Total</TableHead>
                       <TableHead>Cliente</TableHead>
-                      <TableHead>RUC/Cédula</TableHead>
-                      <TableHead>Contenedor</TableHead>
-                      <TableHead className="text-right">Monto</TableHead>
+                      <TableHead>Fecha</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredPendingRecords.map((record) => {
-                      const data = record.data as Record<string, any>
+                      const data = record.data as TruckingExcelData
                       return (
-                        <TableRow
-                          key={record.id}
-                          className={selectedRecordIds.includes(record.id) ? "bg-muted/50" : ""}
-                          onClick={() => handleRecordSelectionChange(record.id, !selectedRecordIds.includes(record.id))}
-                          style={{ cursor: "pointer" }}
-                        >
+                        <TableRow key={record.id}>
                           <TableCell>
-                            <Checkbox checked={selectedRecordIds.includes(record.id)} readOnly />
+                            <Checkbox
+                              checked={selectedRecordIds.includes(record.id)}
+                              onCheckedChange={(checked) => handleRecordSelectionChange(record.id, checked as boolean)}
+                            />
                           </TableCell>
-                          <TableCell className="font-medium">{record.id.split("-").pop()}</TableCell>
-                          <TableCell>{data.fecha}</TableCell>
-                          <TableCell>{String(data.cliente || "N/A")}</TableCell>
-                          <TableCell>{String(data.ruc || "N/A")}</TableCell>
-                          <TableCell>{String(data.contenedor || "N/A")}</TableCell>
-                          <TableCell className="text-right">$ {record.totalValue.toFixed(2)}</TableCell>
+                          <TableCell className="font-mono text-sm">{data.containerConsecutive || record.id.split("-").pop()}</TableCell>
+                          <TableCell>{data.container ? `Contenedor: ${data.container} (${data.size})` : "N/A"}</TableCell>
+                          <TableCell className="text-right">1</TableCell>
+                          <TableCell className="text-right">${record.totalValue?.toFixed(2) || "0.00"}</TableCell>
+                          <TableCell className="text-right font-medium">${record.totalValue.toFixed(2)}</TableCell>
+                          <TableCell>{data.associate || "N/A"}</TableCell>
+                          <TableCell>{data.moveDate || "N/A"}</TableCell>
                         </TableRow>
                       )
                     })}
@@ -820,7 +831,7 @@ export default function TruckingInvoice() {
             )}
           </CardContent>
           <CardFooter className="justify-end">
-            <Button onClick={nextStep} disabled={selectedRecordIds.length === 0}>
+            <Button onClick={nextStep} disabled={selectedRecordIds.length === 0 || isLoadingRecords}>
               Continuar
               <ChevronRight className="ml-2 h-4 w-4" />
             </Button>
