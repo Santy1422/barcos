@@ -3,6 +3,11 @@ import type { RootState } from './store'
 // Esta función carga solo el estado de auth desde localStorage
 export const loadState = (): Partial<RootState> | undefined => {
   try {
+    // Check if we're running in the browser
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+    
     const serializedState = localStorage.getItem("appState")
     if (serializedState === null) {
       return undefined
@@ -21,6 +26,11 @@ export const loadState = (): Partial<RootState> | undefined => {
 // Esta función guarda solo el estado necesario en localStorage
 export const saveState = (state: Partial<RootState>) => {
   try {
+    // Check if we're running in the browser
+    if (typeof window === 'undefined') {
+      return
+    }
+    
     const serializedState = JSON.stringify(state)
     localStorage.setItem("appState", serializedState)
   } catch (err) {

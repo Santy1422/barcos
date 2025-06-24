@@ -1,5 +1,7 @@
 {
-  "/trucking/page": "app/trucking/page.js",
+  "/trucking/invoice/page": "app/trucking/invoice/page.js",
+  "/agency/clients/page": "app/agency/clients/page.js",
+  "/agency/page": "app/agency/page.js",
   "/page": "app/page.js",
-  "/trucking/invoice/page": "app/trucking/invoice/page.js"
+  "/trucking/records/page": "app/trucking/records/page.js"
 }

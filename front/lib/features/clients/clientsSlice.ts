@@ -1,4 +1,4 @@
-import { createSlice, type PayloadAction } from "@reduxjs/toolkit"
+import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/toolkit"
 import type { RootState } from "@/lib/store"
 
 // Tipos de cliente
@@ -9,17 +9,18 @@ export type DocumentType = "cedula" | "pasaporte" | "ruc"
 export interface NaturalClient {
   id: string
   type: "natural"
-  fullName: string // Nombre completo (nombres y apellidos)
-  documentType: "cedula" | "pasaporte" // Tipo de documento
-  documentNumber: string // Cédula o pasaporte
+  fullName: string
+  documentType: "cedula" | "pasaporte"
+  documentNumber: string
   address: {
-    province: string // Provincia
-    district: string // Distrito
-    corregimiento: string // Corregimiento
-    fullAddress?: string // Dirección completa opcional
+    province: string
+    district: string
+    corregimiento: string
+    fullAddress?: string
   }
-  email?: string // Correo electrónico (opcional)
-  phone?: string // Teléfono (opcional)
+  email?: string
+  phone?: string
+  sapCode?: string // Nuevo campo
   createdAt: string
   updatedAt: string
   isActive: boolean
@@ -29,18 +30,19 @@ export interface NaturalClient {
 export interface JuridicalClient {
   id: string
   type: "juridico"
-  companyName: string // Nombre de la empresa (razón social)
-  ruc: string // RUC (Registro Único del Contribuyente)
-  dv: string // DV (Dígito Verificador)
+  companyName: string
+  ruc: string
+  dv: string
   fiscalAddress: {
-    province: string // Provincia
-    district: string // Distrito
-    corregimiento: string // Corregimiento
-    fullAddress?: string // Dirección fiscal completa opcional
+    province: string
+    district: string
+    corregimiento: string
+    fullAddress?: string
   }
-  email: string // Correo electrónico (requerido para factura electrónica)
-  phone?: string // Teléfono (opcional)
-  contactName?: string // Nombre de contacto (opcional)
+  email: string
+  phone?: string
+  contactName?: string
+  sapCode?: string // Nuevo campo
   createdAt: string
   updatedAt: string
   isActive: boolean
@@ -136,6 +138,66 @@ const initialState: ClientsState = {
   error: null
 }
 
+// Async thunks para conectar con API
+export const fetchClients = createAsyncThunk(
+  'clients/fetchClients',
+  async () => {
+    const response = await fetch('/api/clients')
+    if (!response.ok) {
+      throw new Error('Error al obtener clientes')
+    }
+    return response.json()
+  }
+)
+
+export const createClientAsync = createAsyncThunk(
+  'clients/createClient',
+  async (clientData: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const response = await fetch('/api/clients', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(clientData),
+    })
+    if (!response.ok) {
+      throw new Error('Error al crear cliente')
+    }
+    return response.json()
+  }
+)
+
+export const updateClientAsync = createAsyncThunk(
+  'clients/updateClient',
+  async ({ id, ...clientData }: Client) => {
+    const response = await fetch(`/api/clients/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(clientData),
+    })
+    if (!response.ok) {
+      throw new Error('Error al actualizar cliente')
+    }
+    return response.json()
+  }
+)
+
+export const deleteClientAsync = createAsyncThunk(
+  'clients/deleteClient',
+  async (id: string) => {
+    const response = await fetch(`/api/clients/${id}`, {
+      method: 'DELETE',
+    })
+    if (!response.ok) {
+      throw new Error('Error al eliminar cliente')
+    }
+    return { id }
+  }
+)
+
+// Slice con manejo de estados async
 const clientsSlice = createSlice({
   name: "clients",
   initialState,
@@ -182,6 +244,68 @@ const clientsSlice = createSlice({
     setError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload
     }
+  },
+  extraReducers: (builder) => {
+    builder
+      // fetchClients
+      .addCase(fetchClients.pending, (state) => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(fetchClients.fulfilled, (state, action) => {
+        state.loading = false
+        state.clients = action.payload
+      })
+      .addCase(fetchClients.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.error.message || 'Error al obtener clientes'
+      })
+      // createClientAsync
+      .addCase(createClientAsync.pending, (state) => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(createClientAsync.fulfilled, (state, action) => {
+        state.loading = false
+        state.clients.push(action.payload)
+      })
+      .addCase(createClientAsync.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.error.message || 'Error al crear cliente'
+      })
+      // updateClientAsync
+      .addCase(updateClientAsync.pending, (state) => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(updateClientAsync.fulfilled, (state, action) => {
+        state.loading = false
+        const index = state.clients.findIndex(c => c.id === action.payload.id)
+        if (index !== -1) {
+          state.clients[index] = action.payload
+        }
+      })
+      .addCase(updateClientAsync.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.error.message || 'Error al actualizar cliente'
+      })
+      // deleteClientAsync
+      .addCase(deleteClientAsync.pending, (state) => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(deleteClientAsync.fulfilled, (state, action) => {
+        state.loading = false
+        const index = state.clients.findIndex(c => c.id === action.payload.id)
+        if (index !== -1) {
+          state.clients[index].isActive = false
+          state.clients[index].updatedAt = new Date().toISOString()
+        }
+      })
+      .addCase(deleteClientAsync.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.error.message || 'Error al eliminar cliente'
+      })
   }
 })
 

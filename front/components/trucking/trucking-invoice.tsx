@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import React from "react"
 import { useState, useEffect, useMemo } from "react"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { TruckingExcelData } from "@/lib/excel-parser"
 import {
   FileText,
@@ -26,10 +27,18 @@ import {
   ChevronLeft,
   Search,
   Truck,
-  RouteIcon as RouteIconLucide,
+  Route as RouteIcon,
   Download,
-  UserIcon as UserIconLucide,
+  User as UserIcon,
   Loader2,
+  Settings,
+  Calendar,
+  DollarSign,
+  FileSearch,
+  Package,
+  Box,
+  Scale,
+  Hash
 } from "lucide-react"
 import {
   addInvoice,
@@ -42,19 +51,19 @@ import {
   type ExcelRecord as IndividualExcelRecord,
 } from "@/lib/features/records/recordsSlice"
 import {
-  selectModuleCustomFields, // Keep this for custom fields
+  selectModuleCustomFields,
   type CustomFieldConfig,
-  selectTruckingDrivers, // Updated import name
-  selectTruckingRoutes, // Updated import name
-  selectTruckingVehicles, // Updated import name
-} from "@/lib/features/config/configSlice" // All imports now from the same file
-// Remove the entire import from trucking-config/truckingConfigSlice
+  selectTruckingDrivers,
+  selectTruckingRoutes,
+  selectTruckingVehicles,
+} from "@/lib/features/config/configSlice"
 import { generateInvoiceXML } from "@/lib/xml-generator"
 import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features/invoice/invoiceSlice"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import saveAs from "file-saver"
 import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
 
 type InvoiceStep = "select" | "create" | "review" | "confirm"
 
@@ -62,17 +71,46 @@ interface TruckingFormData {
   invoiceNumber: string
   issueDate: string
   dueDate: string
-  clientName: string // From Excel
-  clientRuc: string // From Excel
-  clientAddress: string // From Excel
-  driverId: string // From Trucking Config
-  vehicleId: string // From Trucking Config
-  routeId: string // From Trucking Config
+  clientName: string
+  clientRuc: string
+  clientAddress: string
+  clientSapNumber: string
+  driverId: string
+  vehicleId: string
+  routeId: string
+  originPort: string
+  destinationPort: string
+  moveDate: string
+  associatedCompany: string
   description: string
   subtotal: number
   taxAmount: number
   total: number
   currency: string
+  serviceCode: string
+  activityCode: string
+  bundle: string
+  cargoType: string
+  sealNumber: string
+  weight: string
+  weightInTons: number
+  serviceItems: Array<{
+    id: string
+    containerNumber: string
+    blNumber: string
+    serviceCode: string
+    activityCode: string
+    amount: number
+    description: string
+    containerSize: string
+    moveDate: string
+    origin: string
+    destination: string
+    weight: string
+    commodity: string
+    cargoType: string
+    sealNumber: string
+  }>
   [customFieldId: string]: any
 }
 
@@ -83,72 +121,189 @@ const getNewInvoiceState = (): TruckingFormData => ({
   clientName: "",
   clientRuc: "",
   clientAddress: "",
+  clientSapNumber: "",
   driverId: "",
   vehicleId: "",
   routeId: "",
+  originPort: "",
+  destinationPort: "",
+  moveDate: "",
+  associatedCompany: "",
+  cargoType: "",
+  sealNumber: "",
+  weight: "",
+  weightInTons: 0,
   description: "",
   subtotal: 0,
   taxAmount: 0,
   total: 0,
   currency: "USD",
+  serviceCode: "SRV100",
+  activityCode: "ACT205",
+  bundle: "TRUCKING",
+  serviceItems: []
 })
+
+// Mapeo mejorado de campos desde Excel
+const FIELD_MAPPING = {
+  client: ['cliente', 'client_name', 'customer'],
+  clientName: ['cliente', 'client_name', 'customer'],
+  ruc: ['ruc', 'tax_id', 'identification'],
+  clientRuc: ['ruc', 'tax_id', 'identification'],
+  address: ['direccion', 'address', 'client_address'],
+  clientAddress: ['direccion', 'address', 'client_address'],
+  sapNumber: ['numero_sap', 'sap_number', 'customer_sap_code', 'codigo_cliente_sap'],
+  clientSapNumber: ['numero_sap', 'sap_number', 'customer_sap_code', 'codigo_cliente_sap'],
+  driver: ['conductor', 'driver', 'chofer', 'driver_name'],
+  driverId: ['conductor', 'driver', 'chofer', 'driver_name'],
+  vehicle: ['vehiculo', 'placa', 'vehicle', 'truck', 'vehicle_plate'],
+  vehicleId: ['vehiculo', 'placa', 'vehicle', 'truck', 'vehicle_plate'],
+  route: ['ruta', 'route', 'origen_destino', 'origin_destination', 'route_description'],
+  routeId: ['ruta', 'route', 'origen_destino', 'origin_destination', 'route_description'],
+  origin: ['puerto_origen', 'origin_port', 'origen'],
+  originPort: ['puerto_origen', 'origin_port', 'origen'],
+  destination: ['puerto_destino', 'destination_port', 'destino'],
+  destinationPort: ['puerto_destino', 'destination_port', 'destino'],
+  moveDate: ['fecha_movimiento', 'move_date', 'fecha'],
+  company: ['empresa_asociada', 'associate', 'company'],
+  container: ['contenedor', 'container', 'container_number', 'numero_contenedor'],
+  bl: ['bl_number', 'bl', 'conocimiento', 'bill_of_lading'],
+  blNumber: ['bl_number', 'bl', 'conocimiento', 'bill_of_lading'],
+  size: ['tamaño', 'size', 'container_size'],
+  type: ['tipo_contenedor', 'container_type'],
+  containerType: ['tipo_contenedor', 'container_type'],
+  weight: ['peso', 'weight'],
+  commodity: ['mercancia', 'commodity', 'producto'],
+  seal: ['sello', 'seal', 'seal_number', 'numero_sello'],
+  cargoType: ['tipo_carga', 'cargo_type'],
+  serviceType: ['tipo_servicio', 'service_type', 'servicio']
+}
+
+// Configuración de secciones del formulario
+const FORM_SECTIONS = [
+  {
+    id: 'general',
+    title: "Datos Generales",
+    icon: <FileText className="mr-2 h-5 w-5" />,
+    description: "Información básica de la factura",
+    fields: [
+      { id: 'invoiceNumber', label: "Número Factura", icon: <Hash className="h-4 w-4" />, required: true },
+      { id: 'issueDate', label: "Fecha Emisión", icon: <Calendar className="h-4 w-4" />, type: 'date', required: true },
+      { id: 'dueDate', label: "Fecha Vencimiento", icon: <Calendar className="h-4 w-4" />, type: 'date', required: true },
+      { id: 'currency', label: "Moneda", icon: <DollarSign className="h-4 w-4" />, type: 'select', options: ['USD', 'PAB'], required: true }
+    ]
+  },
+  {
+    id: 'client',
+    title: "Información del Cliente",
+    icon: <UserIcon className="mr-2 h-5 w-5" />,
+    description: "Datos del cliente extraídos del Excel",
+    fields: [
+      { id: 'clientName', label: "Nombre Cliente", icon: <UserIcon className="h-4 w-4" />, required: true, auto: true },
+      { id: 'clientRuc', label: "RUC/Cédula", icon: <FileSearch className="h-4 w-4" />, required: true, auto: true },
+      { id: 'clientAddress', label: "Dirección", icon: <FileSearch className="h-4 w-4" />, auto: true },
+      { id: 'clientSapNumber', label: "Número SAP Cliente", icon: <FileSearch className="h-4 w-4" />, auto: true }
+    ]
+  },
+  {
+    id: 'transport',
+    title: "Detalles de Transporte",
+    icon: <Truck className="mr-2 h-5 w-5" />,
+    description: "Información de la operación logística",
+    fields: [
+      { id: 'driverId', label: "Conductor", icon: <UserIcon className="h-4 w-4" />, required: true, auto: true },
+      { id: 'vehicleId', label: "Vehículo/Placa", icon: <Truck className="h-4 w-4" />, required: true, auto: true },
+      { id: 'routeId', label: "Ruta", icon: <RouteIcon className="h-4 w-4" />, required: true, auto: true },
+      { id: 'originPort', label: "Puerto Origen", icon: <Package className="h-4 w-4" />, auto: true },
+      { id: 'destinationPort', label: "Puerto Destino", icon: <Package className="h-4 w-4" />, auto: true },
+      { id: 'moveDate', label: "Fecha Movimiento", icon: <Calendar className="h-4 w-4" />, type: 'date', auto: true },
+      { id: 'associatedCompany', label: "Empresa Asociada", icon: <Box className="h-4 w-4" />, auto: true }
+    ]
+  },
+  {
+    id: 'cargo',
+    title: "Detalles de Carga",
+    icon: <Package className="mr-2 h-5 w-5" />,
+    description: "Información específica de la carga",
+    fields: [
+      { id: 'cargoType', label: "Tipo de Carga", icon: <Box className="h-4 w-4" />, auto: true },
+      { id: 'sealNumber', label: "Número de Sello", icon: <FileSearch className="h-4 w-4" />, auto: true },
+      { id: 'weight', label: "Peso", icon: <Scale className="h-4 w-4" />, auto: true }
+    ]
+  },
+  {
+    id: 'sap',
+    title: "Configuración SAP",
+    icon: <Settings className="mr-2 h-5 w-5" />,
+    description: "Códigos y parámetros para SAP",
+    fields: [
+      { id: 'serviceCode', label: "Código Servicio", icon: <FileText className="h-4 w-4" />, required: true },
+      { id: 'activityCode', label: "Código Actividad", icon: <FileText className="h-4 w-4" />, required: true },
+      { id: 'bundle', label: "Bundle", icon: <Package className="h-4 w-4" />, required: true }
+    ]
+  }
+]
 
 export default function TruckingInvoice() {
   const dispatch = useAppDispatch()
   const router = useRouter()
   const { toast } = useToast()
 
-  const pendingTruckingRecords: IndividualExcelRecord[] = useAppSelector((state) =>
-    selectPendingRecordsByModule(state, "trucking"),
+  const pendingTruckingRecords = useAppSelector((state) =>
+    selectPendingRecordsByModule(state, "trucking")
   )
   const truckingGeneratedInvoices = useAppSelector((state) => selectInvoicesByModule(state, "trucking"))
   const isLoadingRecords = useAppSelector(selectRecordsLoading)
-
-  // Use new selectors for trucking specific config
   const configuredDrivers = useAppSelector(selectTruckingDrivers)
   const configuredRoutes = useAppSelector(selectTruckingRoutes)
   const configuredVehicles = useAppSelector(selectTruckingVehicles)
-  // Custom fields can still come from the general config slice or be moved to truckingConfigSlice if preferred
   const truckingCustomFields = useAppSelector((state) => selectModuleCustomFields(state, "trucking"))
 
   const [currentStep, setCurrentStep] = useState<InvoiceStep>("select")
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([])
-  const [formData, setFormData] = useState<TruckingFormData>(() => getNewInvoiceState())
+  const [formData, setFormData] = useState<TruckingFormData>(getNewInvoiceState)
   const [searchTerm, setSearchTerm] = useState("")
   const [generatedXml, setGeneratedXml] = useState<string | null>(null)
-  const [generatedPdf, setGeneratedPdf] = useState<Blob | null>(null) // Agregar estado para PDF
+  const [generatedPdf, setGeneratedPdf] = useState<Blob | null>(null)
   const [activeFilters, setActiveFilters] = useState({
-    dateRange: 'all', // 'today', 'week', 'month', 'all'
-    amountRange: 'all', // 'low', 'medium', 'high', 'all'
-    hasContainer: 'all', // 'yes', 'no', 'all'
+    dateRange: 'all',
+    amountRange: 'all',
+    hasContainer: 'all',
   })
+  const [activeSection, setActiveSection] = useState(FORM_SECTIONS[0].id)
 
-  // Cargar registros pendientes al montar el componente
   useEffect(() => {
     dispatch(fetchPendingRecords())
   }, [dispatch])
 
+  // Extraer valor de un registro basado en mapeo de campos
+  const extractFieldValue = (recordData: any, fieldKeys: string[]) => {
+    for (const key of fieldKeys) {
+      if (recordData[key] !== undefined && recordData[key] !== "") {
+        return recordData[key]
+      }
+    }
+    return ""
+  }
+
   const filteredPendingRecords = useMemo(() => {
-    let filtered = pendingTruckingRecords.filter((record) => {
+    return pendingTruckingRecords.filter((record) => {
       const data = record.data as Record<string, any>
       const searchableText = [
-        data.container,
-        data.associate,
-        data.driverName,
-        data.plate,
-        data.bl,
+        extractFieldValue(data, FIELD_MAPPING.container),
+        extractFieldValue(data, FIELD_MAPPING.company),
+        extractFieldValue(data, FIELD_MAPPING.driver),
+        extractFieldValue(data, FIELD_MAPPING.vehicle),
+        extractFieldValue(data, FIELD_MAPPING.bl),
         record.id,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
+      ].filter(Boolean).join(" ").toLowerCase()
       
       const matchesSearch = searchTerm === "" || searchableText.includes(searchTerm.toLowerCase())
       
-      // Date filter
+      // Filtros de fecha
       let matchesDate = true
-      if (activeFilters.dateRange !== 'all' && data.moveDate) {
-        const recordDate = new Date(data.moveDate)
+      if (activeFilters.dateRange !== 'all') {
+        const recordDate = new Date(extractFieldValue(data, FIELD_MAPPING.moveDate) || new Date())
         const now = new Date()
         
         switch (activeFilters.dateRange) {
@@ -166,118 +321,118 @@ export default function TruckingInvoice() {
         }
       }
       
-      // Amount filter
+      // Filtros de monto
       let matchesAmount = true
       if (activeFilters.amountRange !== 'all') {
         const amount = record.totalValue || 0
         switch (activeFilters.amountRange) {
-          case 'low':
-            matchesAmount = amount < 100
-            break
-          case 'medium':
-            matchesAmount = amount >= 100 && amount < 500
-            break
-          case 'high':
-            matchesAmount = amount >= 500
-            break
+          case 'low': matchesAmount = amount < 100; break
+          case 'medium': matchesAmount = amount >= 100 && amount < 500; break
+          case 'high': matchesAmount = amount >= 500; break
         }
       }
       
-      // Container filter
+      // Filtros de contenedor
       let matchesContainer = true
       if (activeFilters.hasContainer !== 'all') {
-        const hasContainer = Boolean(data.container)
+        const hasContainer = Boolean(extractFieldValue(data, FIELD_MAPPING.container))
         matchesContainer = activeFilters.hasContainer === 'yes' ? hasContainer : !hasContainer
       }
       
       return matchesSearch && matchesDate && matchesAmount && matchesContainer
     })
-    
-    return filtered
   }, [pendingTruckingRecords, searchTerm, activeFilters])
 
-  const selectedRecordDetails: IndividualExcelRecord[] = useMemo(() => {
+  const selectedRecordDetails = useMemo(() => {
     return pendingTruckingRecords.filter((record) => selectedRecordIds.includes(record.id))
   }, [selectedRecordIds, pendingTruckingRecords])
 
-  const selectedRecordDetailsString = useMemo(() => JSON.stringify(selectedRecordDetails), [selectedRecordDetails])
-  const truckingCustomFieldsString = useMemo(() => JSON.stringify(truckingCustomFields), [truckingCustomFields])
-
   useEffect(() => {
-    const currentSelectedDetails: IndividualExcelRecord[] = JSON.parse(selectedRecordDetailsString)
-    const currentCustomFields: CustomFieldConfig[] = JSON.parse(truckingCustomFieldsString)
+    if (selectedRecordDetails.length > 0) {
+      const firstRecordData = selectedRecordDetails[0].data as Record<string, any>
+      const subtotal = selectedRecordDetails.reduce((sum, record) => sum + record.totalValue, 0)
 
-    if (currentSelectedDetails.length > 0) {
-      const firstSelectedRecordData = currentSelectedDetails[0].data as Record<string, any>
-      const subtotalCalc = currentSelectedDetails.reduce((sum, record) => sum + record.totalValue, 0)
-      const taxCalc = subtotalCalc * 0.07
-      const totalCalc = subtotalCalc + taxCalc
+      setFormData(prev => {
+        const newFormData: TruckingFormData = {
+          ...prev, // Keep existing form data
+          clientName: extractFieldValue(firstRecordData, FIELD_MAPPING.clientName),
+          clientRuc: extractFieldValue(firstRecordData, FIELD_MAPPING.clientRuc),
+          clientAddress: extractFieldValue(firstRecordData, FIELD_MAPPING.clientAddress),
+          clientSapNumber: extractFieldValue(firstRecordData, FIELD_MAPPING.clientSapNumber),
+          driverId: extractFieldValue(firstRecordData, FIELD_MAPPING.driverId),
+          vehicleId: extractFieldValue(firstRecordData, FIELD_MAPPING.vehicleId),
+          routeId: extractFieldValue(firstRecordData, FIELD_MAPPING.routeId),
+          originPort: extractFieldValue(firstRecordData, FIELD_MAPPING.originPort),
+          destinationPort: extractFieldValue(firstRecordData, FIELD_MAPPING.destinationPort),
+          moveDate: extractFieldValue(firstRecordData, FIELD_MAPPING.moveDate),
+          associatedCompany: extractFieldValue(firstRecordData, FIELD_MAPPING.company),
+          cargoType: extractFieldValue(firstRecordData, FIELD_MAPPING.cargoType),
+          sealNumber: extractFieldValue(firstRecordData, FIELD_MAPPING.seal),
+          weight: extractFieldValue(firstRecordData, FIELD_MAPPING.weight),
+          weightInTons: parseFloat(extractFieldValue(firstRecordData, FIELD_MAPPING.weight)?.replace(/[^\d.]/g, '') || '0') / 1000,
+          subtotal,
+          taxAmount: subtotal * 0.07,
+          total: subtotal + (subtotal * 0.07),
+          serviceItems: selectedRecordDetails.map(record => {
+            const data = record.data as Record<string, any>
+            const tipoServicio = extractFieldValue(data, FIELD_MAPPING.serviceType)
+            const tipoContenedor = extractFieldValue(data, FIELD_MAPPING.containerType)
+            
+            return {
+              id: record.id,
+              containerNumber: extractFieldValue(data, FIELD_MAPPING.container),
+              blNumber: extractFieldValue(data, FIELD_MAPPING.blNumber),
+              serviceCode: tipoServicio === 'transporte' ? 'SRV100' : prev.serviceCode,
+              activityCode: tipoContenedor === '20' ? 'ACT205' : tipoContenedor === '40' ? 'ACT240' : prev.activityCode,
+              amount: record.totalValue,
+              description: `${tipoServicio} - ${extractFieldValue(data, FIELD_MAPPING.container)}`,
+              containerSize: extractFieldValue(data, FIELD_MAPPING.size),
+              moveDate: extractFieldValue(data, FIELD_MAPPING.moveDate),
+              origin: extractFieldValue(data, FIELD_MAPPING.originPort),
+              destination: extractFieldValue(data, FIELD_MAPPING.destinationPort),
+              weight: extractFieldValue(data, FIELD_MAPPING.weight),
+              commodity: extractFieldValue(data, FIELD_MAPPING.commodity),
+              cargoType: extractFieldValue(data, FIELD_MAPPING.cargoType),
+              sealNumber: extractFieldValue(data, FIELD_MAPPING.seal)
+            }
+          })
+        }
 
-      setFormData((prev) => {
-        const newFormData = { ...prev }
+        // Generar descripción automática
+        const serviceLines = newFormData.serviceItems.map((item, index) => 
+          `${index + 1}. ${item.serviceCode} - ${item.containerNumber} - $${item.amount.toFixed(2)}`
+        ).join('\n')
+        
+        newFormData.description = `Servicios de transporte terrestre (${selectedRecordDetails.length} registros)\n${serviceLines}`
 
-        newFormData.clientName = String(firstSelectedRecordData?.cliente || "")
-        newFormData.clientRuc = String(firstSelectedRecordData?.ruc || "")
-        newFormData.clientAddress = String(firstSelectedRecordData?.clientAddress || "") // Assuming clientAddress might be in Excel
-        newFormData.description = `Servicios de transporte terrestre (${currentSelectedDetails.length} registros)`
-        newFormData.subtotal = subtotalCalc
-        newFormData.taxAmount = taxCalc
-        newFormData.total = totalCalc
-
-        currentCustomFields.forEach((cf) => {
-          const excelKeyGuess = cf.label
-            .toLowerCase()
-            .replace(/\s+/g, "_")
-            .replace(/[^\w_]/g, "")
-          const derivedValue = firstSelectedRecordData?.[excelKeyGuess]
-          newFormData[cf.id] = derivedValue !== undefined ? derivedValue : prev[cf.id] || ""
-        })
         return newFormData
       })
     } else {
-      setFormData((prev) => ({
-        ...prev,
-        clientName: "",
-        clientRuc: "",
-        clientAddress: "",
-        description: "",
-        subtotal: 0,
-        taxAmount: 0,
-        total: 0,
-        ...Object.fromEntries(currentCustomFields.map((cf) => [cf.id, ""])),
-      }))
+      setFormData(getNewInvoiceState())
     }
-  }, [selectedRecordDetailsString, truckingCustomFieldsString])
+  }, [selectedRecordDetails]) // Only depend on selectedRecordDetails
 
-  const handleRecordSelectionChange = (recordId: string, checked: boolean | string) =>
-    setSelectedRecordIds((prev) => (checked ? [...prev, recordId] : prev.filter((id) => id !== recordId)))
+  const handleRecordSelectionChange = (recordId: string, checked: boolean) =>
+    setSelectedRecordIds(prev => checked ? [...prev, recordId] : prev.filter(id => id !== recordId))
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
-    setFormData((prev) => {
-      const newState = { ...prev, [name]: value }
+    setFormData(prev => {
+      const newData = { ...prev, [name]: value }
       if (name === "subtotal") {
-        const newSub = Number.parseFloat(value) || 0
-        newState.subtotal = newSub
-        newState.taxAmount = newSub * 0.07
-        newState.total = newState.subtotal + newState.taxAmount
+        const subtotal = Number(value) || 0
+        newData.subtotal = subtotal
+        newData.taxAmount = subtotal * 0.07
+        newData.total = subtotal + newData.taxAmount
       }
-      return newState
+      return newData
     })
   }
 
-  const handleCustomFieldChange = (fieldId: string, value: string | number | Date) =>
-    setFormData((prev) => ({ ...prev, [fieldId]: value }))
-
-  // Filter button handler
   const handleFilterChange = (filterType: keyof typeof activeFilters, value: string) => {
-    setActiveFilters(prev => ({
-      ...prev,
-      [filterType]: value
-    }))
+    setActiveFilters(prev => ({ ...prev, [filterType]: value }))
   }
 
-  // Clear all filters
   const clearAllFilters = () => {
     setActiveFilters({
       dateRange: 'all',
@@ -297,31 +452,18 @@ export default function TruckingInvoice() {
       return false
     }
     if (step === "create") {
-      const validateStep = (step: number): boolean => {
-        if (step === 1) {
-          const requiredFields: (keyof TruckingFormData)[] = ["clientName", "clientRuc", "driverId", "vehicleId", "routeId"]
-          const missingFields = requiredFields.filter((field) => !formData[field])
-          if (missingFields.length > 0) {
-            toast({
-              title: "Campos Requeridos",
-              description: `Complete los siguientes campos: ${missingFields.join(", ")}.`,
-              variant: "destructive",
-            })
-            return false
-          }
-          // Validación de RUC/cédula eliminada
-        }
-        return true
-      }
-      if (formData.total <= 0) {
+      const requiredFields = FORM_SECTIONS
+        .flatMap(section => section.fields.filter(f => f.required).map(f => f.id))
+        .filter(field => !formData[field])
+      
+      if (requiredFields.length > 0) {
         toast({
-          title: "Monto Inválido",
-          description: "El total de la factura debe ser mayor a cero.",
+          title: "Campos Requeridos",
+          description: `Complete los siguientes campos: ${requiredFields.join(", ")}.`,
           variant: "destructive",
         })
         return false
       }
-     
     }
     return true
   }
@@ -330,88 +472,10 @@ export default function TruckingInvoice() {
     if (!validateStep(currentStep)) return
 
     if (currentStep === "select") {
-      if (selectedRecordDetails.length === 0) {
-        toast({
-          title: "Sin Selección",
-          description: "Por favor, seleccione al menos un registro para facturar.",
-          variant: "destructive",
-        })
-        return
-      }
       setCurrentStep("create")
     } else if (currentStep === "create") {
-      const lineItemsForXml: InvoiceLineItemForXml[] = selectedRecordDetails.map((rec) => {
-        const recData = rec.data as Record<string, any>
-        const lineItemCustomFields: Record<string, any> = {}
-        truckingCustomFields.forEach((cf) => {
-          const excelKeyGuess = cf.label
-            .toLowerCase()
-            .replace(/\s+/g, "_")
-            .replace(/[^\w_]/g, "")
-          if (recData && recData[excelKeyGuess] !== undefined) {
-            lineItemCustomFields[cf.id] = recData[excelKeyGuess]
-          }
-        })
-
-        return {
-          id: rec.id,
-          description: `Servicio de transporte - Container: ${recData.container || "N/A"}`,
-          quantity: 1,
-          unitPrice: rec.totalValue,
-          totalPrice: rec.totalValue,
-          serviceCode: "TRK-STD",
-          unit: "VIAJE",
-          blNumber: recData.bl || "",
-          containerNumber: recData.container || "",
-          containerSize: recData.size || "",
-          containerType: recData.type || "",
-          containerIsoCode: recData.type || "",
-          fullEmptyStatus: "",
-          driverName: recData.driverName || "",
-          plate: recData.plate || "",
-          moveDate: recData.moveDate || "",
-          associate: recData.associate || "",
-          ...lineItemCustomFields,
-        }
-      })
-
-      const invoiceLevelCustomFields: Record<string, any> = {}
-      truckingCustomFields.forEach((cf) => {
-        if (formData[cf.id] !== undefined && formData[cf.id] !== "") {
-          invoiceLevelCustomFields[cf.id] = formData[cf.id]
-        }
-      })
-
-      const xmlPayload: InvoiceForXmlPayload = {
-        id: `XML-${formData.invoiceNumber}-${Date.now()}`,
-        module: "trucking",
-        invoiceNumber: formData.invoiceNumber,
-        client: formData.clientRuc,
-        clientName: formData.clientName,
-        date: formData.issueDate,
-        dueDate: formData.dueDate,
-        currency: formData.currency,
-        total: formData.total,
-        records: lineItemsForXml,
-        status: "generated",
-        driverId: formData.driverId,
-        vehicleId: formData.vehicleId,
-        routeId: formData.routeId,
-        ...invoiceLevelCustomFields,
-      }
-      try {
-        const generated = generateInvoiceXML(xmlPayload)
-        setGeneratedXml(generated)
-        
-        // Generate PDF as well
-        const pdfBlob = generateInvoicePDF(formData)
-        setGeneratedPdf(pdfBlob)
-        
-        setCurrentStep("review")
-      } catch (e: any) {
-        console.error("XML Generation Error:", e)
-        toast({ title: "Error al Generar XML", description: e.message || String(e), variant: "destructive" })
-      }
+      generateDocuments()
+      setCurrentStep("review")
     } else if (currentStep === "review") {
       setCurrentStep("confirm")
     }
@@ -423,6 +487,143 @@ export default function TruckingInvoice() {
     else if (currentStep === "confirm") setCurrentStep("review")
   }
 
+  const generateDocuments = () => {
+    try {
+      // Generar XML
+      const xmlPayload: InvoiceForXmlPayload = {
+        id: `XML-${formData.invoiceNumber}-${Date.now()}`,
+        module: "trucking",
+        invoiceNumber: formData.invoiceNumber,
+        client: formData.clientRuc,
+        clientName: formData.clientName,
+        date: formData.issueDate,
+        dueDate: formData.dueDate,
+        currency: formData.currency,
+        total: formData.total,
+        records: selectedRecordDetails.map(record => ({
+          id: record.id,
+          description: `Servicio de transporte - Container: ${extractFieldValue(record.data, FIELD_MAPPING.container) || "N/A"}`,
+          quantity: 1,
+          unitPrice: record.totalValue,
+          totalPrice: record.totalValue,
+          serviceCode: formData.serviceCode,
+          unit: "VIAJE",
+          blNumber: extractFieldValue(record.data, FIELD_MAPPING.bl),
+          containerNumber: extractFieldValue(record.data, FIELD_MAPPING.container),
+          containerSize: extractFieldValue(record.data, FIELD_MAPPING.size),
+          containerType: extractFieldValue(record.data, FIELD_MAPPING.type),
+          driverName: extractFieldValue(record.data, FIELD_MAPPING.driver),
+          plate: extractFieldValue(record.data, FIELD_MAPPING.vehicle),
+          moveDate: extractFieldValue(record.data, FIELD_MAPPING.moveDate),
+          associate: extractFieldValue(record.data, FIELD_MAPPING.company)
+        })),
+        status: "generated",
+        driverId: formData.driverId,
+        vehicleId: formData.vehicleId,
+        routeId: formData.routeId
+      }
+      
+      const xml = generateInvoiceXML(xmlPayload)
+      setGeneratedXml(xml)
+      
+      // Generar PDF
+      const pdf = generateInvoicePDF(formData, selectedRecordDetails)
+      setGeneratedPdf(pdf)
+      
+    } catch (e: any) {
+      console.error("Error al generar documentos:", e)
+      toast({ 
+        title: "Error al Generar Documentos", 
+        description: e.message || String(e), 
+        variant: "destructive" 
+      })
+    }
+  }
+
+  const generateInvoicePDF = (invoiceData: TruckingFormData, records: IndividualExcelRecord[]): Blob => {
+    const doc = new jsPDF()
+    
+    // Encabezado
+    doc.setFontSize(20)
+    doc.setTextColor(15, 23, 42) // slate-900
+    doc.text('FACTURA DE TRANSPORTE TERRESTRE', 105, 20, { align: 'center' })
+    
+    // Información de la factura
+    doc.setFontSize(10)
+    doc.setTextColor(71, 85, 105) // slate-600
+    doc.text(`Número: ${invoiceData.invoiceNumber}`, 15, 35)
+    doc.text(`Fecha: ${new Date(invoiceData.issueDate).toLocaleDateString()}`, 15, 40)
+    doc.text(`Vencimiento: ${new Date(invoiceData.dueDate).toLocaleDateString()}`, 15, 45)
+    
+    // Información del cliente
+    doc.setFontSize(12)
+    doc.setTextColor(15, 23, 42)
+    doc.text('Cliente:', 15, 60)
+    doc.setFontSize(10)
+    doc.text(invoiceData.clientName, 15, 65)
+    doc.text(`RUC: ${invoiceData.clientRuc}`, 15, 70)
+    doc.text(`Dirección: ${invoiceData.clientAddress || 'N/A'}`, 15, 75)
+    
+    // Detalles de transporte
+    doc.setFontSize(12)
+    doc.setTextColor(15, 23, 42)
+    doc.text('Detalles de Transporte:', 15, 90)
+    doc.setFontSize(10)
+    
+    const driver = configuredDrivers.find(d => d.id === invoiceData.driverId)
+    const vehicle = configuredVehicles.find(v => v.id === invoiceData.vehicleId)
+    const route = configuredRoutes.find(r => r.id === invoiceData.routeId)
+    
+    doc.text(`Conductor: ${driver?.name || invoiceData.driverId}`, 15, 95)
+    doc.text(`Vehículo: ${vehicle ? `${vehicle.plate} (${vehicle.model})` : invoiceData.vehicleId}`, 15, 100)
+    doc.text(`Ruta: ${route?.name || invoiceData.routeId}`, 15, 105)
+    
+    // Tabla de servicios
+    doc.setFontSize(12)
+    doc.setTextColor(15, 23, 42)
+    doc.text('Servicios de Transporte:', 15, 120)
+    
+    const serviceData = records.map(record => [
+      extractFieldValue(record.data, FIELD_MAPPING.container) || 'N/A',
+      extractFieldValue(record.data, FIELD_MAPPING.bl) || 'N/A',
+      extractFieldValue(record.data, FIELD_MAPPING.size) || 'N/A',
+      `$${record.totalValue.toFixed(2)}`
+    ])
+    
+    autoTable(doc, {
+      startY: 125,
+      head: [['Contenedor', 'BL', 'Tamaño', 'Monto']],
+      body: serviceData,
+      headStyles: {
+        fillColor: [15, 23, 42], // slate-900
+        textColor: 255
+      },
+      alternateRowStyles: {
+        fillColor: [241, 245, 249] // slate-50
+      },
+      margin: { left: 15 }
+    })
+    
+    // Totales
+    const finalY = (doc as any).lastAutoTable.finalY + 10
+    doc.setFontSize(12)
+    doc.text(`Subtotal: $${invoiceData.subtotal.toFixed(2)}`, 150, finalY)
+    doc.text(`ITBMS (7%): $${invoiceData.taxAmount.toFixed(2)}`, 150, finalY + 5)
+    doc.setFontSize(14)
+    doc.setFont(undefined, 'bold')
+    doc.text(`Total: $${invoiceData.total.toFixed(2)}`, 150, finalY + 15)
+    
+    // Notas
+    if (invoiceData.description) {
+      doc.setFontSize(10)
+      doc.setFont(undefined, 'normal')
+      doc.text('Notas:', 15, finalY + 30)
+      doc.text(invoiceData.description, 15, finalY + 35, { maxWidth: 180 })
+    }
+    
+    return new Blob([doc.output('blob')], { type: 'application/pdf' })
+  }
+
   const handleFinalizeInvoice = async () => {
     if (!generatedXml) {
       toast({ title: "Error", description: "XML no generado. No se puede finalizar.", variant: "destructive" })
@@ -430,22 +631,6 @@ export default function TruckingInvoice() {
     }
     
     try {
-      const driver = configuredDrivers.find((d) => d.id === formData.driverId)
-      const vehicle = configuredVehicles.find((v) => v.id === formData.vehicleId)
-      const route = configuredRoutes.find((r) => r.id === formData.routeId)
-
-      const invoiceDetails: PersistedInvoiceRecord["details"] = {
-        driverId: formData.driverId,
-        driverName: driver?.name,
-        vehicleId: formData.vehicleId,
-        vehicleInfo: vehicle ? `${vehicle.plate} (${vehicle.model})` : undefined,
-        routeId: formData.routeId,
-        routeName: route?.name,
-      }
-      truckingCustomFields.forEach((cf) => {
-        if (formData[cf.id] !== undefined && formData[cf.id] !== "") invoiceDetails[cf.id] = formData[cf.id]
-      })
-
       const newInvoice: PersistedInvoiceRecord = {
         id: `TRK-INV-${Date.now().toString().slice(-6)}`,
         module: "trucking",
@@ -462,14 +647,24 @@ export default function TruckingInvoice() {
         xmlData: generatedXml,
         relatedRecordIds: selectedRecordIds,
         notes: formData.description,
-        details: invoiceDetails,
+        details: {
+          driverId: formData.driverId,
+          driverName: configuredDrivers.find(d => d.id === formData.driverId)?.name,
+          vehicleId: formData.vehicleId,
+          vehicleInfo: configuredVehicles.find(v => v.id === formData.vehicleId)?.plate,
+          routeId: formData.routeId,
+          routeName: configuredRoutes.find(r => r.id === formData.routeId)?.name,
+          ...Object.fromEntries(
+            truckingCustomFields
+              .filter(cf => formData[cf.id] !== undefined && formData[cf.id] !== "")
+              .map(cf => [cf.id, formData[cf.id]])
+          )
+        },
         createdAt: new Date().toISOString(),
       }
       
       dispatch(addInvoice(newInvoice))
       dispatch(markRecordsAsInvoiced({ recordIds: selectedRecordIds, invoiceId: newInvoice.id }))
-      
-      // Refrescar registros pendientes
       dispatch(fetchPendingRecords())
 
       toast({
@@ -477,6 +672,7 @@ export default function TruckingInvoice() {
         description: `${newInvoice.invoiceNumber} guardada con éxito.`,
         className: "bg-green-600 text-white",
       })
+      
       setSelectedRecordIds([])
       setFormData(getNewInvoiceState())
       setGeneratedXml(null)
@@ -495,56 +691,16 @@ export default function TruckingInvoice() {
   const handleDownloadXml = () => {
     if (generatedXml) {
       const blob = new Blob([generatedXml], { type: "application/xml;charset=utf-8" })
-      saveAs(blob, `${formData.invoiceNumber || "factura"}.xml`)
+      saveAs(blob, `${formData.invoiceNumber}.xml`)
       toast({ title: "XML Descargado", description: "El archivo XML ha sido descargado." })
     } else {
       toast({ title: "Error", description: "No hay XML generado para descargar.", variant: "destructive" })
     }
   }
 
-  const generateInvoicePDF = (invoiceData: any): Blob => {
-    const doc = new jsPDF()
-    
-    // Configure PDF document
-    doc.setFontSize(20)
-    doc.text('FACTURA DE TRUCKING', 20, 30)
-    
-    doc.setFontSize(12)
-    doc.text(`Número de Factura: ${invoiceData.invoiceNumber}`, 20, 50)
-    doc.text(`Cliente: ${invoiceData.clientName}`, 20, 60)
-    doc.text(`RUC: ${invoiceData.clientRuc}`, 20, 70)
-    doc.text(`Fecha de Emisión: ${new Date(invoiceData.issueDate).toLocaleDateString()}`, 20, 80)
-    doc.text(`Fecha de Vencimiento: ${new Date(invoiceData.dueDate).toLocaleDateString()}`, 20, 90)
-    
-    // Driver and vehicle information
-    const driver = configuredDrivers.find(d => d.id === invoiceData.driverId)
-    const vehicle = configuredVehicles.find(v => v.id === invoiceData.vehicleId)
-    const route = configuredRoutes.find(r => r.id === invoiceData.routeId)
-    
-    if (driver) doc.text(`Conductor: ${driver.name}`, 20, 110)
-    if (vehicle) doc.text(`Vehículo: ${vehicle.plate} (${vehicle.model})`, 20, 120)
-    if (route) doc.text(`Ruta: ${route.name}`, 20, 130)
-    
-    // Financial details
-    doc.text(`Subtotal: ${invoiceData.currency} ${invoiceData.subtotal.toFixed(2)}`, 20, 150)
-    doc.text(`Impuestos: ${invoiceData.currency} ${invoiceData.taxAmount.toFixed(2)}`, 20, 160)
-    doc.setFontSize(14)
-    doc.text(`Total: ${invoiceData.currency} ${invoiceData.total.toFixed(2)}`, 20, 180)
-    
-    // Description
-    if (invoiceData.description) {
-      doc.setFontSize(12)
-      doc.text('Descripción:', 20, 200)
-      const splitDescription = doc.splitTextToSize(invoiceData.description, 170)
-      doc.text(splitDescription, 20, 210)
-    }
-    
-    return new Blob([doc.output('blob')], { type: 'application/pdf' })
-  }
-
   const handleDownloadPdf = () => {
     if (generatedPdf) {
-      saveAs(generatedPdf, `${formData.invoiceNumber || "factura"}.pdf`)
+      saveAs(generatedPdf, `${formData.invoiceNumber}.pdf`)
       toast({ title: "PDF Descargado", description: "El archivo PDF ha sido descargado." })
     } else {
       toast({ title: "Error", description: "No hay PDF generado para descargar.", variant: "destructive" })
@@ -565,6 +721,7 @@ export default function TruckingInvoice() {
           Crea, revisa y finaliza facturas para el módulo de transporte terrestre.
         </p>
       </header>
+      
       <div className="mb-8">
         <Progress value={progressValue} className="w-full" />
         <div className="flex justify-between text-sm text-muted-foreground mt-1">
@@ -574,6 +731,7 @@ export default function TruckingInvoice() {
           <span className={currentStep === "confirm" ? "font-bold text-primary" : ""}>4. Confirmar</span>
         </div>
       </div>
+      
       {currentStep === "select" && (
         <Card>
           <CardHeader>
@@ -585,13 +743,9 @@ export default function TruckingInvoice() {
           </CardHeader>
           <CardContent>
             <div className="mb-4">
-              <Label htmlFor="searchRecords" className="sr-only">
-                Buscar Registros
-              </Label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  id="searchRecords"
                   type="search"
                   placeholder="Buscar por contenedor, asociado, conductor, placa, BL, ID de registro..."
                   value={searchTerm}
@@ -601,21 +755,14 @@ export default function TruckingInvoice() {
               </div>
             </div>
 
-            {/* Filter Buttons */}
             <div className="mb-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-medium text-muted-foreground">Filtros Rápidos:</h4>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={clearAllFilters}
-                  className="text-xs"
-                >
+                <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-xs">
                   Limpiar Filtros
                 </Button>
               </div>
               
-              {/* Date Range Filter */}
               <div className="space-y-2">
                 <Label className="text-xs font-medium">Por Fecha:</Label>
                 <div className="flex gap-2 flex-wrap">
@@ -638,7 +785,6 @@ export default function TruckingInvoice() {
                 </div>
               </div>
 
-              {/* Amount Range Filter */}
               <div className="space-y-2">
                 <Label className="text-xs font-medium">Por Monto:</Label>
                 <div className="flex gap-2 flex-wrap">
@@ -661,7 +807,6 @@ export default function TruckingInvoice() {
                 </div>
               </div>
 
-              {/* Container Filter */}
               <div className="space-y-2">
                 <Label className="text-xs font-medium">Por Contenedor:</Label>
                 <div className="flex gap-2 flex-wrap">
@@ -683,33 +828,24 @@ export default function TruckingInvoice() {
                 </div>
               </div>
 
-
-
-              {/* Active Filters Summary */}
               {(activeFilters.dateRange !== 'all' || activeFilters.amountRange !== 'all' || 
                 activeFilters.hasContainer !== 'all' || searchTerm) && (
                 <div className="bg-muted/30 p-3 rounded-md">
                   <p className="text-xs text-muted-foreground mb-1">Filtros activos:</p>
                   <div className="flex gap-1 flex-wrap">
                     {searchTerm && (
-                      <span className="bg-primary/10 text-primary px-2 py-1 rounded text-xs">
-                        Búsqueda: "{searchTerm}"
-                      </span>
+                      <Badge variant="secondary">Búsqueda: "{searchTerm}"</Badge>
                     )}
                     {activeFilters.dateRange !== 'all' && (
-                      <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">
-                        Fecha: {activeFilters.dateRange}
-                      </span>
+                      <Badge variant="blue">Fecha: {activeFilters.dateRange}</Badge>
                     )}
                     {activeFilters.amountRange !== 'all' && (
-                      <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs">
-                        Monto: {activeFilters.amountRange}
-                      </span>
+                      <Badge variant="green">Monto: {activeFilters.amountRange}</Badge>
                     )}
                     {activeFilters.hasContainer !== 'all' && (
-                      <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs">
+                      <Badge variant="orange">
                         Contenedor: {activeFilters.hasContainer === 'yes' ? 'Con' : 'Sin'}
-                      </span>
+                      </Badge>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
@@ -718,6 +854,7 @@ export default function TruckingInvoice() {
                 </div>
               )}
             </div>
+
             {isLoadingRecords ? (
               <div className="flex justify-center items-center p-8">
                 <Loader2 className="h-8 w-8 animate-spin" />
@@ -730,28 +867,28 @@ export default function TruckingInvoice() {
                     <TableRow>
                       <TableHead className="w-12">
                         <Checkbox
-                          checked={selectedRecordIds.length === filteredPendingRecords.length && filteredPendingRecords.length > 0}
+                          checked={selectedRecordIds.length === filteredPendingRecords.length}
                           onCheckedChange={(checked) => {
-                            if (checked) {
-                              setSelectedRecordIds(filteredPendingRecords.map(r => r.id))
-                            } else {
-                              setSelectedRecordIds([])
-                            }
+                            setSelectedRecordIds(checked ? filteredPendingRecords.map(r => r.id) : [])
                           }}
                         />
                       </TableHead>
                       <TableHead>Código</TableHead>
-                      <TableHead>Descripción</TableHead>
+                      <TableHead>Conetenedor</TableHead>
                       <TableHead>Cantidad</TableHead>
                       <TableHead>Precio Unit.</TableHead>
                       <TableHead>Total</TableHead>
-                      <TableHead>Cliente</TableHead>
+                      <TableHead>Asociado</TableHead>
                       <TableHead>Fecha</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredPendingRecords.map((record) => {
-                      const data = record.data as TruckingExcelData
+                      const container = extractFieldValue(record.data, FIELD_MAPPING.container)
+                      const size = extractFieldValue(record.data, FIELD_MAPPING.size)
+                      const associate = extractFieldValue(record.data, FIELD_MAPPING.company)
+                      const moveDate = extractFieldValue(record.data, FIELD_MAPPING.moveDate)
+                      
                       return (
                         <TableRow key={record.id}>
                           <TableCell>
@@ -760,13 +897,17 @@ export default function TruckingInvoice() {
                               onCheckedChange={(checked) => handleRecordSelectionChange(record.id, checked as boolean)}
                             />
                           </TableCell>
-                          <TableCell className="font-mono text-sm">{data.containerConsecutive || record.id.split("-").pop()}</TableCell>
-                          <TableCell>{data.container ? `Contenedor: ${data.container} (${data.size})` : "N/A"}</TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {record.id.split("-").pop()}
+                          </TableCell>
+                          <TableCell>
+                            {container ? `${container} (${size})` : "N/A"}
+                          </TableCell>
                           <TableCell className="text-right">1</TableCell>
-                          <TableCell className="text-right">${record.totalValue?.toFixed(2) || "0.00"}</TableCell>
+                          <TableCell className="text-right">${record.totalValue?.toFixed(2)}</TableCell>
                           <TableCell className="text-right font-medium">${record.totalValue.toFixed(2)}</TableCell>
-                          <TableCell>{data.associate || "N/A"}</TableCell>
-                          <TableCell>{data.moveDate || "N/A"}</TableCell>
+                          <TableCell>{associate || "N/A"}</TableCell>
+                          <TableCell>{moveDate || "N/A"}</TableCell>
                         </TableRow>
                       )
                     })}
@@ -782,62 +923,22 @@ export default function TruckingInvoice() {
                     ? "No se encontraron registros individuales pendientes para Trucking."
                     : "Intenta ajustar los filtros o la búsqueda para encontrar registros."
                   }
-                  {pendingTruckingRecords.length === 0 && (
-                    <>
-                      {" "}
-                      <Button variant="link" className="p-0 h-auto" onClick={() => router.push("/trucking/upload")}>
-                        Cargar nuevos desde un Excel
-                      </Button>
-                      .
-                    </>
-                  )}
                 </AlertDescription>
               </Alert>
             )}
-            {truckingGeneratedInvoices.length > 0 && (
-              <div className="mt-8">
-                <h3 className="text-lg font-semibold mb-2">Facturas de Trucking Ya Generadas</h3>
-                <div className="max-h-[200px] overflow-y-auto border rounded-md">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Nº Factura</TableHead>
-                        <TableHead>Cliente</TableHead>
-                        <TableHead>Fecha</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                        <TableHead>Estado</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {truckingGeneratedInvoices.map((invoice) => (
-                        <TableRow key={invoice.id}>
-                          <TableCell>{invoice.invoiceNumber}</TableCell>
-                          <TableCell>{invoice.clientName}</TableCell>
-                          <TableCell>{new Date(invoice.issueDate).toLocaleDateString()}</TableCell>
-                          <TableCell className="text-right">$ {invoice.totalAmount.toFixed(2)}</TableCell>
-                          <TableCell>
-                            <span
-                              className={`px-2 py-1 text-xs font-semibold rounded-full ${invoice.status === "generada" ? "bg-blue-100 text-blue-700" : invoice.status === "transmitida" ? "bg-green-100 text-green-700" : invoice.status === "anulada" ? "bg-red-100 text-red-700" : invoice.status === "pagada" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-700"}`}
-                            >
-                              {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1).replace("_", " ")}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            )}
           </CardContent>
           <CardFooter className="justify-end">
-            <Button onClick={nextStep} disabled={selectedRecordIds.length === 0 || isLoadingRecords}>
+            <Button 
+              onClick={nextStep} 
+              disabled={selectedRecordIds.length === 0 || isLoadingRecords}
+            >
               Continuar
               <ChevronRight className="ml-2 h-4 w-4" />
             </Button>
           </CardFooter>
         </Card>
       )}
+      
       {currentStep === "create" && (
         <Card>
           <CardHeader>
@@ -846,157 +947,288 @@ export default function TruckingInvoice() {
               Crear Factura de Trucking
             </CardTitle>
             <CardDescription>
-              Completa los detalles. Algunos campos se prellenan desde los registros seleccionados.
+              Completa los detalles. Los campos marcados con <span className="text-green-600">✓</span> se han prellenado desde Excel.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <fieldset className="space-y-4">
-                <legend className="text-lg font-semibold mb-2 border-b pb-1">Datos Generales</legend>
-                <div>
-                  <Label htmlFor="invoiceNumber">Número Factura</Label>
-                  <Input
-                    id="invoiceNumber"
-                    name="invoiceNumber"
-                    value={formData.invoiceNumber}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="issueDate">Fecha Emisión</Label>
-                    <Input
-                      id="issueDate"
-                      name="issueDate"
-                      type="date"
-                      value={formData.issueDate}
-                      onChange={handleInputChange}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="dueDate">Fecha Vencimiento</Label>
-                    <Input
-                      id="dueDate"
-                      name="dueDate"
-                      type="date"
-                      value={formData.dueDate}
-                      onChange={handleInputChange}
-                      required
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="currency">Moneda</Label>
-                  <Select
-                    name="currency"
-                    value={formData.currency}
-                    onValueChange={(value) => handleInputChange({ target: { name: "currency", value } } as any)}
+          <CardContent>
+            <div className="flex flex-col md:flex-row gap-6">
+              {/* Navegación lateral */}
+              <div className="w-full md:w-64 space-y-2">
+                {FORM_SECTIONS.map((section) => (
+                  <Button
+                    key={section.id}
+                    variant={activeSection === section.id ? "secondary" : "ghost"}
+                    className="w-full justify-start"
+                    onClick={() => setActiveSection(section.id)}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="USD">USD</SelectItem>
-                      <SelectItem value="PAB">PAB</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <span className="mr-2">{section.icon}</span>
+                    {section.title}
+                  </Button>
+                ))}
+              </div>
+              
+              {/* Contenido del formulario */}
+              <div className="flex-1">
+                {FORM_SECTIONS.map((section) => (
+                  <div 
+                    key={section.id} 
+                    className={`space-y-4 ${activeSection === section.id ? 'block' : 'hidden'}`}
+                  >
+                    <h3 className="text-lg font-semibold flex items-center">
+                      {section.icon}
+                      <span className="ml-2">{section.title}</span>
+                    </h3>
+                    <p className="text-sm text-muted-foreground">{section.description}</p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {section.fields.map((field) => {
+                        const isAutoField = 'auto' in field && field.auto
+                        const value = formData[field.id]
+                        
+                        return (
+                          <div key={field.id}>
+                            <Label htmlFor={field.id} className="flex items-center">
+                              {isAutoField && (
+                                <span className="text-green-600 mr-1">✓</span>
+                              )}
+                              {field.icon && React.cloneElement(field.icon, { className: "h-4 w-4 mr-1" })}
+                              {field.label}
+                              {field.required && <span className="text-red-500 ml-1">*</span>}
+                            </Label>
+                            
+                            {field.type === 'select' ? (
+                              <Select
+                                value={value}
+                                onValueChange={(val) => setFormData(prev => ({ ...prev, [field.id]: val }))}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder={`Seleccionar ${field.label}`} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {field.options?.map(opt => (
+                                    <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : field.type === 'date' ? (
+                              <Input
+                                id={field.id}
+                                type="date"
+                                value={value}
+                                onChange={handleInputChange}
+                                className={isAutoField ? "bg-green-50 border-green-200" : ""}
+                              />
+                            ) : (
+                              <Input
+                                id={field.id}
+                                name={field.id}
+                                value={value}
+                                onChange={handleInputChange}
+                                className={isAutoField ? "bg-green-50 border-green-200" : ""}
+                                placeholder={isAutoField ? "Extraído automáticamente" : undefined}
+                              />
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+                
+                {/* Sección de items de servicio */}
+                {formData.serviceItems.length > 0 && (
+                  <div className="mt-8 space-y-4">
+                    <h3 className="text-lg font-semibold flex items-center">
+                      <Package className="mr-2 h-5 w-5" />
+                      Servicios ({formData.serviceItems.length})
+                    </h3>
+                    
+                    <div className="space-y-4">
+                      {formData.serviceItems.map((item, index) => (
+                        <Card key={item.id}>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="flex items-center">
+                              <Truck className="mr-2 h-5 w-5" />
+                              Servicio #{index + 1} - {item.containerNumber || 'N/A'}
+                            </CardTitle>
+                            <CardDescription className="flex flex-wrap gap-2">
+                              <Badge variant="secondary">BL: {item.blNumber || 'N/A'}</Badge>
+                              <Badge variant="outline">{item.containerSize || 'N/A'}</Badge>
+                              <Badge variant="outline">{item.weight || 'N/A'}</Badge>
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                              <Label>Código Servicio SAP</Label>
+                              <Select
+                                value={item.serviceCode}
+                                onValueChange={(val) => {
+                                  const newItems = [...formData.serviceItems]
+                                  newItems[index].serviceCode = val
+                                  setFormData(prev => ({ ...prev, serviceItems: newItems }))
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="SRV100">SRV100 - TRANSPORT</SelectItem>
+                                  <SelectItem value="SRV101">SRV101 - LOADING</SelectItem>
+                                  <SelectItem value="SRV102">SRV102 - UNLOADING</SelectItem>
+                                  <SelectItem value="SRV103">SRV103 - STORAGE</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            
+                            <div>
+                              <Label>Código Actividad</Label>
+                              <Select
+                                value={item.activityCode}
+                                onValueChange={(val) => {
+                                  const newItems = [...formData.serviceItems]
+                                  newItems[index].activityCode = val
+                                  setFormData(prev => ({ ...prev, serviceItems: newItems }))
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="ACT205">ACT205 - CONTAINER 20FT</SelectItem>
+                                  <SelectItem value="ACT206">ACT206 - CONTAINER 40FT</SelectItem>
+                                  <SelectItem value="ACT207">ACT207 - REEFER</SelectItem>
+                                  <SelectItem value="ACT208">ACT208 - FREIGHT</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            
+                            <div>
+                              <Label>Monto</Label>
+                              <Input
+                                value={`$${item.amount.toFixed(2)}`}
+                                readOnly
+                                className="font-bold"
+                              />
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Campos personalizados */}
+                {truckingCustomFields.length > 0 && (
+                  <div className="mt-8 space-y-4">
+                    <h3 className="text-lg font-semibold">Campos Personalizados</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {truckingCustomFields.map((field) => (
+                        <div key={field.id}>
+                          <Label htmlFor={field.id}>{field.label}</Label>
+                          {field.type === "text" && (
+                            <Input
+                              id={field.id}
+                              name={field.id}
+                              value={formData[field.id] || ""}
+                              onChange={(e) => setFormData(prev => ({ ...prev, [field.id]: e.target.value }))}
+                              placeholder={field.placeholder}
+                            />
+                          )}
+                          {field.type === "number" && (
+                            <Input
+                              id={field.id}
+                              name={field.id}
+                              type="number"
+                              value={formData[field.id] || ""}
+                              onChange={(e) => setFormData(prev => ({ ...prev, [field.id]: Number(e.target.value) || 0 }))}
+                              placeholder={field.placeholder}
+                            />
+                          )}
+                          {field.type === "date" && (
+                            <Input
+                              id={field.id}
+                              name={field.id}
+                              type="date"
+                              value={formData[field.id] || ""}
+                              onChange={(e) => setFormData(prev => ({ ...prev, [field.id]: e.target.value }))}
+                            />
+                          )}
+                          {field.type === "select" && field.options && (
+                            <Select
+                              value={formData[field.id] || ""}
+                              onValueChange={(val) => setFormData(prev => ({ ...prev, [field.id]: val }))}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder={field.placeholder || `Seleccionar ${field.label}`} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {field.options.map((option) => (
+                                  <SelectItem key={option} value={option}>{option}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Notas y montos */}
+                <div className="mt-8 space-y-4">
+                  <h3 className="text-lg font-semibold">Notas y Montos</h3>
+                  <div>
+                    <Label htmlFor="description">Descripción / Notas Adicionales</Label>
+                    <Textarea
+                      id="description"
+                      name="description"
+                      value={formData.description}
+                      onChange={handleInputChange}
+                      rows={3}
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor="subtotal">Subtotal ({formData.currency})</Label>
+                      <Input
+                        id="subtotal"
+                        name="subtotal"
+                        type="number"
+                        value={formData.subtotal.toFixed(2)}
+                        onChange={handleInputChange}
+                        step="0.01"
+                        className="bg-muted/50"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="taxAmount">ITBMS (7%) ({formData.currency})</Label>
+                      <Input
+                        id="taxAmount"
+                        name="taxAmount"
+                        type="number"
+                        value={formData.taxAmount.toFixed(2)}
+                        readOnly
+                        disabled
+                        className="bg-muted/50"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="total">Total ({formData.currency})</Label>
+                      <Input
+                        id="total"
+                        name="total"
+                        type="number"
+                        value={formData.total.toFixed(2)}
+                        readOnly
+                        disabled
+                        className="bg-muted/50 font-bold"
+                      />
+                    </div>
+                  </div>
                 </div>
-              </fieldset>
-              <fieldset className="space-y-4">
-                <legend className="text-lg font-semibold mb-2 border-b pb-1">Datos del Cliente (desde Excel)</legend>
-                <div>
-                  <Label htmlFor="clientName">Nombre Cliente</Label>
-                  <Input
-                    id="clientName"
-                    name="clientName"
-                    value={formData.clientName}
-                    onChange={handleInputChange}
-                    required
-                    className="bg-muted/50"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="clientRuc">RUC/Cédula</Label>
-                  <Input
-                    id="clientRuc"
-                    name="clientRuc"
-                    value={formData.clientRuc}
-                    onChange={handleInputChange}
-                    required
-                    readOnly
-                    className="bg-muted/50"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="clientAddress">Dirección</Label>
-                  <Input
-                    id="clientAddress"
-                    name="clientAddress"
-                    value={formData.clientAddress}
-                    onChange={handleInputChange}
-                    readOnly
-                    className="bg-muted/50"
-                  />
-                </div>
-              </fieldset>
+              </div>
             </div>
-
- 
-
-            <fieldset className="space-y-4">
-              <legend className="text-lg font-semibold mb-2 border-b pb-1">Notas y Montos</legend>
-              <div>
-                <Label htmlFor="description">Descripción / Notas Adicionales</Label>
-                <Textarea
-                  id="description"
-                  name="description"
-                  value={formData.description}
-                  onChange={handleInputChange}
-                  rows={3}
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <Label htmlFor="subtotal">Subtotal ({formData.currency})</Label>
-                  <Input
-                    id="subtotal"
-                    name="subtotal"
-                    type="number"
-                    value={formData.subtotal.toFixed(2)}
-                    onChange={handleInputChange}
-                    step="0.01"
-                    readOnly
-                    className="bg-muted/50"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="taxAmount">ITBMS (7%) ({formData.currency})</Label>
-                  <Input
-                    id="taxAmount"
-                    name="taxAmount"
-                    type="number"
-                    value={formData.taxAmount.toFixed(2)}
-                    readOnly
-                    disabled
-                    className="bg-muted/50"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="total">Total ({formData.currency})</Label>
-                  <Input
-                    id="total"
-                    name="total"
-                    type="number"
-                    value={formData.total.toFixed(2)}
-                    readOnly
-                    disabled
-                    className="bg-muted/50 font-bold"
-                  />
-                </div>
-              </div>
-            </fieldset>
           </CardContent>
           <CardFooter className="justify-end">
             <Button onClick={prevStep} variant="outline">
@@ -1010,6 +1242,7 @@ export default function TruckingInvoice() {
           </CardFooter>
         </Card>
       )}
+      
       {currentStep === "review" && (
         <Card>
           <CardHeader>
@@ -1045,44 +1278,37 @@ export default function TruckingInvoice() {
               <div>
                 <h3 className="font-semibold mb-1">Detalles Transporte:</h3>
                 <p>
-                  <strong>Conductor:</strong> {configuredDrivers.find((d) => d.id === formData.driverId)?.name || "N/A"}
+                  <strong>Conductor:</strong> {formData.driverId || "N/A"}
                 </p>
                 <p>
-                  <strong>Vehículo:</strong>{" "}
-                  {configuredVehicles.find((v) => v.id === formData.vehicleId)?.plate || "N/A"}
+                  <strong>Vehículo:</strong> {formData.vehicleId || "N/A"}
                 </p>
                 <p>
-                  <strong>Ruta:</strong> {configuredRoutes.find((r) => r.id === formData.routeId)?.name || "N/A"}
+                  <strong>Ruta:</strong> {formData.routeId || "N/A"}
                 </p>
               </div>
-              {truckingCustomFields.filter((cf) => formData[cf.id] !== undefined && formData[cf.id] !== "").length >
-                0 && (
-                <div className="md:col-span-2">
-                  <h3 className="font-semibold mb-1">Campos Personalizados:</h3>
-                  {truckingCustomFields.map((cf) =>
-                    formData[cf.id] !== undefined && formData[cf.id] !== "" ? (
-                      <p key={cf.id}>
-                        <strong>{cf.label}:</strong> {String(formData[cf.id])}
-                      </p>
-                    ) : null,
-                  )}
-                </div>
-              )}
+              
               <div className="md:col-span-2">
-                <h3 className="font-semibold mb-1">Registros Individuales Incluidos:</h3>
-                <ul className="list-disc list-inside text-sm max-h-24 overflow-y-auto">
-                  {selectedRecordDetails.map((r) => {
-                    const data = r.data as Record<string, any>
+                <h3 className="font-semibold mb-1">Servicios de Transporte Terrestre ({selectedRecordDetails.length} registros):</h3>
+                <div className="text-sm max-h-32 overflow-y-auto border rounded p-2 bg-muted/10">
+                  {selectedRecordDetails.map((r, index) => {
+                    const container = extractFieldValue(r.data, FIELD_MAPPING.container)
+                    const size = extractFieldValue(r.data, FIELD_MAPPING.size)
+                    const client = extractFieldValue(r.data, FIELD_MAPPING.client)
+                    
                     return (
-                      <li key={r.id}>
-                        ID: {r.id.split("-").pop()} - {data.cliente} - {data.contenedor} ({data.tamaño}) - $
-                        {r.totalValue.toFixed(2)}
-                      </li>
+                      <div key={r.id} className="mb-1 pb-1 border-b border-muted last:border-b-0">
+                        <strong>{index + 1}. {formData.serviceCode}</strong> - {client}<br/>
+                        <span className="text-muted-foreground">
+                          Contenedor: {container} ({size}) - ${r.totalValue.toFixed(2)}
+                        </span>
+                      </div>
                     )
                   })}
-                </ul>
+                </div>
               </div>
             </div>
+            
             <div className="text-right space-y-1 mt-4">
               <p>
                 <strong>Subtotal:</strong> {formData.currency} {formData.subtotal.toFixed(2)}
@@ -1094,6 +1320,7 @@ export default function TruckingInvoice() {
                 <strong>Total:</strong> {formData.currency} {formData.total.toFixed(2)}
               </p>
             </div>
+            
             <div className="mt-4">
               <div className="flex justify-between items-center mb-2">
                 <h3 className="font-semibold">Archivos Generados:</h3>
@@ -1128,6 +1355,7 @@ export default function TruckingInvoice() {
           </CardFooter>
         </Card>
       )}
+      
       {currentStep === "confirm" && (
         <Card>
           <CardHeader>
@@ -1163,21 +1391,6 @@ export default function TruckingInvoice() {
           </CardFooter>
         </Card>
       )}
-
-      <div className="mt-8 flex justify-between">
-        <Button onClick={prevStep} disabled={currentStep === "select"} variant="outline">
-          <ChevronLeft className="mr-2 h-4 w-4" />
-          Anterior
-        </Button>
-        {currentStep !== "confirm" ? (
-          <Button onClick={nextStep} disabled={currentStep === "select" && selectedRecordIds.length === 0}>
-            Siguiente
-            <ChevronRight className="ml-2 h-4 w-4" />
-          </Button>
-        ) : null}
-      </div>
     </div>
   )
 }
-
-

@@ -540,26 +540,40 @@ const handleUpdateRecord = (recordId: string, field: string, value: any) => {
   )
 }
 
-// Función para guardar los cambios
-const handleSaveExcelChanges = () => {
-  editingRecords.forEach(record => {
-    dispatch(updateRecord({
-      id: record.id,
-      updates: {
-        data: record.data,
-        totalValue: calculateRecordTotal(record.data)
-      }
-    }))
-  })
+// Importar la nueva función async
+import { updateRecordAsync } from '@/lib/features/records/recordsSlice'
+
+// Actualizar la función para usar el backend
+const handleSaveExcelChanges = async () => {
+  try {
+    // Guardar cada registro modificado en el backend
+    const updatePromises = editingRecords.map(record => 
+      dispatch(updateRecordAsync({
+        id: record.id,
+        updates: {
+          data: record.data,
+          totalValue: calculateRecordTotal(record.data)
+        }
+      }))
+    )
     
-  setShowEditExcelModal(false)
-  setExcelToEdit(null)
-  setEditingRecords([])
+    await Promise.all(updatePromises)
     
-  toast({
-    title: "Excel Actualizado",
-    description: "Los cambios han sido guardados exitosamente."
-  })
+    setShowEditExcelModal(false)
+    setExcelToEdit(null)
+    setEditingRecords([])
+    
+    toast({
+      title: "Excel Actualizado",
+      description: "Los cambios han sido guardados exitosamente en el servidor."
+    })
+  } catch (error) {
+    toast({
+      title: "Error",
+      description: "Hubo un problema al guardar los cambios.",
+      variant: "destructive"
+    })
+  }
 }
 
 // Función para calcular el total de un registro

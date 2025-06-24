@@ -75,6 +75,13 @@ const clientsSchema = new mongoose.Schema({
     type: String,
     required: false
   },
+  // Nuevo campo para código SAP
+  sapCode: {
+    type: String,
+    required: false,
+    unique: true,
+    sparse: true // Permite múltiples documentos con valor null
+  },
   isActive: {
     type: Boolean,
     default: true

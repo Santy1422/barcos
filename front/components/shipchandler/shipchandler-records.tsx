@@ -575,7 +575,7 @@ const excelRecords = useAppSelector((state) => {
                       <TableCell>${data.tarifa.toFixed(2)}</TableCell>
                       <TableCell>{data.fechaFacturacion}</TableCell>
                       <TableCell>
-                        <Badge 
+<Badge
                           variant={
                             record.status === "facturado" ? "default" :
                             record.status === "pendiente" ? "secondary" : "destructive"

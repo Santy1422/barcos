@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/toolkit"
 import type { RootState } from "@/lib/store"
+import { createSelector } from '@reduxjs/toolkit'
 
 // Generic interface for a single record extracted from an Excel row
 export interface ExcelRecord {
@@ -167,6 +168,32 @@ export const updateRecordStatus = createAsyncThunk(
   }
 )
 
+export const updateRecordAsync = createAsyncThunk(
+  'records/updateRecord',
+  async ({ id, updates }: { id: string; updates: Partial<ExcelRecord> }, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`/api/records/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updates)
+      })
+      
+      if (!response.ok) {
+        throw new Error('Error al actualizar registro')
+      }
+      
+      const data = await response.json()
+      return { id, updates: data.data }
+    } catch (error) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
 interface RecordsState {
   individualRecords: ExcelRecord[]
   invoices: InvoiceRecord[]
@@ -290,6 +317,16 @@ const recordsSlice = createSlice({
           Object.assign(record, action.payload)
         }
       })
+      // En extraReducers, agregar:
+      .addCase(updateRecordAsync.fulfilled, (state, action) => {
+        const record = state.individualRecords.find(r => r.id === action.payload.id)
+        if (record) {
+          Object.assign(record, action.payload.updates)
+        }
+      })
+      .addCase(updateRecordAsync.rejected, (state, action) => {
+        state.error = action.payload as string
+      })
   },
 })
 
@@ -312,11 +349,17 @@ export const selectRecordsLoading = (state: RootState) => state.records.fetching
 export const selectRecordsError = (state: RootState) => state.records.error
 export const selectCreatingRecords = (state: RootState) => state.records.creatingRecords
 
-export const selectPendingRecordsByModule = (state: RootState, moduleName: ExcelRecord["module"]) =>
-  state.records.individualRecords.filter((record) => record.module === moduleName && record.status === "pendiente")
+export const selectPendingRecordsByModule = createSelector(
+  [(state: RootState) => state.records.individualRecords, (state: RootState, moduleName: ExcelRecord["module"]) => moduleName],
+  (individualRecords, moduleName) => 
+    individualRecords.filter((record) => record.module === moduleName && record.status === "pendiente")
+)
 
-export const selectInvoicesByModule = (state: RootState, moduleName: InvoiceRecord["module"]) =>
-  state.records.invoices.filter((invoice) => invoice.module === moduleName)
+export const selectInvoicesByModule = createSelector(
+  [(state: RootState) => state.records.invoices, (state: RootState, moduleName: InvoiceRecord["module"]) => moduleName],
+  (invoices, moduleName) => 
+    invoices.filter((invoice) => invoice.module === moduleName)
+)
 
 export default recordsSlice.reducer
 export interface PersistedInvoiceRecord {

@@ -30,6 +30,7 @@ export interface TruckingFormData {
   clientName: string
   clientRuc: string
   clientAddress: string
+  clientSapNumber: string // Nuevo campo
   driverId: string
   vehicleId: string
   routeId: string
@@ -38,7 +39,22 @@ export interface TruckingFormData {
   taxAmount: number
   total: number
   currency: string
-  [customFieldId: string]: any
+  // Campos SAP existentes
+  companyCode?: string
+  profitCenter?: string
+  clientType?: string
+  businessType?: string
+  paymentTerms?: string
+  taxRate?: number
+  internalOrder?: string
+  refKey1?: string
+  refKey2?: string
+  refKey3?: string
+  // Nuevos campos para servicios SAP
+  serviceCode?: string
+  activityCode?: string
+  bundle?: string
+  [key: string]: any
 }
 
 const getNewInvoiceState = (): TruckingFormData => ({
@@ -48,6 +64,7 @@ const getNewInvoiceState = (): TruckingFormData => ({
   clientName: "",
   clientRuc: "",
   clientAddress: "",
+  clientSapNumber: "", // Inicializar nuevo campo
   driverId: "",
   vehicleId: "",
   routeId: "",
@@ -56,6 +73,10 @@ const getNewInvoiceState = (): TruckingFormData => ({
   taxAmount: 0,
   total: 0,
   currency: "USD",
+  // Inicializar nuevos campos de servicios
+  serviceCode: "TRANSPORT",
+  activityCode: "CONTAINER",
+  bundle: "TRUCKING",
 })
 
 export function useTruckingInvoice() {

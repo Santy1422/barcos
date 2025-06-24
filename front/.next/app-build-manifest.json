@@ -1,9 +1,9 @@
 {
   "pages": {
-    "/page": [
+    "/trucking/invoice/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/page.js"
+      "static/chunks/app/trucking/invoice/page.js"
     ],
     "/layout": [
       "static/chunks/webpack.js",
@@ -21,10 +21,25 @@
       "static/chunks/main-app.js",
       "static/chunks/app/trucking/upload/page.js"
     ],
-    "/trucking/invoice/page": [
+    "/trucking/records/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/trucking/invoice/page.js"
+      "static/chunks/app/trucking/records/page.js"
+    ],
+    "/agency/clients/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/agency/clients/page.js"
+    ],
+    "/agency/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/agency/page.js"
+    ],
+    "/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/page.js"
     ]
   }
 }

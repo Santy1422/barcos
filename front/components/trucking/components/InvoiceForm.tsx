@@ -107,6 +107,30 @@ export function InvoiceForm({
             />
           </div>
           <div>
+            <Label htmlFor="clientSapNumber">Número Cliente SAP</Label>
+            <Input
+              id="clientSapNumber"
+              name="clientSapNumber"
+              value={formData.clientSapNumber || ""}
+              onChange={onInputChange}
+              placeholder="Número de cliente en SAP"
+            />
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="clientAddress">Dirección</Label>
+          <Input
+            id="clientAddress"
+            name="clientAddress"
+            value={formData.clientAddress}
+            onChange={onInputChange}
+            placeholder="Dirección del cliente"
+          />
+        </div>
+        
+        <div className="grid grid-cols-1 gap-4">
+          <div>
             <Label htmlFor="clientAddress">Dirección</Label>
             <Input
               id="clientAddress"
@@ -178,6 +202,222 @@ export function InvoiceForm({
           />
         </div>
 
+        {/* Nuevos campos para códigos de servicios SAP */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+          <div className="md:col-span-3">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Códigos de Servicios SAP</h4>
+          </div>
+          <div>
+            <Label htmlFor="serviceCode">Código de Servicio</Label>
+            <Input
+              id="serviceCode"
+              name="serviceCode"
+              value={formData.serviceCode || "TRANSPORT"}
+              onChange={onInputChange}
+              placeholder="Ej: TRANSPORT, STORAGE"
+            />
+          </div>
+          <div>
+            <Label htmlFor="activityCode">Código de Actividad</Label>
+            <Input
+              id="activityCode"
+              name="activityCode"
+              value={formData.activityCode || "CONTAINER"}
+              onChange={onInputChange}
+              placeholder="Ej: CONTAINER, HANDLING"
+            />
+          </div>
+          <div>
+            <Label htmlFor="bundle">Bundle/Paquete</Label>
+            <Input
+              id="bundle"
+              name="bundle"
+              value={formData.bundle || "TRUCKING"}
+              onChange={onInputChange}
+              placeholder="Ej: TRUCKING, LOGISTICS"
+            />
+          </div>
+        </div>
+
+        {truckingCustomFields.map((field) => (
+          <div key={field.id}>
+            <Label htmlFor={field.id}>{field.label}</Label>
+            <Input
+              id={field.id}
+              name={field.id}
+              value={formData[field.id] || ""}
+              onChange={onInputChange}
+              placeholder={field.label}
+            />
+          </div>
+        ))}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t">
+          <div>
+            <Label htmlFor="subtotal">Subtotal</Label>
+            <Input
+              id="subtotal"
+              name="subtotal"
+              type="number"
+              step="0.01"
+              value={formData.subtotal}
+              onChange={onInputChange}
+              placeholder="0.00"
+            />
+          </div>
+          <div>
+            <Label htmlFor="taxAmount">Impuestos (7%)</Label>
+            <Input
+              id="taxAmount"
+              name="taxAmount"
+              type="number"
+              step="0.01"
+              value={formData.taxAmount}
+              onChange={onInputChange}
+              placeholder="0.00"
+            />
+          </div>
+          <div>
+            <Label htmlFor="total">Total</Label>
+            <Input
+              id="total"
+              name="total"
+              type="number"
+              step="0.01"
+              value={formData.total}
+              onChange={onInputChange}
+              placeholder="0.00"
+              className="font-bold"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="companyCode">Código de Compañía</Label>
+            <Input
+              id="companyCode"
+              name="companyCode"
+              value={formData.companyCode || "9321"}
+              onChange={onInputChange}
+              placeholder="9321"
+            />
+          </div>
+          <div>
+            <Label htmlFor="profitCenter">Centro de Beneficio</Label>
+            <Input
+              id="profitCenter"
+              name="profitCenter"
+              value={formData.profitCenter || "1000"}
+              onChange={onInputChange}
+              placeholder="1000"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <Label htmlFor="clientType">Tipo de Cliente</Label>
+            <Select value={formData.clientType || "COMMERCIAL"} onValueChange={(value) => onSelectChange("clientType", value)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="COMMERCIAL">Comercial</SelectItem>
+                <SelectItem value="GOVERNMENT">Gubernamental</SelectItem>
+                <SelectItem value="INDIVIDUAL">Individual</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="businessType">Tipo de Negocio</Label>
+            <Select value={formData.businessType || "IMPORT"} onValueChange={(value) => onSelectChange("businessType", value)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="IMPORT">Importación</SelectItem>
+                <SelectItem value="EXPORT">Exportación</SelectItem>
+                <SelectItem value="DOMESTIC">Doméstico</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="paymentTerms">Términos de Pago</Label>
+            <Select value={formData.paymentTerms || "NET30"} onValueChange={(value) => onSelectChange("paymentTerms", value)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="NET15">15 días</SelectItem>
+                <SelectItem value="NET30">30 días</SelectItem>
+                <SelectItem value="NET60">60 días</SelectItem>
+                <SelectItem value="IMMEDIATE">Inmediato</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="taxRate">Tasa de Impuesto (%)</Label>
+            <Input
+              id="taxRate"
+              name="taxRate"
+              type="number"
+              step="0.01"
+              min="0"
+              max="1"
+              value={formData.taxRate || 0.07}
+              onChange={onInputChange}
+              placeholder="0.07"
+            />
+          </div>
+          <div>
+            <Label htmlFor="internalOrder">Orden Interna (Opcional)</Label>
+            <Input
+              id="internalOrder"
+              name="internalOrder"
+              value={formData.internalOrder || ""}
+              onChange={onInputChange}
+              placeholder="Orden interna SAP"
+              maxLength={12}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <Label htmlFor="refKey1">Referencia 1</Label>
+            <Input
+              id="refKey1"
+              name="refKey1"
+              value={formData.refKey1 || ""}
+              onChange={onInputChange}
+              placeholder="Referencia adicional 1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="refKey2">Referencia 2</Label>
+            <Input
+              id="refKey2"
+              name="refKey2"
+              value={formData.refKey2 || ""}
+              onChange={onInputChange}
+              placeholder="Referencia adicional 2"
+            />
+          </div>
+          <div>
+            <Label htmlFor="refKey3">Referencia 3</Label>
+            <Input
+              id="refKey3"
+              name="refKey3"
+              value={formData.refKey3 || ""}
+              onChange={onInputChange}
+              placeholder="Referencia adicional 3"
+            />
+          </div>
+        </div>
         {truckingCustomFields.map((field) => (
           <div key={field.id}>
             <Label htmlFor={field.id}>{field.label}</Label>

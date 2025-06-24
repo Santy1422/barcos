@@ -1,4 +1,5 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit"
+import { createSelector } from '@reduxjs/toolkit'
 
 // Interfaces for configuration items
 export interface Driver {
@@ -143,5 +144,8 @@ export default configSlice.reducer
 export const selectTruckingDrivers = (state: { config: ConfigState }) => state.config.drivers
 export const selectTruckingVehicles = (state: { config: ConfigState }) => state.config.vehicles
 export const selectTruckingRoutes = (state: { config: ConfigState }) => state.config.routes
-export const selectModuleCustomFields = (state: { config: ConfigState }, module: CustomFieldConfig["module"]) =>
-  state.config.customFields.filter((field) => field.module === module)
+export const selectModuleCustomFields = createSelector(
+  [(state: { config: ConfigState }) => state.config.customFields, (state: { config: ConfigState }, module: CustomFieldConfig["module"]) => module],
+  (customFields, module) => 
+    customFields.filter((field) => field.module === module)
+)

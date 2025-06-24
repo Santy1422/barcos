@@ -36,7 +36,7 @@ export function generateInvoiceXML(invoice: Invoice): string {
         },
         // Header Section
         Header: {
-          CompanyCode: invoice.module === "trucking" ? "932?" : invoice.module === "shipchandler" ? "6721" : "9121",
+          CompanyCode: invoice.module === "trucking" ? "932" : invoice.module === "shipchandler" ? "6721" : "9121",
           DocumentType: "XL",
           DocumentDate: formatDateForXML(invoice.date), // ISSUE_DATE
           PostingDate: formatDateForXML(invoice.date), // POSTING_DATE
@@ -50,51 +50,51 @@ export function generateInvoiceXML(invoice: Invoice): string {
         },
         // CustomerOpenItem Section
         CustomerOpenItem: {
-          CustomerNbr: invoice.client, // SAP_CUSTOMER_NUMBER
-          AmntTransactCur: invoice.total.toFixed(2), // INVOICE_AMOUNT
-          PmtTerms: "PAYMENT_TERM_TABLE"
+          CustomerNbr: invoice.clientSapNumber || invoice.client, // Usar número SAP del cliente
+          AmntTransactCur: invoice.total.toFixed(2),
+          PmtTerms: invoice.paymentTerms || "NET30"
         },
         // OtherItems Section
         OtherItems: {
           OtherItem: invoice.records.map((record: InvoiceRecord) => ({
-            IncomeRebateCode: "I", // I = INCOME
-            CompanyCode: "SERVICE_DIMENSION",
-            BaseUnitMeasure: "SAP - ECC",
-            Qty: record.quantity || 1, // DEPENDS_ON_BASE_UNIT
-            ProfitCenter: "SAP - ECC",
-            InternalOrder: "", // string(12)
-            Bundle: "SERVICE_DIMENSION",
-            Service: "SERVICE_DIMENSION",
-            Activity: "SERVICE_DIMENSION",
-            Pillar: "SERVICE_DIMENSION",
-            BUCountry: "SERVICE_DIMENSION",
-            ServiceCountry: "SERVICE_DIMENSION",
-            RepairTyp: "SERVICE_DIMENSION",
-            ClientType: "SERVICE_DIMENSION",
-            BusinessType: "SERVICE_DIMENSION",
-            FullEmpty: record.fullEmptyStatus || "FULL / EMPTY",
-            CtrISOcode: record.containerIsoCode || "SERVICE_DIMENSION",
-            CtrType: "SERVICE_DIMENSION",
-            CtrSize: "SERVICE_DIMENSION",
-            CtrCategory: "SERVICE_DIMENSION",
-            SalesOrder: "SERVICE_WITH_OUT_CONTRACT",
-            Route: "SERVICE_DIMENSION",
-            Commodity: "SERVICE_DIMENSION",
-            SubContracting: "YES / NO",
-            CtrNbr: record.containerNumber || "CONTAINER_NUMBER",
-            // Campos adicionales según el esquema
-            AmntTransacCur: (-record.totalPrice || -record.totalRate || 0).toFixed(2),
-            AmntCpyCur: (-record.totalPrice || -record.totalRate || 0).toFixed(2),
-            TaxCode: "O7",
-            TaxAmntDocCur: (-(record.totalPrice || record.totalRate || 0) * 0.07).toFixed(2),
-            TaxAmntCpyCur: (-(record.totalPrice || record.totalRate || 0) * 0.07).toFixed(2),
+            IncomeRebateCode: "I",
+            CompanyCode: invoice.companyCode || "932", // ✅ Corregido
+            BaseUnitMeasure: "EA", // ✅ Mejorado de "SAP - ECC"
+            Qty: record.quantity || 1,
+            ProfitCenter: invoice.profitCenter || "1000",
+            InternalOrder: invoice.internalOrder || "",
+            Bundle: record.serviceCode || invoice.serviceCode || "TRUCKING", // ⚠️ Mejorar mapeo
+            Service: record.serviceCode || invoice.serviceCode || "TRANSPORT",
+            Activity: record.activityCode || invoice.activityCode || "CONTAINER",
+            Pillar: invoice.pillar || "LOGISTICS",
+            BUCountry: invoice.buCountry || "PA",
+            ServiceCountry: invoice.serviceCountry || "PA",
+            RepairTyp: record.repairType || "N/A",
+            ClientType: invoice.clientType || "COMMERCIAL",
+            BusinessType: invoice.businessType || "IMPORT",
+            FullEmpty: record.fullEmptyStatus || "FULL", // ⚠️ Necesita mapeo desde Excel
+            CtrISOcode: record.containerIsoCode || "42G1", // ⚠️ Necesita mapeo desde Excel
+            CtrType: record.containerType || "DV",
+            CtrSize: record.containerSize || "40",
+            CtrCategory: record.containerCategory || "STANDARD",
+            SalesOrder: invoice.salesOrder || "",
+            Route: record.route || invoice.routeName || "STANDARD",
+            Commodity: record.commodity || "GENERAL",
+            SubContracting: invoice.subContracting || "NO",
+            CtrNbr: record.containerNumber || "",
+            // Corregir cálculos de montos
+            AmntTransacCur: (record.totalPrice || record.totalRate || 0).toFixed(3), // 3 decimales como especifica SAP
+            AmntCpyCur: (record.totalPrice || record.totalRate || 0).toFixed(3),
+            TaxCode: invoice.taxCode || "O7",
+            TaxAmntDocCur: ((record.totalPrice || record.totalRate || 0) * (invoice.taxRate || 0.07)).toFixed(3),
+            TaxAmntCpyCur: ((record.totalPrice || record.totalRate || 0) * (invoice.taxRate || 0.07)).toFixed(3),
             ReferencePeriod: `${(new Date(invoice.date).getMonth() + 1).toString().padStart(2, "0")}.${new Date(invoice.date).getFullYear()}`,
             AssignmentNbr: invoice.invoiceNumber,
-            LineItemText: record.description || record.productName || `${record.serviceCode || "N/A"} (${record.containerSize || "N/A"}')`,
+            LineItemText: record.description || record.productName || `${record.serviceCode || "TRANSPORT"} (${record.containerSize || "40"}')`,
             BL: record.blNumber || "",
-            REF_KEY1: "",
-            REF_KEY2: "",
-            REF_KEY3: ""
+            REF_KEY1: invoice.refKey1 || "",
+            REF_KEY2: invoice.refKey2 || "",
+            REF_KEY3: invoice.refKey3 || ""
           }))
         }
       }
