@@ -1106,7 +1106,6 @@ export default function TruckingInvoice() {
                               <Label>Monto</Label>
                               <Input
                                 value={`$${item.amount.toFixed(2)}`}
-                                readOnly
                                 className="font-bold"
                               />
                             </div>
