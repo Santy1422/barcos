@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -80,7 +80,9 @@ export function TruckingConfig() {
     name: "",
     origin: "",
     destination: "",
-    distance: 0,
+    containerType: "normal",
+    routeType: "single",
+    price: 0,
   })
   const [newVehicle, setNewVehicle] = useState<Omit<Vehicle, "id">>({
     plate: "",
@@ -98,6 +100,33 @@ export function TruckingConfig() {
     options: [],
   })
 
+  // Autocomplete functions
+  const handleOriginChange = (value: string) => {
+    const upperValue = value.toUpperCase()
+    
+    // Update name automatically when origin or destination changes
+    const newName = upperValue && newRoute.destination ? `${upperValue}/${newRoute.destination}` : ""
+    
+    setNewRoute({ 
+      ...newRoute, 
+      origin: upperValue,
+      name: newName
+    })
+  }
+
+  const handleDestinationChange = (value: string) => {
+    const upperValue = value.toUpperCase()
+    
+    // Update name automatically when origin or destination changes
+    const newName = newRoute.origin && upperValue ? `${newRoute.origin}/${upperValue}` : ""
+    
+    setNewRoute({ 
+      ...newRoute, 
+      destination: upperValue,
+      name: newName
+    })
+  }
+
   const handleSaveGeneralConfig = () => {
     toast({
       title: "Configuración General Guardada",
@@ -107,9 +136,9 @@ export function TruckingConfig() {
   }
 
   const handleAddRoute = () => {
-    if (newRoute.name && newRoute.origin && newRoute.destination && newRoute.distance > 0) {
+    if (newRoute.name && newRoute.origin && newRoute.destination && newRoute.price > 0) {
       dispatch(addRoute({ id: `route-${Date.now()}`, ...newRoute }))
-      setNewRoute({ name: "", origin: "", destination: "", distance: 0 })
+      setNewRoute({ name: "", origin: "", destination: "", containerType: "normal", routeType: "single", price: 0 })
       setShowNewRouteDialog(false)
       toast({ title: "Ruta Agregada", description: `Ruta '${newRoute.name}' agregada exitosamente.` })
     } else {
@@ -174,6 +203,33 @@ export function TruckingConfig() {
     setEditDialogType(null)
   }
 
+  // Edit autocomplete functions
+  const handleEditOriginChange = (value: string) => {
+    const upperValue = value.toUpperCase()
+    
+    // Update name automatically when origin or destination changes
+    const newName = upperValue && editingItem.destination ? `${upperValue}/${editingItem.destination}` : ""
+    
+    setEditingItem({ 
+      ...editingItem, 
+      origin: upperValue,
+      name: newName
+    })
+  }
+
+  const handleEditDestinationChange = (value: string) => {
+    const upperValue = value.toUpperCase()
+    
+    // Update name automatically when origin or destination changes
+    const newName = editingItem.origin && upperValue ? `${editingItem.origin}/${upperValue}` : ""
+    
+    setEditingItem({ 
+      ...editingItem, 
+      destination: upperValue,
+      name: newName
+    })
+  }
+
   const handleDeleteItem = (type: "route" | "vehicle" | "driver" | "customField", id: string) => {
     if (type === "route") {
       dispatch(deleteRoute(id))
@@ -189,6 +245,19 @@ export function TruckingConfig() {
       toast({ title: "Campo Personalizado Eliminado", description: "El campo personalizado ha sido eliminado." })
     }
   }
+
+  useEffect(() => {
+    if (showNewRouteDialog) {
+      setNewRoute({
+        name: "",
+        origin: "",
+        destination: "",
+        containerType: "normal",
+        routeType: "single",
+        price: 0,
+      })
+    }
+  }, [showNewRouteDialog])
 
   return (
     <div className="p-6 space-y-6">
@@ -390,44 +459,59 @@ export function TruckingConfig() {
                   Nueva Ruta
                 </Button>
               </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Origen</TableHead>
-                    <TableHead>Destino</TableHead>
-                    <TableHead>Distancia (km)</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {routes.map((route) => (
-                    <TableRow key={route.id}>
-                      <TableCell className="font-medium">{route.name}</TableCell>
-                      <TableCell>{route.origin}</TableCell>
-                      <TableCell>{route.destination}</TableCell>
-                      <TableCell>{route.distance} km</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex gap-1 justify-end">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setEditingItem(route)
-                              setEditDialogType("route")
-                            }}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDeleteItem("route", route.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+              {routes.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground gap-4">
+                  <MapPin className="w-12 h-12 mx-auto mb-2 opacity-40" />
+                  <div className="text-lg font-semibold">No hay rutas creadas</div>
+                  <div className="text-sm">Comienza creando tu primera ruta para verlas aquí.</div>
+                  <Button variant="outline" onClick={() => setShowNewRouteDialog(true)}>
+                    <Plus className="mr-2 h-4 w-4" /> Crear Ruta
+                  </Button>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Origen</TableHead>
+                      <TableHead>Destino</TableHead>
+                      <TableHead>Tipo Contenedor</TableHead>
+                      <TableHead>Tipo Ruta</TableHead>
+                      <TableHead>Precio</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {routes.map((route) => (
+                      <TableRow key={route.id}>
+                        <TableCell className="font-medium">{route.name}</TableCell>
+                        <TableCell>{route.origin}</TableCell>
+                        <TableCell>{route.destination}</TableCell>
+                        <TableCell>{route.containerType === "refrigerated" ? "Refrigerado" : "Normal"}</TableCell>
+                        <TableCell>{route.routeType === "RT" ? "RT" : "Simple"}</TableCell>
+                        <TableCell>${route.price}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex gap-1 justify-end">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setEditingItem(route)
+                                setEditDialogType("route")
+                              }}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteItem("route", route.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -601,57 +685,103 @@ export function TruckingConfig() {
             <DialogDescription>Complete los detalles para agregar una nueva ruta.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="new-route-name" className="text-right">
+            <div className="grid grid-cols-4 items-start gap-4">
+              <Label htmlFor="new-route-name" className="text-right pt-3">
                 Nombre
               </Label>
-              <Input
-                id="new-route-name"
-                value={newRoute.name}
-                onChange={(e) => setNewRoute({ ...newRoute, name: e.target.value })}
-                className="col-span-3"
-              />
+              <div className="col-span-3 flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="new-route-origin-input"
+                    value={newRoute.origin}
+                    onChange={(e) => handleOriginChange(e.target.value)}
+                    placeholder="PTY"
+                    className="flex-1"
+                  />
+                  <span className="text-lg font-semibold text-muted-foreground">/</span>
+                  <Input
+                    id="new-route-destination-input"
+                    value={newRoute.destination}
+                    onChange={(e) => handleDestinationChange(e.target.value)}
+                    placeholder="COL"
+                    className="flex-1"
+                  />
+                </div>
+                <div className="flex justify-between text-sm text-muted-foreground my-4 min-h-[2rem] border-t border-muted pt-3 mt-6">
+                  <span>Origen: <span className="font-medium text-foreground">{newRoute.origin || <span className='opacity-50'>---</span>}</span></span>
+                  <span>Destino: <span className="font-medium text-foreground">{newRoute.destination || <span className='opacity-50'>---</span>}</span></span>
+                </div>
+              </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="new-route-origin" className="text-right">
-                Origen
+              <Label htmlFor="new-route-container-type" className="text-right">
+                Tipo de Contenedor
               </Label>
-              <Input
-                id="new-route-origin"
-                value={newRoute.origin}
-                onChange={(e) => setNewRoute({ ...newRoute, origin: e.target.value })}
-                className="col-span-3"
-              />
+              <Select
+                value={newRoute.containerType}
+                onValueChange={(value: "normal" | "refrigerated") => setNewRoute({ ...newRoute, containerType: value })}
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Seleccionar tipo de contenedor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="normal">Normal</SelectItem>
+                  <SelectItem value="refrigerated">Refrigerado</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="new-route-destination" className="text-right">
-                Destino
+              <Label htmlFor="new-route-route-type" className="text-right">
+                Tipo de Ruta
               </Label>
-              <Input
-                id="new-route-destination"
-                value={newRoute.destination}
-                onChange={(e) => setNewRoute({ ...newRoute, destination: e.target.value })}
-                className="col-span-3"
-              />
+              <Select
+                value={newRoute.routeType}
+                onValueChange={(value: "single" | "RT") => setNewRoute({ ...newRoute, routeType: value })}
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Seleccionar tipo de ruta" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single">Simple</SelectItem>
+                  <SelectItem value="RT">RT</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="new-route-distance" className="text-right">
-                Distancia (km)
+              <Label htmlFor="new-route-price" className="text-right">
+                Precio
               </Label>
-              <Input
-                id="new-route-distance"
-                type="number"
-                value={newRoute.distance}
-                onChange={(e) => setNewRoute({ ...newRoute, distance: Number(e.target.value) })}
-                className="col-span-3"
-              />
+              <div className="col-span-3 flex items-center gap-2">
+                <Input
+                  id="new-route-price"
+                  type="text"
+                  inputMode="decimal"
+                  pattern="[0-9.]*"
+                  value={newRoute.price === 0 ? '' : newRoute.price}
+                  placeholder=""
+                  onChange={(e) => {
+                    let val = e.target.value.replace(/[^0-9.]/g, '');
+                    // Only allow one decimal point
+                    val = val.replace(/(\..*)\./g, '$1');
+                    setNewRoute({ ...newRoute, price: val === '' ? 0 : Number(val) });
+                  }}
+                  className="col-span-3"
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewRouteDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleAddRoute}>Guardar</Button>
+            <Button onClick={handleAddRoute} disabled={
+              !newRoute.origin ||
+              !newRoute.destination ||
+              !newRoute.containerType ||
+              !newRoute.routeType ||
+              !newRoute.price ||
+              newRoute.price <= 0
+            }>Guardar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -846,50 +976,89 @@ export function TruckingConfig() {
           <div className="grid gap-4 py-4">
             {editDialogType === "route" && editingItem && (
               <>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="edit-route-name" className="text-right">
+                <div className="grid grid-cols-4 items-start gap-4">
+                  <Label htmlFor="edit-route-name" className="text-right pt-3">
                     Nombre
                   </Label>
-                  <Input
-                    id="edit-route-name"
-                    value={editingItem.name}
-                    onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
-                    className="col-span-3"
-                  />
+                  <div className="col-span-3 flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="edit-route-origin-input"
+                        value={editingItem.origin}
+                        onChange={(e) => handleEditOriginChange(e.target.value)}
+                        placeholder="PTY"
+                        className="flex-1"
+                      />
+                      <span className="text-lg font-semibold text-muted-foreground">/</span>
+                      <Input
+                        id="edit-route-destination-input"
+                        value={editingItem.destination}
+                        onChange={(e) => handleEditDestinationChange(e.target.value)}
+                        placeholder="COL"
+                        className="flex-1"
+                      />
+                    </div>
+                    <div className="flex justify-between text-sm text-muted-foreground my-4 min-h-[2rem] border-t border-muted pt-3 mt-6">
+                      <span>Origen: <span className="font-medium text-foreground">{editingItem.origin || <span className='opacity-50'>---</span>}</span></span>
+                      <span>Destino: <span className="font-medium text-foreground">{editingItem.destination || <span className='opacity-50'>---</span>}</span></span>
+                    </div>
+                  </div>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="edit-route-origin" className="text-right">
-                    Origen
+                  <Label htmlFor="edit-route-container-type" className="text-right">
+                    Tipo de Contenedor
                   </Label>
-                  <Input
-                    id="edit-route-origin"
-                    value={editingItem.origin}
-                    onChange={(e) => setEditingItem({ ...editingItem, origin: e.target.value })}
-                    className="col-span-3"
-                  />
+                  <Select
+                    value={editingItem.containerType}
+                    onValueChange={(value: "normal" | "refrigerated") => setEditingItem({ ...editingItem, containerType: value })}
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Seleccionar tipo de contenedor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="normal">Normal</SelectItem>
+                      <SelectItem value="refrigerated">Refrigerado</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="edit-route-destination" className="text-right">
-                    Destino
+                  <Label htmlFor="edit-route-route-type" className="text-right">
+                    Tipo de Ruta
                   </Label>
-                  <Input
-                    id="edit-route-destination"
-                    value={editingItem.destination}
-                    onChange={(e) => setEditingItem({ ...editingItem, destination: e.target.value })}
-                    className="col-span-3"
-                  />
+                  <Select
+                    value={editingItem.routeType}
+                    onValueChange={(value: "single" | "RT") => setEditingItem({ ...editingItem, routeType: value })}
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Seleccionar tipo de ruta" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="single">Simple</SelectItem>
+                      <SelectItem value="RT">RT</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="edit-route-distance" className="text-right">
-                    Distancia (km)
+                  <Label htmlFor="edit-route-price" className="text-right">
+                    Precio
                   </Label>
-                  <Input
-                    id="edit-route-distance"
-                    type="number"
-                    value={editingItem.distance}
-                    onChange={(e) => setEditingItem({ ...editingItem, distance: Number(e.target.value) })}
-                    className="col-span-3"
-                  />
+                  <div className="col-span-3 flex items-center gap-2">
+                    <Input
+                      id="edit-route-price"
+                      type="text"
+                      inputMode="decimal"
+                      pattern="[0-9.]*"
+                      value={editingItem.price === 0 ? '' : editingItem.price}
+                      placeholder=""
+                      onChange={(e) => {
+                        let val = e.target.value.replace(/[^0-9.]/g, '');
+                        // Only allow one decimal point
+                        val = val.replace(/(\..*)\./g, '$1');
+                        setEditingItem({ ...editingItem, price: val === '' ? 0 : Number(val) });
+                      }}
+                      className="flex-1"
+                    />
+                  </div>
                 </div>
               </>
             )}

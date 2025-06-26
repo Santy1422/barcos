@@ -21,7 +21,9 @@ export interface Route {
   name: string
   origin: string
   destination: string
-  distance: number
+  containerType: "normal" | "refrigerated"
+  routeType: "single" | "RT"
+  price: number
 }
 
 export type CustomFieldType = "text" | "number" | "date" | "select"
@@ -57,9 +59,11 @@ const initialState: ConfigState = {
       name: "Puerto Balboa - Ciudad",
       origin: "Puerto Balboa",
       destination: "Ciudad de Panamá",
-      distance: 25,
+      containerType: "normal",
+      routeType: "single",
+      price: 1000,
     },
-    { id: "route-2", name: "Manzanillo - Colón", origin: "Manzanillo", destination: "Colón", distance: 15 },
+    { id: "route-2", name: "Manzanillo - Colón", origin: "Manzanillo", destination: "Colón", containerType: "normal", routeType: "single", price: 750 },
   ],
   customFields: [
     { id: "trucking-cf-1", label: "Tipo de Carga", type: "text", module: "trucking" },
