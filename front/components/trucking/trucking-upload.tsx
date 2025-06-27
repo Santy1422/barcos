@@ -81,7 +81,7 @@ export function TruckingUpload() {
         type: "trucking-data",
         module: "trucking" as const,
         recordIds: [], // Will be populated after records are created
-        totalValue: previewData.reduce((sum, record) => sum + (record.totalValue || 0), 0)
+        totalValue: 0 // Valor por defecto ya que no tenemos totalValue en los datos
       }
 
       // TODO: Create API endpoint to create Excel file and return ObjectId
@@ -98,7 +98,7 @@ export function TruckingUpload() {
         type: "trucking-data",
         status: "pendiente" as const,
         data: record,
-        totalValue: record.totalValue || 0
+        totalValue: 0 // Valor por defecto ya que no tenemos totalValue en los datos
       }))
       
       const userId = localStorage.getItem('userId') || 'default-user'
