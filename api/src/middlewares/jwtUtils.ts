@@ -2,23 +2,40 @@ import { Types } from "mongoose";
 import jwt from 'jsonwebtoken'
 import { userConexion } from "../config/env";
 import { ClientError } from "../utils/errors";
+import { users } from "../database";
 
-export const jwtUtils = (req, res, next) => {
+export const jwtUtils = async (req, res, next) => {
     const token = req.headers.authorization?.split('Bearer ')[1];
-    if (!token)
-      next(new ClientError('Missing token! Authorization=undefined', 400))
+    
+    if (!token) {
+      return next(new ClientError('Missing token! Authorization=undefined', 400))
+    }
+    
     try {
       const decodedToken = decodeToken(token) as TokenSignature
-      // Asegurar que req.user tenga tanto id como mongoId para compatibilidad
+      
+      // Obtener información completa del usuario desde la base de datos
+      const user = await users.findById(decodedToken.mongoId)
+      if (!user) {
+        return next(new ClientError('Usuario no encontrado', 401))
+      }
+      
+      // Asegurar que req.user tenga toda la información necesaria
       req.user = {
-        ...decodedToken,
-        id: decodedToken.mongoId // Agregar id que apunte al mongoId
+        id: user._id.toString(),
+        mongoId: user._id.toString(),
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        modules: user.modules,
+        isActive: user.isActive
       };
       next();
     } catch (error) {
-      next(new ClientError('Token falló al decodificarse!', 400))
+      return next(new ClientError('Token falló al decodificarse!', 400))
     }
 }
+
 export type TokenSignature = { id?: string, mongoId: string}
 
 export const firmarToken = (payload:TokenSignature) => {

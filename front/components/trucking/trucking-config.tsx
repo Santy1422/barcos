@@ -28,29 +28,57 @@ import {
   addVehicle,
   updateVehicle,
   deleteVehicle,
-  addRoute,
-  updateRoute,
-  deleteRoute,
   addCustomField,
   updateCustomField,
   deleteCustomField,
   selectTruckingDrivers,
   selectTruckingVehicles,
-  selectTruckingRoutes,
   selectModuleCustomFields,
   type Driver,
   type Vehicle,
-  type Route,
   type CustomFieldConfig,
   type CustomFieldType,
 } from "@/lib/features/config/configSlice"
+import {
+  fetchTruckingRoutes,
+  createTruckingRoute,
+  updateTruckingRoute,
+  deleteTruckingRoute,
+  selectTruckingRoutes,
+  selectTruckingRoutesLoading,
+  selectTruckingRoutesError,
+  type TruckingRoute,
+  type TruckingRouteInput,
+} from "@/lib/features/truckingRoutes/truckingRoutesSlice"
+import { selectCurrentUser } from "@/lib/features/auth/authSlice"
 
 export function TruckingConfig() {
   const dispatch = useAppDispatch()
   const drivers = useAppSelector(selectTruckingDrivers)
   const vehicles = useAppSelector(selectTruckingVehicles)
   const routes = useAppSelector(selectTruckingRoutes)
+  const routesLoading = useAppSelector(selectTruckingRoutesLoading)
+  const routesError = useAppSelector(selectTruckingRoutesError)
   const truckingCustomFields = useAppSelector((state) => selectModuleCustomFields(state, "trucking"))
+  const user = useAppSelector(selectCurrentUser)
+
+  // Cargar rutas al montar el componente solo si el usuario está autenticado
+  useEffect(() => {
+    if (user) {
+      dispatch(fetchTruckingRoutes())
+    }
+  }, [dispatch, user])
+
+  // Mostrar error si existe
+  useEffect(() => {
+    if (routesError) {
+      toast({
+        title: "Error",
+        description: routesError,
+        variant: "destructive",
+      })
+    }
+  }, [routesError])
 
   // General settings (still local state for now, could be moved to Redux configSlice if needed)
   const [autoCalculateRates, setAutoCalculateRates] = useState(true)
@@ -76,7 +104,7 @@ export function TruckingConfig() {
   const [editDialogType, setEditDialogType] = useState<"route" | "vehicle" | "driver" | "customField" | null>(null)
 
   // Form states for new items
-  const [newRoute, setNewRoute] = useState<Omit<Route, "id">>({
+  const [newRoute, setNewRoute] = useState<TruckingRouteInput>({
     name: "",
     origin: "",
     destination: "",
@@ -137,7 +165,7 @@ export function TruckingConfig() {
 
   const handleAddRoute = () => {
     if (newRoute.name && newRoute.origin && newRoute.destination && newRoute.price > 0) {
-      dispatch(addRoute({ id: `route-${Date.now()}`, ...newRoute }))
+      dispatch(createTruckingRoute(newRoute))
       setNewRoute({ name: "", origin: "", destination: "", containerType: "normal", routeType: "single", price: 0 })
       setShowNewRouteDialog(false)
       toast({ title: "Ruta Agregada", description: `Ruta '${newRoute.name}' agregada exitosamente.` })
@@ -187,7 +215,15 @@ export function TruckingConfig() {
     if (!editingItem) return
 
     if (editDialogType === "route") {
-      dispatch(updateRoute(editingItem))
+      const routeData: TruckingRouteInput = {
+        name: editingItem.name,
+        origin: editingItem.origin,
+        destination: editingItem.destination,
+        containerType: editingItem.containerType,
+        routeType: editingItem.routeType,
+        price: editingItem.price,
+      }
+      dispatch(updateTruckingRoute({ id: editingItem._id, routeData }))
       toast({ title: "Ruta Actualizada", description: `Ruta '${editingItem.name}' actualizada.` })
     } else if (editDialogType === "vehicle") {
       dispatch(updateVehicle(editingItem))
@@ -232,7 +268,7 @@ export function TruckingConfig() {
 
   const handleDeleteItem = (type: "route" | "vehicle" | "driver" | "customField", id: string) => {
     if (type === "route") {
-      dispatch(deleteRoute(id))
+      dispatch(deleteTruckingRoute(id))
       toast({ title: "Ruta Eliminada", description: "La ruta ha sido eliminada." })
     } else if (type === "vehicle") {
       dispatch(deleteVehicle(id))
@@ -453,64 +489,80 @@ export function TruckingConfig() {
               <CardDescription>Configurar rutas disponibles y sus distancias.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex justify-end">
-                <Button onClick={() => setShowNewRouteDialog(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Nueva Ruta
-                </Button>
-              </div>
-              {routes.length === 0 ? (
+              {!user ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground gap-4">
                   <MapPin className="w-12 h-12 mx-auto mb-2 opacity-40" />
-                  <div className="text-lg font-semibold">No hay rutas creadas</div>
-                  <div className="text-sm">Comienza creando tu primera ruta para verlas aquí.</div>
-                  <Button variant="outline" onClick={() => setShowNewRouteDialog(true)}>
-                    <Plus className="mr-2 h-4 w-4" /> Crear Ruta
-                  </Button>
+                  <div className="text-lg font-semibold">Usuario no autenticado</div>
+                  <div className="text-sm">Debe iniciar sesión para gestionar las rutas.</div>
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nombre</TableHead>
-                      <TableHead>Origen</TableHead>
-                      <TableHead>Destino</TableHead>
-                      <TableHead>Tipo Contenedor</TableHead>
-                      <TableHead>Tipo Ruta</TableHead>
-                      <TableHead>Precio</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {routes.map((route) => (
-                      <TableRow key={route.id}>
-                        <TableCell className="font-medium">{route.name}</TableCell>
-                        <TableCell>{route.origin}</TableCell>
-                        <TableCell>{route.destination}</TableCell>
-                        <TableCell>{route.containerType === "refrigerated" ? "Refrigerado" : "Normal"}</TableCell>
-                        <TableCell>{route.routeType === "RT" ? "RT" : "Simple"}</TableCell>
-                        <TableCell>${route.price}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex gap-1 justify-end">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setEditingItem(route)
-                                setEditDialogType("route")
-                              }}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => handleDeleteItem("route", route.id)}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <>
+                  <div className="flex justify-end">
+                    <Button onClick={() => setShowNewRouteDialog(true)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Nueva Ruta
+                    </Button>
+                  </div>
+                  {routes.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground gap-4">
+                      <MapPin className="w-12 h-12 mx-auto mb-2 opacity-40" />
+                      <div className="text-lg font-semibold">
+                        {routesLoading ? "Cargando rutas..." : "No hay rutas creadas"}
+                      </div>
+                      <div className="text-sm">
+                        {routesLoading ? "Obteniendo datos del servidor..." : "Comienza creando tu primera ruta para verlas aquí."}
+                      </div>
+                      {!routesLoading && (
+                        <Button variant="outline" onClick={() => setShowNewRouteDialog(true)}>
+                          <Plus className="mr-2 h-4 w-4" /> Crear Ruta
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nombre</TableHead>
+                          <TableHead>Origen</TableHead>
+                          <TableHead>Destino</TableHead>
+                          <TableHead>Tipo Contenedor</TableHead>
+                          <TableHead>Tipo Ruta</TableHead>
+                          <TableHead>Precio</TableHead>
+                          <TableHead className="text-right">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {routes.map((route) => (
+                          <TableRow key={route._id}>
+                            <TableCell className="font-medium">{route.name}</TableCell>
+                            <TableCell>{route.origin}</TableCell>
+                            <TableCell>{route.destination}</TableCell>
+                            <TableCell>{route.containerType === "refrigerated" ? "Refrigerado" : "Normal"}</TableCell>
+                            <TableCell>{route.routeType === "RT" ? "RT" : "Simple"}</TableCell>
+                            <TableCell>${route.price}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex gap-1 justify-end">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setEditingItem(route)
+                                    setEditDialogType("route")
+                                  }}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => handleDeleteItem("route", route._id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
@@ -774,14 +826,20 @@ export function TruckingConfig() {
             <Button variant="outline" onClick={() => setShowNewRouteDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleAddRoute} disabled={
-              !newRoute.origin ||
-              !newRoute.destination ||
-              !newRoute.containerType ||
-              !newRoute.routeType ||
-              !newRoute.price ||
-              newRoute.price <= 0
-            }>Guardar</Button>
+            <Button 
+              onClick={handleAddRoute} 
+              disabled={
+                routesLoading ||
+                !newRoute.origin ||
+                !newRoute.destination ||
+                !newRoute.containerType ||
+                !newRoute.routeType ||
+                !newRoute.price ||
+                newRoute.price <= 0
+              }
+            >
+              {routesLoading ? "Guardando..." : "Guardar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1196,7 +1254,12 @@ export function TruckingConfig() {
             >
               Cancelar
             </Button>
-            <Button onClick={handleEditItem}>Guardar Cambios</Button>
+            <Button 
+              onClick={handleEditItem}
+              disabled={routesLoading}
+            >
+              {routesLoading ? "Guardando..." : "Guardar Cambios"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

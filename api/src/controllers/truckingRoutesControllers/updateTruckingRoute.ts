@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import truckingRouteSchema from "../../database/schemas/truckingRouteSchema";
+import { response } from "../../utils";
 
 const TruckingRoute = mongoose.model('TruckingRoute', truckingRouteSchema);
 
@@ -9,6 +10,8 @@ const updateTruckingRoute = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { name, origin, destination, containerType, routeType, price } = req.body;
 
+    console.log('Actualizando ruta de trucking:', { id, updates: req.body });
+
     const updated = await TruckingRoute.findByIdAndUpdate(
       id,
       { name, origin, destination, containerType, routeType, price },
@@ -16,21 +19,17 @@ const updateTruckingRoute = async (req: Request, res: Response) => {
     );
 
     if (!updated) {
-      return res.status(404).json({
-        success: false,
-        message: 'Ruta de trucking no encontrada'
-      });
+      return response(res, 404, { message: 'Ruta de trucking no encontrada' });
     }
 
-    res.status(200).json({
-      success: true,
+    console.log('Ruta actualizada exitosamente:', updated);
+    return response(res, 200, { 
       message: 'Ruta de trucking actualizada',
       data: updated
     });
   } catch (error) {
     console.error('Error actualizando ruta de trucking:', error);
-    res.status(500).json({
-      success: false,
+    return response(res, 500, { 
       message: 'Error interno del servidor al actualizar ruta de trucking',
       error: error instanceof Error ? error.message : 'Error desconocido'
     });

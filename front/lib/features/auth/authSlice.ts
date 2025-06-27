@@ -78,20 +78,27 @@ export const loginAsync = createAsyncThunk(
       
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Error en el login')
+        throw new Error(errorData.payload?.error || 'Error en el login')
       }
       
       const data = await response.json()
       
+      // Los datos están envueltos en payload
+      const { user, token } = data.payload
+      
+      if (!token) {
+        throw new Error('Token no recibido del servidor')
+      }
+      
       // Guardar token en localStorage
-      localStorage.setItem('token', data.token)
+      localStorage.setItem('token', token)
       
       // Guardar cookie para middleware
       document.cookie = `auth-token=true; path=/`
       
       return {
-        user: data.user,
-        token: data.token
+        user: user,
+        token: token
       }
     } catch (error: any) {
       return rejectWithValue(error.message)
@@ -138,8 +145,11 @@ export const verifyToken = createAsyncThunk(
       
       const data = await response.json()
       
+      // Los datos están envueltos en payload
+      const { user } = data.payload
+      
       return {
-        user: data.user,
+        user: user,
         token: token
       }
     } catch (error: any) {
@@ -193,26 +203,33 @@ export const registerAsync = createAsyncThunk(
       
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Error en el registro')
+        throw new Error(errorData.payload?.error || 'Error en el registro')
       }
       
       const data = await response.json()
       
+      // Los datos están envueltos en payload
+      const { user, token } = data.payload
+      
+      if (!token) {
+        throw new Error('Token no recibido del servidor')
+      }
+      
       // Guardar token en localStorage
-      localStorage.setItem('token', data.token)
+      localStorage.setItem('token', token)
       
       // Guardar cookie para middleware
       document.cookie = `auth-token=true; path=/`
       
       return {
         user: {
-          id: data.user.id,
-          email: data.user.email,
-          name: data.user.name,
-          role: data.user.role,
-          createdAt: data.user.createdAt || new Date().toISOString()
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          createdAt: user.createdAt || new Date().toISOString()
         },
-        token: data.token
+        token: token
       }
     } catch (error: any) {
       return rejectWithValue(error.message || 'Error de conexión')
