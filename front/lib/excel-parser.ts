@@ -30,7 +30,83 @@ export interface TruckingExcelData {
   route: string;
   routeRtSummary: string;
   type1Type2: string;
+  // Campos agregados para el matching
+  matchedPrice?: number;
+  matchedRouteId?: string;
+  matchedRouteName?: string;
+  isMatched?: boolean;
 }
+
+// Función para hacer matching con las rutas configuradas
+export const matchTruckingDataWithRoutes = (
+  excelData: TruckingExcelData[], 
+  routes: Array<{_id: string, name: string, containerType: "normal" | "refrigerated", routeType: "single" | "RT", price: number}>
+): TruckingExcelData[] => {
+  console.log("=== INICIANDO MATCHING ===")
+  console.log("Rutas disponibles:", routes)
+  console.log("")
+  
+  return excelData.map((record, index) => {
+    console.log(`Procesando registro ${index + 1}:`)
+    console.log(`  Leg: "${record.leg}"`)
+    console.log(`  MoveType: "${record.moveType}"`)
+    console.log(`  Type: "${record.type}"`)
+    
+    // Buscar coincidencia basada en los criterios:
+    // 1. leg (name de la ruta) - normalizar espacios
+    // 2. moveType (routeType de la ruta) - case insensitive
+    // 3. type (containerType de la ruta) - HR = refrigerated, HC = normal
+    
+    const matchedRoute = routes.find(route => {
+      // Normalizar el leg: remover espacios extra y normalizar formato
+      const normalizedLeg = record.leg?.trim().replace(/\s*\/\s*/g, '/').toUpperCase() || '';
+      const normalizedRouteName = route.name?.trim().replace(/\s*\/\s*/g, '/').toUpperCase() || '';
+      
+      // Matching por leg (name de la ruta)
+      const legMatch = normalizedRouteName === normalizedLeg;
+      
+      // Matching por moveType (routeType de la ruta) - case insensitive
+      const normalizedMoveType = record.moveType?.trim().toLowerCase() || '';
+      const moveTypeMatch = 
+        (normalizedMoveType === 's' && route.routeType === 'single') ||
+        (normalizedMoveType === 'single' && route.routeType === 'single') ||
+        (normalizedMoveType === 'rt' && route.routeType === 'RT') ||
+        (normalizedMoveType === 'rt' && route.routeType === 'RT');
+      
+      // Matching por type (containerType de la ruta) - HR = refrigerated, HC = normal
+      const normalizedType = record.type?.trim().toUpperCase() || '';
+      const containerTypeMatch = 
+        (normalizedType === 'HR' && route.containerType === 'refrigerated') ||
+        (normalizedType === 'HC' && route.containerType === 'normal');
+      
+      console.log(`  Comparando con ruta "${route.name}":`)
+      console.log(`    Leg normalizado: "${normalizedLeg}" vs "${normalizedRouteName}" = ${legMatch}`)
+      console.log(`    MoveType normalizado: "${normalizedMoveType}" vs "${route.routeType}" = ${moveTypeMatch}`)
+      console.log(`    Type normalizado: "${normalizedType}" vs "${route.containerType}" = ${containerTypeMatch}`)
+      console.log(`    Match total: ${legMatch && moveTypeMatch && containerTypeMatch}`)
+      
+      return legMatch && moveTypeMatch && containerTypeMatch;
+    });
+    
+    if (matchedRoute) {
+      console.log(`  ✅ MATCH ENCONTRADO: ${matchedRoute.name} - $${matchedRoute.price}`)
+      return {
+        ...record,
+        matchedPrice: matchedRoute.price,
+        matchedRouteId: matchedRoute._id || '',
+        matchedRouteName: matchedRoute.name || '',
+        isMatched: true
+      };
+    } else {
+      console.log(`  ❌ NO SE ENCONTRÓ MATCH`)
+      return {
+        ...record,
+        matchedPrice: 0,
+        isMatched: false
+      };
+    }
+  });
+};
 
 export const parseTruckingExcel = async (file: File): Promise<TruckingExcelData[]> => {
   return new Promise(async (resolve, reject) => {
@@ -191,7 +267,7 @@ export const parseTruckingExcel = async (file: File): Promise<TruckingExcelData[
             Object.entries(columnIndexes).forEach(([field, columnIndex]) => {
               if (columnIndex !== undefined && columnIndex < row.length) {
                 const cellValue = row[columnIndex];
-                record[field as keyof TruckingExcelData] = cellValue ? String(cellValue).trim() : '';
+                (record as any)[field] = cellValue ? String(cellValue).trim() : '';
               }
             });
             

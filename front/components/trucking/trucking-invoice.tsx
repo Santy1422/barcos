@@ -278,12 +278,25 @@ export default function TruckingInvoice() {
 
   // Extraer valor de un registro basado en mapeo de campos
   const extractFieldValue = (recordData: any, fieldKeys: string[]) => {
+    if (!recordData) {
+      return ""
+    }
+    
     for (const key of fieldKeys) {
       if (recordData[key] !== undefined && recordData[key] !== "") {
         return recordData[key]
       }
     }
     return ""
+  }
+
+  // Función helper para obtener el ID correcto del registro
+  const getRecordId = (record: any): string => {
+    if (!record) {
+      return 'unknown'
+    }
+    
+    return record.id || record._id || 'unknown'
   }
 
   const filteredPendingRecords = useMemo(() => {
@@ -295,7 +308,7 @@ export default function TruckingInvoice() {
         extractFieldValue(data, FIELD_MAPPING.driver),
         extractFieldValue(data, FIELD_MAPPING.vehicle),
         extractFieldValue(data, FIELD_MAPPING.bl),
-        record.id,
+        getRecordId(record),
       ].filter(Boolean).join(" ").toLowerCase()
       
       const matchesSearch = searchTerm === "" || searchableText.includes(searchTerm.toLowerCase())
@@ -344,7 +357,7 @@ export default function TruckingInvoice() {
   }, [pendingTruckingRecords, searchTerm, activeFilters])
 
   const selectedRecordDetails = useMemo(() => {
-    return pendingTruckingRecords.filter((record) => selectedRecordIds.includes(record.id))
+    return pendingTruckingRecords.filter((record) => selectedRecordIds.includes(getRecordId(record)))
   }, [selectedRecordIds, pendingTruckingRecords])
 
   useEffect(() => {
@@ -379,7 +392,7 @@ export default function TruckingInvoice() {
             const tipoContenedor = extractFieldValue(data, FIELD_MAPPING.containerType)
             
             return {
-              id: record.id,
+              id: getRecordId(record),
               containerNumber: extractFieldValue(data, FIELD_MAPPING.container),
               blNumber: extractFieldValue(data, FIELD_MAPPING.blNumber),
               serviceCode: tipoServicio === 'transporte' ? 'SRV100' : prev.serviceCode,
@@ -501,7 +514,7 @@ export default function TruckingInvoice() {
         currency: formData.currency,
         total: formData.total,
         records: selectedRecordDetails.map(record => ({
-          id: record.id,
+          id: getRecordId(record),
           description: `Servicio de transporte - Container: ${extractFieldValue(record.data, FIELD_MAPPING.container) || "N/A"}`,
           quantity: 1,
           unitPrice: record.totalValue,
@@ -869,7 +882,7 @@ export default function TruckingInvoice() {
                         <Checkbox
                           checked={selectedRecordIds.length === filteredPendingRecords.length}
                           onCheckedChange={(checked) => {
-                            setSelectedRecordIds(checked ? filteredPendingRecords.map(r => r.id) : [])
+                            setSelectedRecordIds(checked ? filteredPendingRecords.map(r => getRecordId(r)) : [])
                           }}
                         />
                       </TableHead>
@@ -883,22 +896,22 @@ export default function TruckingInvoice() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredPendingRecords.map((record) => {
+                    {filteredPendingRecords.filter(record => record && record.data).map((record) => {
                       const container = extractFieldValue(record.data, FIELD_MAPPING.container)
                       const size = extractFieldValue(record.data, FIELD_MAPPING.size)
                       const associate = extractFieldValue(record.data, FIELD_MAPPING.company)
                       const moveDate = extractFieldValue(record.data, FIELD_MAPPING.moveDate)
                       
                       return (
-                        <TableRow key={record.id}>
+                        <TableRow key={getRecordId(record)}>
                           <TableCell>
                             <Checkbox
-                              checked={selectedRecordIds.includes(record.id)}
-                              onCheckedChange={(checked) => handleRecordSelectionChange(record.id, checked as boolean)}
+                              checked={selectedRecordIds.includes(getRecordId(record))}
+                              onCheckedChange={(checked) => handleRecordSelectionChange(getRecordId(record), checked as boolean)}
                             />
                           </TableCell>
                           <TableCell className="font-mono text-sm">
-                            {record.id.split("-").pop()}
+                            {getRecordId(record).split("-").pop()}
                           </TableCell>
                           <TableCell>
                             {container ? `${container} (${size})` : "N/A"}

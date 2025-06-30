@@ -56,7 +56,13 @@ export const fetchRecordsByModule = createAsyncThunk(
       }
       
       const data = await response.json()
-      return data.records || []
+      console.log("Respuesta del backend:", data);
+      console.log("data.payload:", data.payload);
+      console.log("data.payload.records:", data.payload?.records);
+      console.log("data.payload.records length:", data.payload?.records?.length);
+      const result = data.payload?.records || [];
+      console.log("Resultado final a retornar:", result);
+      return result
     } catch (error) {
       return rejectWithValue(error.message)
     }
@@ -103,13 +109,15 @@ export const fetchPendingRecords = createAsyncThunk(
 
 export const createTruckingRecords = createAsyncThunk(
   'records/createTrucking',
-  async ({ excelId, recordsData, createdBy }: {
+  async ({ excelId, recordsData }: {
     excelId: string
     recordsData: any[]
-    createdBy: string
   }, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem('token')
+      console.log("Token presente:", !!token);
+      console.log("Token (primeros 20 chars):", token ? token.substring(0, 20) + "..." : "NO HAY TOKEN");
+      console.log("Payload enviado a backend:", { excelId, recordsData });
       const response = await fetch('/api/records/trucking/bulk', {
         method: 'POST',
         headers: {
@@ -118,17 +126,27 @@ export const createTruckingRecords = createAsyncThunk(
         },
         body: JSON.stringify({
           excelId,
-          recordsData,
-          createdBy
+          recordsData
         })
       })
       
       if (!response.ok) {
-        throw new Error('Error al crear registros')
+        const errorData = await response.json();
+        console.error("Error backend - Status:", response.status);
+        console.error("Error backend - Data:", JSON.stringify(errorData, null, 2));
+        throw new Error(errorData.error || `Error al crear registros (${response.status})`);
       }
       
+      console.log("✅ Response OK - Status:", response.status);
       const data = await response.json()
-      return data.records || []
+      console.log("Respuesta del backend:", data);
+      console.log("data.payload:", data.payload);
+      console.log("data.payload.records:", data.payload?.records);
+      console.log("data.payload.records length:", data.payload?.records?.length);
+      const result = data.payload?.records || [];
+      console.log("Resultado final a retornar:", result);
+      console.log("Resultado final length:", result.length);
+      return result
     } catch (error) {
       return rejectWithValue(error.message)
     }
