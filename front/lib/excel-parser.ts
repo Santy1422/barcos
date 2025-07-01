@@ -35,6 +35,7 @@ export interface TruckingExcelData {
   matchedRouteId?: string;
   matchedRouteName?: string;
   isMatched?: boolean;
+  sapCode?:string;
 }
 
 // Función para hacer matching con las rutas configuradas
@@ -95,14 +96,16 @@ export const matchTruckingDataWithRoutes = (
         matchedPrice: matchedRoute.price,
         matchedRouteId: matchedRoute._id || '',
         matchedRouteName: matchedRoute.name || '',
-        isMatched: true
+        isMatched: true,
+             sapCode: 'TRK002'
       };
     } else {
       console.log(`  ❌ NO SE ENCONTRÓ MATCH`)
       return {
         ...record,
         matchedPrice: 0,
-        isMatched: false
+        isMatched: false,
+        sapCode: 'TRK002'
       };
     }
   });

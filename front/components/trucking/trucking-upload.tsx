@@ -301,6 +301,8 @@ export function TruckingUpload() {
                     <TableHead>Container</TableHead>
                     <TableHead>Container Consecutive</TableHead>
                     <TableHead>Driver Name</TableHead>
+                                      <TableHead>Sap Code</TableHead>
+
                     <TableHead>Plate</TableHead>
                     <TableHead>Size</TableHead>
                     <TableHead>Type</TableHead>
@@ -309,6 +311,7 @@ export function TruckingUpload() {
                     <TableHead>Leg</TableHead>
                     <TableHead>Move Type</TableHead>
                     <TableHead>Precio</TableHead>
+
                     <TableHead>Estado</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -318,6 +321,8 @@ export function TruckingUpload() {
                       <TableCell className="font-mono text-sm">{record.container}</TableCell>
                       <TableCell>{record.containerConsecutive}</TableCell>
                       <TableCell>{record.driverName}</TableCell>
+                                            <TableCell>{record?.sapCode}</TableCell>
+
                       <TableCell>{record.plate}</TableCell>
                       <TableCell>{record.size}</TableCell>
                       <TableCell>{record.type}</TableCell>

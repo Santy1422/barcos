@@ -529,6 +529,7 @@ export default function TruckingInvoice() {
           plate: extractFieldValue(record.data, FIELD_MAPPING.vehicle),
           moveDate: extractFieldValue(record.data, FIELD_MAPPING.moveDate),
           associate: extractFieldValue(record.data, FIELD_MAPPING.company)
+          
         })),
         status: "generated",
         driverId: formData.driverId,
@@ -1058,6 +1059,7 @@ export default function TruckingInvoice() {
                     
                     <div className="space-y-4">
                       {formData.serviceItems.map((item, index) => (
+                        console.log(item),
                         <Card key={item.id}>
                           <CardHeader className="pb-2">
                             <CardTitle className="flex items-center">
@@ -1074,7 +1076,8 @@ export default function TruckingInvoice() {
                             <div>
                               <Label>Código Servicio SAP</Label>
                               <Select
-                                value={item.serviceCode}
+                              //@ts-ignore
+                                value={item.sapCode}
                                 onValueChange={(val) => {
                                   const newItems = [...formData.serviceItems]
                                   newItems[index].serviceCode = val
@@ -1085,15 +1088,14 @@ export default function TruckingInvoice() {
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="SRV100">SRV100 - TRANSPORT</SelectItem>
-                                  <SelectItem value="SRV101">SRV101 - LOADING</SelectItem>
-                                  <SelectItem value="SRV102">SRV102 - UNLOADING</SelectItem>
-                                  <SelectItem value="SRV103">SRV103 - STORAGE</SelectItem>
+                                  <SelectItem value="SRV100">TRK001</SelectItem>
+                                  <SelectItem value="SRV100">TRK002</SelectItem>
+                    
                                 </SelectContent>
                               </Select>
                             </div>
                             
-                            <div>
+                            {/* <div>
                               <Label>Código Actividad</Label>
                               <Select
                                 value={item.activityCode}
@@ -1113,7 +1115,7 @@ export default function TruckingInvoice() {
                                   <SelectItem value="ACT208">ACT208 - FREIGHT</SelectItem>
                                 </SelectContent>
                               </Select>
-                            </div>
+                            </div> */}
                             
                             <div>
                               <Label>Monto</Label>
