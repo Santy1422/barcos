@@ -21,6 +21,9 @@ router.get('/module/:module', jwtUtils, catchedAsync(recordsControllers.getRecor
 // Obtener registros por estado
 router.get('/status/:status', catchedAsync(recordsControllers.getRecordsByStatus));
 
+// Obtener registros por sapCode
+router.get('/sapcode/:sapCode', jwtUtils, catchedAsync(recordsControllers.getRecordsBySapCode));
+
 // Obtener registro por ID
 router.get('/:id', jwtUtils, catchedAsync(recordsControllers.getRecordById));
 

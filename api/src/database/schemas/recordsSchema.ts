@@ -30,6 +30,13 @@ const excelRecordSchema = new mongoose.Schema({
     required: true
   },
   
+  // Campo específico para sapCode (para consultas más eficientes)
+  sapCode: {
+    type: String,
+    required: false,
+    default: null
+  },
+  
   // Relaciones
   clientId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -60,5 +67,6 @@ excelRecordSchema.index({ invoiceId: 1 });
 excelRecordSchema.index({ clientId: 1 });
 excelRecordSchema.index({ createdBy: 1 });
 excelRecordSchema.index({ createdAt: -1 });
+excelRecordSchema.index({ sapCode: 1 });
 
 export default excelRecordSchema;

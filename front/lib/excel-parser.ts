@@ -276,8 +276,14 @@ export const parseTruckingExcel = async (file: File): Promise<TruckingExcelData[
             
             // Validar que al menos algunos campos importantes estén presentes
             if (record.container || record.bl || record.driverName) {
-              parsedData.push(record as TruckingExcelData);
-              console.log(`Fila ${i + 1} procesada:`, record);
+              // Asignar sapCode por defecto
+              const recordWithSapCode = {
+                ...record,
+                sapCode: 'TRK002'
+              } as TruckingExcelData;
+              
+              parsedData.push(recordWithSapCode);
+              console.log(`Fila ${i + 1} procesada:`, recordWithSapCode);
             } else {
               console.warn(`Fila ${i + 1} no tiene datos suficientes, saltando:`, record);
             }

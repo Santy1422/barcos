@@ -186,6 +186,35 @@ export const updateRecordStatus = createAsyncThunk(
   }
 )
 
+export const fetchRecordsBySapCode = createAsyncThunk(
+  'records/fetchBySapCode',
+  async ({ sapCode, module = "trucking", page = 1, limit = 50 }: {
+    sapCode: string
+    module?: string
+    page?: number
+    limit?: number
+  }, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`/api/records/sapcode/${sapCode}?module=${module}&page=${page}&limit=${limit}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Error al obtener registros por sapCode')
+      }
+      
+      const data = await response.json()
+      return data.payload || { records: [], pagination: {}, summary: {} }
+    } catch (error) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
 export const updateRecordAsync = createAsyncThunk(
   'records/updateRecord',
   async ({ id, updates }: { id: string; updates: Partial<ExcelRecord> }, { rejectWithValue }) => {
@@ -219,6 +248,19 @@ interface RecordsState {
   error: string | null
   fetchingRecords: boolean
   creatingRecords: boolean
+  sapCodeRecords: ExcelRecord[]
+  sapCodePagination: {
+    currentPage: number
+    totalPages: number
+    totalCount: number
+    hasNextPage: boolean
+    hasPrevPage: boolean
+    limit: number
+  } | null
+  sapCodeSummary: {
+    totalValue: number
+    averageValue: number
+  } | null
 }
 
 const initialState: RecordsState = {
@@ -228,6 +270,9 @@ const initialState: RecordsState = {
   error: null,
   fetchingRecords: false,
   creatingRecords: false,
+  sapCodeRecords: [],
+  sapCodePagination: null,
+  sapCodeSummary: null,
 }
 
 const recordsSlice = createSlice({
@@ -345,6 +390,22 @@ const recordsSlice = createSlice({
       .addCase(updateRecordAsync.rejected, (state, action) => {
         state.error = action.payload as string
       })
+      
+      // Fetch records by sapCode
+      .addCase(fetchRecordsBySapCode.pending, (state) => {
+        state.fetchingRecords = true
+        state.error = null
+      })
+      .addCase(fetchRecordsBySapCode.fulfilled, (state, action) => {
+        state.fetchingRecords = false
+        state.sapCodeRecords = action.payload.records || []
+        state.sapCodePagination = action.payload.pagination || null
+        state.sapCodeSummary = action.payload.summary || null
+      })
+      .addCase(fetchRecordsBySapCode.rejected, (state, action) => {
+        state.fetchingRecords = false
+        state.error = action.payload as string
+      })
   },
 })
 
@@ -366,6 +427,9 @@ export const selectAllInvoices = (state: RootState) => state.records.invoices
 export const selectRecordsLoading = (state: RootState) => state.records.fetchingRecords
 export const selectRecordsError = (state: RootState) => state.records.error
 export const selectCreatingRecords = (state: RootState) => state.records.creatingRecords
+export const selectSapCodeRecords = (state: RootState) => state.records.sapCodeRecords
+export const selectSapCodePagination = (state: RootState) => state.records.sapCodePagination
+export const selectSapCodeSummary = (state: RootState) => state.records.sapCodeSummary
 
 export const selectPendingRecordsByModule = createSelector(
   [(state: RootState) => state.records.individualRecords, (state: RootState, moduleName: ExcelRecord["module"]) => moduleName],

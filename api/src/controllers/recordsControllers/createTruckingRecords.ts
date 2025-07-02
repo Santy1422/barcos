@@ -12,6 +12,7 @@ interface TruckingExcelData {
   plate: string;
   moveDate: string;
   associate: string;
+  sapCode?: string;
 }
 
 export default async (req, res) => {
@@ -64,6 +65,7 @@ export default async (req, res) => {
       console.log(`📝 Procesando registro ${i + 1}/${recordsData.length}:`);
       console.log(`  - totalValue: ${totalValue}`);
       console.log(`  - data keys: ${Object.keys(data).join(', ')}`);
+      console.log(`  - sapCode: ${data.sapCode || 'no encontrado'}`);
       
       // Validar que cada registro tenga los datos necesarios
       if (!data || totalValue === undefined) {
@@ -73,6 +75,10 @@ export default async (req, res) => {
       
       try {
         console.log(`💾 Guardando registro ${i + 1} en MongoDB...`);
+        
+        // Extraer sapCode de los datos si existe
+        const sapCode = data.sapCode || null;
+        
         const record = await records.create({
           excelId: validExcelId,
           module: "trucking",
@@ -80,6 +86,7 @@ export default async (req, res) => {
           status: "pendiente",
           totalValue: totalValue || 0,
           data, // Datos originales completos
+          sapCode, // Campo específico para consultas
           createdBy: userId
         });
         

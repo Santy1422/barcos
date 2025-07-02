@@ -6,6 +6,7 @@ import updateRecord from "./updateRecord";
 import deleteRecord from "./deleteRecord";
 import getRecordsByModule from "./getRecordsByModule";
 import getRecordsByStatus from "./getRecordsByStatus";
+import getRecordsBySapCode from "./getRecordsBySapCode";
 
 const recordsControllers = {
   createRecord,
@@ -15,7 +16,8 @@ const recordsControllers = {
   updateRecord,
   deleteRecord,
   getRecordsByModule,
-  getRecordsByStatus
+  getRecordsByStatus,
+  getRecordsBySapCode
 };
 
 export default recordsControllers;
