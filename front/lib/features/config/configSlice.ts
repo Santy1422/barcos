@@ -1,4 +1,4 @@
-import { createSlice, type PayloadAction } from "@reduxjs/toolkit"
+import { createSlice, type PayloadAction, createAsyncThunk } from "@reduxjs/toolkit"
 import { createSelector } from '@reduxjs/toolkit'
 
 // Interfaces for configuration items
@@ -36,12 +36,135 @@ export interface CustomFieldConfig {
   module: "trucking" | "agency" | "shipchandler" // Which module this field belongs to
 }
 
+// Tipos para códigos SAP
+export interface ServiceSapCode {
+  _id: string
+  code: string
+  description: string
+  module: 'trucking' | 'agency' | 'shipchandler' | 'all'
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+// Thunk para cargar códigos SAP
+export const fetchServiceSapCodes = createAsyncThunk(
+  'config/fetchServiceSapCodes',
+  async (module?: string) => {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      throw new Error('No se encontró token de autenticación')
+    }
+    
+    const params = module ? `?module=${module}` : ''
+    const response = await fetch(`/api/config/service-sap-codes${params}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.payload?.message || `Error ${response.status}: ${response.statusText}`)
+    }
+    
+    const data = await response.json()
+    return data.data as ServiceSapCode[]
+  }
+)
+
+// Thunk para crear código SAP
+export const createServiceSapCode = createAsyncThunk(
+  'config/createServiceSapCode',
+  async (codeData: Omit<ServiceSapCode, '_id' | 'createdAt' | 'updatedAt'>) => {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      throw new Error('No se encontró token de autenticación')
+    }
+    
+    const response = await fetch('/api/config/service-sap-codes', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(codeData)
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.payload?.message || `Error ${response.status}: ${response.statusText}`)
+    }
+    
+    const data = await response.json()
+    return data.data as ServiceSapCode
+  }
+)
+
+// Thunk para actualizar código SAP
+export const updateServiceSapCode = createAsyncThunk(
+  'config/updateServiceSapCode',
+  async ({ id, codeData }: { id: string, codeData: Partial<ServiceSapCode> }) => {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      throw new Error('No se encontró token de autenticación')
+    }
+    
+    const response = await fetch(`/api/config/service-sap-codes/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(codeData)
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.payload?.message || `Error ${response.status}: ${response.statusText}`)
+    }
+    
+    const data = await response.json()
+    return data.data as ServiceSapCode
+  }
+)
+
+// Thunk para eliminar código SAP
+export const deleteServiceSapCode = createAsyncThunk(
+  'config/deleteServiceSapCode',
+  async (id: string) => {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      throw new Error('No se encontró token de autenticación')
+    }
+    
+    const response = await fetch(`/api/config/service-sap-codes/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.payload?.message || `Error ${response.status}: ${response.statusText}`)
+    }
+    
+    return id
+  }
+)
+
 // State structure for the config slice
 interface ConfigState {
   drivers: Driver[]
   vehicles: Vehicle[]
   routes: Route[]
   customFields: CustomFieldConfig[]
+  serviceSapCodes: ServiceSapCode[]
+  serviceSapCodesLoading: boolean
+  serviceSapCodesError: string | null
 }
 
 const initialState: ConfigState = {
@@ -70,6 +193,9 @@ const initialState: ConfigState = {
     { id: "trucking-cf-2", label: "Número de Sello", type: "text", module: "trucking" },
     { id: "trucking-cf-3", label: "Peso (kg)", type: "number", module: "trucking" },
   ],
+  serviceSapCodes: [],
+  serviceSapCodesLoading: false,
+  serviceSapCodesError: null
 }
 
 const configSlice = createSlice({
@@ -125,6 +251,41 @@ const configSlice = createSlice({
       state.customFields = state.customFields.filter((cf) => cf.id !== action.payload)
     },
   },
+  extraReducers: (builder) => {
+    // Reducers para códigos SAP
+    builder
+      // Fetch Service SAP Codes
+      .addCase(fetchServiceSapCodes.pending, (state) => {
+        state.serviceSapCodesLoading = true
+        state.serviceSapCodesError = null
+      })
+      .addCase(fetchServiceSapCodes.fulfilled, (state, action) => {
+        state.serviceSapCodesLoading = false
+        state.serviceSapCodes = action.payload
+      })
+      .addCase(fetchServiceSapCodes.rejected, (state, action) => {
+        state.serviceSapCodesLoading = false
+        state.serviceSapCodesError = action.error.message || 'Error al cargar códigos SAP'
+      })
+      
+      // Create Service SAP Code
+      .addCase(createServiceSapCode.fulfilled, (state, action) => {
+        state.serviceSapCodes.push(action.payload)
+      })
+      
+      // Update Service SAP Code
+      .addCase(updateServiceSapCode.fulfilled, (state, action) => {
+        const index = state.serviceSapCodes.findIndex(code => code._id === action.payload._id)
+        if (index !== -1) {
+          state.serviceSapCodes[index] = action.payload
+        }
+      })
+      
+      // Delete Service SAP Code
+      .addCase(deleteServiceSapCode.fulfilled, (state, action) => {
+        state.serviceSapCodes = state.serviceSapCodes.filter(code => code._id !== action.payload)
+      })
+  }
 })
 
 export const {
@@ -153,3 +314,16 @@ export const selectModuleCustomFields = createSelector(
   (customFields, module) => 
     customFields.filter((field) => field.module === module)
 )
+
+// Selectores para códigos SAP
+export const selectServiceSapCodes = (state: { config: ConfigState }) => state.config.serviceSapCodes
+export const selectServiceSapCodesLoading = (state: { config: ConfigState }) => state.config.serviceSapCodesLoading
+export const selectServiceSapCodesError = (state: { config: ConfigState }) => state.config.serviceSapCodesError
+
+// Selector para códigos SAP por módulo
+export const selectServiceSapCodesByModule = (state: { config: ConfigState }, module: string) => 
+  state.config.serviceSapCodes.filter(code => code.module === module || code.module === 'all')
+
+// Selector para códigos SAP activos
+export const selectActiveServiceSapCodes = (state: { config: ConfigState }) => 
+  state.config.serviceSapCodes.filter(code => code.active)

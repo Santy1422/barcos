@@ -63,6 +63,7 @@ interface ClientFormData {
   district: string
   corregimiento: string
   fullAddress: string
+  sapCode: string
 }
 
 const initialFormData: ClientFormData = {
@@ -79,13 +80,367 @@ const initialFormData: ClientFormData = {
   province: "",
   district: "",
   corregimiento: "",
-  fullAddress: ""
+  fullAddress: "",
+  sapCode: ""
 }
 
 const provinces = [
   "Panamá", "Colón", "Chiriquí", "Veraguas", "Los Santos", 
   "Herrera", "Coclé", "Darién", "Panamá Oeste", "Bocas del Toro"
 ]
+
+// Componente reutilizable para el modal de clientes
+export function ClientModal({ 
+  isOpen, 
+  onClose, 
+  onClientCreated 
+}: { 
+  isOpen: boolean
+  onClose: () => void
+  onClientCreated?: (client: Client) => void
+}) {
+  const dispatch = useAppDispatch()
+  const { toast } = useToast()
+  
+  const [editingClient, setEditingClient] = useState<Client | null>(null)
+  const [formData, setFormData] = useState<ClientFormData>(initialFormData)
+
+  // Generar ID único
+  const generateId = () => `client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+
+  // Manejar envío del formulario
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    // Validar campos requeridos
+    if (!formData.sapCode.trim()) {
+      toast({ 
+        title: "Campo requerido", 
+        description: "El código SAP del cliente es obligatorio.", 
+        variant: "destructive" 
+      })
+      return
+    }
+    
+    try {
+      const now = new Date().toISOString()
+      
+              if (formData.type === "natural") {
+          const naturalClient: NaturalClient = {
+            id: editingClient?.id || generateId(),
+            type: "natural",
+            fullName: formData.fullName,
+            documentType: formData.documentType,
+            documentNumber: formData.documentNumber,
+            address: {
+              province: formData.province,
+              district: formData.district,
+              corregimiento: formData.corregimiento,
+              fullAddress: formData.fullAddress || undefined
+            },
+            email: formData.email || undefined,
+            phone: formData.phone || undefined,
+            sapCode: formData.sapCode,
+            createdAt: editingClient?.createdAt || now,
+            updatedAt: now,
+            isActive: true
+          }
+        
+        if (editingClient) {
+          dispatch(updateClient(naturalClient))
+          toast({ title: "Cliente actualizado", description: "El cliente natural ha sido actualizado exitosamente." })
+        } else {
+          dispatch(addClient(naturalClient))
+          toast({ title: "Cliente creado", description: "El cliente natural ha sido creado exitosamente." })
+          onClientCreated?.(naturalClient)
+        }
+              } else {
+          const juridicalClient: JuridicalClient = {
+            id: editingClient?.id || generateId(),
+            type: "juridico",
+            companyName: formData.companyName,
+            ruc: formData.ruc,
+            dv: formData.dv,
+            fiscalAddress: {
+              province: formData.province,
+              district: formData.district,
+              corregimiento: formData.corregimiento,
+              fullAddress: formData.fullAddress || undefined
+            },
+            email: formData.email,
+            phone: formData.phone || undefined,
+            contactName: formData.contactName || undefined,
+            sapCode: formData.sapCode,
+            createdAt: editingClient?.createdAt || now,
+            updatedAt: now,
+            isActive: true
+          }
+        
+        if (editingClient) {
+          dispatch(updateClient(juridicalClient))
+          toast({ title: "Cliente actualizado", description: "El cliente jurídico ha sido actualizado exitosamente." })
+        } else {
+          dispatch(addClient(juridicalClient))
+          toast({ title: "Cliente creado", description: "El cliente jurídico ha sido creado exitosamente." })
+          onClientCreated?.(juridicalClient)
+        }
+      }
+      
+      handleCloseDialog()
+    } catch (error) {
+      toast({ 
+        title: "Error", 
+        description: "Ocurrió un error al guardar el cliente.", 
+        variant: "destructive" 
+      })
+    }
+  }
+
+  // Cerrar diálogo
+  const handleCloseDialog = () => {
+    setEditingClient(null)
+    setFormData(initialFormData)
+    onClose()
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            {editingClient ? "Editar Cliente" : "Crear Nuevo Cliente"}
+          </DialogTitle>
+        </DialogHeader>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Tipo de Cliente */}
+          <div className="space-y-2">
+            <Label>Tipo de Cliente</Label>
+            <Tabs 
+              value={formData.type} 
+              onValueChange={(value) => setFormData({...formData, type: value as ClientType})}
+            >
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="natural" className="flex items-center space-x-2">
+                  <User className="h-4 w-4" />
+                  <span>Natural</span>
+                </TabsTrigger>
+                <TabsTrigger value="juridico" className="flex items-center space-x-2">
+                  <Building className="h-4 w-4" />
+                  <span>Jurídico</span>
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="natural" className="space-y-4">
+                {/* Campos para Cliente Natural */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <Label htmlFor="fullName">Nombre Completo *</Label>
+                    <Input
+                      id="fullName"
+                      value={formData.fullName}
+                      onChange={(e) => setFormData({...formData, fullName: e.target.value})}
+                      placeholder="Nombres y apellidos"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="documentType">Tipo de Documento *</Label>
+                    <Select 
+                      value={formData.documentType} 
+                      onValueChange={(value) => setFormData({...formData, documentType: value as "cedula" | "pasaporte"})}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cedula">Cédula</SelectItem>
+                        <SelectItem value="pasaporte">Pasaporte</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="documentNumber">Número de Documento *</Label>
+                    <Input
+                      id="documentNumber"
+                      value={formData.documentNumber}
+                      onChange={(e) => setFormData({...formData, documentNumber: e.target.value})}
+                      placeholder="8-123-456 o PA123456789"
+                      required
+                    />
+                  </div>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="juridico" className="space-y-4">
+                {/* Campos para Cliente Jurídico */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <Label htmlFor="companyName">Nombre de la Empresa *</Label>
+                    <Input
+                      id="companyName"
+                      value={formData.companyName}
+                      onChange={(e) => setFormData({...formData, companyName: e.target.value})}
+                      placeholder="Razón social"
+                      required={formData.type === "juridico"}
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="ruc">RUC *</Label>
+                    <Input
+                      id="ruc"
+                      value={formData.ruc}
+                      onChange={(e) => setFormData({...formData, ruc: e.target.value})}
+                      placeholder="155678901-2-2020"
+                      required={formData.type === "juridico"}
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="dv">Dígito Verificador *</Label>
+                    <Input
+                      id="dv"
+                      value={formData.dv}
+                      onChange={(e) => setFormData({...formData, dv: e.target.value})}
+                      placeholder="12"
+                      required={formData.type === "juridico"}
+                    />
+                  </div>
+                  
+                  <div className="col-span-2">
+                    <Label htmlFor="contactName">Nombre de Contacto</Label>
+                    <Input
+                      id="contactName"
+                      value={formData.contactName}
+                      onChange={(e) => setFormData({...formData, contactName: e.target.value})}
+                      placeholder="Persona de contacto"
+                    />
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </div>
+          
+          <Separator />
+          
+          {/* Información de Contacto */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">Información de Contacto</h3>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="email">Correo Electrónico {formData.type === "juridico" && "*"}</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  placeholder="correo@ejemplo.com"
+                  required={formData.type === "juridico"}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="phone">Teléfono</Label>
+                <Input
+                  id="phone"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                  placeholder="6001-2345"
+                />
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="sapCode">Código SAP Cliente *</Label>
+              <Input
+                id="sapCode"
+                value={formData.sapCode}
+                onChange={(e) => setFormData({...formData, sapCode: e.target.value})}
+                placeholder="Código SAP del cliente"
+                required
+              />
+            </div>
+          </div>
+          
+          <Separator />
+          
+          {/* Dirección */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">
+              {formData.type === "natural" ? "Dirección" : "Dirección Fiscal"}
+            </h3>
+            
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="province">Provincia *</Label>
+                <Select 
+                  value={formData.province} 
+                  onValueChange={(value) => setFormData({...formData, province: value})}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {provinces.map(province => (
+                      <SelectItem key={province} value={province}>{province}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="district">Distrito *</Label>
+                <Input
+                  id="district"
+                  value={formData.district}
+                  onChange={(e) => setFormData({...formData, district: e.target.value})}
+                  placeholder="Distrito"
+                  required
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="corregimiento">Corregimiento *</Label>
+                <Input
+                  id="corregimiento"
+                  value={formData.corregimiento}
+                  onChange={(e) => setFormData({...formData, corregimiento: e.target.value})}
+                  placeholder="Corregimiento"
+                  required
+                />
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="fullAddress">Dirección Completa</Label>
+              <Textarea
+                id="fullAddress"
+                value={formData.fullAddress}
+                onChange={(e) => setFormData({...formData, fullAddress: e.target.value})}
+                placeholder="Dirección detallada (opcional)"
+                rows={2}
+              />
+            </div>
+          </div>
+          
+          {/* Botones */}
+          <div className="flex justify-end space-x-2 pt-4">
+            <Button type="button" variant="outline" onClick={handleCloseDialog}>
+              Cancelar
+            </Button>
+            <Button type="submit">
+              {editingClient ? "Actualizar" : "Crear"} Cliente
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 export function ClientsManagement() {
   const dispatch = useAppDispatch()
@@ -127,6 +482,7 @@ export function ClientsManagement() {
           return (
             client.fullName.toLowerCase().includes(search) ||
             client.documentNumber.toLowerCase().includes(search) ||
+            client.sapCode.toLowerCase().includes(search) ||
             client.email?.toLowerCase().includes(search) ||
             client.phone?.toLowerCase().includes(search)
           )
@@ -134,6 +490,7 @@ export function ClientsManagement() {
           return (
             client.companyName.toLowerCase().includes(search) ||
             client.ruc.toLowerCase().includes(search) ||
+            client.sapCode.toLowerCase().includes(search) ||
             client.email.toLowerCase().includes(search) ||
             client.contactName?.toLowerCase().includes(search)
           )
@@ -143,133 +500,6 @@ export function ClientsManagement() {
     
     return filtered
   }, [allClients, searchTerm, filterType, filterStatus])
-
-  // Generar ID único
-  const generateId = () => `client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-
-  // Manejar envío del formulario
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    try {
-      const now = new Date().toISOString()
-      
-      if (formData.type === "natural") {
-        const naturalClient: NaturalClient = {
-          id: editingClient?.id || generateId(),
-          type: "natural",
-          fullName: formData.fullName,
-          documentType: formData.documentType,
-          documentNumber: formData.documentNumber,
-          address: {
-            province: formData.province,
-            district: formData.district,
-            corregimiento: formData.corregimiento,
-            fullAddress: formData.fullAddress || undefined
-          },
-          email: formData.email || undefined,
-          phone: formData.phone || undefined,
-          createdAt: editingClient?.createdAt || now,
-          updatedAt: now,
-          isActive: true
-        }
-        
-        if (editingClient) {
-          dispatch(updateClient(naturalClient))
-          toast({ title: "Cliente actualizado", description: "El cliente natural ha sido actualizado exitosamente." })
-        } else {
-          dispatch(addClient(naturalClient))
-          toast({ title: "Cliente creado", description: "El cliente natural ha sido creado exitosamente." })
-        }
-      } else {
-        const juridicalClient: JuridicalClient = {
-          id: editingClient?.id || generateId(),
-          type: "juridico",
-          companyName: formData.companyName,
-          ruc: formData.ruc,
-          dv: formData.dv,
-          fiscalAddress: {
-            province: formData.province,
-            district: formData.district,
-            corregimiento: formData.corregimiento,
-            fullAddress: formData.fullAddress || undefined
-          },
-          email: formData.email,
-          phone: formData.phone || undefined,
-          contactName: formData.contactName || undefined,
-          createdAt: editingClient?.createdAt || now,
-          updatedAt: now,
-          isActive: true
-        }
-        
-        if (editingClient) {
-          dispatch(updateClient(juridicalClient))
-          toast({ title: "Cliente actualizado", description: "El cliente jurídico ha sido actualizado exitosamente." })
-        } else {
-          dispatch(addClient(juridicalClient))
-          toast({ title: "Cliente creado", description: "El cliente jurídico ha sido creado exitosamente." })
-        }
-      }
-      
-      handleCloseDialog()
-    } catch (error) {
-      toast({ 
-        title: "Error", 
-        description: "Ocurrió un error al guardar el cliente.", 
-        variant: "destructive" 
-      })
-    }
-  }
-
-  // Abrir diálogo para editar
-  const handleEdit = (client: Client) => {
-    setEditingClient(client)
-    
-    if (client.type === "natural") {
-      setFormData({
-        type: "natural",
-        fullName: client.fullName,
-        documentType: client.documentType,
-        documentNumber: client.documentNumber,
-        companyName: "",
-        ruc: "",
-        dv: "",
-        contactName: "",
-        email: client.email || "",
-        phone: client.phone || "",
-        province: client.address.province,
-        district: client.address.district,
-        corregimiento: client.address.corregimiento,
-        fullAddress: client.address.fullAddress || ""
-      })
-    } else {
-      setFormData({
-        type: "juridico",
-        fullName: "",
-        documentType: "cedula",
-        documentNumber: "",
-        companyName: client.companyName,
-        ruc: client.ruc,
-        dv: client.dv,
-        contactName: client.contactName || "",
-        email: client.email,
-        phone: client.phone || "",
-        province: client.fiscalAddress.province,
-        district: client.fiscalAddress.district,
-        corregimiento: client.fiscalAddress.corregimiento,
-        fullAddress: client.fiscalAddress.fullAddress || ""
-      })
-    }
-    
-    setIsDialogOpen(true)
-  }
-
-  // Cerrar diálogo
-  const handleCloseDialog = () => {
-    setIsDialogOpen(false)
-    setEditingClient(null)
-    setFormData(initialFormData)
-  }
 
   // Eliminar cliente
   const handleDelete = (clientId: string) => {
@@ -299,229 +529,6 @@ export function ClientsManagement() {
               Nuevo Cliente
             </Button>
           </DialogTrigger>
-          
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>
-                {editingClient ? "Editar Cliente" : "Crear Nuevo Cliente"}
-              </DialogTitle>
-            </DialogHeader>
-            
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Tipo de Cliente */}
-              <div className="space-y-2">
-                <Label>Tipo de Cliente</Label>
-                <Tabs 
-                  value={formData.type} 
-                  onValueChange={(value) => setFormData({...formData, type: value as ClientType})}
-                >
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="natural" className="flex items-center space-x-2">
-                      <User className="h-4 w-4" />
-                      <span>Natural</span>
-                    </TabsTrigger>
-                    <TabsTrigger value="juridico" className="flex items-center space-x-2">
-                      <Building className="h-4 w-4" />
-                      <span>Jurídico</span>
-                    </TabsTrigger>
-                  </TabsList>
-                  
-                  <TabsContent value="natural" className="space-y-4">
-                    {/* Campos para Cliente Natural */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="col-span-2">
-                        <Label htmlFor="fullName">Nombre Completo *</Label>
-                        <Input
-                          id="fullName"
-                          value={formData.fullName}
-                          onChange={(e) => setFormData({...formData, fullName: e.target.value})}
-                          placeholder="Nombres y apellidos"
-                          required
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="documentType">Tipo de Documento *</Label>
-                        <Select 
-                          value={formData.documentType} 
-                          onValueChange={(value) => setFormData({...formData, documentType: value as "cedula" | "pasaporte"})}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="cedula">Cédula</SelectItem>
-                            <SelectItem value="pasaporte">Pasaporte</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="documentNumber">Número de Documento *</Label>
-                        <Input
-                          id="documentNumber"
-                          value={formData.documentNumber}
-                          onChange={(e) => setFormData({...formData, documentNumber: e.target.value})}
-                          placeholder="8-123-456 o PA123456789"
-                          required
-                        />
-                      </div>
-                    </div>
-                  </TabsContent>
-                  
-                  <TabsContent value="juridico" className="space-y-4">
-                    {/* Campos para Cliente Jurídico */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="col-span-2">
-                        <Label htmlFor="companyName">Nombre de la Empresa *</Label>
-                        <Input
-                          id="companyName"
-                          value={formData.companyName}
-                          onChange={(e) => setFormData({...formData, companyName: e.target.value})}
-                          placeholder="Razón social"
-                          required={formData.type === "juridico"}
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="ruc">RUC *</Label>
-                        <Input
-                          id="ruc"
-                          value={formData.ruc}
-                          onChange={(e) => setFormData({...formData, ruc: e.target.value})}
-                          placeholder="155678901-2-2020"
-                          required={formData.type === "juridico"}
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="dv">Dígito Verificador *</Label>
-                        <Input
-                          id="dv"
-                          value={formData.dv}
-                          onChange={(e) => setFormData({...formData, dv: e.target.value})}
-                          placeholder="12"
-                          required={formData.type === "juridico"}
-                        />
-                      </div>
-                      
-                      <div className="col-span-2">
-                        <Label htmlFor="contactName">Nombre de Contacto</Label>
-                        <Input
-                          id="contactName"
-                          value={formData.contactName}
-                          onChange={(e) => setFormData({...formData, contactName: e.target.value})}
-                          placeholder="Persona de contacto"
-                        />
-                      </div>
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              </div>
-              
-              <Separator />
-              
-              {/* Información de Contacto */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Información de Contacto</h3>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="email">Correo Electrónico {formData.type === "juridico" && "*"}</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({...formData, email: e.target.value})}
-                      placeholder="correo@ejemplo.com"
-                      required={formData.type === "juridico"}
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="phone">Teléfono</Label>
-                    <Input
-                      id="phone"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                      placeholder="6001-2345"
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              <Separator />
-              
-              {/* Dirección */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">
-                  {formData.type === "natural" ? "Dirección" : "Dirección Fiscal"}
-                </h3>
-                
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="province">Provincia *</Label>
-                    <Select 
-                      value={formData.province} 
-                      onValueChange={(value) => setFormData({...formData, province: value})}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {provinces.map(province => (
-                          <SelectItem key={province} value={province}>{province}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="district">Distrito *</Label>
-                    <Input
-                      id="district"
-                      value={formData.district}
-                      onChange={(e) => setFormData({...formData, district: e.target.value})}
-                      placeholder="Distrito"
-                      required
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="corregimiento">Corregimiento *</Label>
-                    <Input
-                      id="corregimiento"
-                      value={formData.corregimiento}
-                      onChange={(e) => setFormData({...formData, corregimiento: e.target.value})}
-                      placeholder="Corregimiento"
-                      required
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <Label htmlFor="fullAddress">Dirección Completa</Label>
-                  <Textarea
-                    id="fullAddress"
-                    value={formData.fullAddress}
-                    onChange={(e) => setFormData({...formData, fullAddress: e.target.value})}
-                    placeholder="Dirección detallada (opcional)"
-                    rows={2}
-                  />
-                </div>
-              </div>
-              
-              {/* Botones */}
-              <div className="flex justify-end space-x-2 pt-4">
-                <Button type="button" variant="outline" onClick={handleCloseDialog}>
-                  Cancelar
-                </Button>
-                <Button type="submit">
-                  {editingClient ? "Actualizar" : "Crear"} Cliente
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
         </Dialog>
       </div>
 
@@ -590,7 +597,7 @@ export function ClientsManagement() {
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar por nombre, documento, RUC, email..."
+                  placeholder="Buscar por nombre, documento, RUC, código SAP, email..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -657,6 +664,7 @@ export function ClientsManagement() {
                   <TableHead>Tipo</TableHead>
                   <TableHead>Nombre/Empresa</TableHead>
                   <TableHead>Documento/RUC</TableHead>
+                  <TableHead>Código SAP</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Teléfono</TableHead>
                   <TableHead>Ubicación</TableHead>
@@ -667,7 +675,7 @@ export function ClientsManagement() {
               <TableBody>
                 {filteredClients.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
+                    <TableCell colSpan={9} className="text-center py-8">
                       <div className="flex flex-col items-center space-y-2">
                         <Users className="h-8 w-8 text-muted-foreground" />
                         <p className="text-muted-foreground">
@@ -705,6 +713,12 @@ export function ClientsManagement() {
                           ? `${client.documentType.toUpperCase()}: ${client.documentNumber}`
                           : `${client.ruc}-${client.dv}`
                         }
+                      </TableCell>
+                      
+                      <TableCell>
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {client.sapCode}
+                        </Badge>
                       </TableCell>
                       
                       <TableCell>
@@ -748,7 +762,26 @@ export function ClientsManagement() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleEdit(client)}
+                                                         onClick={() => {
+                               setEditingClient(client)
+                               setFormData({
+                                 type: client.type,
+                                 fullName: client.fullName,
+                                 documentType: client.documentType,
+                                 documentNumber: client.documentNumber,
+                                 companyName: client.type === "juridico" ? client.companyName : "",
+                                 ruc: client.type === "juridico" ? client.ruc : "",
+                                 dv: client.type === "juridico" ? client.dv : "",
+                                 contactName: client.type === "juridico" ? client.contactName || "" : "",
+                                 email: client.email || "",
+                                 phone: client.phone || "",
+                                 province: client.type === "natural" ? client.address.province : client.fiscalAddress.province,
+                                 district: client.type === "natural" ? client.address.district : client.fiscalAddress.district,
+                                 corregimiento: client.type === "natural" ? client.address.corregimiento : client.fiscalAddress.corregimiento,
+                                 fullAddress: client.type === "natural" ? client.address.fullAddress || "" : client.fiscalAddress.fullAddress || "",
+                                 sapCode: client.sapCode || ""
+                               })
+                             }}
                           >
                             <Edit className="h-4 w-4" />
                           </Button>

@@ -107,6 +107,46 @@ export const fetchPendingRecords = createAsyncThunk(
   }
 )
 
+// Nuevo thunk para obtener registros pendientes por módulo específico
+export const fetchPendingRecordsByModule = createAsyncThunk(
+  'records/fetchPendingByModule',
+  async (module: string, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      // Solicitar todos los registros sin paginación
+      const response = await fetch(`http://localhost:8080/api/records/status/pendiente?module=${module}&limit=1000`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Error al obtener registros pendientes por módulo')
+      }
+      
+      const data = await response.json()
+      
+      // Transformar los datos del backend al formato esperado por el frontend
+      const transformedRecords = (data.data || []).map((record: any) => ({
+        id: record._id,
+        excelId: record.excelId || '',
+        module: record.module,
+        type: record.type,
+        status: record.status,
+        totalValue: record.totalValue || 0,
+        data: record.data,
+        createdAt: record.createdAt,
+        invoiceId: record.invoiceId
+      }))
+      
+      return { module, records: transformedRecords }
+    } catch (error) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
 export const createTruckingRecords = createAsyncThunk(
   'records/createTrucking',
   async ({ excelId, recordsData }: {
@@ -261,6 +301,9 @@ interface RecordsState {
     totalValue: number
     averageValue: number
   } | null
+  pendingRecordsByModule: {
+    [module: string]: ExcelRecord[]
+  }
 }
 
 const initialState: RecordsState = {
@@ -273,6 +316,7 @@ const initialState: RecordsState = {
   sapCodeRecords: [],
   sapCodePagination: null,
   sapCodeSummary: null,
+  pendingRecordsByModule: {},
 }
 
 const recordsSlice = createSlice({
@@ -359,6 +403,21 @@ const recordsSlice = createSlice({
         state.error = action.payload as string
       })
       
+      // Fetch pending records by module
+      .addCase(fetchPendingRecordsByModule.pending, (state) => {
+        state.fetchingRecords = true
+        state.error = null
+      })
+      .addCase(fetchPendingRecordsByModule.fulfilled, (state, action) => {
+        state.fetchingRecords = false
+        const { module, records } = action.payload
+        state.pendingRecordsByModule[module] = records
+      })
+      .addCase(fetchPendingRecordsByModule.rejected, (state, action) => {
+        state.fetchingRecords = false
+        state.error = action.payload as string
+      })
+      
       // Create trucking records
       .addCase(createTruckingRecords.pending, (state) => {
         state.creatingRecords = true
@@ -435,6 +494,12 @@ export const selectPendingRecordsByModule = createSelector(
   [(state: RootState) => state.records.individualRecords, (state: RootState, moduleName: ExcelRecord["module"]) => moduleName],
   (individualRecords, moduleName) => 
     individualRecords.filter((record) => record.module === moduleName && record.status === "pendiente")
+)
+
+export const selectPendingRecordsByModuleFromDB = createSelector(
+  [(state: RootState) => state.records.pendingRecordsByModule, (state: RootState, moduleName: ExcelRecord["module"]) => moduleName],
+  (pendingRecordsByModule, moduleName) => 
+    pendingRecordsByModule[moduleName] || []
 )
 
 export const selectInvoicesByModule = createSelector(

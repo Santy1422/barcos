@@ -12,6 +12,10 @@ import deleteRoute from "./deleteRoute";
 import createCustomField from "./createCustomField";
 import updateCustomField from "./updateCustomField";
 import deleteCustomField from "./deleteCustomField";
+import getServiceSapCodes from './getServiceSapCodes';
+import createServiceSapCode from './createServiceSapCode';
+import updateServiceSapCode from './updateServiceSapCode';
+import deleteServiceSapCode from './deleteServiceSapCode';
 
 const configControllers = {
   getConfig,
@@ -27,7 +31,11 @@ const configControllers = {
   deleteRoute,
   createCustomField,
   updateCustomField,
-  deleteCustomField
+  deleteCustomField,
+  getServiceSapCodes,
+  createServiceSapCode,
+  updateServiceSapCode,
+  deleteServiceSapCode,
 };
 
 export default configControllers;

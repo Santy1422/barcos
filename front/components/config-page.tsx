@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -11,13 +11,130 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { AlertCircle, Bell, Save, Server, Settings, User, Users } from "lucide-react"
+import { AlertCircle, Bell, Save, Server, Settings, User, Users, Check, X, Plus, Edit, Trash2, Hash, Loader2 } from "lucide-react"
+import {
+  selectModuleCustomFields,
+  selectTruckingDrivers,
+  selectTruckingRoutes,
+  selectTruckingVehicles,
+  selectServiceSapCodes,
+  selectServiceSapCodesLoading,
+  fetchServiceSapCodes,
+  createServiceSapCode,
+  updateServiceSapCode,
+  deleteServiceSapCode,
+  type ServiceSapCode,
+} from "@/lib/features/config/configSlice"
+import { useAppDispatch, useAppSelector } from "@/lib/hooks"
+import { useToast } from "@/hooks/use-toast"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Checkbox } from "@/components/ui/checkbox"
 
 export function ConfigPage() {
+  const dispatch = useAppDispatch()
+  const { toast } = useToast()
   const [sapEnabled, setSapEnabled] = useState(true)
   const [emailNotifications, setEmailNotifications] = useState(true)
   const [autoValidation, setAutoValidation] = useState(true)
   const [debugMode, setDebugMode] = useState(false)
+
+  // Estado para códigos SAP
+  const [sapCodes, setSapCodes] = useState<ServiceSapCode[]>([])
+  const [isLoadingSapCodes, setIsLoadingSapCodes] = useState(false)
+  const [showSapCodeModal, setShowSapCodeModal] = useState(false)
+  const [editingSapCode, setEditingSapCode] = useState<ServiceSapCode | null>(null)
+  const [sapCodeForm, setSapCodeForm] = useState({
+    code: '',
+    description: '',
+    module: 'trucking' as 'trucking' | 'agency' | 'shipchandler' | 'all',
+    active: true
+  })
+
+  const serviceSapCodes = useAppSelector(selectServiceSapCodes)
+  const serviceSapCodesLoading = useAppSelector(selectServiceSapCodesLoading)
+
+  useEffect(() => {
+    dispatch(fetchServiceSapCodes())
+  }, [dispatch])
+
+  // Funciones para códigos SAP
+  const handleCreateSapCode = async () => {
+    try {
+      await dispatch(createServiceSapCode(sapCodeForm)).unwrap()
+      toast({
+        title: "Código SAP creado",
+        description: "El código SAP se ha creado exitosamente",
+      })
+      setShowSapCodeModal(false)
+      setSapCodeForm({ code: '', description: '', module: 'trucking', active: true })
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudo crear el código SAP",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleUpdateSapCode = async () => {
+    if (!editingSapCode) return
+    try {
+      await dispatch(updateServiceSapCode({ id: editingSapCode._id, codeData: sapCodeForm })).unwrap()
+      toast({
+        title: "Código SAP actualizado",
+        description: "El código SAP se ha actualizado exitosamente",
+      })
+      setShowSapCodeModal(false)
+      setEditingSapCode(null)
+      setSapCodeForm({ code: '', description: '', module: 'trucking', active: true })
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el código SAP",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleDeleteSapCode = async (id: string) => {
+    try {
+      await dispatch(deleteServiceSapCode(id)).unwrap()
+      toast({
+        title: "Código SAP eliminado",
+        description: "El código SAP se ha eliminado exitosamente",
+      })
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar el código SAP",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const openEditSapCode = (sapCode: ServiceSapCode) => {
+    setEditingSapCode(sapCode)
+    setSapCodeForm({
+      code: sapCode.code,
+      description: sapCode.description,
+      module: sapCode.module,
+      active: sapCode.active
+    })
+    setShowSapCodeModal(true)
+  }
+
+  const openCreateSapCode = () => {
+    setEditingSapCode(null)
+    setSapCodeForm({ code: '', description: '', module: 'trucking', active: true })
+    setShowSapCodeModal(true)
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -672,9 +789,139 @@ export function ConfigPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Códigos SAP */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center">
+                <Plus className="mr-2 h-5 w-5" />
+                Códigos SAP de Servicio
+              </div>
+              <Button onClick={openCreateSapCode} size="sm">
+                Agregar Código
+              </Button>
+            </CardTitle>
+            <CardDescription>
+              Gestiona los códigos SAP utilizados en las facturas
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {serviceSapCodesLoading ? (
+              <div className="flex justify-center p-4">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {serviceSapCodes.map((sapCode) => (
+                  <div
+                    key={sapCode._id}
+                    className="flex items-center justify-between p-2 border rounded hover:bg-muted/50"
+                  >
+                    <div className="flex-1">
+                      <div className="font-medium">{sapCode.code}</div>
+                      <div className="text-sm text-muted-foreground">{sapCode.description}</div>
+                      <div className="flex gap-2 mt-1">
+                        <Badge variant="outline" className="text-xs">
+                          {sapCode.module}
+                        </Badge>
+                        <Badge variant={sapCode.active ? "default" : "secondary"} className="text-xs">
+                          {sapCode.active ? "Activo" : "Inactivo"}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEditSapCode(sapCode)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteSapCode(sapCode._id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Modal para crear/editar código SAP */}
+      <Dialog open={showSapCodeModal} onOpenChange={setShowSapCodeModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editingSapCode ? "Editar Código SAP" : "Crear Código SAP"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="sap-code">Código</Label>
+              <Input
+                id="sap-code"
+                value={sapCodeForm.code}
+                onChange={(e) => setSapCodeForm(prev => ({ ...prev, code: e.target.value }))}
+                placeholder="Ej: TRK001"
+              />
+            </div>
+            <div>
+              <Label htmlFor="sap-description">Descripción</Label>
+              <Input
+                id="sap-description"
+                value={sapCodeForm.description}
+                onChange={(e) => setSapCodeForm(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Descripción del servicio"
+              />
+            </div>
+            <div>
+              <Label htmlFor="sap-module">Módulo</Label>
+              <Select
+                value={sapCodeForm.module}
+                onValueChange={(value: 'trucking' | 'agency' | 'shipchandler' | 'all') => 
+                  setSapCodeForm(prev => ({ ...prev, module: value }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="trucking">Trucking</SelectItem>
+                  <SelectItem value="agency">Agency</SelectItem>
+                  <SelectItem value="shipchandler">Shipchandler</SelectItem>
+                  <SelectItem value="all">Todos</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="sap-active"
+                checked={sapCodeForm.active}
+                onCheckedChange={(checked) => 
+                  setSapCodeForm(prev => ({ ...prev, active: checked as boolean }))
+                }
+              />
+              <Label htmlFor="sap-active">Activo</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSapCodeModal(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={editingSapCode ? handleUpdateSapCode : handleCreateSapCode}>
+              {editingSapCode ? "Actualizar" : "Crear"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
-
-// Componentes adicionales para esta página
-import { Check, X } from "lucide-react"

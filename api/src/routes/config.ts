@@ -24,4 +24,10 @@ router.post('/routes', jwtUtils, requireAdminOrOperations, catchedAsync(configCo
 router.put('/routes/:id', jwtUtils, requireAdminOrOperations, catchedAsync(configControllers.updateRoute));
 router.delete('/routes/:id', jwtUtils, requireAdminOrOperations, catchedAsync(configControllers.deleteRoute));
 
+// SAP Service Codes
+router.get('/service-sap-codes', jwtUtils, requireAdminOrOperations, catchedAsync(configControllers.getServiceSapCodes));
+router.post('/service-sap-codes', jwtUtils, requireAdminOrOperations, catchedAsync(configControllers.createServiceSapCode));
+router.put('/service-sap-codes/:id', jwtUtils, requireAdminOrOperations, catchedAsync(configControllers.updateServiceSapCode));
+router.delete('/service-sap-codes/:id', jwtUtils, requireAdminOrOperations, catchedAsync(configControllers.deleteServiceSapCode));
+
 export default router;

@@ -38,15 +38,18 @@ import {
   Package,
   Box,
   Scale,
-  Hash
+  Hash,
+  Database,
+  Clock,
+  Plus
 } from "lucide-react"
 import {
   addInvoice,
   markRecordsAsInvoiced,
   selectInvoicesByModule,
-  selectPendingRecordsByModule,
+  selectPendingRecordsByModuleFromDB,
   selectRecordsLoading,
-  fetchPendingRecords,
+  fetchPendingRecordsByModule,
   type InvoiceRecord as PersistedInvoiceRecord,
   type ExcelRecord as IndividualExcelRecord,
 } from "@/lib/features/records/recordsSlice"
@@ -56,6 +59,8 @@ import {
   selectTruckingDrivers,
   selectTruckingRoutes,
   selectTruckingVehicles,
+  selectServiceSapCodesByModule,
+  fetchServiceSapCodes,
 } from "@/lib/features/config/configSlice"
 import { generateInvoiceXML } from "@/lib/xml-generator"
 import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features/invoice/invoiceSlice"
@@ -64,6 +69,7 @@ import { useRouter } from "next/navigation"
 import saveAs from "file-saver"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
+import { ClientModal } from "@/components/clients-management"
 
 type InvoiceStep = "select" | "create" | "review" | "confirm"
 
@@ -81,6 +87,7 @@ interface TruckingFormData {
   originPort: string
   destinationPort: string
   moveDate: string
+  moveTime: string
   associatedCompany: string
   description: string
   subtotal: number
@@ -100,7 +107,9 @@ interface TruckingFormData {
     blNumber: string
     serviceCode: string
     activityCode: string
-    amount: number
+    routeAmount: number
+    serviceAmount: number
+    totalAmount: number
     description: string
     containerSize: string
     moveDate: string
@@ -128,6 +137,7 @@ const getNewInvoiceState = (): TruckingFormData => ({
   originPort: "",
   destinationPort: "",
   moveDate: "",
+  moveTime: "",
   associatedCompany: "",
   cargoType: "",
   sealNumber: "",
@@ -154,17 +164,17 @@ const FIELD_MAPPING = {
   clientAddress: ['direccion', 'address', 'client_address'],
   sapNumber: ['numero_sap', 'sap_number', 'customer_sap_code', 'codigo_cliente_sap'],
   clientSapNumber: ['numero_sap', 'sap_number', 'customer_sap_code', 'codigo_cliente_sap'],
-  driver: ['conductor', 'driver', 'chofer', 'driver_name'],
-  driverId: ['conductor', 'driver', 'chofer', 'driver_name'],
-  vehicle: ['vehiculo', 'placa', 'vehicle', 'truck', 'vehicle_plate'],
-  vehicleId: ['vehiculo', 'placa', 'vehicle', 'truck', 'vehicle_plate'],
+  driver: ['conductor', 'driver', 'chofer', 'driver_name', 'driverName'],
+  driverId: ['conductor', 'driver', 'chofer', 'driver_name', 'driverName'],
+  vehicle: ['vehiculo', 'placa', 'vehicle', 'truck', 'vehicle_plate', 'plate'],
+  vehicleId: ['vehiculo', 'placa', 'vehicle', 'truck', 'vehicle_plate', 'plate'],
   route: ['ruta', 'route', 'origen_destino', 'origin_destination', 'route_description'],
   routeId: ['ruta', 'route', 'origen_destino', 'origin_destination', 'route_description'],
-  origin: ['puerto_origen', 'origin_port', 'origen'],
-  originPort: ['puerto_origen', 'origin_port', 'origen'],
-  destination: ['puerto_destino', 'destination_port', 'destino'],
-  destinationPort: ['puerto_destino', 'destination_port', 'destino'],
-  moveDate: ['fecha_movimiento', 'move_date', 'fecha'],
+  origin: ['puerto_origen', 'origin_port', 'origen', 'rtFrom', 'rt_from', 'RT FROM'],
+  originPort: ['puerto_origen', 'origin_port', 'origen', 'rtFrom', 'rt_from', 'RT FROM'],
+  destination: ['puerto_destino', 'destination_port', 'destino', 'rtTo', 'rt_to', 'RT To'],
+  destinationPort: ['puerto_destino', 'destination_port', 'destino', 'rtTo', 'rt_to', 'RT To'],
+  moveDate: ['moveDate'],
   company: ['empresa_asociada', 'associate', 'company'],
   container: ['contenedor', 'container', 'container_number', 'numero_contenedor'],
   bl: ['bl_number', 'bl', 'conocimiento', 'bill_of_lading'],
@@ -200,9 +210,9 @@ const FORM_SECTIONS = [
     description: "Datos del cliente extraídos del Excel",
     fields: [
       { id: 'clientName', label: "Nombre Cliente", icon: <UserIcon className="h-4 w-4" />, required: true, auto: true },
-      { id: 'clientRuc', label: "RUC/Cédula", icon: <FileSearch className="h-4 w-4" />, required: true, auto: true },
-      { id: 'clientAddress', label: "Dirección", icon: <FileSearch className="h-4 w-4" />, auto: true },
-      { id: 'clientSapNumber', label: "Número SAP Cliente", icon: <FileSearch className="h-4 w-4" />, auto: true }
+      { id: 'clientRuc', label: "RUC/Cédula", icon: <FileSearch className="h-4 w-4" />, required: true },
+      { id: 'clientAddress', label: "Dirección", icon: <FileSearch className="h-4 w-4" /> },
+      { id: 'clientSapNumber', label: "Número SAP Cliente", icon: <FileSearch className="h-4 w-4" /> }
     ]
   },
   {
@@ -217,6 +227,7 @@ const FORM_SECTIONS = [
       { id: 'originPort', label: "Puerto Origen", icon: <Package className="h-4 w-4" />, auto: true },
       { id: 'destinationPort', label: "Puerto Destino", icon: <Package className="h-4 w-4" />, auto: true },
       { id: 'moveDate', label: "Fecha Movimiento", icon: <Calendar className="h-4 w-4" />, type: 'date', auto: true },
+      { id: 'moveTime', label: "Hora Movimiento", icon: <Clock className="h-4 w-4" />, type: 'time', auto: true },
       { id: 'associatedCompany', label: "Empresa Asociada", icon: <Box className="h-4 w-4" />, auto: true }
     ]
   },
@@ -237,7 +248,6 @@ const FORM_SECTIONS = [
     icon: <Settings className="mr-2 h-5 w-5" />,
     description: "Códigos y parámetros para SAP",
     fields: [
-      { id: 'serviceCode', label: "Código Servicio", icon: <FileText className="h-4 w-4" />, required: true },
       { id: 'activityCode', label: "Código Actividad", icon: <FileText className="h-4 w-4" />, required: true },
       { id: 'bundle', label: "Bundle", icon: <Package className="h-4 w-4" />, required: true }
     ]
@@ -250,7 +260,7 @@ export default function TruckingInvoice() {
   const { toast } = useToast()
 
   const pendingTruckingRecords = useAppSelector((state) =>
-    selectPendingRecordsByModule(state, "trucking")
+    selectPendingRecordsByModuleFromDB(state, "trucking")
   )
   const truckingGeneratedInvoices = useAppSelector((state) => selectInvoicesByModule(state, "trucking"))
   const isLoadingRecords = useAppSelector(selectRecordsLoading)
@@ -258,6 +268,7 @@ export default function TruckingInvoice() {
   const configuredRoutes = useAppSelector(selectTruckingRoutes)
   const configuredVehicles = useAppSelector(selectTruckingVehicles)
   const truckingCustomFields = useAppSelector((state) => selectModuleCustomFields(state, "trucking"))
+  const serviceSapCodes = useAppSelector((state) => selectServiceSapCodesByModule(state, "trucking"))
 
   const [currentStep, setCurrentStep] = useState<InvoiceStep>("select")
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([])
@@ -268,12 +279,17 @@ export default function TruckingInvoice() {
   const [activeFilters, setActiveFilters] = useState({
     dateRange: 'all',
     amountRange: 'all',
-    hasContainer: 'all',
   })
   const [activeSection, setActiveSection] = useState(FORM_SECTIONS[0].id)
+  const [isClientModalOpen, setIsClientModalOpen] = useState(false)
+
+  // Estado para paginación
+  const [currentPage, setCurrentPage] = useState(1)
+  const [recordsPerPage] = useState(10)
 
   useEffect(() => {
-    dispatch(fetchPendingRecords())
+    dispatch(fetchPendingRecordsByModule("trucking"))
+    dispatch(fetchServiceSapCodes("trucking"))
   }, [dispatch])
 
   // Extraer valor de un registro basado en mapeo de campos
@@ -299,6 +315,67 @@ export default function TruckingInvoice() {
     return record.id || record._id || 'unknown'
   }
 
+  // Función para convertir fecha y hora a formato de fecha
+  const formatDateForInput = (dateTimeString: string): string => {
+    if (!dateTimeString) return ""
+    
+    try {
+      // Intentar parsear diferentes formatos de fecha
+      let date: Date
+      
+      // Formato MM/DD/YYYY HH:MM:SS
+      if (/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/.test(dateTimeString)) {
+        const [datePart, timePart] = dateTimeString.split(' ')
+        const [month, day, year] = datePart.split('/')
+        date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+      }
+      // Formato DD/MM/YYYY HH:MM:SS
+      else if (/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/.test(dateTimeString)) {
+        const [datePart, timePart] = dateTimeString.split(' ')
+        const [day, month, year] = datePart.split('/')
+        date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+      }
+      // Otros formatos - intentar parseo directo
+      else {
+        date = new Date(dateTimeString)
+      }
+      
+      // Verificar que la fecha es válida
+      if (date && !isNaN(date.getTime())) {
+        return date.toISOString().split('T')[0] // Formato YYYY-MM-DD
+      }
+      
+      return ""
+    } catch (error) {
+      console.error('Error al formatear fecha:', error)
+      return ""
+    }
+  }
+
+  // Función para extraer la hora del string de fecha y hora
+  const extractTimeFromDateTime = (dateTimeString: string): string => {
+    if (!dateTimeString) return ""
+    
+    try {
+      // Formato MM/DD/YYYY HH:MM:SS o DD/MM/YYYY HH:MM:SS
+      if (/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/.test(dateTimeString)) {
+        const [datePart, timePart] = dateTimeString.split(' ')
+        return timePart // Retorna HH:MM:SS
+      }
+      
+      // Otros formatos - intentar parsear como Date y extraer hora
+      const date = new Date(dateTimeString)
+      if (date && !isNaN(date.getTime())) {
+        return date.toTimeString().split(' ')[0] // Retorna HH:MM:SS
+      }
+      
+      return ""
+    } catch (error) {
+      console.error('Error al extraer hora:', error)
+      return ""
+    }
+  }
+
   const filteredPendingRecords = useMemo(() => {
     return pendingTruckingRecords.filter((record) => {
       const data = record.data as Record<string, any>
@@ -316,21 +393,73 @@ export default function TruckingInvoice() {
       // Filtros de fecha
       let matchesDate = true
       if (activeFilters.dateRange !== 'all') {
-        const recordDate = new Date(extractFieldValue(data, FIELD_MAPPING.moveDate) || new Date())
-        const now = new Date()
-        
-        switch (activeFilters.dateRange) {
-          case 'today':
-            matchesDate = recordDate.toDateString() === now.toDateString()
-            break
-          case 'week':
-            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-            matchesDate = recordDate >= weekAgo
-            break
-          case 'month':
-            const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-            matchesDate = recordDate >= monthAgo
-            break
+        const moveDateValue = extractFieldValue(data, FIELD_MAPPING.moveDate)
+        if (moveDateValue) {
+          // Intentar parsear la fecha en diferentes formatos
+          let recordDate: Date | null = null
+          
+          // Formato ISO (YYYY-MM-DD)
+          if (/^\d{4}-\d{2}-\d{2}$/.test(moveDateValue)) {
+            recordDate = new Date(moveDateValue)
+          }
+          // Formato DD/MM/YYYY
+          else if (/^\d{2}\/\d{2}\/\d{4}$/.test(moveDateValue)) {
+            const [day, month, year] = moveDateValue.split('/')
+            recordDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+          }
+          // Formato MM/DD/YYYY
+          else if (/^\d{2}\/\d{2}\/\d{4}$/.test(moveDateValue)) {
+            const [month, day, year] = moveDateValue.split('/')
+            recordDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+          }
+          // Otros formatos - intentar parseo directo
+          else {
+            recordDate = new Date(moveDateValue)
+          }
+          
+          // Verificar que la fecha es válida
+          if (recordDate && !isNaN(recordDate.getTime())) {
+            const now = new Date()
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+            
+            switch (activeFilters.dateRange) {
+              case 'today':
+                const recordDateOnly = new Date(recordDate.getFullYear(), recordDate.getMonth(), recordDate.getDate())
+                matchesDate = recordDateOnly.getTime() === today.getTime()
+                break
+              case 'week':
+                const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+                matchesDate = recordDate >= weekAgo
+                break
+              case 'month':
+                const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
+                matchesDate = recordDate >= monthAgo
+                break
+            }
+          } else {
+            // Si no se puede parsear la fecha, no mostrar el registro
+            matchesDate = false
+          }
+        } else {
+          // Si no hay fecha de movimiento, usar la fecha de creación del registro como respaldo
+          const recordDate = new Date(record.createdAt)
+          const now = new Date()
+          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+          
+          switch (activeFilters.dateRange) {
+            case 'today':
+              const recordDateOnly = new Date(recordDate.getFullYear(), recordDate.getMonth(), recordDate.getDate())
+              matchesDate = recordDateOnly.getTime() === today.getTime()
+              break
+            case 'week':
+              const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+              matchesDate = recordDate >= weekAgo
+              break
+            case 'month':
+              const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
+              matchesDate = recordDate >= monthAgo
+              break
+          }
         }
       }
       
@@ -345,14 +474,7 @@ export default function TruckingInvoice() {
         }
       }
       
-      // Filtros de contenedor
-      let matchesContainer = true
-      if (activeFilters.hasContainer !== 'all') {
-        const hasContainer = Boolean(extractFieldValue(data, FIELD_MAPPING.container))
-        matchesContainer = activeFilters.hasContainer === 'yes' ? hasContainer : !hasContainer
-      }
-      
-      return matchesSearch && matchesDate && matchesAmount && matchesContainer
+      return matchesSearch && matchesDate && matchesAmount
     })
   }, [pendingTruckingRecords, searchTerm, activeFilters])
 
@@ -363,21 +485,115 @@ export default function TruckingInvoice() {
   useEffect(() => {
     if (selectedRecordDetails.length > 0) {
       const firstRecordData = selectedRecordDetails[0].data as Record<string, any>
-      const subtotal = selectedRecordDetails.reduce((sum, record) => sum + record.totalValue, 0)
-
+      
+      console.log('useEffect ejecutándose - selectedRecordDetails:', selectedRecordDetails.length)
+      console.log('Primer registro completo:', selectedRecordDetails[0])
+      console.log('Datos del primer registro:', selectedRecordDetails[0]?.data)
+      
       setFormData(prev => {
+        // Preservar los montos de servicio editados manualmente si ya existen serviceItems
+        const existingServiceItems = prev.serviceItems || []
+        const existingServiceAmounts = new Map(existingServiceItems.map(item => [item.id, item.serviceAmount]))
+        
+        console.log('Montos de servicio existentes:', Array.from(existingServiceAmounts.entries()))
+        
+        const newServiceItems = selectedRecordDetails.map(record => {
+          const data = record.data as Record<string, any>
+          const recordId = getRecordId(record)
+          const tipoServicio = extractFieldValue(data, FIELD_MAPPING.serviceType)
+          const tipoContenedor = extractFieldValue(data, FIELD_MAPPING.containerType)
+          
+          // Monto de ruta (fijo, viene de la configuración)
+          const routeAmount = record.totalValue
+          
+          // Preservar el monto de servicio editado si existe, sino usar 0
+          const existingServiceAmount = existingServiceAmounts.get(recordId) ?? 0
+          
+          console.log(`Servicio ${recordId}:`, { routeAmount, existingServiceAmount })
+          
+          // Calcular monto total
+          const totalAmount = routeAmount + existingServiceAmount
+          
+          const itemMoveDate = extractFieldValue(data, FIELD_MAPPING.moveDate)
+          
+          return {
+            id: recordId,
+            containerNumber: extractFieldValue(data, FIELD_MAPPING.container),
+            blNumber: extractFieldValue(data, FIELD_MAPPING.blNumber),
+            serviceCode: tipoServicio === 'transporte' ? 'SRV100' : prev.serviceCode,
+            activityCode: tipoContenedor === '20' ? 'ACT205' : tipoContenedor === '40' ? 'ACT240' : prev.activityCode,
+            routeAmount: routeAmount,
+            serviceAmount: existingServiceAmount,
+            totalAmount: totalAmount,
+            description: `${tipoServicio} - ${extractFieldValue(data, FIELD_MAPPING.container)}`,
+            containerSize: extractFieldValue(data, FIELD_MAPPING.size),
+            moveDate: itemMoveDate,
+            origin: extractFieldValue(data, FIELD_MAPPING.originPort),
+            destination: extractFieldValue(data, FIELD_MAPPING.destinationPort),
+            weight: extractFieldValue(data, FIELD_MAPPING.weight),
+            commodity: extractFieldValue(data, FIELD_MAPPING.commodity),
+            cargoType: extractFieldValue(data, FIELD_MAPPING.cargoType),
+            sealNumber: extractFieldValue(data, FIELD_MAPPING.seal)
+          }
+        })
+        
+        // Calcular subtotal basado en los montos totales
+        const subtotal = newServiceItems.reduce((sum, item) => sum + item.totalAmount, 0)
+        
+        // Extraer datos del cliente del primer registro (solo nombre se autocompleta)
+        const associate = extractFieldValue(firstRecordData, FIELD_MAPPING.company)
+        const clientName = associate // Solo el nombre se autocompleta desde associate
+        const clientRuc = prev.clientRuc || "" // Mantener valor existente o vacío
+        const clientAddress = prev.clientAddress || "" // Mantener valor existente o vacío
+        const clientSapNumber = prev.clientSapNumber || "" // Mantener valor existente o vacío
+        
+        // Extraer datos de transporte
+        const driverName = extractFieldValue(firstRecordData, FIELD_MAPPING.driverId)
+        const vehiclePlate = extractFieldValue(firstRecordData, FIELD_MAPPING.vehicleId)
+        const originPort = extractFieldValue(firstRecordData, FIELD_MAPPING.originPort)
+        const destinationPort = extractFieldValue(firstRecordData, FIELD_MAPPING.destinationPort)
+        const moveDateRaw = extractFieldValue(firstRecordData, FIELD_MAPPING.moveDate)
+        const moveDate = formatDateForInput(moveDateRaw)
+        const moveTime = extractTimeFromDateTime(moveDateRaw)
+        
+        console.log('Datos del cliente extraídos:', {
+          associate,
+          clientName,
+          clientRuc,
+          clientAddress,
+          clientSapNumber,
+          firstRecordData: firstRecordData
+        })
+        
+        console.log('Datos de transporte extraídos:', {
+          driverName,
+          vehiclePlate,
+          originPort,
+          destinationPort,
+          moveDate,
+          driverMapping: FIELD_MAPPING.driverId,
+          vehicleMapping: FIELD_MAPPING.vehicleId,
+          originMapping: FIELD_MAPPING.originPort,
+          destinationMapping: FIELD_MAPPING.destinationPort,
+          moveDateMapping: FIELD_MAPPING.moveDate
+        })
+        
+        // Debug específico para moveDate
+        console.log('moveDate extraído:', moveDateRaw, '-> fecha:', moveDate, '-> hora:', moveTime)
+        
         const newFormData: TruckingFormData = {
           ...prev, // Keep existing form data
-          clientName: extractFieldValue(firstRecordData, FIELD_MAPPING.clientName),
-          clientRuc: extractFieldValue(firstRecordData, FIELD_MAPPING.clientRuc),
-          clientAddress: extractFieldValue(firstRecordData, FIELD_MAPPING.clientAddress),
-          clientSapNumber: extractFieldValue(firstRecordData, FIELD_MAPPING.clientSapNumber),
+          clientName,
+          clientRuc,
+          clientAddress,
+          clientSapNumber,
           driverId: extractFieldValue(firstRecordData, FIELD_MAPPING.driverId),
           vehicleId: extractFieldValue(firstRecordData, FIELD_MAPPING.vehicleId),
           routeId: extractFieldValue(firstRecordData, FIELD_MAPPING.routeId),
           originPort: extractFieldValue(firstRecordData, FIELD_MAPPING.originPort),
           destinationPort: extractFieldValue(firstRecordData, FIELD_MAPPING.destinationPort),
-          moveDate: extractFieldValue(firstRecordData, FIELD_MAPPING.moveDate),
+          moveDate: moveDate,
+          moveTime: moveTime,
           associatedCompany: extractFieldValue(firstRecordData, FIELD_MAPPING.company),
           cargoType: extractFieldValue(firstRecordData, FIELD_MAPPING.cargoType),
           sealNumber: extractFieldValue(firstRecordData, FIELD_MAPPING.seal),
@@ -386,35 +602,15 @@ export default function TruckingInvoice() {
           subtotal,
           taxAmount: subtotal * 0.07,
           total: subtotal + (subtotal * 0.07),
-          serviceItems: selectedRecordDetails.map(record => {
-            const data = record.data as Record<string, any>
-            const tipoServicio = extractFieldValue(data, FIELD_MAPPING.serviceType)
-            const tipoContenedor = extractFieldValue(data, FIELD_MAPPING.containerType)
-            
-            return {
-              id: getRecordId(record),
-              containerNumber: extractFieldValue(data, FIELD_MAPPING.container),
-              blNumber: extractFieldValue(data, FIELD_MAPPING.blNumber),
-              serviceCode: tipoServicio === 'transporte' ? 'SRV100' : prev.serviceCode,
-              activityCode: tipoContenedor === '20' ? 'ACT205' : tipoContenedor === '40' ? 'ACT240' : prev.activityCode,
-              amount: record.totalValue,
-              description: `${tipoServicio} - ${extractFieldValue(data, FIELD_MAPPING.container)}`,
-              containerSize: extractFieldValue(data, FIELD_MAPPING.size),
-              moveDate: extractFieldValue(data, FIELD_MAPPING.moveDate),
-              origin: extractFieldValue(data, FIELD_MAPPING.originPort),
-              destination: extractFieldValue(data, FIELD_MAPPING.destinationPort),
-              weight: extractFieldValue(data, FIELD_MAPPING.weight),
-              commodity: extractFieldValue(data, FIELD_MAPPING.commodity),
-              cargoType: extractFieldValue(data, FIELD_MAPPING.cargoType),
-              sealNumber: extractFieldValue(data, FIELD_MAPPING.seal)
-            }
-          })
+          serviceItems: newServiceItems
         }
 
         // Generar descripción automática
-        const serviceLines = newFormData.serviceItems.map((item, index) => 
-          `${index + 1}. ${item.serviceCode} - ${item.containerNumber} - $${item.amount.toFixed(2)}`
-        ).join('\n')
+        const serviceLines = newFormData.serviceItems.map((item, index) => {
+          const record = selectedRecordDetails.find(r => getRecordId(r) === item.id)
+          const sapCode = record?.sapCode || item.serviceCode
+          return `${index + 1}. ${sapCode} - ${item.containerNumber} - Ruta: $${item.routeAmount.toFixed(2)} + Servicio: $${item.serviceAmount} = $${item.totalAmount.toFixed(2)}`
+        }).join('\n')
         
         newFormData.description = `Servicios de transporte terrestre (${selectedRecordDetails.length} registros)\n${serviceLines}`
 
@@ -450,7 +646,6 @@ export default function TruckingInvoice() {
     setActiveFilters({
       dateRange: 'all',
       amountRange: 'all',
-      hasContainer: 'all',
     })
     setSearchTerm('')
   }
@@ -513,22 +708,22 @@ export default function TruckingInvoice() {
         dueDate: formData.dueDate,
         currency: formData.currency,
         total: formData.total,
-        records: selectedRecordDetails.map(record => ({
-          id: getRecordId(record),
-          description: `Servicio de transporte - Container: ${extractFieldValue(record.data, FIELD_MAPPING.container) || "N/A"}`,
+        records: formData.serviceItems.map(item => ({
+          id: item.id,
+          description: `Servicio de transporte - Container: ${item.containerNumber || "N/A"}`,
           quantity: 1,
-          unitPrice: record.totalValue,
-          totalPrice: record.totalValue,
-          serviceCode: formData.serviceCode,
+          unitPrice: item.totalAmount,
+          totalPrice: item.totalAmount,
+          serviceCode: item.serviceCode,
           unit: "VIAJE",
-          blNumber: extractFieldValue(record.data, FIELD_MAPPING.bl),
-          containerNumber: extractFieldValue(record.data, FIELD_MAPPING.container),
-          containerSize: extractFieldValue(record.data, FIELD_MAPPING.size),
-          containerType: extractFieldValue(record.data, FIELD_MAPPING.type),
-          driverName: extractFieldValue(record.data, FIELD_MAPPING.driver),
-          plate: extractFieldValue(record.data, FIELD_MAPPING.vehicle),
-          moveDate: extractFieldValue(record.data, FIELD_MAPPING.moveDate),
-          associate: extractFieldValue(record.data, FIELD_MAPPING.company)
+          blNumber: item.blNumber,
+          containerNumber: item.containerNumber,
+          containerSize: item.containerSize,
+          containerType: item.cargoType,
+          driverName: formData.driverId,
+          plate: formData.vehicleId,
+          moveDate: item.moveDate,
+          associate: formData.associatedCompany
           
         })),
         status: "generated",
@@ -679,7 +874,7 @@ export default function TruckingInvoice() {
       
       dispatch(addInvoice(newInvoice))
       dispatch(markRecordsAsInvoiced({ recordIds: selectedRecordIds, invoiceId: newInvoice.id }))
-      dispatch(fetchPendingRecords())
+      dispatch(fetchPendingRecordsByModule("trucking"))
 
       toast({
         title: "Factura Finalizada",
@@ -724,6 +919,49 @@ export default function TruckingInvoice() {
   const progressValue =
     currentStep === "select" ? 25 : currentStep === "create" ? 50 : currentStep === "review" ? 75 : 100
 
+  // Función para formatear fecha y hora
+  const formatDateTime = (dateString: string) => {
+    const date = new Date(dateString)
+    return {
+      date: date.toLocaleDateString('es-ES'),
+      time: date.toLocaleTimeString('es-ES', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        second: '2-digit'
+      })
+    }
+  }
+
+  // Calcular paginación basada en registros filtrados
+  const totalFilteredRecords = filteredPendingRecords.length
+  const totalPages = Math.ceil(totalFilteredRecords / recordsPerPage)
+  const startIndex = (currentPage - 1) * recordsPerPage
+  const endIndex = startIndex + recordsPerPage
+  const paginatedRecords = filteredPendingRecords.slice(startIndex, endIndex)
+
+  // Funciones de paginación
+  const goToPage = (page: number) => {
+    const newPage = Math.max(1, Math.min(page, totalPages))
+    setCurrentPage(newPage)
+  }
+
+  const goToNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1)
+    }
+  }
+
+  const goToPrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1)
+    }
+  }
+
+  // Resetear página cuando cambian los filtros
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, activeFilters])
+
   return (
     <div className="container mx-auto p-4">
       <header className="mb-6">
@@ -753,7 +991,14 @@ export default function TruckingInvoice() {
               <ListChecks className="mr-2 h-6 w-6" />
               Seleccionar Registros Individuales Pendientes
             </CardTitle>
-            <CardDescription>Elige los servicios de Excel para incluir en la factura.</CardDescription>
+            <CardDescription>
+              Elige los servicios de Excel para incluir en la factura. 
+              {pendingTruckingRecords.length > 0 && (
+                <span className="ml-2 font-medium text-blue-600">
+                  Total de registros disponibles: {pendingTruckingRecords.length}
+                </span>
+              )}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="mb-4">
@@ -777,73 +1022,53 @@ export default function TruckingInvoice() {
                 </Button>
               </div>
               
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Por Fecha:</Label>
-                <div className="flex gap-2 flex-wrap">
-                  {[
-                    { value: 'all', label: 'Todas' },
-                    { value: 'today', label: 'Hoy' },
-                    { value: 'week', label: 'Última Semana' },
-                    { value: 'month', label: 'Último Mes' }
-                  ].map((option) => (
-                    <Button
-                      key={option.value}
-                      variant={activeFilters.dateRange === option.value ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => handleFilterChange('dateRange', option.value)}
-                      className="text-xs"
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs font-medium">Por Fecha:</Label>
+                  <div className="flex gap-2">
+                    {[
+                      { value: 'all', label: 'Todas' },
+                      { value: 'today', label: 'Hoy' },
+                      { value: 'week', label: 'Última Semana' },
+                      { value: 'month', label: 'Último Mes' }
+                    ].map((option) => (
+                      <Button
+                        key={option.value}
+                        variant={activeFilters.dateRange === option.value ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handleFilterChange('dateRange', option.value)}
+                        className="text-xs"
+                      >
+                        {option.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs font-medium">Por Monto:</Label>
+                  <div className="flex gap-2">
+                    {[
+                      { value: 'all', label: 'Todos' },
+                      { value: 'low', label: '< $100' },
+                      { value: 'medium', label: '$100 - $500' },
+                      { value: 'high', label: '> $500' }
+                    ].map((option) => (
+                      <Button
+                        key={option.value}
+                        variant={activeFilters.amountRange === option.value ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handleFilterChange('amountRange', option.value)}
+                        className="text-xs"
+                      >
+                        {option.label}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Por Monto:</Label>
-                <div className="flex gap-2 flex-wrap">
-                  {[
-                    { value: 'all', label: 'Todos' },
-                    { value: 'low', label: '< $100' },
-                    { value: 'medium', label: '$100 - $500' },
-                    { value: 'high', label: '> $500' }
-                  ].map((option) => (
-                    <Button
-                      key={option.value}
-                      variant={activeFilters.amountRange === option.value ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => handleFilterChange('amountRange', option.value)}
-                      className="text-xs"
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Por Contenedor:</Label>
-                <div className="flex gap-2 flex-wrap">
-                  {[
-                    { value: 'all', label: 'Todos' },
-                    { value: 'yes', label: 'Con Contenedor' },
-                    { value: 'no', label: 'Sin Contenedor' }
-                  ].map((option) => (
-                    <Button
-                      key={option.value}
-                      variant={activeFilters.hasContainer === option.value ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => handleFilterChange('hasContainer', option.value)}
-                      className="text-xs"
-                    >
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {(activeFilters.dateRange !== 'all' || activeFilters.amountRange !== 'all' || 
-                activeFilters.hasContainer !== 'all' || searchTerm) && (
+              {(activeFilters.dateRange !== 'all' || activeFilters.amountRange !== 'all' || searchTerm) && (
                 <div className="bg-muted/30 p-3 rounded-md">
                   <p className="text-xs text-muted-foreground mb-1">Filtros activos:</p>
                   <div className="flex gap-1 flex-wrap">
@@ -856,17 +1081,34 @@ export default function TruckingInvoice() {
                     {activeFilters.amountRange !== 'all' && (
                       <Badge variant="green">Monto: {activeFilters.amountRange}</Badge>
                     )}
-                    {activeFilters.hasContainer !== 'all' && (
-                      <Badge variant="orange">
-                        Contenedor: {activeFilters.hasContainer === 'yes' ? 'Con' : 'Sin'}
-                      </Badge>
-                    )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
                     Mostrando {filteredPendingRecords.length} de {pendingTruckingRecords.length} registros
                   </p>
                 </div>
               )}
+              
+              {/* Información del total de registros */}
+              <div className="bg-blue-50 border border-blue-200 p-3 rounded-md">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Database className="h-4 w-4 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-800">
+                      Total de registros en la base de datos: {pendingTruckingRecords.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 text-sm text-blue-600">
+                    {totalFilteredRecords !== pendingTruckingRecords.length && (
+                      <span>Filtrados: {totalFilteredRecords}</span>
+                    )}
+                    {totalPages > 1 && (
+                      <span>Página {currentPage} de {totalPages}</span>
+                    )}
+                  </div>
+                </div>
+                
+
+              </div>
             </div>
 
             {isLoadingRecords ? (
@@ -875,58 +1117,84 @@ export default function TruckingInvoice() {
                 <span className="ml-2">Cargando registros...</span>
               </div>
             ) : filteredPendingRecords.length > 0 ? (
-              <div className="max-h-[400px] overflow-y-auto border rounded-md">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">
-                        <Checkbox
-                          checked={selectedRecordIds.length === filteredPendingRecords.length}
-                          onCheckedChange={(checked) => {
-                            setSelectedRecordIds(checked ? filteredPendingRecords.map(r => getRecordId(r)) : [])
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead>Código</TableHead>
-                      <TableHead>Conetenedor</TableHead>
-                      <TableHead>Cantidad</TableHead>
-                      <TableHead>Precio Unit.</TableHead>
-                      <TableHead>Total</TableHead>
-                      <TableHead>Asociado</TableHead>
-                      <TableHead>Fecha</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredPendingRecords.filter(record => record && record.data).map((record) => {
-                      const container = extractFieldValue(record.data, FIELD_MAPPING.container)
-                      const size = extractFieldValue(record.data, FIELD_MAPPING.size)
-                      const associate = extractFieldValue(record.data, FIELD_MAPPING.company)
-                      const moveDate = extractFieldValue(record.data, FIELD_MAPPING.moveDate)
-                      
-                      return (
-                        <TableRow key={getRecordId(record)}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedRecordIds.includes(getRecordId(record))}
-                              onCheckedChange={(checked) => handleRecordSelectionChange(getRecordId(record), checked as boolean)}
-                            />
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {getRecordId(record).split("-").pop()}
-                          </TableCell>
-                          <TableCell>
-                            {container ? `${container} (${size})` : "N/A"}
-                          </TableCell>
-                          <TableCell className="text-right">1</TableCell>
-                          <TableCell className="text-right">${record.totalValue?.toFixed(2)}</TableCell>
-                          <TableCell className="text-right font-medium">${record.totalValue.toFixed(2)}</TableCell>
-                          <TableCell>{associate || "N/A"}</TableCell>
-                          <TableCell>{moveDate || "N/A"}</TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
+              <div className="border rounded-md">
+                {/* Header fijo */}
+                <div className="bg-gray-400 border-b shadow-sm">
+                  <div
+                    className="grid grid-cols-9 gap-2 p-2 font-medium text-sm text-black items-center"
+                    style={{ gridTemplateColumns: '40px 1.5fr 1fr 1fr 2fr 1fr 1fr 1.2fr 1fr' }}
+                  >
+                    <div className="w-12">
+                      <Checkbox
+                        checked={selectedRecordIds.length === paginatedRecords.length}
+                        onCheckedChange={(checked) => {
+                          setSelectedRecordIds(checked ? paginatedRecords.map(r => getRecordId(r)) : [])
+                        }}
+                      />
+                    </div>
+                    <div className="text-left">Contenedor</div>
+                    <div className="text-left">SAP</div>
+                    <div className="text-right">Precio Unit.</div>
+                    <div className="text-right">Total</div>
+                    <div className="text-left">Asociado</div>
+                    <div className="text-left">Fecha Movimiento</div>
+                    <div className="text-left">Fecha Creación</div>
+                    <div className="text-left">Hora Creación</div>
+                  </div>
+                </div>
+                
+                {/* Body con scroll */}
+                <div className="max-h-[400px] overflow-y-auto">
+                  {paginatedRecords.filter(record => record && record.data).map((record) => {
+                    const container = extractFieldValue(record.data, FIELD_MAPPING.container)
+                    const size = extractFieldValue(record.data, FIELD_MAPPING.size)
+                    const associate = extractFieldValue(record.data, FIELD_MAPPING.company)
+                    const moveDate = extractFieldValue(record.data, FIELD_MAPPING.moveDate)
+                    const sapCode = record.sapCode || record.data?.sapCode || ''
+                    const { date, time } = formatDateTime(record.createdAt)
+                    
+
+                    return (
+                      <div
+                        key={getRecordId(record)}
+                        className="grid grid-cols-9 gap-2 p-2 border-b bg-gray-100 hover:bg-gray-200 text-sm items-center"
+                        style={{ gridTemplateColumns: '40px 1.5fr 1fr 1fr 2fr 1fr 1fr 1.2fr 1fr' }}
+                      >
+                        <div className="w-12">
+                          <Checkbox
+                            checked={selectedRecordIds.includes(getRecordId(record))}
+                            onCheckedChange={(checked) => handleRecordSelectionChange(getRecordId(record), checked as boolean)}
+                          />
+                        </div>
+                        <div className="text-left">
+                          {container ? `${container} (${size})` : "N/A"}
+                        </div>
+                        <div className="text-left">{sapCode}</div>
+                        <div className="text-right">${record.totalValue?.toFixed(2)}</div>
+                        <div className="text-right font-medium">${record.totalValue.toFixed(2)}</div>
+                        <div className="text-left">{associate || "N/A"}</div>
+                        <div className="text-left text-xs">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {moveDate || "N/A"}
+                          </div>
+                        </div>
+                        <div className="text-left text-xs">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {date}
+                          </div>
+                        </div>
+                        <div className="text-left text-xs">
+                          <div className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {time}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             ) : (
               <Alert>
@@ -939,6 +1207,66 @@ export default function TruckingInvoice() {
                   }
                 </AlertDescription>
               </Alert>
+            )}
+            
+            {/* Paginación */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-4">
+                <div className="text-sm text-muted-foreground">
+                  Mostrando {startIndex + 1} a {Math.min(endIndex, totalFilteredRecords)} de {totalFilteredRecords} registros
+                  {totalFilteredRecords !== pendingTruckingRecords.length && (
+                    <span className="ml-2">(filtrados de {pendingTruckingRecords.length} total)</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goToPrevPage}
+                    disabled={currentPage === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Anterior
+                  </Button>
+                  
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum
+                      if (totalPages <= 5) {
+                        pageNum = i + 1
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i
+                      } else {
+                        pageNum = currentPage - 2 + i
+                      }
+                      
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={currentPage === pageNum ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => goToPage(pageNum)}
+                          className="w-8 h-8 p-0"
+                        >
+                          {pageNum}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goToNextPage}
+                    disabled={currentPage === totalPages}
+                  >
+                    Siguiente
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
             )}
           </CardContent>
           <CardFooter className="justify-end">
@@ -988,11 +1316,27 @@ export default function TruckingInvoice() {
                     key={section.id} 
                     className={`space-y-4 ${activeSection === section.id ? 'block' : 'hidden'}`}
                   >
-                    <h3 className="text-lg font-semibold flex items-center">
-                      {section.icon}
-                      <span className="ml-2">{section.title}</span>
-                    </h3>
-                    <p className="text-sm text-muted-foreground">{section.description}</p>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold flex items-center">
+                          {section.icon}
+                          <span className="ml-2">{section.title}</span>
+                        </h3>
+                        <p className="text-sm text-muted-foreground">{section.description}</p>
+                      </div>
+                      {section.id === 'client' && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsClientModalOpen(true)}
+                          className="flex items-center gap-2"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Agregar Cliente
+                        </Button>
+                      )}
+                    </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {section.fields.map((field) => {
@@ -1019,7 +1363,13 @@ export default function TruckingInvoice() {
                                   <SelectValue placeholder={`Seleccionar ${field.label}`} />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {field.options?.map(opt => (
+                                  {field.id === 'serviceCode' ? (
+                                    serviceSapCodes.map((sapCode) => (
+                                      <SelectItem key={sapCode._id} value={sapCode.code}>
+                                        {sapCode.code} - {sapCode.description}
+                                      </SelectItem>
+                                    ))
+                                  ) : field.options?.map(opt => (
                                     <SelectItem key={opt} value={opt}>{opt}</SelectItem>
                                   ))}
                                 </SelectContent>
@@ -1027,7 +1377,17 @@ export default function TruckingInvoice() {
                             ) : field.type === 'date' ? (
                               <Input
                                 id={field.id}
+                                name={field.id}
                                 type="date"
+                                value={value}
+                                onChange={handleInputChange}
+                                className={isAutoField ? "bg-green-50 border-green-200" : ""}
+                              />
+                            ) : field.type === 'time' ? (
+                              <Input
+                                id={field.id}
+                                name={field.id}
+                                type="time"
                                 value={value}
                                 onChange={handleInputChange}
                                 className={isAutoField ? "bg-green-50 border-green-200" : ""}
@@ -1076,8 +1436,7 @@ export default function TruckingInvoice() {
                             <div>
                               <Label>Código Servicio SAP</Label>
                               <Select
-                              //@ts-ignore
-                                value={item.sapCode}
+                                value={item.serviceCode}
                                 onValueChange={(val) => {
                                   const newItems = [...formData.serviceItems]
                                   newItems[index].serviceCode = val
@@ -1085,12 +1444,14 @@ export default function TruckingInvoice() {
                                 }}
                               >
                                 <SelectTrigger>
-                                  <SelectValue />
+                                  <SelectValue placeholder="Seleccionar código SAP" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="SRV100">TRK001</SelectItem>
-                                  <SelectItem value="SRV100">TRK002</SelectItem>
-                    
+                                  {serviceSapCodes.map((sapCode) => (
+                                    <SelectItem key={sapCode._id} value={sapCode.code}>
+                                      {sapCode.code} - {sapCode.description}
+                                    </SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
                             </div>
@@ -1118,10 +1479,80 @@ export default function TruckingInvoice() {
                             </div> */}
                             
                             <div>
-                              <Label>Monto</Label>
+                              <Label className="flex items-center gap-2">
+                                Monto de Ruta
+                                <span className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded">Fijo</span>
+                              </Label>
                               <Input
-                                value={`$${item.amount.toFixed(2)}`}
-                                className="font-bold"
+                                type="number"
+                                value={item.routeAmount.toFixed(2)}
+                                readOnly
+                                disabled
+                                className="bg-gray-50 border-gray-200"
+                              />
+                            </div>
+                            
+                            <div>
+                              <Label className="flex items-center gap-2">
+                                Monto de Servicio SAP
+                                <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">Editable</span>
+                              </Label>
+                              <Input
+                                type="number"
+                                value={item.serviceAmount}
+                                onChange={(e) => {
+                                  console.log('Editando servicio SAP:', e.target.value)
+                                  const newServiceAmount = Number(e.target.value) || 0
+                                  console.log('Nuevo monto servicio:', newServiceAmount)
+                                  
+                                  setFormData(prev => {
+                                    const newItems = [...prev.serviceItems]
+                                    newItems[index].serviceAmount = newServiceAmount
+                                    newItems[index].totalAmount = newItems[index].routeAmount + newServiceAmount
+                                    
+                                    // Recalcular subtotal, tax y total
+                                    const newSubtotal = newItems.reduce((sum, item) => sum + item.totalAmount, 0)
+                                    const newTaxAmount = newSubtotal * 0.07
+                                    const newTotal = newSubtotal + newTaxAmount
+                                    
+                                    // Actualizar descripción automáticamente
+                                    const serviceLines = newItems.map((item, idx) => {
+                                      const record = selectedRecordDetails.find(r => getRecordId(r) === item.id)
+                                      const sapCode = record?.sapCode || item.serviceCode
+                                      return `${idx + 1}. ${sapCode} - ${item.containerNumber} - Ruta: $${item.routeAmount.toFixed(2)} + Servicio: $${item.serviceAmount} = $${item.totalAmount.toFixed(2)}`
+                                    }).join('\n')
+                                    
+                                    const newDescription = `Servicios de transporte terrestre (${newItems.length} registros)\n${serviceLines}`
+                                    
+                                    console.log('Nuevos cálculos:', { newSubtotal, newTaxAmount, newTotal })
+                                    
+                                    return {
+                                      ...prev,
+                                      serviceItems: newItems,
+                                      subtotal: newSubtotal,
+                                      taxAmount: newTaxAmount,
+                                      total: newTotal,
+                                      description: newDescription
+                                    }
+                                  })
+                                }}
+                                step="1"
+                                className="font-bold bg-white border-blue-200 focus:border-blue-500"
+                                placeholder="0"
+                              />
+                            </div>
+                            
+                            <div>
+                              <Label className="flex items-center gap-2">
+                                Total del Servicio
+                                <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">Calculado</span>
+                              </Label>
+                              <Input
+                                type="number"
+                                value={item.totalAmount.toFixed(2)}
+                                readOnly
+                                disabled
+                                className="bg-green-50 border-green-200 font-bold"
                               />
                             </div>
                           </CardContent>
@@ -1210,8 +1641,8 @@ export default function TruckingInvoice() {
                         name="subtotal"
                         type="number"
                         value={formData.subtotal.toFixed(2)}
-                        onChange={handleInputChange}
-                        step="0.01"
+                        readOnly
+                        disabled
                         className="bg-muted/50"
                       />
                     </div>
@@ -1405,6 +1836,33 @@ export default function TruckingInvoice() {
           </CardFooter>
         </Card>
       )}
+
+      {/* Modal de Clientes */}
+      <ClientModal
+        isOpen={isClientModalOpen}
+        onClose={() => setIsClientModalOpen(false)}
+        onClientCreated={(client) => {
+          // Cuando se crea un cliente, actualizar los campos del formulario
+          if (client.type === "natural") {
+            setFormData(prev => ({
+              ...prev,
+              clientName: client.fullName,
+              clientRuc: client.documentNumber,
+              clientAddress: client.address.fullAddress || `${client.address.district}, ${client.address.province}`,
+              clientSapNumber: client.sapCode || ""
+            }))
+          } else {
+            setFormData(prev => ({
+              ...prev,
+              clientName: client.companyName,
+              clientRuc: `${client.ruc}-${client.dv}`,
+              clientAddress: client.fiscalAddress.fullAddress || `${client.fiscalAddress.district}, ${client.fiscalAddress.province}`,
+              clientSapNumber: client.sapCode || ""
+            }))
+          }
+          setIsClientModalOpen(false)
+        }}
+      />
     </div>
   )
 }
