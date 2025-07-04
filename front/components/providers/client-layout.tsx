@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import { usePathname } from "next/navigation"
 import { ThemeProvider } from "@/components/theme-provider"
 import ReduxProvider from "@/components/providers/redux-provider"
 import { Toaster } from "@/components/ui/toaster"
@@ -15,6 +16,8 @@ interface ClientLayoutProps {
 }
 
 export default function ClientLayout({ children, isLoginPage, defaultOpen }: ClientLayoutProps) {
+  const pathname = usePathname()
+  const isLoginOrRegisterPage = pathname === '/login' || pathname === '/register'
   return (
     <ReduxProvider>
       <AuthProvider>
@@ -25,7 +28,7 @@ export default function ClientLayout({ children, isLoginPage, defaultOpen }: Cli
           disableTransitionOnChange
         >
           <Toaster />
-          {isLoginPage ? (
+          {isLoginOrRegisterPage ? (
             // Layout simple para login sin sidebar
             <main className="min-h-screen">
               {children}

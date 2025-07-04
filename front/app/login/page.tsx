@@ -25,7 +25,9 @@ export default function LoginPage() {
 
   // Redirigir si ya está autenticado
   useEffect(() => {
+    console.log('Auth state changed:', { isAuthenticated, isLoading, error })
     if (isAuthenticated) {
+      console.log('Redirecting to home...')
       router.push("/")
     }
   }, [isAuthenticated, router])
@@ -48,16 +50,23 @@ export default function LoginPage() {
     }
 
     try {
+      console.log('Attempting login...')
       const result = await dispatch(loginAsync({ email, password }))
       
+      console.log('Login result:', result)
+      
       if (loginAsync.fulfilled.match(result)) {
+        console.log('Login successful, payload:', result.payload)
         toast({
           title: "Login exitoso",
           description: "¡Bienvenido de vuelta!",
         })
+        // Redirección inmediata después del login exitoso
+        console.log('Redirecting after successful login...')
         router.push("/")
       }
     } catch (error) {
+      console.error('Login error:', error)
       // El error se maneja en el reducer
     }
   }

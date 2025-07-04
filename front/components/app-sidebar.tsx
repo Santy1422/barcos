@@ -3,7 +3,7 @@
 import React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { useAppSelector } from "@/lib/hooks"
+import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { logoutAsync, selectCurrentUser } from "@/lib/features/auth/authSlice"
 import {
   Sidebar,
@@ -61,6 +61,7 @@ interface NavItem {
 export function AppSidebar() {
   const pathname = usePathname()
   const router = useRouter()
+  const dispatch = useAppDispatch()
   const currentUser = useAppSelector(selectCurrentUser)
   const [userEmail, setUserEmail] = React.useState("")
 

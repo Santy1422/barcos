@@ -19,14 +19,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Marcar como hidratado después del primer render
     setIsHydrated(true)
     
-    // Verificar token al cargar la aplicación
-    const token = localStorage.getItem('token')
-    const storedAuth = localStorage.getItem('isAuthenticated')
+    console.log('AuthProvider - Current state:', { isAuthenticated, isLoading })
     
-    if (token && storedAuth === 'true') {
-      dispatch(verifyToken())
+    // Verificar token al cargar la aplicación solo si no está autenticado
+    if (!isAuthenticated) {
+      const token = localStorage.getItem('token')
+      const storedAuth = localStorage.getItem('isAuthenticated')
+      
+      console.log('AuthProvider - Checking localStorage:', { token: !!token, storedAuth })
+      
+      if (token && storedAuth === 'true') {
+        console.log('AuthProvider - Dispatching verifyToken')
+        dispatch(verifyToken())
+      }
     }
-  }, [dispatch])
+  }, [dispatch, isAuthenticated])
 
   // Mostrar loading mientras se hidrata o verifica el token
   if (!isHydrated || isLoading) {

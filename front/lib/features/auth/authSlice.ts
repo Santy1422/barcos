@@ -45,12 +45,16 @@ const loadInitialState = (): AuthState => {
     const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true'
     const currentUser = localStorage.getItem('currentUser')
     
+    console.log('Loading initial state from localStorage:', { token: !!token, isAuthenticated, currentUser: !!currentUser })
+    
     if (token && isAuthenticated && currentUser) {
+      const parsedUser = JSON.parse(currentUser)
+      console.log('Restoring authenticated state:', { user: parsedUser })
       return {
         ...initialState,
         isAuthenticated: true,
         token,
-        currentUser: JSON.parse(currentUser)
+        currentUser: parsedUser
       }
     }
   } catch (error) {
@@ -94,7 +98,7 @@ export const loginAsync = createAsyncThunk(
       localStorage.setItem('token', token)
       
       // Guardar cookie para middleware
-      document.cookie = `auth-token=true; path=/`
+      document.cookie = `auth-token=true; path=/; max-age=86400`
       
       return {
         user: user,
@@ -219,7 +223,7 @@ export const registerAsync = createAsyncThunk(
       localStorage.setItem('token', token)
       
       // Guardar cookie para middleware
-      document.cookie = `auth-token=true; path=/`
+      document.cookie = `auth-token=true; path=/; max-age=86400`
       
       return {
         user: {
@@ -239,7 +243,7 @@ export const registerAsync = createAsyncThunk(
 
 const authSlice = createSlice({
   name: 'auth',
-  initialState,
+  initialState: authInitialState,
   reducers: {
     login: (state, action: PayloadAction<{ user: User; token: string }>) => {
       state.isAuthenticated = true
@@ -288,6 +292,12 @@ const authSlice = createSlice({
         state.currentUser = action.payload.user
         state.token = action.payload.token
         state.error = null
+        
+        // Guardar estado en localStorage
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('isAuthenticated', 'true')
+          localStorage.setItem('currentUser', JSON.stringify(action.payload.user))
+        }
       })
       .addCase(registerAsync.rejected, (state, action) => {
         state.loading = false
@@ -295,22 +305,38 @@ const authSlice = createSlice({
       })
       // Login async
       .addCase(loginAsync.pending, (state) => {
+        console.log('LoginAsync pending')
         state.loading = true
         state.error = null
       })
       .addCase(loginAsync.fulfilled, (state, action) => {
+        console.log('LoginAsync fulfilled - updating state:', action.payload)
         state.loading = false
         state.isAuthenticated = true
         state.currentUser = action.payload.user
         state.token = action.payload.token
         state.error = null
+        
+        // Guardar estado en localStorage
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('isAuthenticated', 'true')
+          localStorage.setItem('currentUser', JSON.stringify(action.payload.user))
+          console.log('Saved to localStorage:', { isAuthenticated: true, user: action.payload.user })
+        }
       })
       .addCase(loginAsync.rejected, (state, action) => {
+        console.log('LoginAsync rejected:', action.payload)
         state.loading = false
         state.isAuthenticated = false
         state.currentUser = null
         state.token = null
         state.error = action.payload as string
+        
+        // Limpiar localStorage en caso de error
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('isAuthenticated')
+          localStorage.removeItem('currentUser')
+        }
       })
       // Logout async
       .addCase(logoutAsync.fulfilled, (state) => {
@@ -319,6 +345,12 @@ const authSlice = createSlice({
         state.currentUser = null
         state.token = null
         state.error = null
+        
+        // Limpiar localStorage
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('isAuthenticated')
+          localStorage.removeItem('currentUser')
+        }
       })
       // Verify token
       .addCase(verifyToken.pending, (state) => {
@@ -329,12 +361,24 @@ const authSlice = createSlice({
         state.isAuthenticated = true
         state.currentUser = action.payload.user
         state.token = action.payload.token
+        
+        // Guardar estado en localStorage
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('isAuthenticated', 'true')
+          localStorage.setItem('currentUser', JSON.stringify(action.payload.user))
+        }
       })
       .addCase(verifyToken.rejected, (state) => {
         state.loading = false
         state.isAuthenticated = false
         state.currentUser = null
         state.token = null
+        
+        // Limpiar localStorage en caso de error
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('isAuthenticated')
+          localStorage.removeItem('currentUser')
+        }
       })
   },
 })
