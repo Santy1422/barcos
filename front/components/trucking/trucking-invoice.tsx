@@ -62,7 +62,7 @@ import {
   selectServiceSapCodesByModule,
   fetchServiceSapCodes,
 } from "@/lib/features/config/configSlice"
-import { generateInvoiceXML } from "@/lib/xml-generator"
+import { generateInvoiceXML, validateXMLForSAP } from "@/lib/xml-generator"
 import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features/invoice/invoiceSlice"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
@@ -733,6 +733,23 @@ export default function TruckingInvoice() {
       }
       
       const xml = generateInvoiceXML(xmlPayload)
+      
+      // Validar el XML generado
+      const validation = validateXMLForSAP(xml)
+      if (!validation.isValid) {
+        console.error("Errores en el XML:", validation.errors)
+        toast({
+          title: "Advertencia - XML",
+          description: `El XML generado tiene ${validation.errors.length} errores. Revisa la consola para más detalles.`,
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "XML Válido",
+          description: "El XML cumple con todos los requisitos para SAP.",
+        })
+      }
+      
       setGeneratedXml(xml)
       
       // Generar PDF
