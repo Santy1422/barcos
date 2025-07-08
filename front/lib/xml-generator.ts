@@ -1,5 +1,6 @@
 import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features/invoice/invoiceSlice"
 import { js2xml } from "xml-js"
+import { TRUCKING_DEFAULTS } from "./constants/trucking-options"
 
 function formatDateForXML(dateString: string): string {
   const date = new Date(dateString)
@@ -23,92 +24,79 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
     throw new Error("Datos requeridos faltantes para generar XML")
   }
 
+  // Calcular el monto total de las rutas (AmntTransactCur)
+  const routeAmountTotal = invoice.records.reduce((sum, record) => {
+    // Usar routeAmount si está disponible, sino usar totalPrice como fallback
+    const routeAmount = (record as any).routeAmount || record.totalPrice || 0
+    return sum + routeAmount
+  }, 0)
+
   const xmlObject = {
     _declaration: { _attributes: { version: "1.0", encoding: "utf-8" } },
     "LogisticARInvoices": {
       _attributes: {
-        "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
         "xmlns": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00",
         "targetNamespace": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00"
       },
       "CustomerInvoice": {
         // Protocol Section
         "Protocol": {
-          "TechnicalContact": "almeida.kant@ptyrmgmt.com / renee.taylor@ptyrmgmt.com",
-          "Timestamp": formatDateForXML(invoice.date) + formatTimeForXML(new Date().toISOString()),
-          "Version": "01.00"
+          "SourceSystem": "DEP",
+          "TechnicalContact": "almeida.kant@ptyrmgmt.com / renee.taylor@ptyrmgmt.com"
         },
         // Header Section
         "Header": {
-          "CompanyCode": invoice.module === "trucking" ? "932" : invoice.module === "shipchandler" ? "6721" : "9121",
+          "CompanyCode": "9325",
           "DocumentType": "XL",
           "DocumentDate": formatDateForXML(invoice.date),
-          "PostingDate": formatDateForXML(invoice.date),
+          "PostingDate": invoice.sapDate ? formatDateForXML(invoice.sapDate) : formatDateForXML(invoice.date),
           "TransactionCurrency": invoice.currency || "USD",
-          "TranslationDate": formatDateForXML(invoice.date),
-          "EntityDocNbr": invoice.invoiceNumber,
-          "ReferenceDocument": invoice.invoiceNumber,
-          "DocumentText": `Factura ${invoice.module} - ${invoice.invoiceNumber}`
+          "Reference": invoice.invoiceNumber,
+          "EntityDocNbr": invoice.sapDocumentNumber || invoice.invoiceNumber
         },
         // AdditionalTexts Section
         "AdditionalTexts": {
-          "LongHeaderTextLangKey": "EN",
-          "LongHeaderText": `Factura de ${invoice.module} - ${invoice.clientName || invoice.client}`
+          "LongHeaderTextLangKey": "EN"
         },
         // CustomerOpenItem Section
         "CustomerOpenItem": {
           "CustomerNbr": invoice.client,
-          "AmntTransactCur": invoice.total.toFixed(2),
-          "PmtTerms": "NET30",
-          "PaymentMethod": "BANK_TRANSFER",
-          "DueDate": formatDateForXML(invoice.dueDate || invoice.date)
+          "AmntTransactCur": routeAmountTotal.toFixed(3)
         },
         // OtherItems Section
         "OtherItems": {
-          "OtherItem": invoice.records.map((record: InvoiceLineItemForXml, index: number) => ({
-            "IncomeRebateCode": "I",
-            "CompanyCode": invoice.module === "trucking" ? "932" : invoice.module === "shipchandler" ? "6721" : "9121",
-            "BaseUnitMeasure": "EA",
-            "Qty": record.quantity || 1,
-            "ProfitCenter": "1000",
-            "InternalOrder": "",
-            "Bundle": record.serviceCode || "TRUCKING",
-            "Service": record.serviceCode || "TRANSPORT",
-            "Activity": record.activityCode || "CONTAINER",
-            "Pillar": "LOGISTICS",
-            "BUCountry": "PA",
-            "ServiceCountry": "PA",
-            "RepairTyp": "N/A",
-            "ClientType": "COMMERCIAL",
-            "BusinessType": "IMPORT",
-            "FullEmpty": record.fullEmptyStatus || "FULL",
-            "CtrISOcode": record.containerIsoCode || "42G1",
-            "CtrType": record.containerType || "DV",
-            "CtrSize": record.containerSize || "40",
-            "CtrCategory": "STANDARD",
-            "SalesOrder": "",
-            "Route": record.route || "STANDARD",
-            "Commodity": record.commodity || "GENERAL",
-            "SubContracting": "NO",
-            "CtrNbr": record.containerNumber || "",
-            "AmntTransacCur": (record.totalPrice || 0).toFixed(3),
-            "AmntCpyCur": (record.totalPrice || 0).toFixed(3),
-            "TaxCode": "O7",
-            "TaxAmntDocCur": ((record.totalPrice || 0) * 0.07).toFixed(3),
-            "TaxAmntCpyCur": ((record.totalPrice || 0) * 0.07).toFixed(3),
-            "ReferencePeriod": `${(new Date(invoice.date).getMonth() + 1).toString().padStart(2, "0")}.${new Date(invoice.date).getFullYear()}`,
-            "AssignmentNbr": invoice.invoiceNumber,
-            "LineItemText": record.description || `${record.serviceCode || "TRANSPORT"} (${record.containerSize || "40"}')`,
-            "BL": record.blNumber || "",
-            "REF_KEY1": invoice.invoiceNumber,
-            "REF_KEY2": record.containerNumber || "",
-            "REF_KEY3": record.blNumber || "",
-            "LineItemNumber": (index + 1).toString().padStart(3, "0"),
-            "DriverName": record.driverName || invoice.driverId || "",
-            "VehiclePlate": record.plate || invoice.vehicleId || "",
-            "MoveDate": record.moveDate ? formatDateForXML(record.moveDate) : formatDateForXML(invoice.date),
-            "Associate": record.associate || ""
-          }))
+          "OtherItem": invoice.records.map((record: InvoiceLineItemForXml, index: number) => {
+            // Determinar el valor de BusinessType para el XML (I o E)
+            const businessTypeXmlValue = record.businessType === "IMPORT" ? "I" : "E"
+            
+            return {
+              "IncomeRebateCode": TRUCKING_DEFAULTS.incomeRebateCode,
+              "AmntTransacCur": (record.totalPrice || 0).toFixed(3),
+              "TaxCode": (record as any).taxCode || "O7",
+              "TaxAmntDocCur": ((record as any).taxAmntDocCur || 0),
+              "TaxAmntCpyCur": ((record as any).taxAmntCpyCur || 0),
+              "ProfitCenter": (record as any).profitCenter || "1000",
+              "InternalOrder": record.internalOrder || "",
+              "Bundle": record.bundle || "0000",
+              "Service": "TRK001",
+              "Activity": "TRK",
+              "Pillar": TRUCKING_DEFAULTS.pillar,
+              "BUCountry": TRUCKING_DEFAULTS.buCountry,
+              "ServiceCountry": TRUCKING_DEFAULTS.serviceCountry,
+              "RepairTyp": TRUCKING_DEFAULTS.repairTyp,
+              "ClientType": TRUCKING_DEFAULTS.clientType,
+              "BusinessType": businessTypeXmlValue,
+              "FullEmpty": record.fullEmptyStatus || "FULL",
+              "CtrISOcode": record.containerIsoCode || "D",
+              "CtrType": record.containerType || "DV",
+              "CtrSize": record.containerSize || "40",
+              "CtrCategory": record.ctrCategory || "D",
+              "SalesOrder": record.salesOrder || "",
+              "Route": record.route || "STANDARD",
+              "Commodity": record.commodity || "10",
+              "SubContracting": record.subcontracting || "N"
+            }
+          })
         }
       }
     }
@@ -193,30 +181,123 @@ export function generateTestXML(): string {
   const testInvoice: InvoiceForXmlPayload = {
     id: "TEST-001",
     module: "trucking",
-    invoiceNumber: "F-TRK-12345",
-    client: "12345678-1",
-    clientName: "Cliente de Prueba",
-    date: new Date().toISOString().split('T')[0],
-    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    invoiceNumber: "F-DHL-01250",
+    client: "1234567890",
+    clientName: "DHL Express",
+    date: "2025-07-04",
+    dueDate: "2025-08-03",
     currency: "USD",
-    total: 500.00,
+    total: 2485.00,
     records: [
       {
         id: "REC-001",
-        description: "Servicio de transporte - Container: ABCD1234567",
+        description: "Servicio de transporte - Container: DHLU8901234",
         quantity: 1,
-        unitPrice: 500.00,
-        totalPrice: 500.00,
+        unitPrice: 850.00,
+        totalPrice: 850.00,
         serviceCode: "SRV100",
+        activityCode: "CONTAINER",
         unit: "VIAJE",
-        blNumber: "BL123456789",
-        containerNumber: "ABCD1234567",
+        blNumber: "DHLGC987654",
+        containerNumber: "DHLU8901234",
         containerSize: "40",
         containerType: "DV",
+        containerIsoCode: "42G1",
+        fullEmptyStatus: "FULL",
+        route: "STANDARD",
+        commodity: "EXPRESS",
         driverName: "Juan Pérez",
         plate: "ABC-123",
-        moveDate: new Date().toISOString().split('T')[0],
-        associate: "Empresa Asociada"
+        moveDate: "2025-07-04",
+        associate: "DHL_EXPRESS"
+      },
+      {
+        id: "REC-002",
+        description: "Servicio de almacenamiento - 7 días - Container: DHLU8901234",
+        quantity: 7,
+        unitPrice: 50.00,
+        totalPrice: 350.00,
+        serviceCode: "SRV200",
+        activityCode: "STORAGE",
+        unit: "DAYS",
+        blNumber: "DHLGC987654",
+        containerNumber: "DHLU8901234",
+        containerSize: "40",
+        containerType: "DV",
+        containerIsoCode: "42G1",
+        fullEmptyStatus: "FULL",
+        route: "WAREHOUSE",
+        commodity: "EXPRESS",
+        driverName: "Juan Pérez",
+        plate: "ABC-123",
+        moveDate: "2025-07-04",
+        associate: "STORAGE"
+      },
+      {
+        id: "REC-003",
+        description: "Servicio de manipulación de carga - Container: DHLU8901234",
+        quantity: 1,
+        unitPrice: 280.00,
+        totalPrice: 280.00,
+        serviceCode: "SRV300",
+        activityCode: "HANDLING",
+        unit: "VIAJE",
+        blNumber: "DHLGC987654",
+        containerNumber: "DHLU8901234",
+        containerSize: "40",
+        containerType: "DV",
+        containerIsoCode: "42G1",
+        fullEmptyStatus: "FULL",
+        route: "TERMINAL",
+        commodity: "EXPRESS",
+        driverName: "Juan Pérez",
+        plate: "ABC-123",
+        moveDate: "2025-07-04",
+        associate: "HANDLING"
+      },
+      {
+        id: "REC-004",
+        description: "Servicio de documentación y trámites aduaneros",
+        quantity: 1,
+        unitPrice: 150.00,
+        totalPrice: 150.00,
+        serviceCode: "SRV400",
+        activityCode: "DOCUMENTATION",
+        unit: "VIAJE",
+        blNumber: "DHLGC987654",
+        containerNumber: "DHLU8901234",
+        containerSize: "N/A",
+        containerType: "N/A",
+        containerIsoCode: "N/A",
+        fullEmptyStatus: "N/A",
+        route: "OFFICE",
+        commodity: "DOCUMENTS",
+        driverName: "Juan Pérez",
+        plate: "ABC-123",
+        moveDate: "2025-07-04",
+        associate: "DOCUMENTATION"
+      },
+      {
+        id: "REC-005",
+        description: "Seguro de carga internacional - Container: DHLU8901234",
+        quantity: 1,
+        unitPrice: 180.00,
+        totalPrice: 180.00,
+        serviceCode: "SRV500",
+        activityCode: "INSURANCE",
+        unit: "VIAJE",
+        blNumber: "DHLGC987654",
+        containerNumber: "DHLU8901234",
+        containerSize: "40",
+        containerType: "DV",
+        containerIsoCode: "42G1",
+        fullEmptyStatus: "FULL",
+        route: "COVERAGE",
+        commodity: "EXPRESS",
+        driverName: "Juan Pérez",
+        plate: "ABC-123",
+        moveDate: "2025-07-04",
+        associate: "INSURANCE"
       }
     ],
     status: "generated",

@@ -12,13 +12,26 @@ export interface InvoiceLineItemForXml {
   unitPrice?: number
   totalPrice: number
   serviceCode?: string
+  activityCode?: string // TRK por defecto
   unit?: string
   blNumber?: string
   containerNumber?: string
-  containerSize?: string
-  containerType?: string
-  containerIsoCode?: string
+  containerSize?: string // 0, 10, 20, 22, 23, 24, 25, 26, 30, 40, 45, 48, 53, 8
+  containerType?: string // BB, BH, BV, DV, FL, FT, HC, HH, HO, HP, HR, HT, IS, OS, OT, PL, PP, PW, RE, SH, SR, ST, SW, TH, TK, TS, VE, XX, ZZ
+  containerIsoCode?: string // A, B, D, DRY, N, R, REEFE, T
+  ctrCategory?: string // Categoría extraída del código ISO
   fullEmptyStatus?: "FULL" | "EMPTY"
+  businessType?: "IMPORT" | "EXPORT" // Se guarda I o E en el XML
+  internalOrder?: string // Orden interna para el XML
+  salesOrder?: string // Orden de venta para el XML
+  bundle?: string // Bundle para el XML
+  route?: string // Nombre de la ruta
+  commodity?: string // VER por defecto
+  subcontracting?: "Y" | "N" // Yes/No se guarda Y/N en el XML
+  driverName?: string
+  plate?: string
+  moveDate?: string
+  associate?: string
   [key: string]: any // To capture any other custom field values for XML
 }
 
@@ -27,10 +40,11 @@ export interface InvoiceForXmlPayload {
   id: string // Unique ID for the XML document
   module: "trucking" | "shipchandler" | "agency"
   invoiceNumber: string
+  sapDocumentNumber?: string
   client: string // RUC/Cedula for CustomerNbr
   clientName?: string
   date: string
-  dueDate?: string
+  sapDate?: string
   currency: string
   total: number
   records: InvoiceLineItemForXml[] // Line items for XML

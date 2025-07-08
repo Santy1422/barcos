@@ -64,6 +64,7 @@ import {
 } from "@/lib/features/config/configSlice"
 import { generateInvoiceXML, validateXMLForSAP } from "@/lib/xml-generator"
 import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features/invoice/invoiceSlice"
+import { TRUCKING_OPTIONS } from "@/lib/constants/trucking-options"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import saveAs from "file-saver"
@@ -75,8 +76,9 @@ type InvoiceStep = "select" | "create" | "review" | "confirm"
 
 interface TruckingFormData {
   invoiceNumber: string
+  sapDocumentNumber: string
   issueDate: string
-  dueDate: string
+  sapDate: string
   clientName: string
   clientRuc: string
   clientAddress: string
@@ -97,10 +99,25 @@ interface TruckingFormData {
   serviceCode: string
   activityCode: string
   bundle: string
+  commodity: string
+  businessType: "IMPORT" | "EXPORT"
+  internalOrder: string
+  salesOrder: string
   cargoType: string
   sealNumber: string
   weight: string
   weightInTons: number
+  containerType: string
+  containerSize: string
+  containerIsoCode: string
+  ctrCategory: string
+  containerCategory: string
+  fullEmptyStatus: "FULL" | "EMPTY"
+  // Campos para XML
+  taxCode: string
+  taxAmntDocCur: number
+  taxAmntCpyCur: number
+  profitCenter: string
   serviceItems: Array<{
     id: string
     containerNumber: string
@@ -112,11 +129,20 @@ interface TruckingFormData {
     totalAmount: number
     description: string
     containerSize: string
+    containerType: string
+    containerIsoCode: string
+    fullEmptyStatus: "FULL" | "EMPTY"
+    businessType: "IMPORT" | "EXPORT"
+    internalOrder: string
+    salesOrder: string
+    bundle: string
+    route: string
+    commodity: string
+    subcontracting: "Y" | "N"
     moveDate: string
     origin: string
     destination: string
     weight: string
-    commodity: string
     cargoType: string
     sealNumber: string
   }>
@@ -125,8 +151,9 @@ interface TruckingFormData {
 
 const getNewInvoiceState = (): TruckingFormData => ({
   invoiceNumber: `F-TRK-${Date.now().toString().slice(-5)}`,
+  sapDocumentNumber: "",
   issueDate: new Date().toISOString().split("T")[0],
-  dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+  sapDate: new Date().toISOString().split("T")[0],
   clientName: "",
   clientRuc: "",
   clientAddress: "",
@@ -139,18 +166,34 @@ const getNewInvoiceState = (): TruckingFormData => ({
   moveDate: "",
   moveTime: "",
   associatedCompany: "",
+  businessType: "EXPORT",
+  internalOrder: "",
+  salesOrder: "",
   cargoType: "",
   sealNumber: "",
   weight: "",
   weightInTons: 0,
+  containerType: "DV",
+  containerSize: "40",
+  containerIsoCode: "42G0",
+  ctrCategory: "D",
+  containerCategory: "D",
+  fullEmptyStatus: "FULL",
+  subcontracting: "N",
   description: "",
   subtotal: 0,
   taxAmount: 0,
   total: 0,
   currency: "USD",
   serviceCode: "SRV100",
-  activityCode: "ACT205",
-  bundle: "TRUCKING",
+  activityCode: "TRK",
+  bundle: "0000",
+  commodity: "10",
+  // Campos para XML
+  taxCode: "O7",
+  taxAmntDocCur: 0,
+  taxAmntCpyCur: 0,
+  profitCenter: "1000",
   serviceItems: []
 })
 
@@ -197,10 +240,16 @@ const FORM_SECTIONS = [
     icon: <FileText className="mr-2 h-5 w-5" />,
     description: "Información básica de la factura",
     fields: [
-      { id: 'invoiceNumber', label: "Número Factura", icon: <Hash className="h-4 w-4" />, required: true },
+      { id: 'invoiceNumber', label: "Número Factura Sistema", icon: <Hash className="h-4 w-4" />, required: true },
+      { id: 'sapDocumentNumber', label: "SAP Document Number", icon: <FileText className="h-4 w-4" />, required: true },
       { id: 'issueDate', label: "Fecha Emisión", icon: <Calendar className="h-4 w-4" />, type: 'date', required: true },
-      { id: 'dueDate', label: "Fecha Vencimiento", icon: <Calendar className="h-4 w-4" />, type: 'date', required: true },
-      { id: 'currency', label: "Moneda", icon: <DollarSign className="h-4 w-4" />, type: 'select', options: ['USD', 'PAB'], required: true }
+      { id: 'sapDate', label: "Fecha SAP", icon: <Calendar className="h-4 w-4" />, type: 'date', required: true },
+      { id: 'currency', label: "Moneda", icon: <DollarSign className="h-4 w-4" />, type: 'select', options: ['USD', 'PAB'], required: true },
+      { id: 'businessType', label: "Tipo de Negocio", icon: <Box className="h-4 w-4" />, type: 'select', options: ['IMPORT', 'EXPORT'], required: true },
+      { id: 'internalOrder', label: "Orden Interna", icon: <FileText className="h-4 w-4" />, required: false },
+      { id: 'salesOrder', label: "Orden de Venta", icon: <FileText className="h-4 w-4" />, required: false },
+      { id: 'bundle', label: "Bundle", icon: <Package className="h-4 w-4" />, type: 'select', options: TRUCKING_OPTIONS.bundle.map(b => b.value), required: true },
+      { id: 'subcontracting', label: "Subcontratación", icon: <Settings className="h-4 w-4" />, type: 'select', options: ['Y', 'N'], required: true }
     ]
   },
   {
@@ -237,21 +286,27 @@ const FORM_SECTIONS = [
     icon: <Package className="mr-2 h-5 w-5" />,
     description: "Información específica de la carga",
     fields: [
-      { id: 'cargoType', label: "Tipo de Carga", icon: <Box className="h-4 w-4" />, auto: true },
-      { id: 'sealNumber', label: "Número de Sello", icon: <FileSearch className="h-4 w-4" />, auto: true },
-      { id: 'weight', label: "Peso", icon: <Scale className="h-4 w-4" />, auto: true }
+      { id: 'containerType', label: "Tipo de Contenedor", icon: <Box className="h-4 w-4" />, type: 'select', options: TRUCKING_OPTIONS.containerType.map(ct => ct.code), required: true },
+      { id: 'containerSize', label: "Tamaño de Contenedor", icon: <Box className="h-4 w-4" />, type: 'select', options: TRUCKING_OPTIONS.containerSize.map(cs => cs.value), required: true },
+      { id: 'containerIsoCode', label: "Código ISO Contenedor", icon: <FileSearch className="h-4 w-4" />, type: 'select', options: TRUCKING_OPTIONS.containerIsoCode.map(cic => cic.code), required: true },
+      { id: 'containerCategory', label: "Categoría Contenedor", icon: <Box className="h-4 w-4" />, type: 'select', options: ['A', 'B', 'D', 'DRY', 'N', 'R', 'REEFE', 'T'], required: true },
+      { id: 'fullEmptyStatus', label: "Estado Full/Empty", icon: <Box className="h-4 w-4" />, type: 'select', options: TRUCKING_OPTIONS.fullEmpty.map(fe => fe.value), required: true },
+      { id: 'commodity', label: "Commodity", icon: <Package className="h-4 w-4" />, type: 'select', options: TRUCKING_OPTIONS.commodity.map(c => c.value), required: true }
     ]
   },
   {
-    id: 'sap',
-    title: "Configuración SAP",
+    id: 'xml',
+    title: "Definir",
     icon: <Settings className="mr-2 h-5 w-5" />,
-    description: "Códigos y parámetros para SAP",
+    description: "Configuración específica para el XML de SAP",
     fields: [
-      { id: 'activityCode', label: "Código Actividad", icon: <FileText className="h-4 w-4" />, required: true },
-      { id: 'bundle', label: "Bundle", icon: <Package className="h-4 w-4" />, required: true }
+      { id: 'taxCode', label: "Tax Code", icon: <FileText className="h-4 w-4" />, required: true },
+      { id: 'taxAmntDocCur', label: "Tax Amount Document Currency", icon: <DollarSign className="h-4 w-4" />, type: 'number', required: true },
+      { id: 'taxAmntCpyCur', label: "Tax Amount Company Currency", icon: <DollarSign className="h-4 w-4" />, type: 'number', required: true },
+      { id: 'profitCenter', label: "Profit Center", icon: <Database className="h-4 w-4" />, required: true }
     ]
-  }
+  },
+
 ]
 
 export default function TruckingInvoice() {
@@ -313,6 +368,166 @@ export default function TruckingInvoice() {
     }
     
     return record.id || record._id || 'unknown'
+  }
+
+  // Mapeo directo de códigos ISO a información de contenedor
+  const ISO_CODE_MAPPING: Record<string, { type: string; size: string; category: string }> = {
+    "10G0": { type: "DV", size: "10", category: "D" },
+    "10T0": { type: "TK", size: "10", category: "T" },
+    "12R1": { type: "RE", size: "10", category: "R" },
+    "20G0": { type: "DV", size: "20", category: "D" },
+    "20G1": { type: "DV", size: "20", category: "D" },
+    "20H0": { type: "HR", size: "20", category: "D" },
+    "20P1": { type: "FL", size: "20", category: "D" },
+    "20T0": { type: "TK", size: "20", category: "T" },
+    "20T1": { type: "TK", size: "20", category: "T" },
+    "20T2": { type: "TK", size: "20", category: "T" },
+    "20T3": { type: "TK", size: "20", category: "T" },
+    "20T4": { type: "TK", size: "20", category: "T" },
+    "20T5": { type: "TK", size: "20", category: "T" },
+    "20T6": { type: "TK", size: "20", category: "T" },
+    "20T7": { type: "TK", size: "20", category: "T" },
+    "20T8": { type: "TK", size: "20", category: "T" },
+    "22B0": { type: "BV", size: "20", category: "B" },
+    "22G0": { type: "DV", size: "20", category: "D" },
+    "22G1": { type: "DV", size: "20", category: "D" },
+    "22H0": { type: "IS", size: "20", category: "D" },
+    "22K2": { type: "TK", size: "20", category: "T" },
+    "22OS": { type: "OS", size: "20", category: "D" },
+    "22P1": { type: "FL", size: "20", category: "D" },
+    "22P3": { type: "FL", size: "20", category: "D" },
+    "22P7": { type: "FL", size: "20", category: "D" },
+    "22P8": { type: "FL", size: "20", category: "D" },
+    "22P9": { type: "FL", size: "20", category: "D" },
+    "22R1": { type: "RE", size: "20", category: "R" },
+    "22R7": { type: "PP", size: "20", category: "R" },
+    "22R9": { type: "RE", size: "20", category: "R" },
+    "22S1": { type: "XX", size: "20", category: "D" },
+    "22T0": { type: "TK", size: "20", category: "T" },
+    "22T1": { type: "TK", size: "20", category: "T" },
+    "22T2": { type: "TK", size: "20", category: "T" },
+    "22T3": { type: "TK", size: "20", category: "T" },
+    "22T4": { type: "TK", size: "20", category: "T" },
+    "22T5": { type: "TK", size: "20", category: "T" },
+    "22T6": { type: "TK", size: "20", category: "T" },
+    "22T7": { type: "TK", size: "20", category: "T" },
+    "22T8": { type: "TK", size: "20", category: "T" },
+    "22U1": { type: "OT", size: "20", category: "D" },
+    "22U6": { type: "HT", size: "20", category: "D" },
+    "22V0": { type: "VE", size: "20", category: "D" },
+    "22V2": { type: "VE", size: "20", category: "D" },
+    "22V3": { type: "VE", size: "20", category: "D" },
+    "22W0": { type: "PW", size: "20", category: "D" },
+    "24T6": { type: "TK", size: "20", category: "T" },
+    "24W1": { type: "PW", size: "20", category: "T" },
+    "24ZZ": { type: "ZZ", size: "20", category: "D" },
+    "25G0": { type: "DV", size: "20", category: "D" },
+    "25P0": { type: "PL", size: "20", category: "D" },
+    "26G0": { type: "DV", size: "20", category: "D" },
+    "26H0": { type: "IS", size: "20", category: "D" },
+    "26T9": { type: "TK", size: "20", category: "T" },
+    "28G0": { type: "HH", size: "20", category: "D" },
+    "28T0": { type: "HH", size: "20", category: "T" },
+    "28T8": { type: "TK", size: "20", category: "T" },
+    "28U1": { type: "HH", size: "20", category: "D" },
+    "28V0": { type: "HH", size: "20", category: "D" },
+    "29P0": { type: "PL", size: "20", category: "D" },
+    "2EG0": { type: "HC", size: "20", category: "D" },
+    "2LXX": { type: "XX", size: "20", category: "T" },
+    "30B1": { type: "BV", size: "30", category: "B" },
+    "30G0": { type: "DV", size: "30", category: "D" },
+    "32R3": { type: "PP", size: "30", category: "R" },
+    "32T1": { type: "TK", size: "30", category: "T" },
+    "32T6": { type: "TK", size: "30", category: "T" },
+    "3LXX": { type: "XX", size: "30", category: "T" },
+    "3MB0": { type: "BB", size: "30", category: "B" },
+    "40I0": { type: "IS", size: "40", category: "D" },
+    "40V0": { type: "VE", size: "40", category: "D" },
+    "42G0": { type: "DV", size: "40", category: "D" },
+    "42G1": { type: "DV", size: "40", category: "D" },
+    "42H0": { type: "RE", size: "40", category: "D" },
+    "42OS": { type: "OS", size: "40", category: "D" },
+    "42P1": { type: "FL", size: "40", category: "D" },
+    "42P3": { type: "FL", size: "40", category: "D" },
+    "42P4": { type: "FL", size: "40", category: "D" },
+    "42P6": { type: "FL", size: "40", category: "D" },
+    "42P8": { type: "FL", size: "40", category: "D" },
+    "42P9": { type: "FL", size: "40", category: "D" },
+    "42R1": { type: "RE", size: "40", category: "R" },
+    "42R3": { type: "PP", size: "40", category: "R" },
+    "42R9": { type: "RE", size: "40", category: "R" },
+    "42S1": { type: "XX", size: "40", category: "D" },
+    "42T2": { type: "TK", size: "40", category: "T" },
+    "42T5": { type: "TK", size: "40", category: "T" },
+    "42T6": { type: "TK", size: "40", category: "T" },
+    "42T8": { type: "TK", size: "40", category: "T" },
+    "42U1": { type: "OT", size: "40", category: "D" },
+    "42U6": { type: "HT", size: "40", category: "D" },
+    "43T5": { type: "TK", size: "40", category: "T" },
+    "44ZZ": { type: "ZZ", size: "40", category: "D" },
+    "45B3": { type: "BV", size: "40", category: "B" },
+    "45G0": { type: "HC", size: "40", category: "D" },
+    "45G1": { type: "HC", size: "40", category: "D" },
+    "45P0": { type: "PL", size: "40", category: "D" },
+    "45P1": { type: "FT", size: "40", category: "D" },
+    "45P3": { type: "FT", size: "40", category: "D" },
+    "45P8": { type: "FT", size: "40", category: "D" },
+    "45R1": { type: "HR", size: "40", category: "R" },
+    "45R9": { type: "RE", size: "40", category: "R" },
+    "45U1": { type: "OT", size: "40", category: "D" },
+    "45U6": { type: "HT", size: "40", category: "D" },
+    "46H0": { type: "HR", size: "40", category: "D" },
+    "47T9": { type: "TK", size: "40", category: "T" },
+    "48G0": { type: "HH", size: "20", category: "D" },
+    "48T8": { type: "TK", size: "40", category: "D" },
+    "49P0": { type: "PL", size: "40", category: "D" },
+    "49P3": { type: "FL", size: "40", category: "D" },
+    "4CG0": { type: "DV", size: "40", category: "D" },
+    "4EG1": { type: "HC", size: "40", category: "D" },
+    "4MNL": { type: "TK", size: "40", category: "T" },
+    "72T0": { type: "TK", size: "23", category: "T" },
+    "72T8": { type: "TK", size: "23", category: "T" },
+    "74T0": { type: "TK", size: "23", category: "T" },
+    "74T1": { type: "TK", size: "23", category: "T" },
+    "74T6": { type: "TK", size: "23", category: "T" },
+    "74T7": { type: "TK", size: "23", category: "T" },
+    "74T8": { type: "TK", size: "23", category: "T" },
+    "74ZZ": { type: "ZZ", size: "23", category: "D" },
+    "75T8": { type: "TK", size: "23", category: "T" },
+    "A2T1": { type: "TK", size: "23", category: "T" },
+    "A2T3": { type: "TK", size: "23", category: "T" },
+    "CMT1": { type: "TK", size: "20", category: "T" },
+    "L0G0": { type: "DV", size: "45", category: "D" },
+    "L0G1": { type: "HC", size: "45", category: "D" },
+    "L2G1": { type: "HC", size: "45", category: "D" },
+    "L2W0": { type: "PW", size: "45", category: "D" },
+    "L4ZZ": { type: "ZZ", size: "45", category: "D" },
+    "L5G1": { type: "HC", size: "45", category: "D" },
+    "L5R0": { type: "HR", size: "45", category: "R" },
+    "L5R1": { type: "RE", size: "45", category: "R" },
+    "LEG1": { type: "HC", size: "45", category: "D" },
+    "M0G0": { type: "DV", size: "48", category: "D" },
+    "P0G0": { type: "DV", size: "53", category: "D" },
+    "P5G0": { type: "HC", size: "53", category: "D" },
+    "P5OS": { type: "OS", size: "53", category: "D" },
+    "P5R1": { type: "RE", size: "53", category: "R" },
+    "ZZNC": { type: "ZZ", size: "0", category: "N" }
+  }
+
+  // Función para extraer información del código ISO de contenedor
+  const extractContainerInfoFromIsoCode = (isoCode: string) => {
+    if (!isoCode) {
+      return { type: "DV", size: "40", category: "D" }
+    }
+
+    // Buscar en el mapeo directo
+    const mapping = ISO_CODE_MAPPING[isoCode]
+    if (mapping) {
+      return mapping
+    }
+
+    // Fallback si no se encuentra en el mapeo
+    return { type: "DV", size: "40", category: "D" }
   }
 
   // Función para convertir fecha y hora a formato de fecha
@@ -516,6 +731,20 @@ export default function TruckingInvoice() {
           
           const itemMoveDate = extractFieldValue(data, FIELD_MAPPING.moveDate)
           
+          const originPort = extractFieldValue(data, FIELD_MAPPING.originPort)
+          const destinationPort = extractFieldValue(data, FIELD_MAPPING.destinationPort)
+          
+          // Construir el nombre de la ruta combinando origen y destino
+          const routeName = originPort && destinationPort ? `${originPort} / ${destinationPort}` : 
+                           extractFieldValue(data, FIELD_MAPPING.route) || "STANDARD"
+          
+          console.log(`Ruta construida para registro ${recordId}:`, {
+            originPort,
+            destinationPort,
+            routeName,
+            originalRoute: extractFieldValue(data, FIELD_MAPPING.route)
+          })
+          
           return {
             id: recordId,
             containerNumber: extractFieldValue(data, FIELD_MAPPING.container),
@@ -526,12 +755,21 @@ export default function TruckingInvoice() {
             serviceAmount: existingServiceAmount,
             totalAmount: totalAmount,
             description: `${tipoServicio} - ${extractFieldValue(data, FIELD_MAPPING.container)}`,
-            containerSize: extractFieldValue(data, FIELD_MAPPING.size),
+            containerSize: extractFieldValue(data, FIELD_MAPPING.size) || prev.containerSize,
+            containerType: prev.containerType,
+            containerIsoCode: prev.containerIsoCode,
+            fullEmptyStatus: prev.fullEmptyStatus,
+            businessType: prev.businessType,
+            internalOrder: prev.internalOrder,
+            salesOrder: prev.salesOrder,
+            bundle: prev.bundle,
+            route: routeName,
+            commodity: prev.commodity,
+            subcontracting: prev.subcontracting,
             moveDate: itemMoveDate,
-            origin: extractFieldValue(data, FIELD_MAPPING.originPort),
-            destination: extractFieldValue(data, FIELD_MAPPING.destinationPort),
+            origin: originPort,
+            destination: destinationPort,
             weight: extractFieldValue(data, FIELD_MAPPING.weight),
-            commodity: extractFieldValue(data, FIELD_MAPPING.commodity),
             cargoType: extractFieldValue(data, FIELD_MAPPING.cargoType),
             sealNumber: extractFieldValue(data, FIELD_MAPPING.seal)
           }
@@ -638,6 +876,19 @@ export default function TruckingInvoice() {
     })
   }
 
+  const handleContainerIsoCodeChange = (isoCode: string) => {
+    const containerInfo = extractContainerInfoFromIsoCode(isoCode)
+    
+    setFormData(prev => ({
+      ...prev,
+      containerIsoCode: isoCode,
+      containerType: containerInfo.type,
+      containerSize: containerInfo.size,
+      ctrCategory: containerInfo.category,
+      containerCategory: containerInfo.category
+    }))
+  }
+
   const handleFilterChange = (filterType: keyof typeof activeFilters, value: string) => {
     setActiveFilters(prev => ({ ...prev, [filterType]: value }))
   }
@@ -702,30 +953,50 @@ export default function TruckingInvoice() {
         id: `XML-${formData.invoiceNumber}-${Date.now()}`,
         module: "trucking",
         invoiceNumber: formData.invoiceNumber,
-        client: formData.clientRuc,
+        sapDocumentNumber: formData.sapDocumentNumber,
+        client: formData.clientSapNumber,
         clientName: formData.clientName,
         date: formData.issueDate,
-        dueDate: formData.dueDate,
+        sapDate: formData.sapDate,
         currency: formData.currency,
         total: formData.total,
-        records: formData.serviceItems.map(item => ({
-          id: item.id,
-          description: `Servicio de transporte - Container: ${item.containerNumber || "N/A"}`,
-          quantity: 1,
-          unitPrice: item.totalAmount,
-          totalPrice: item.totalAmount,
-          serviceCode: item.serviceCode,
-          unit: "VIAJE",
-          blNumber: item.blNumber,
-          containerNumber: item.containerNumber,
-          containerSize: item.containerSize,
-          containerType: item.cargoType,
-          driverName: formData.driverId,
-          plate: formData.vehicleId,
-          moveDate: item.moveDate,
-          associate: formData.associatedCompany
-          
-        })),
+        records: formData.serviceItems.map(item => {
+          console.log(`XML - Ruta para item ${item.id}:`, item.route)
+          return {
+            id: item.id,
+            description: `Servicio de transporte - Container: ${item.containerNumber || "N/A"}`,
+            quantity: 1,
+            unitPrice: item.totalAmount,
+            totalPrice: item.totalAmount,
+            routeAmount: item.routeAmount, // Agregar el precio de la ruta
+            // Campos para XML
+            taxCode: formData.taxCode,
+            taxAmntDocCur: formData.taxAmntDocCur,
+            taxAmntCpyCur: formData.taxAmntCpyCur,
+            profitCenter: formData.profitCenter,
+            serviceCode: item.serviceCode,
+            activityCode: item.activityCode || "TRK",
+            unit: "VIAJE",
+            blNumber: item.blNumber,
+            containerNumber: item.containerNumber,
+            containerSize: formData.containerSize,
+            containerType: formData.containerType,
+            containerIsoCode: formData.containerIsoCode,
+            ctrCategory: formData.ctrCategory,
+            fullEmptyStatus: formData.fullEmptyStatus,
+            businessType: item.businessType || formData.businessType,
+            internalOrder: formData.internalOrder || "",
+            salesOrder: formData.salesOrder || "",
+            bundle: formData.bundle || "0000",
+            route: item.route || "STANDARD",
+            commodity: formData.commodity || "10",
+            subcontracting: item.subcontracting || "N",
+            driverName: formData.driverId,
+            plate: formData.vehicleId,
+            moveDate: item.moveDate,
+            associate: formData.associatedCompany
+          }
+        }),
         status: "generated",
         driverId: formData.driverId,
         vehicleId: formData.vehicleId,
@@ -864,7 +1135,7 @@ export default function TruckingInvoice() {
         clientName: formData.clientName,
         clientRuc: formData.clientRuc,
         issueDate: formData.issueDate,
-        dueDate: formData.dueDate,
+        dueDate: formData.sapDate, // Using sapDate as dueDate for backward compatibility
         currency: formData.currency,
         subtotal: formData.subtotal,
         taxAmount: formData.taxAmount,
@@ -978,6 +1249,8 @@ export default function TruckingInvoice() {
   useEffect(() => {
     setCurrentPage(1)
   }, [searchTerm, activeFilters])
+
+
 
   return (
     <div className="container mx-auto p-4">
@@ -1374,16 +1647,85 @@ export default function TruckingInvoice() {
                             {field.type === 'select' ? (
                               <Select
                                 value={value}
-                                onValueChange={(val) => setFormData(prev => ({ ...prev, [field.id]: val }))}
+                                onValueChange={(val) => {
+                                  if (field.id === 'containerIsoCode') {
+                                    handleContainerIsoCodeChange(val)
+                                  } else {
+                                    setFormData(prev => ({ ...prev, [field.id]: val }))
+                                  }
+                                }}
                               >
                                 <SelectTrigger>
                                   <SelectValue placeholder={`Seleccionar ${field.label}`} />
                                 </SelectTrigger>
-                                <SelectContent>
+                                <SelectContent position="popper">
                                   {field.id === 'serviceCode' ? (
                                     serviceSapCodes.map((sapCode) => (
                                       <SelectItem key={sapCode._id} value={sapCode.code}>
                                         {sapCode.code} - {sapCode.description}
+                                      </SelectItem>
+                                    ))
+                                  ) : field.id === 'businessType' ? (
+                                    TRUCKING_OPTIONS.businessType.map(bt => (
+                                      <SelectItem key={bt.value} value={bt.value}>
+                                        {bt.label}
+                                      </SelectItem>
+                                    ))
+                                  ) : field.id === 'subcontracting' ? (
+                                    TRUCKING_OPTIONS.subcontracting.map(sub => (
+                                      <SelectItem key={sub.value} value={sub.value}>
+                                        {sub.label}
+                                      </SelectItem>
+                                    ))
+                                  ) : field.id === 'containerType' ? (
+                                    TRUCKING_OPTIONS.containerType.map(ct => (
+                                      <SelectItem key={ct.code} value={ct.code}>
+                                        {ct.code} - {ct.description}
+                                      </SelectItem>
+                                    ))
+                                  ) : field.id === 'containerSize' ? (
+                                    TRUCKING_OPTIONS.containerSize.map(cs => (
+                                      <SelectItem key={cs.value} value={cs.value}>
+                                        {cs.label}
+                                      </SelectItem>
+                                    ))
+                                  ) : field.id === 'containerIsoCode' ? (
+                                    TRUCKING_OPTIONS.containerIsoCode.map(cic => (
+                                      <SelectItem key={cic.code} value={cic.code}>
+                                        {cic.code} - {cic.description}
+                                      </SelectItem>
+                                    ))
+                                  ) : field.id === 'fullEmptyStatus' ? (
+                                    TRUCKING_OPTIONS.fullEmpty.map(fe => (
+                                      <SelectItem key={fe.value} value={fe.value}>
+                                        {fe.label}
+                                      </SelectItem>
+                                    ))
+                                  ) : field.id === 'bundle' ? (
+                                    TRUCKING_OPTIONS.bundle.map(b => (
+                                      <SelectItem key={b.value} value={b.value}>
+                                        {b.label}
+                                      </SelectItem>
+                                    ))
+                                  ) : field.id === 'containerCategory' ? (
+                                    [
+                                      { value: 'A', label: 'A - All' },
+                                      { value: 'B', label: 'B - BulkC' },
+                                      { value: 'D', label: 'D - Dry' },
+                                      { value: 'DRY', label: 'DRY - Dry' },
+                                      { value: 'N', label: 'N - Non Containerized' },
+                                      { value: 'R', label: 'R - Reefer' },
+                                      { value: 'REEFE', label: 'REEFE - Reefer' },
+                                      { value: 'T', label: 'T - TankD' }
+                                    ].map(cat => (
+                                      <SelectItem key={cat.value} value={cat.value}>
+                                        {cat.label}
+                                      </SelectItem>
+                                    ))
+                                  ) : field.id === 'commodity' ? (
+                                    TRUCKING_OPTIONS.commodity.map(c => (
+                                      <SelectItem key={c.value} value={c.value}>
+                                        {c.label}
                                       </SelectItem>
                                     ))
                                   ) : field.options?.map(opt => (
@@ -1463,7 +1805,7 @@ export default function TruckingInvoice() {
                                 <SelectTrigger>
                                   <SelectValue placeholder="Seleccionar código SAP" />
                                 </SelectTrigger>
-                                <SelectContent>
+                                <SelectContent position="popper">
                                   {serviceSapCodes.map((sapCode) => (
                                     <SelectItem key={sapCode._id} value={sapCode.code}>
                                       {sapCode.code} - {sapCode.description}
@@ -1623,7 +1965,7 @@ export default function TruckingInvoice() {
                               <SelectTrigger>
                                 <SelectValue placeholder={field.placeholder || `Seleccionar ${field.label}`} />
                               </SelectTrigger>
-                              <SelectContent>
+                              <SelectContent position="popper">
                                 {field.options.map((option) => (
                                   <SelectItem key={option} value={option}>{option}</SelectItem>
                                 ))}
@@ -1719,6 +2061,9 @@ export default function TruckingInvoice() {
               <div>
                 <h3 className="font-semibold mb-1">Factura Nº: {formData.invoiceNumber}</h3>
                 <p>
+                  <strong>SAP Document Number:</strong> {formData.sapDocumentNumber || "No especificado"}
+                </p>
+                <p>
                   <strong>Cliente:</strong> {formData.clientName}
                 </p>
                 <p>
@@ -1731,7 +2076,7 @@ export default function TruckingInvoice() {
                   <strong>Fecha Emisión:</strong> {new Date(formData.issueDate).toLocaleDateString()}
                 </p>
                 <p>
-                  <strong>Fecha Venc.:</strong> {new Date(formData.dueDate).toLocaleDateString()}
+                  <strong>Fecha SAP:</strong> {new Date(formData.sapDate).toLocaleDateString()}
                 </p>
                 <p>
                   <strong>Moneda:</strong> {formData.currency}
