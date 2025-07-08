@@ -9,7 +9,7 @@
     "tsc": "tsc",
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc --noEmitOnError false",
-    "start": "npm run tsc && NODE_ENV=PRODUCTION node dist/index.js",
+    "start": "npm run tsc && NODE_ENV=PRODUCTION node dist/src/index.js",
     "lint": "eslint src/**/*.js --fix"
   },
   "keywords": [],

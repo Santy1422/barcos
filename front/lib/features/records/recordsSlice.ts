@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/toolkit"
 import type { RootState } from "@/lib/store"
 import { createSelector } from '@reduxjs/toolkit'
+import { createApiUrl } from '@/lib/api-config'
 
 // Generic interface for a single record extracted from an Excel row
 export interface ExcelRecord {
@@ -76,7 +77,7 @@ export const fetchPendingRecords = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch('http://localhost:8080/api/records/status/pendiente', {
+      const response = await fetch(createApiUrl('/api/records/status/pendiente'), {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -118,7 +119,7 @@ export const fetchPendingRecordsByModule = createAsyncThunk(
     try {
       const token = localStorage.getItem('token')
       // Solicitar todos los registros sin paginación
-      const response = await fetch(`http://localhost:8080/api/records/status/pendiente?module=${module}&limit=1000`, {
+      const response = await fetch(createApiUrl(`/api/records/status/pendiente?module=${module}&limit=1000`), {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
