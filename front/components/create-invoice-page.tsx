@@ -14,6 +14,15 @@ import { Textarea } from "@/components/ui/textarea"
 import { mockExcelData } from "@/lib/mock-data"
 import { InvoicePreview } from "@/components/invoice-preview"
 
+interface Service {
+  description: string
+  people: string[]
+  code: string
+  price: number
+  time: string
+  date: string
+}
+
 export function CreateInvoicePage() {
   const [invoiceData, setInvoiceData] = useState({
     invoiceNumber: "AG-1608",
@@ -34,25 +43,25 @@ export function CreateInvoicePage() {
 
   // Agrupar servicios por descripción
   const groupedServices = selectedExcelData.reduce((acc: any, item) => {
-    const key = item.descripcion
+    const key = `${item.desde}-${item.hacia}` // Usar origen-destino como clave
     if (!acc[key]) {
       acc[key] = {
-        description: item.descripcion,
+        description: `Transporte ${item.desde} - ${item.hacia}`,
         people: [],
-        code: item.codigo,
+        code: item.ptgOrder,
         price: 0,
-        time: item.hora,
+        time: item.fecha,
         date: item.fecha,
       }
     }
-    if (item.persona) {
-      acc[key].people.push(item.persona)
+    if (item.driver) {
+      acc[key].people.push(item.driver)
     }
-    acc[key].price += item.precio
+    acc[key].price += item.tarifa || 0
     return acc
   }, {})
 
-  const services = Object.values(groupedServices)
+  const services = Object.values(groupedServices) as Service[]
   const subtotal = services.reduce((sum: number, service: any) => sum + service.price, 0)
   const tax = 0 // Sin impuestos según la factura
   const total = subtotal + tax
@@ -325,6 +334,7 @@ export function CreateInvoicePage() {
             <CardTitle>Vista Previa de la Factura</CardTitle>
           </CardHeader>
           <CardContent>
+
             <InvoicePreview invoiceData={invoiceData} services={services} subtotal={subtotal} tax={tax} total={total} />
           </CardContent>
         </Card>

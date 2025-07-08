@@ -53,7 +53,7 @@ export function ConfigPage() {
   const [sapCodeForm, setSapCodeForm] = useState({
     code: '',
     description: '',
-    module: 'trucking' as 'trucking' | 'agency' | 'shipchandler' | 'all',
+    module: 'trucking' as 'trucking' | 'all',
     active: true
   })
 
@@ -886,7 +886,7 @@ export function ConfigPage() {
               <Label htmlFor="sap-module">Módulo</Label>
               <Select
                 value={sapCodeForm.module}
-                onValueChange={(value: 'trucking' | 'agency' | 'shipchandler' | 'all') => 
+                onValueChange={(value: 'trucking' | 'all') => 
                   setSapCodeForm(prev => ({ ...prev, module: value }))
                 }
               >
@@ -895,8 +895,7 @@ export function ConfigPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="trucking">Trucking</SelectItem>
-                  <SelectItem value="agency">Agency</SelectItem>
-                  <SelectItem value="shipchandler">Shipchandler</SelectItem>
+
                   <SelectItem value="all">Todos</SelectItem>
                 </SelectContent>
               </Select>

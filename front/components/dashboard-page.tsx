@@ -19,9 +19,6 @@ const getTypeBadgeVariant = (typeId: string): ExcelTypeBadgeVariant => {
   if (typeInfo) {
     if (typeInfo.name.toLowerCase().includes("trucking") || typeInfo.name.toLowerCase().includes("transporte"))
       return "blue"
-    if (typeInfo.name.toLowerCase().includes("shipchandler")) return "green"
-    if (typeInfo.name.toLowerCase().includes("agency") || typeInfo.name.toLowerCase().includes("agencia"))
-      return "purple"
   }
   return "default"
 }

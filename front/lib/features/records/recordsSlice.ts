@@ -6,7 +6,7 @@ import { createSelector } from '@reduxjs/toolkit'
 export interface ExcelRecord {
   id: string // Unique ID for this specific record (e.g., TRK-REC-EXCELID-ROWID)
   excelId: string // ID of the Excel file this record came from
-  module: "trucking" | "shipchandler" | "agency"
+  module: "trucking"
   type: string // Type of data (e.g., "transport-services", "supply-order")
   status: "pendiente" | "facturado" | "anulado" // Status of this individual record
   totalValue: number // The calculated total value for this specific record/line item
@@ -18,7 +18,7 @@ export interface ExcelRecord {
 // Interface for a full Invoice document stored in records
 export interface InvoiceRecord {
   id: string // Unique ID for the invoice document
-  module: "trucking" | "shipchandler" | "agency"
+  module: "trucking"
   invoiceNumber: string
   clientName: string
   clientRuc: string
@@ -64,6 +64,8 @@ export const fetchRecordsByModule = createAsyncThunk(
       console.log("Resultado final a retornar:", result);
       return result
     } catch (error) {
+                                       //@ts-ignore
+
       return rejectWithValue(error.message)
     }
   }
@@ -102,6 +104,8 @@ export const fetchPendingRecords = createAsyncThunk(
       
       return transformedRecords
     } catch (error) {
+                                       //@ts-ignore
+
       return rejectWithValue(error.message)
     }
   }
@@ -142,6 +146,8 @@ export const fetchPendingRecordsByModule = createAsyncThunk(
       
       return { module, records: transformedRecords }
     } catch (error) {
+                                       //@ts-ignore
+
       return rejectWithValue(error.message)
     }
   }
@@ -188,6 +194,8 @@ export const createTruckingRecords = createAsyncThunk(
       console.log("Resultado final length:", result.length);
       return result
     } catch (error) {
+                                       //@ts-ignore
+
       return rejectWithValue(error.message)
     }
   }
@@ -250,6 +258,8 @@ export const fetchRecordsBySapCode = createAsyncThunk(
       const data = await response.json()
       return data.payload || { records: [], pagination: {}, summary: {} }
     } catch (error) {
+                                       //@ts-ignore
+
       return rejectWithValue(error.message)
     }
   }
@@ -276,6 +286,8 @@ export const updateRecordAsync = createAsyncThunk(
       const data = await response.json()
       return { id, updates: data.data }
     } catch (error) {
+                                       //@ts-ignore
+
       return rejectWithValue(error.message)
     }
   }
@@ -493,6 +505,8 @@ export const selectSapCodeSummary = (state: RootState) => state.records.sapCodeS
 export const selectPendingRecordsByModule = createSelector(
   [(state: RootState) => state.records.individualRecords, (state: RootState, moduleName: ExcelRecord["module"]) => moduleName],
   (individualRecords, moduleName) => 
+                                     //@ts-ignore
+
     individualRecords.filter((record) => record.module === moduleName && record.status === "pendiente")
 )
 

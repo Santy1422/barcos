@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import ServiceSapCode from '../database/schemas/serviceSapCodeSchema';
+import ServiceSapCode from '../src/database/schemas/serviceSapCodeSchema';
 
 const sapCodes = [
   { code: "TRK003", description: "Repositioning" },
@@ -76,4 +76,4 @@ async function seed() {
   await mongoose.disconnect();
 }
 
-seed(); 
+seed();

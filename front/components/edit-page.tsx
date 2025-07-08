@@ -68,48 +68,48 @@ export function EditPage({ id }: { id: string }) {
                     <Label htmlFor="company-code">Código de Compañía</Label>
                     <Input
                       id="company-code"
-                      value={editedFile.companyCode}
-                      onChange={(e) => handleInputChange("companyCode", e.target.value)}
+                      value={editedFile.id || ""}
+                      onChange={(e) => handleInputChange("id", e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="document-type">Tipo de Documento</Label>
                     <Input
                       id="document-type"
-                      value={editedFile.documentType}
-                      onChange={(e) => handleInputChange("documentType", e.target.value)}
+                      value={editedFile.type || ""}
+                      onChange={(e) => handleInputChange("type", e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="reference">Referencia</Label>
                     <Input
                       id="reference"
-                      value={editedFile.reference}
-                      onChange={(e) => handleInputChange("reference", e.target.value)}
+                      value={editedFile.filename || ""}
+                      onChange={(e) => handleInputChange("filename", e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="date">Fecha del Documento</Label>
                     <Input
                       id="date"
-                      value={editedFile.date}
-                      onChange={(e) => handleInputChange("date", e.target.value)}
+                      value={editedFile.uploadDate || ""}
+                      onChange={(e) => handleInputChange("uploadDate", e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="posting-date">Fecha de Contabilización</Label>
                     <Input
                       id="posting-date"
-                      value={editedFile.postingDate || editedFile.date}
-                      onChange={(e) => handleInputChange("postingDate", e.target.value)}
+                      value={editedFile.uploadDate || ""}
+                      onChange={(e) => handleInputChange("uploadDate", e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="currency">Moneda</Label>
                     <Input
                       id="currency"
-                      value={editedFile.currency}
-                      onChange={(e) => handleInputChange("currency", e.target.value)}
+                      value={editedFile.status || ""}
+                      onChange={(e) => handleInputChange("status", e.target.value)}
                     />
                   </div>
                 </div>
@@ -120,31 +120,31 @@ export function EditPage({ id }: { id: string }) {
                     <Label htmlFor="customer-number">Número de Cliente</Label>
                     <Input
                       id="customer-number"
-                      value={editedFile.customerNumber || "6423"}
-                      onChange={(e) => handleInputChange("customerNumber", e.target.value)}
+                      value={editedFile.size?.toString() || "6423"}
+                      onChange={(e) => handleInputChange("size", e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="customer-name">Nombre del Cliente</Label>
                     <Input
                       id="customer-name"
-                      value={editedFile.customer}
-                      onChange={(e) => handleInputChange("customer", e.target.value)}
+                      value={editedFile.mainClient || ""}
+                      onChange={(e) => handleInputChange("mainClient", e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="amount">Monto</Label>
                     <Input
                       id="amount"
-                      value={editedFile.amount}
-                      onChange={(e) => handleInputChange("amount", e.target.value)}
+                      value={editedFile.records?.toString() || ""}
+                      onChange={(e) => handleInputChange("records", e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="profit-center">Centro de Beneficio</Label>
                     <Input
                       id="profit-center"
-                      value={editedFile.profitCenter || "ZADURB220"}
+                      value={"ZADURB220"}
                       onChange={(e) => handleInputChange("profitCenter", e.target.value)}
                     />
                   </div>
@@ -152,7 +152,7 @@ export function EditPage({ id }: { id: string }) {
                     <Label htmlFor="payment-block">Bloqueo de Pago</Label>
                     <Input
                       id="payment-block"
-                      value={editedFile.paymentBlock || "A"}
+                      value={"A"}
                       onChange={(e) => handleInputChange("paymentBlock", e.target.value)}
                     />
                   </div>
@@ -160,7 +160,7 @@ export function EditPage({ id }: { id: string }) {
                     <Label htmlFor="due-date">Fecha de Vencimiento</Label>
                     <Input
                       id="due-date"
-                      value={editedFile.dueDate || editedFile.date}
+                      value={editedFile.uploadDate || ""}
                       onChange={(e) => handleInputChange("dueDate", e.target.value)}
                     />
                   </div>

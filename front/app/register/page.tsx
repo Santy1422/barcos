@@ -25,7 +25,7 @@ export default function RegisterPage() {
     password: "",
     confirmPassword: "",
     role: "administrador" as const,
-    modules: ["trucking", "shipchandler", "agency"]
+    modules: ["trucking"]
   })
   
   const router = useRouter()
@@ -217,9 +217,7 @@ export default function RegisterPage() {
               <Label>Módulos de Acceso</Label>
               <div className="space-y-2">
                 {[
-                  { id: 'trucking', label: 'Trucking' },
-                  { id: 'shipchandler', label: 'Ship Chandler' },
-                  { id: 'agency', label: 'Agency' }
+                  { id: 'trucking', label: 'Trucking' }
                 ].map((module) => (
                   <div key={module.id} className="flex items-center space-x-2">
                     <Checkbox

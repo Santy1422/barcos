@@ -33,7 +33,7 @@ export interface CustomFieldConfig {
   label: string
   type: CustomFieldType
   options?: string[] // For 'select' type
-  module: "trucking" | "agency" | "shipchandler" // Which module this field belongs to
+  module: "trucking" // Which module this field belongs to
 }
 
 // Tipos para códigos SAP
@@ -41,7 +41,7 @@ export interface ServiceSapCode {
   _id: string
   code: string
   description: string
-  module: 'trucking' | 'agency' | 'shipchandler' | 'all'
+  module: 'trucking' | 'all'
   active: boolean
   createdAt: string
   updatedAt: string

@@ -90,34 +90,9 @@ export function AppSidebar() {
       ],
     },
     {
-      title: "Shipchandler",
-      href: "/shipchandler",
-      icon: Ship,
-      children: [
-        { title: "Subir Excel", href: "/shipchandler/upload", icon: UploadCloud },
-        { title: "Crear Factura", href: "/shipchandler/invoice", icon: FilePlus2 },
-        { title: "Registros", href: "/shipchandler/records", icon: ListOrdered },
-        { title: "Reportes", href: "/shipchandler/reports", icon: BarChart3 },
-        { title: "Configuración", href: "/shipchandler/config", icon: Settings2 },
-      ],
-    },
-    {
-      title: "Agency",
-      href: "/agency",
-      icon: Anchor,
-      children: [
-        { title: "Subir Excel", href: "/agency/upload", icon: UploadCloud },
-        { title: "Crear Factura", href: "/agency/invoice", icon: FilePlus2 },
-        { title: "Registros", href: "/agency/records", icon: ListOrdered },
-        { title: "Reportes", href: "/agency/reports", icon: BarChart3 },
-        { title: "Configuración", href: "/agency/config", icon: Settings2 },
-      ],
-    },
-    {
       title: "Clientes",
-      href: "/agency/clients",
-      icon: User,
-      children: [],
+      href: "/clientes",
+      icon: Users,
     },
     // Add Users menu item conditionally for administrators
     ...(currentUser?.role === "administrador" ? [{

@@ -7,7 +7,7 @@ export interface ExcelFile {
   uploadDate: string
   status: "pendiente" | "procesado" | "error"
   type: string // User-defined type/template name for this Excel structure
-  module: "trucking" | "shipchandler" | "agency"
+  module: "trucking"
   recordIds: string[] // NEW: Stores IDs of individual records belonging to this file
   totalValue?: number
   metadata?: {

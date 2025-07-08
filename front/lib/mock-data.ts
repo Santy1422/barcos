@@ -280,3 +280,21 @@ export const mockInvoices = [
     type: "invoices",
   },
 ]
+
+// Export missing data for compatibility
+export const mockExcelData = mockTrackingData
+export const mockXmlFiles = mockExcelFiles
+export const mockXmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<invoice>
+  <header>
+    <invoiceNumber>AG-1608</invoiceNumber>
+    <date>18/05/2025</date>
+    <client>ALMEIDA KANT</client>
+  </header>
+  <items>
+    <item>
+      <description>Tracking Service</description>
+      <amount>450.00</amount>
+    </item>
+  </items>
+</invoice>`

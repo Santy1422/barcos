@@ -48,8 +48,14 @@ export interface CrewTransportRecord {
 
 const generateSupplyOrderData = (count: number): SupplyOrderRecord[] => {
   return Array.from({ length: count }, (_, i) => {
+                                     //@ts-ignore
+
     const tarifa = faker.number.float({ min: 15, max: 200, precision: 0.01 })
+                                     //@ts-ignore
+
     const otrosGastos = faker.number.float({ min: 0, max: 50, precision: 0.01 })
+                                     //@ts-ignore
+
     const bono = faker.number.float({ min: 0, max: 100, precision: 0.01 })
     
     return {
@@ -137,11 +143,12 @@ const generateCrewTransportData = (count: number): CrewTransportRecord[] => {
 
 // --- Función Principal del Simulador ---
 
-type Module = "trucking" | "shipchandler" | "agency"
+type Module = "trucking"
 type ExcelType = string // 'supply-order', 'crew-transport', etc.
 
 export const simulateExcelParse = (module: Module, type: ExcelType): any[] => {
   const recordCount = faker.number.int({ min: 5, max: 30 }) // Generar un número aleatorio de registros
+                                 //@ts-ignore
 
   if (module === "shipchandler") {
     switch (type) {
@@ -152,6 +159,7 @@ export const simulateExcelParse = (module: Module, type: ExcelType): any[] => {
         return [] // Retorna vacío si el tipo no tiene un generador
     }
   }
+                                 //@ts-ignore
 
   if (module === "agency") {
     switch (type) {

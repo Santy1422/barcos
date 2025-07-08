@@ -464,25 +464,25 @@ export function ClientsManagement() {
     
     // Filtrar por estado
     if (filterStatus === "active") {
-      filtered = filtered.filter(client => client.isActive)
+      filtered = filtered.filter((client: Client) => client.isActive)
     } else if (filterStatus === "inactive") {
-      filtered = filtered.filter(client => !client.isActive)
+      filtered = filtered.filter((client: Client) => !client.isActive)
     }
     
     // Filtrar por tipo
     if (filterType !== "all") {
-      filtered = filtered.filter(client => client.type === filterType)
+      filtered = filtered.filter((client: Client) => client.type === filterType)
     }
     
     // Filtrar por búsqueda
     if (searchTerm) {
       const search = searchTerm.toLowerCase()
-      filtered = filtered.filter(client => {
+      filtered = filtered.filter((client: Client) => {
         if (client.type === "natural") {
           return (
             client.fullName.toLowerCase().includes(search) ||
             client.documentNumber.toLowerCase().includes(search) ||
-            client.sapCode.toLowerCase().includes(search) ||
+            client.sapCode?.toLowerCase().includes(search) ||
             client.email?.toLowerCase().includes(search) ||
             client.phone?.toLowerCase().includes(search)
           )
@@ -490,7 +490,7 @@ export function ClientsManagement() {
           return (
             client.companyName.toLowerCase().includes(search) ||
             client.ruc.toLowerCase().includes(search) ||
-            client.sapCode.toLowerCase().includes(search) ||
+            client.sapCode?.toLowerCase().includes(search) ||
             client.email.toLowerCase().includes(search) ||
             client.contactName?.toLowerCase().includes(search)
           )
@@ -687,7 +687,7 @@ export function ClientsManagement() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredClients.map((client) => (
+                  filteredClients.map((client: Client) => (
                     <TableRow key={client.id}>
                       <TableCell>
                         <Badge variant={client.type === "natural" ? "default" : "secondary"}>
@@ -766,9 +766,11 @@ export function ClientsManagement() {
                                setEditingClient(client)
                                setFormData({
                                  type: client.type,
-                                 fullName: client.fullName,
-                                 documentType: client.documentType,
-                                 documentNumber: client.documentNumber,
+                                 fullName: client.type === "natural" ? client.fullName : "",
+                                                                  //@ts-ignore
+
+                                 documentType: client.type === "natural" ? client.documentType : "DNI",
+                                 documentNumber: client.type === "natural" ? client.documentNumber : "",
                                  companyName: client.type === "juridico" ? client.companyName : "",
                                  ruc: client.type === "juridico" ? client.ruc : "",
                                  dv: client.type === "juridico" ? client.dv : "",
@@ -781,6 +783,7 @@ export function ClientsManagement() {
                                  fullAddress: client.type === "natural" ? client.address.fullAddress || "" : client.fiscalAddress.fullAddress || "",
                                  sapCode: client.sapCode || ""
                                })
+                               setIsDialogOpen(true)
                              }}
                           >
                             <Edit className="h-4 w-4" />

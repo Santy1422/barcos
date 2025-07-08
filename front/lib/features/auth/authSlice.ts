@@ -176,7 +176,7 @@ export const registerAsync = createAsyncThunk(
     email, 
     password, 
     role = 'administrador',
-    modules = ['trucking', 'shipchandler', 'agency']
+    modules = ['trucking']
   }: { 
     username: string;
     fullName: string;
@@ -398,6 +398,7 @@ export const {
 export const selectIsAuthenticated = (state: { auth: AuthState }) => state.auth.isAuthenticated
 export const selectCurrentUser = (state: { auth: AuthState }) => state.auth.currentUser
 export const selectUsers = (state: { auth: AuthState }) => state.auth.users
+export const selectAllUsers = (state: { auth: AuthState }) => state.auth.users // Alias for compatibility
 export const selectAuthLoading = (state: { auth: AuthState }) => state.auth.loading
 export const selectAuthError = (state: { auth: AuthState }) => state.auth.error
 

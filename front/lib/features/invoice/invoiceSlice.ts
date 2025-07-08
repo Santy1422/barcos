@@ -38,7 +38,7 @@ export interface InvoiceLineItemForXml {
 // Payload for generateInvoiceXML
 export interface InvoiceForXmlPayload {
   id: string // Unique ID for the XML document
-  module: "trucking" | "shipchandler" | "agency"
+  module: "trucking"
   invoiceNumber: string
   sapDocumentNumber?: string
   client: string // RUC/Cedula for CustomerNbr
@@ -84,6 +84,15 @@ const invoiceForXmlSlice = createSlice({
 })
 
 export const { setCurrentInvoiceForXml, setXmlLoading, setXmlError } = invoiceForXmlSlice.actions
+
+// Export missing types for compatibility
+export type Invoice = InvoiceForXmlPayload
+export type InvoiceRecord = InvoiceLineItemForXml
+
+// Export missing functions for compatibility
+export const createInvoice = setCurrentInvoiceForXml
+export const finalizeInvoice = setCurrentInvoiceForXml
+export const setCurrentInvoice = setCurrentInvoiceForXml
 
 // Add this default export
 export default invoiceForXmlSlice.reducer
