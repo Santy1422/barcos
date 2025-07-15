@@ -1,5 +1,6 @@
 import createRecord from "./createRecord";
 import createTruckingRecords from "./createTruckingRecords";
+import createPTYSSRecords from "./createPTYSSRecords";
 import getAllRecords from "./getAllRecords";
 import getRecordById from "./getRecordById";
 import updateRecord from "./updateRecord";
@@ -11,6 +12,7 @@ import getRecordsBySapCode from "./getRecordsBySapCode";
 const recordsControllers = {
   createRecord,
   createTruckingRecords,
+  createPTYSSRecords,
   getAllRecords,
   getRecordById,
   updateRecord,

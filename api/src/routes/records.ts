@@ -12,6 +12,9 @@ router.post('/', jwtUtils, catchedAsync(recordsControllers.createRecord));
 // Crear múltiples registros de trucking desde Excel
 router.post('/trucking/bulk', jwtUtils, catchedAsync(recordsControllers.createTruckingRecords));
 
+// Crear múltiples registros de PTYSS desde entrada manual
+router.post('/ptyss/bulk', jwtUtils, catchedAsync(recordsControllers.createPTYSSRecords));
+
 // Obtener todos los registros
 router.get('/', catchedAsync(recordsControllers.getAllRecords));
 

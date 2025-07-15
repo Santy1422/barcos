@@ -8,6 +8,7 @@ import recordsSchema from './schemas/recordsSchema';
 import invoicesSchema from './schemas/invoicesSchema';
 import configSchema from './schemas/configSchema';
 import excelFilesSchema from './schemas/excelFilesSchema';
+import { Naviera } from './schemas/navieraSchema';
 
 mongoose.set('strictQuery', false);
 
@@ -33,6 +34,7 @@ export const records = mongoose.model('records', recordsSchema);
 export const invoices = mongoose.model('invoices', invoicesSchema);
 export const config = mongoose.model('config', configSchema);
 export const excelFiles = mongoose.model('excelFiles', excelFilesSchema);
+export const navieras = Naviera;
 
 // Manejo de eventos de conexión
 mongoose.connection.on('connected', () => {
@@ -62,7 +64,8 @@ export const getModels = () => {
     records,
     invoices,
     config,
-    excelFiles
+    excelFiles,
+    navieras
   };
 };
 
@@ -74,4 +77,5 @@ export type Models = {
   invoices: typeof invoices;
   config: typeof config;
   excelFiles: typeof excelFiles;
+  navieras: typeof navieras;
 };

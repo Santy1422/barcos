@@ -8,6 +8,7 @@ import excelFiles from './excelFiles';
 import config from './config';
 import dashboard from './dashboard';
 import truckingRoutes from './truckingRoutes';
+import navieras from './navieras';
 
 router.use('/api/user', user);
 router.use('/api/clients', clients);
@@ -17,5 +18,6 @@ router.use('/api/excel-files', excelFiles);
 router.use('/api/config', config);
 router.use('/api/dashboard', dashboard);
 router.use('/api/trucking-routes', truckingRoutes);
+router.use('/api/navieras', navieras);
 
 export default router;

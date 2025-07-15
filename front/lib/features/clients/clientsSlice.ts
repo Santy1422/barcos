@@ -7,20 +7,16 @@ export type DocumentType = "cedula" | "pasaporte" | "ruc"
 
 // Interface para cliente natural (persona)
 export interface NaturalClient {
-  id: string
+  id?: string
+  _id?: string
   type: "natural"
   fullName: string
   documentType: "cedula" | "pasaporte"
   documentNumber: string
-  address: {
-    province: string
-    district: string
-    corregimiento: string
-    fullAddress?: string
-  }
+  address?: string
   email?: string
   phone?: string
-  sapCode?: string // Nuevo campo
+  sapCode?: string
   createdAt: string
   updatedAt: string
   isActive: boolean
@@ -28,21 +24,16 @@ export interface NaturalClient {
 
 // Interface para cliente jurídico (empresa)
 export interface JuridicalClient {
-  id: string
+  id?: string
+  _id?: string
   type: "juridico"
   companyName: string
   ruc: string
-  dv: string
-  fiscalAddress: {
-    province: string
-    district: string
-    corregimiento: string
-    fullAddress?: string
-  }
   email: string
   phone?: string
   contactName?: string
-  sapCode?: string // Nuevo campo
+  address?: string
+  sapCode?: string
   createdAt: string
   updatedAt: string
   isActive: boolean
@@ -67,14 +58,10 @@ const initialState: ClientsState = {
       fullName: "Juan Carlos Pérez González",
       documentType: "cedula",
       documentNumber: "8-123-456",
-      address: {
-        province: "Panamá",
-        district: "Panamá",
-        corregimiento: "San Francisco",
-        fullAddress: "Calle 50, Edificio Torre Global, Piso 15"
-      },
+      address: "Calle 50, Edificio Torre Global, Piso 15, San Francisco, Panamá",
       email: "juan.perez@email.com",
       phone: "6001-2345",
+      sapCode: "SAP001",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       isActive: true
@@ -84,16 +71,11 @@ const initialState: ClientsState = {
       type: "juridico",
       companyName: "Importadora Del Mar S.A.",
       ruc: "155678901-2-2020",
-      dv: "12",
-      fiscalAddress: {
-        province: "Panamá",
-        district: "Panamá",
-        corregimiento: "Bella Vista",
-        fullAddress: "Avenida Balboa, Torre de las Américas, Piso 20"
-      },
       email: "facturacion@importadoradelmar.com",
       phone: "507-264-5000",
       contactName: "María González",
+      address: "Avenida Balboa, Torre de las Américas, Piso 20, Bella Vista, Panamá",
+      sapCode: "SAP002",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       isActive: true
@@ -104,13 +86,10 @@ const initialState: ClientsState = {
       fullName: "Ana María Rodríguez",
       documentType: "pasaporte",
       documentNumber: "PA123456789",
-      address: {
-        province: "Colón",
-        district: "Colón",
-        corregimiento: "Cristóbal"
-      },
+      address: "Cristóbal, Colón",
       email: "ana.rodriguez@email.com",
       phone: "6002-3456",
+      sapCode: "SAP003",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       isActive: true
@@ -120,15 +99,11 @@ const initialState: ClientsState = {
       type: "juridico",
       companyName: "Logística Total PTY",
       ruc: "8-NT-12345",
-      dv: "45",
-      fiscalAddress: {
-        province: "Panamá",
-        district: "San Miguelito",
-        corregimiento: "José Domingo Espinar"
-      },
       email: "admin@logisticatotal.com",
       phone: "507-236-7890",
       contactName: "Carlos Mendoza",
+      address: "José Domingo Espinar, San Miguelito, Panamá",
+      sapCode: "SAP004",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       isActive: true
@@ -146,54 +121,110 @@ export const fetchClients = createAsyncThunk(
     if (!response.ok) {
       throw new Error('Error al obtener clientes')
     }
-    return response.json()
+    const data = await response.json()
+    console.log('Fetch clients response:', data)
+    return data.payload?.clients || data.payload || data
   }
 )
 
 export const createClientAsync = createAsyncThunk(
   'clients/createClient',
-  async (clientData: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const response = await fetch('/api/clients', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(clientData),
-    })
-    if (!response.ok) {
-      throw new Error('Error al crear cliente')
+  async (clientData: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+      
+      const response = await fetch('/api/clients', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(clientData),
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Error response:', errorData)
+        throw new Error(errorData.error || errorData.message || `Error ${response.status}: ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      console.log('Success response:', data)
+      return data.payload.client
+    } catch (error) {
+      console.error('Error en createClientAsync:', error)
+      return rejectWithValue(error instanceof Error ? error.message : 'Error desconocido')
     }
-    return response.json()
   }
 )
 
 export const updateClientAsync = createAsyncThunk(
   'clients/updateClient',
-  async ({ id, ...clientData }: Client) => {
-    const response = await fetch(`/api/clients/${id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(clientData),
-    })
-    if (!response.ok) {
-      throw new Error('Error al actualizar cliente')
+  async ({ id, ...clientData }: Client, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+      
+      const response = await fetch(`/api/clients/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(clientData),
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Error response:', errorData)
+        throw new Error(errorData.error || errorData.message || `Error ${response.status}: ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      console.log('Success response:', data)
+      return data.payload.client
+    } catch (error) {
+      console.error('Error en updateClientAsync:', error)
+      return rejectWithValue(error instanceof Error ? error.message : 'Error desconocido')
     }
-    return response.json()
   }
 )
 
 export const deleteClientAsync = createAsyncThunk(
   'clients/deleteClient',
-  async (id: string) => {
-    const response = await fetch(`/api/clients/${id}`, {
-      method: 'DELETE',
-    })
-    if (!response.ok) {
-      throw new Error('Error al eliminar cliente')
+  async (id: string, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+      
+      const response = await fetch(`/api/clients/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `Error ${response.status}: ${response.statusText}`)
+      }
+      
+      return { id }
+    } catch (error) {
+      console.error('Error en deleteClientAsync:', error)
+      return rejectWithValue(error instanceof Error ? error.message : 'Error desconocido')
     }
-    return { id }
   }
 )
 
@@ -321,14 +352,22 @@ export const {
 export default clientsSlice.reducer
 
 // Selectores
-export const selectAllClients = (state: RootState) => state.clients.clients
-export const selectActiveClients = (state: RootState) => 
-  state.clients.clients.filter(client => client.isActive)
-export const selectNaturalClients = (state: RootState) => 
-  state.clients.clients.filter(client => client.type === "natural" && client.isActive)
-export const selectJuridicalClients = (state: RootState) => 
-  state.clients.clients.filter(client => client.type === "juridico" && client.isActive)
-export const selectClientById = (state: RootState, clientId: string) => 
-  state.clients.clients.find(client => client.id === clientId)
+export const selectAllClients = (state: RootState) => Array.isArray(state.clients.clients) ? state.clients.clients : []
+export const selectActiveClients = (state: RootState) => {
+  const clients = Array.isArray(state.clients.clients) ? state.clients.clients : []
+  return clients.filter(client => client && client.isActive)
+}
+export const selectNaturalClients = (state: RootState) => {
+  const clients = Array.isArray(state.clients.clients) ? state.clients.clients : []
+  return clients.filter(client => client && client.type === "natural" && client.isActive)
+}
+export const selectJuridicalClients = (state: RootState) => {
+  const clients = Array.isArray(state.clients.clients) ? state.clients.clients : []
+  return clients.filter(client => client && client.type === "juridico" && client.isActive)
+}
+export const selectClientById = (state: RootState, clientId: string) => {
+  const clients = Array.isArray(state.clients.clients) ? state.clients.clients : []
+  return clients.find(client => client && client.id === clientId)
+}
 export const selectClientsLoading = (state: RootState) => state.clients.loading
 export const selectClientsError = (state: RootState) => state.clients.error

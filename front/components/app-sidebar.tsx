@@ -37,6 +37,7 @@ import {
   BarChart3,
   Settings2,
   User,
+  Plus,
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -85,8 +86,18 @@ export function AppSidebar() {
         { title: "Subir Excel", href: "/trucking/upload", icon: UploadCloud },
         { title: "Crear Factura", href: "/trucking/invoice", icon: FilePlus2 },
         { title: "Registros", href: "/trucking/records", icon: ListOrdered },
-        { title: "Reportes", href: "/trucking/reports", icon: BarChart3 },
         { title: "Configuración", href: "/trucking/config", icon: Settings2 },
+      ],
+    },
+    {
+      title: "PTYSS",
+      href: "/ptyss",
+      icon: Ship,
+      children: [
+        { title: "Crear Registros", href: "/ptyss/upload", icon: Plus },
+        { title: "Crear Factura", href: "/ptyss/invoice", icon: FilePlus2 },
+        { title: "Registros", href: "/ptyss/records", icon: ListOrdered },
+        { title: "Configuración", href: "/ptyss/config", icon: Settings2 },
       ],
     },
     {

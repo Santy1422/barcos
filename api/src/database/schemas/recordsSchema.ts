@@ -9,7 +9,7 @@ const excelRecordSchema = new mongoose.Schema({
   },
   module: {
     type: String,
-    enum: ["trucking", "shipchandler", "agency"],
+    enum: ["trucking", "shipchandler", "agency", "ptyss"],
     required: true
   },
   type: {

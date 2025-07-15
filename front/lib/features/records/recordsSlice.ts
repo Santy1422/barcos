@@ -7,7 +7,7 @@ import { createApiUrl } from '@/lib/api-config'
 export interface ExcelRecord {
   id: string // Unique ID for this specific record (e.g., TRK-REC-EXCELID-ROWID)
   excelId: string // ID of the Excel file this record came from
-  module: "trucking"
+  module: "trucking" | "ptyss"
   type: string // Type of data (e.g., "transport-services", "supply-order")
   status: "pendiente" | "facturado" | "anulado" // Status of this individual record
   totalValue: number // The calculated total value for this specific record/line item
@@ -19,7 +19,7 @@ export interface ExcelRecord {
 // Interface for a full Invoice document stored in records
 export interface InvoiceRecord {
   id: string // Unique ID for the invoice document
-  module: "trucking"
+  module: "trucking" | "ptyss"
   invoiceNumber: string
   clientName: string
   clientRuc: string
@@ -193,6 +193,54 @@ export const createTruckingRecords = createAsyncThunk(
       const result = data.payload?.records || [];
       console.log("Resultado final a retornar:", result);
       console.log("Resultado final length:", result.length);
+      return result
+    } catch (error) {
+                                       //@ts-ignore
+
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
+export const createPTYSSRecords = createAsyncThunk(
+  'records/createPTYSS',
+  async ({ excelId, recordsData }: {
+    excelId: string
+    recordsData: any[]
+  }, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      console.log("Token presente:", !!token);
+      console.log("Token (primeros 20 chars):", token ? token.substring(0, 20) + "..." : "NO HAY TOKEN");
+      console.log("Payload enviado a backend PTYSS:", { excelId, recordsData });
+      const response = await fetch('/api/records/ptyss/bulk', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          excelId,
+          recordsData
+        })
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Error backend PTYSS - Status:", response.status);
+        console.error("Error backend PTYSS - Data:", JSON.stringify(errorData, null, 2));
+        throw new Error(errorData.error || `Error al crear registros PTYSS (${response.status})`);
+      }
+      
+      console.log("✅ Response OK PTYSS - Status:", response.status);
+      const data = await response.json()
+      console.log("Respuesta del backend PTYSS:", data);
+      console.log("data.payload:", data.payload);
+      console.log("data.payload.records:", data.payload?.records);
+      console.log("data.payload.records length:", data.payload?.records?.length);
+      const result = data.payload?.records || [];
+      console.log("Resultado final a retornar PTYSS:", result);
+      console.log("Resultado final length PTYSS:", result.length);
       return result
     } catch (error) {
                                        //@ts-ignore
@@ -441,6 +489,20 @@ const recordsSlice = createSlice({
         state.individualRecords.push(...action.payload)
       })
       .addCase(createTruckingRecords.rejected, (state, action) => {
+        state.creatingRecords = false
+        state.error = action.payload as string
+      })
+      
+      // Create PTYSS records
+      .addCase(createPTYSSRecords.pending, (state) => {
+        state.creatingRecords = true
+        state.error = null
+      })
+      .addCase(createPTYSSRecords.fulfilled, (state, action) => {
+        state.creatingRecords = false
+        state.individualRecords.push(...action.payload)
+      })
+      .addCase(createPTYSSRecords.rejected, (state, action) => {
         state.creatingRecords = false
         state.error = action.payload as string
       })

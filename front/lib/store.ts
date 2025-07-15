@@ -6,6 +6,7 @@ import configReducer from './features/config/configSlice'
 import excelReducer from './features/excel/excelSlice'
 import clientsReducer from './features/clients/clientsSlice'
 import truckingRoutesReducer from './features/truckingRoutes/truckingRoutesSlice'
+import navieraReducer from './features/naviera/navieraSlice'
 import { loadState, saveState } from './storage'
 
 export const makeStore = () => {
@@ -21,6 +22,7 @@ export const makeStore = () => {
       excel: excelReducer,
       clients: clientsReducer,
       truckingRoutes: truckingRoutesReducer,
+      naviera: navieraReducer,
     },
     preloadedState: persistedState
   })

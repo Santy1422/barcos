@@ -1924,9 +1924,19 @@ export default function TruckingInvoice() {
                 {/* Campos personalizados */}
                 {truckingCustomFields.length > 0 && (
                   <div className="mt-8 space-y-4">
-                    <h3 className="text-lg font-semibold">Campos Personalizados</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {truckingCustomFields.map((field) => (
+                      {truckingCustomFields
+                        .filter(field => 
+                          !field.label.toLowerCase().includes('tipo de carga') &&
+                          !field.label.toLowerCase().includes('número de sellos') &&
+                          !field.label.toLowerCase().includes('numero de sellos') &&
+                          !field.label.toLowerCase().includes('número de sellos') &&
+                          !field.label.toLowerCase().includes('numero de sellos') &&
+                          !field.label.toLowerCase().includes('sellos') &&
+                          !field.label.toLowerCase().includes('sello') &&
+                          !field.label.toLowerCase().includes('peso')
+                        )
+                        .map((field) => (
                         <div key={field.id}>
                           <Label htmlFor={field.id}>{field.label}</Label>
                           {field.type === "text" && (

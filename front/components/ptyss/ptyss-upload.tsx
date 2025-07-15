@@ -1,0 +1,901 @@
+"use client"
+
+import { useState, useRef, useEffect } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Separator } from "@/components/ui/separator"
+import { 
+  FileText, 
+  Plus, 
+  AlertCircle, 
+  CheckCircle2,
+  Ship,
+  Database,
+  Trash2,
+  Edit,
+  Save,
+  Loader2
+} from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { useAppSelector, useAppDispatch } from "@/lib/hooks"
+import { createPTYSSRecords } from "@/lib/features/records/recordsSlice"
+import { 
+  selectAllClients,
+  createClientAsync,
+  type Client,
+  type NaturalClient,
+  type JuridicalClient,
+  type ClientType
+} from "@/lib/features/clients/clientsSlice"
+import { 
+  selectActiveNavieras,
+  fetchNavieras
+} from "@/lib/features/naviera/navieraSlice"
+import { ClientModal } from "@/components/clients-management"
+
+interface PTYSSRecordData {
+  clientId: string
+  order: string
+  container: string
+  naviera: string
+  from: string
+  to: string
+  operationType: string
+  containerSize: string
+  containerType: string
+  estadia: string
+  genset: string
+  retencion: string
+  pesaje: string
+  ti: string
+  matriculaCamion: string
+  conductor: string
+  numeroChasisPlaca: string
+  moveDate: string
+  notes: string
+  totalValue: number
+}
+
+const initialRecordData: PTYSSRecordData = {
+  clientId: "",
+  order: "",
+  container: "",
+  naviera: "",
+  from: "",
+  to: "",
+  operationType: "",
+  containerSize: "40",
+  containerType: "DV",
+  estadia: "",
+  genset: "",
+  retencion: "",
+  pesaje: "",
+  ti: "",
+  matriculaCamion: "",
+  conductor: "",
+  numeroChasisPlaca: "",
+  moveDate: "",
+  notes: "",
+  totalValue: 0
+}
+
+export function PTYSSUpload() {
+  const dispatch = useAppDispatch()
+  const { toast } = useToast()
+  
+  const [records, setRecords] = useState<PTYSSRecordData[]>([])
+  const [currentRecord, setCurrentRecord] = useState<PTYSSRecordData>(initialRecordData)
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  
+  // Obtener clientes y navieras del store de Redux
+  const clients = useAppSelector(selectAllClients)
+  const navieras = useAppSelector(selectActiveNavieras)
+
+  // Cargar navieras al montar el componente
+  useEffect(() => {
+    dispatch(fetchNavieras('active'))
+  }, [dispatch])
+
+  // Estado para el formulario de nuevo cliente
+  const [newClient, setNewClient] = useState({
+    companyName: "",
+    ruc: "",
+    contactName: "",
+    email: "",
+    phone: "",
+    address: "",
+    sapCode: ""
+  })
+  
+  const [showAddClientDialog, setShowAddClientDialog] = useState(false)
+
+  // Funciones para manejar clientes
+  const handleAddClient = async () => {
+    if (!newClient.sapCode || !newClient.companyName || !newClient.ruc || !newClient.email) {
+      toast({
+        title: "Error",
+        description: "Completa los campos obligatorios (Código SAP, Nombre de Empresa, RUC y Email)",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      const clientData = {
+        type: "juridico" as const,
+        companyName: newClient.companyName,
+        ruc: newClient.ruc,
+        email: newClient.email,
+        phone: newClient.phone || undefined,
+        contactName: newClient.contactName || undefined,
+        address: newClient.address || undefined,
+        sapCode: newClient.sapCode,
+        isActive: true
+      }
+
+      await dispatch(createClientAsync(clientData)).unwrap()
+      
+      setNewClient({
+        companyName: "",
+        ruc: "",
+        contactName: "",
+        email: "",
+        phone: "",
+        address: "",
+        sapCode: ""
+      })
+      setShowAddClientDialog(false)
+
+      toast({
+        title: "Cliente agregado",
+        description: "El nuevo cliente ha sido agregado correctamente",
+      })
+    } catch (error: any) {
+      console.error("Error al crear cliente:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Error al crear el cliente. Inténtalo de nuevo.",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const getSelectedClient = () => {
+    return clients.find(client => client && (client._id || client.id) === currentRecord.clientId)
+  }
+
+  const handleAddRecord = () => {
+    if (!currentRecord.clientId || !currentRecord.order || !currentRecord.container || !currentRecord.naviera || 
+        !currentRecord.from || !currentRecord.to || !currentRecord.operationType || !currentRecord.containerSize || 
+        !currentRecord.containerType || !currentRecord.estadia || !currentRecord.ti || !currentRecord.conductor) {
+      toast({
+        title: "Error",
+        description: "Completa todos los campos obligatorios marcados con *",
+        variant: "destructive"
+      })
+      return
+    }
+
+    if (editingIndex !== null) {
+      // Editar registro existente
+      const updatedRecords = [...records]
+      updatedRecords[editingIndex] = currentRecord
+      setRecords(updatedRecords)
+      setEditingIndex(null)
+      toast({ title: "Registro actualizado", description: "El registro ha sido actualizado exitosamente." })
+    } else {
+      // Agregar nuevo registro
+      const newRecord = {
+        ...currentRecord,
+        totalValue: calculateTotalValue(currentRecord)
+      }
+      setRecords([...records, newRecord])
+      toast({ title: "Registro agregado", description: "El registro ha sido agregado exitosamente." })
+    }
+
+    setCurrentRecord(initialRecordData)
+    setIsDialogOpen(false)
+  }
+
+  const calculateTotalValue = (record: PTYSSRecordData): number => {
+    let total = 0
+    
+    // Agregar valores numéricos si existen
+    if (record.genset) total += parseFloat(record.genset) || 0
+    if (record.retencion) total += parseFloat(record.retencion) || 0
+    if (record.pesaje) total += parseFloat(record.pesaje) || 0
+    
+    return total
+  }
+
+  const handleEditRecord = (index: number) => {
+    setCurrentRecord(records[index])
+    setEditingIndex(index)
+    setIsDialogOpen(true)
+  }
+
+  const handleDeleteRecord = (index: number) => {
+    const updatedRecords = records.filter((_, i) => i !== index)
+    setRecords(updatedRecords)
+    toast({ title: "Registro eliminado", description: "El registro ha sido eliminado." })
+  }
+
+  const handleSaveRecords = async () => {
+    if (records.length === 0) {
+      toast({
+        title: "Error",
+        description: "No hay registros para guardar",
+        variant: "destructive"
+      })
+      return
+    }
+
+    setIsSaving(true)
+
+    try {
+      console.log("=== INICIANDO GUARDADO PTYSS ===")
+      console.log("Registros a guardar:", records)
+      
+      // Temporary workaround: Use a proper ObjectId format
+      const tempObjectId = new Date().getTime().toString(16).padStart(24, '0').substring(0, 24)
+      
+      console.log("ExcelId:", tempObjectId)
+      
+      // Preparar los datos para el backend
+      const recordsData = records.map((record, index) => ({
+        data: record, // Datos completos del registro
+        totalValue: record.totalValue || 0
+      }))
+      
+      console.log("Records data preparado:", recordsData)
+      console.log("Payload a enviar:", {
+        excelId: tempObjectId,
+        recordsData
+      })
+      
+      const result = await dispatch(createPTYSSRecords({
+        excelId: tempObjectId,
+        recordsData
+      })).unwrap()
+      
+      console.log("Resultado del guardado:", result)
+      
+      toast({
+        title: "Éxito",
+        description: `${result.length} registros guardados correctamente en el sistema`
+      })
+      
+      // Limpiar el estado
+      setRecords([])
+      
+    } catch (error) {
+      console.error("Error al guardar:", error)
+      toast({
+        title: "Error",
+        description: "Error al guardar los registros en el sistema",
+        variant: "destructive"
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Ship className="h-5 w-5" />
+            Crear Registros PTYSS
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-medium">Crear Registro Individual</h3>
+              <p className="text-sm text-muted-foreground">
+                Agrega registros marítimos uno por uno para luego generar facturas
+              </p>
+            </div>
+            <Button onClick={() => {
+              setCurrentRecord(initialRecordData)
+              setEditingIndex(null)
+              setIsDialogOpen(true)
+            }}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nuevo Registro
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Lista de registros */}
+      {records.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Database className="h-5 w-5" />
+                Registros Creados ({records.length})
+              </span>
+              <Button 
+                onClick={handleSaveRecords} 
+                disabled={isSaving}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Guardar Registros
+                  </>
+                )}
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Orden</TableHead>
+                    <TableHead>Contenedor</TableHead>
+                    <TableHead>Naviera</TableHead>
+                    <TableHead>From/To</TableHead>
+                    <TableHead>Operación</TableHead>
+                    <TableHead>Conductor</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {records.map((record, index) => {
+                    const client = clients.find(c => (c._id || c.id) === record.clientId)
+                    const naviera = navieras.find(n => n._id === record.naviera)
+                    
+                    return (
+                      <TableRow key={index}>
+                        <TableCell>
+                          {client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"}
+                        </TableCell>
+                        <TableCell>{record.order}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium">{record.container}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {record.containerSize}' {record.containerType}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>{naviera?.name || "N/A"}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="text-xs">{record.from}</span>
+                            <span className="text-xs">→ {record.to}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={record.operationType === "import" ? "default" : "secondary"}>
+                            {record.operationType.toUpperCase()}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{record.conductor}</TableCell>
+                        <TableCell>${record.totalValue.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end space-x-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditRecord(index)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteRecord(index)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Modal para crear/editar registro */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingIndex !== null ? "Editar Registro PTYSS" : "Crear Nuevo Registro PTYSS"}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            {/* Información del Cliente */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Información del Cliente</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="client">Cliente *</Label>
+                  <div className="flex gap-2">
+                    <Select value={currentRecord.clientId} onValueChange={(value) => setCurrentRecord({...currentRecord, clientId: value})}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Seleccionar cliente" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {clients.filter(client => client && client.isActive).map((client) => (
+                          <SelectItem key={client._id || client.id} value={client._id || client.id}>
+                            {client.type === "natural" ? client.fullName : client.companyName} - {client.sapCode || "Sin SAP"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Dialog open={showAddClientDialog} onOpenChange={setShowAddClientDialog}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="icon">
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>Agregar Nuevo Cliente</DialogTitle>
+                        </DialogHeader>
+                        
+                        <div className="space-y-4">
+                          {/* Información de la Empresa */}
+                          <div className="space-y-4">
+                            <h3 className="text-lg font-medium">Información de la Empresa</h3>
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label htmlFor="companyName">Nombre de la Empresa *</Label>
+                                <Input
+                                  id="companyName"
+                                  value={newClient.companyName}
+                                  onChange={(e) => setNewClient({...newClient, companyName: e.target.value})}
+                                  placeholder="Razón social"
+                                />
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <Label htmlFor="sapCode">Código SAP *</Label>
+                                <Input
+                                  id="sapCode"
+                                  value={newClient.sapCode}
+                                  onChange={(e) => setNewClient({...newClient, sapCode: e.target.value})}
+                                  placeholder="Código SAP del cliente"
+                                />
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <Label htmlFor="ruc">RUC *</Label>
+                                <Input
+                                  id="ruc"
+                                  value={newClient.ruc}
+                                  onChange={(e) => setNewClient({...newClient, ruc: e.target.value})}
+                                  placeholder="155678901-2-2020"
+                                />
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <Label htmlFor="contactName">Nombre de Contacto</Label>
+                                <Input
+                                  id="contactName"
+                                  value={newClient.contactName}
+                                  onChange={(e) => setNewClient({...newClient, contactName: e.target.value})}
+                                  placeholder="Persona de contacto"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <Separator />
+                          
+                          {/* Información de Contacto */}
+                          <div className="space-y-4">
+                            <h3 className="text-lg font-medium">Información de Contacto</h3>
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label htmlFor="email">Correo Electrónico *</Label>
+                                <Input
+                                  id="email"
+                                  type="email"
+                                  value={newClient.email}
+                                  onChange={(e) => setNewClient({...newClient, email: e.target.value})}
+                                  placeholder="correo@ejemplo.com"
+                                />
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <Label htmlFor="phone">Teléfono</Label>
+                                <Input
+                                  id="phone"
+                                  value={newClient.phone}
+                                  onChange={(e) => setNewClient({...newClient, phone: e.target.value})}
+                                  placeholder="6001-2345"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <Separator />
+                          
+                          {/* Dirección */}
+                          <div className="space-y-4">
+                            <h3 className="text-lg font-medium">Dirección</h3>
+                            
+                            <div className="space-y-2">
+                              <Label htmlFor="address">Dirección</Label>
+                              <Textarea
+                                id="address"
+                                value={newClient.address}
+                                onChange={(e) => setNewClient({...newClient, address: e.target.value})}
+                                placeholder="Dirección completa de la empresa"
+                                rows={3}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex justify-end gap-2 pt-4">
+                          <Button variant="outline" onClick={() => setShowAddClientDialog(false)}>
+                            Cancelar
+                          </Button>
+                          <Button onClick={handleAddClient}>
+                            <Plus className="h-4 w-4 mr-2" />
+                            Agregar Cliente
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                  {getSelectedClient() && (
+                    <div className="text-sm text-muted-foreground mt-1">
+                      {getSelectedClient()?.type === "juridico" ? (
+                        <>
+                          RUC: {getSelectedClient()?.ruc} | 
+                          Tel: {getSelectedClient()?.phone || "No especificado"}
+                        </>
+                      ) : (
+                        <>
+                          {getSelectedClient()?.documentType?.toUpperCase()}: {getSelectedClient()?.documentNumber} | 
+                          Tel: {getSelectedClient()?.phone || "No especificado"}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="order">Orden *</Label>
+                  <Input
+                    id="order"
+                    value={currentRecord.order}
+                    onChange={(e) => setCurrentRecord({...currentRecord, order: e.target.value})}
+                    placeholder="Número de orden"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <Separator />
+            
+            {/* Información del Contenedor */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Información del Contenedor</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="container">Contenedor *</Label>
+                  <Input
+                    id="container"
+                    value={currentRecord.container}
+                    onChange={(e) => {
+                      const value = e.target.value.toUpperCase()
+                      if (value.length <= 11) {
+                        setCurrentRecord({...currentRecord, container: value})
+                      }
+                    }}
+                    placeholder="MSCU1234567"
+                    maxLength={11}
+                    pattern="[A-Z0-9]+"
+                    title="Solo letras y números, máximo 11 caracteres"
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="naviera">Naviera *</Label>
+                  <Select value={currentRecord.naviera} onValueChange={(value) => setCurrentRecord({...currentRecord, naviera: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar naviera" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {navieras.map((naviera) => (
+                        <SelectItem key={naviera._id} value={naviera._id}>
+                          {naviera.name} ({naviera.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="from">From *</Label>
+                  <Select value={currentRecord.from} onValueChange={(value) => setCurrentRecord({...currentRecord, from: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar From" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MIT">MIT</SelectItem>
+                      <SelectItem value="BLB">BLB</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="to">To *</Label>
+                  <Select value={currentRecord.to} onValueChange={(value) => setCurrentRecord({...currentRecord, to: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar To" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Colon free zone">Colon free zone</SelectItem>
+                      <SelectItem value="Parque sur">Parque sur</SelectItem>
+                      <SelectItem value="Montemar">Montemar</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="operationType">Tipo Operación *</Label>
+                  <Select value={currentRecord.operationType} onValueChange={(value) => setCurrentRecord({...currentRecord, operationType: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar tipo de operación" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="import">Import</SelectItem>
+                      <SelectItem value="export">Export</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="containerSize">Tamaño de Contenedor *</Label>
+                  <Select value={currentRecord.containerSize} onValueChange={(value) => setCurrentRecord({...currentRecord, containerSize: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar tamaño" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10' - 10 pies</SelectItem>
+                      <SelectItem value="20">20' - 20 pies</SelectItem>
+                      <SelectItem value="40">40' - 40 pies</SelectItem>
+                      <SelectItem value="45">45' - 45 pies</SelectItem>
+                      <SelectItem value="48">48' - 48 pies</SelectItem>
+                      <SelectItem value="53">53' - 53 pies</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="containerType">Tipo de Contenedor *</Label>
+                  <Select value={currentRecord.containerType} onValueChange={(value) => setCurrentRecord({...currentRecord, containerType: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DV">DV - Dry Van</SelectItem>
+                      <SelectItem value="HC">HC - High Cube</SelectItem>
+                      <SelectItem value="RE">RE - Reefer</SelectItem>
+                      <SelectItem value="TK">TK - Tank</SelectItem>
+                      <SelectItem value="FL">FL - Flat Rack</SelectItem>
+                      <SelectItem value="OS">OS - Open Side</SelectItem>
+                      <SelectItem value="OT">OT - Open Top</SelectItem>
+                      <SelectItem value="HR">HR - Hard Top</SelectItem>
+                      <SelectItem value="PL">PL - Platform</SelectItem>
+                      <SelectItem value="BV">BV - Bulk</SelectItem>
+                      <SelectItem value="VE">VE - Ventilated</SelectItem>
+                      <SelectItem value="PW">PW - Pallet Wide</SelectItem>
+                      <SelectItem value="HT">HT - Hard Top</SelectItem>
+                      <SelectItem value="IS">IS - Insulated</SelectItem>
+                      <SelectItem value="XX">XX - Special</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+            
+            <Separator />
+            
+            {/* Servicios Adicionales */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Servicios Adicionales</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="estadia">Estadia *</Label>
+                  <Select value={currentRecord.estadia} onValueChange={(value) => setCurrentRecord({...currentRecord, estadia: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="si">Sí</SelectItem>
+                      <SelectItem value="no">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="genset">Genset</Label>
+                  <Input
+                    id="genset"
+                    type="number"
+                    value={currentRecord.genset}
+                    onChange={(e) => setCurrentRecord({...currentRecord, genset: e.target.value})}
+                    placeholder="Ingrese número"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="retencion">Retención</Label>
+                  <Input
+                    id="retencion"
+                    type="number"
+                    value={currentRecord.retencion}
+                    onChange={(e) => setCurrentRecord({...currentRecord, retencion: e.target.value})}
+                    placeholder="Ingrese número"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="pesaje">Pesaje</Label>
+                  <Input
+                    id="pesaje"
+                    type="number"
+                    value={currentRecord.pesaje}
+                    onChange={(e) => setCurrentRecord({...currentRecord, pesaje: e.target.value})}
+                    placeholder="Ingrese monto en moneda"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="ti">TI *</Label>
+                  <Select value={currentRecord.ti} onValueChange={(value) => setCurrentRecord({...currentRecord, ti: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="si">Sí</SelectItem>
+                      <SelectItem value="no">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+            
+            <Separator />
+            
+            {/* Información de Transporte */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Información de Transporte</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="matriculaCamion">Matrícula del Camión</Label>
+                  <Input
+                    id="matriculaCamion"
+                    value={currentRecord.matriculaCamion}
+                    onChange={(e) => setCurrentRecord({...currentRecord, matriculaCamion: e.target.value})}
+                    placeholder="Ingrese matrícula alfanumérica"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="conductor">Conductor *</Label>
+                  <Input
+                    id="conductor"
+                    value={currentRecord.conductor}
+                    onChange={(e) => setCurrentRecord({...currentRecord, conductor: e.target.value})}
+                    placeholder="Ingrese nombre del conductor"
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="numeroChasisPlaca">Número de Chasis o Placa</Label>
+                  <Input
+                    id="numeroChasisPlaca"
+                    value={currentRecord.numeroChasisPlaca}
+                    onChange={(e) => setCurrentRecord({...currentRecord, numeroChasisPlaca: e.target.value})}
+                    placeholder="Ingrese número de chasis o placa"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="moveDate">Fecha de Movimiento</Label>
+                  <Input
+                    id="moveDate"
+                    type="date"
+                    value={currentRecord.moveDate}
+                    onChange={(e) => setCurrentRecord({...currentRecord, moveDate: e.target.value})}
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <Separator />
+            
+            {/* Notas */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Notas Adicionales</h3>
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notas</Label>
+                <Textarea
+                  id="notes"
+                  value={currentRecord.notes}
+                  onChange={(e) => setCurrentRecord({...currentRecord, notes: e.target.value})}
+                  placeholder="Notas adicionales sobre el registro..."
+                  rows={3}
+                />
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex justify-end space-x-2 pt-4">
+            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={handleAddRecord}>
+              {editingIndex !== null ? "Actualizar" : "Agregar"} Registro
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Clientes */}
+      <ClientModal
+        isOpen={showAddClientDialog}
+        onClose={() => setShowAddClientDialog(false)}
+        onClientCreated={(client) => {
+          // Cuando se crea un cliente, seleccionarlo automáticamente
+          setCurrentRecord(prev => ({
+            ...prev,
+            clientId: client._id || client.id || ""
+          }))
+          setShowAddClientDialog(false)
+        }}
+      />
+    </div>
+  )
+} 

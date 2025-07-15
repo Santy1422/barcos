@@ -7,7 +7,7 @@ const { catchedAsync } = require('../utils');
 const router = Router();
 
 // Crear cliente
-router.post('/', catchedAsync(clientsControllers.createClient));
+router.post('/', jwtUtils, catchedAsync(clientsControllers.createClient));
 
 // Obtener todos los clientes
 router.get('/', catchedAsync(clientsControllers.getAllClients));
@@ -19,9 +19,9 @@ router.get('/active', catchedAsync(clientsControllers.getActiveClients));
 router.get('/:id', catchedAsync(clientsControllers.getClientById));
 
 // Actualizar cliente
-router.put('/:id', catchedAsync(clientsControllers.updateClient));
+router.put('/:id', jwtUtils, catchedAsync(clientsControllers.updateClient));
 
 // Eliminar cliente
-router.delete('/:id', catchedAsync(clientsControllers.deleteClient));
+router.delete('/:id', jwtUtils, catchedAsync(clientsControllers.deleteClient));
 
 export default router;
