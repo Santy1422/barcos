@@ -157,123 +157,121 @@ export function PTYSSConfig() {
       </Card>
 
       <Card>
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Gestión de Navieras</CardTitle>
-              <Button onClick={() => setShowAddNavieraForm(!showAddNavieraForm)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Agregar Naviera
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {showAddNavieraForm && (
-              <Card className="border-dashed">
-                <CardHeader>
-                  <CardTitle className="text-lg">Nueva Naviera</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="naviera-name">Nombre de la Naviera *</Label>
-                      <Input
-                        id="naviera-name"
-                        value={newNaviera.name}
-                        onChange={(e) => setNewNaviera({...newNaviera, name: e.target.value})}
-                        placeholder="MSC Mediterranean Shipping Company"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="naviera-code">Código *</Label>
-                      <Input
-                        id="naviera-code"
-                        value={newNaviera.code}
-                        onChange={(e) => setNewNaviera({...newNaviera, code: e.target.value})}
-                        placeholder="MSC"
-                      />
-                    </div>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Gestión de Navieras</CardTitle>
+            <Button onClick={() => setShowAddNavieraForm(!showAddNavieraForm)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Agregar Naviera
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {showAddNavieraForm && (
+            <Card className="border-dashed">
+              <CardHeader>
+                <CardTitle className="text-lg">Nueva Naviera</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="naviera-name">Nombre de la Naviera *</Label>
+                    <Input
+                      id="naviera-name"
+                      value={newNaviera.name}
+                      onChange={(e) => setNewNaviera({...newNaviera, name: e.target.value})}
+                      placeholder="MSC Mediterranean Shipping Company"
+                    />
                   </div>
-                  <div className="flex gap-2">
-                    <Button onClick={handleAddNaviera} disabled={loading}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      {loading ? "Agregando..." : "Agregar Naviera"}
-                    </Button>
-                    <Button variant="outline" onClick={() => setShowAddNavieraForm(false)}>
-                      Cancelar
-                    </Button>
+                  <div className="space-y-2">
+                    <Label htmlFor="naviera-code">Código *</Label>
+                    <Input
+                      id="naviera-code"
+                      value={newNaviera.code}
+                      onChange={(e) => setNewNaviera({...newNaviera, code: e.target.value})}
+                      placeholder="MSC"
+                    />
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={handleAddNaviera} disabled={loading}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    {loading ? "Agregando..." : "Agregar Naviera"}
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowAddNavieraForm(false)}>
+                    Cancelar
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Código</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading && navieras.length === 0 ? (
                   <TableRow>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Código</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Acciones</TableHead>
+                    <TableCell colSpan={4} className="text-center py-8">
+                      <div className="flex items-center justify-center space-x-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                        <span>Cargando navieras...</span>
+                      </div>
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading && navieras.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center py-8">
-                        <div className="flex items-center justify-center space-x-2">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                          <span>Cargando navieras...</span>
+                ) : navieras.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                      No hay navieras registradas
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  navieras.map((naviera) => (
+                    <TableRow key={naviera._id}>
+                      <TableCell className="font-medium">{naviera.name}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{naviera.code}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={naviera.isActive ? "default" : "secondary"}>
+                          {naviera.isActive ? "Activa" : "Inactiva"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleToggleNavieraStatus(naviera)}
+                            disabled={loading}
+                          >
+                            {naviera.isActive ? "Desactivar" : "Activar"}
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            onClick={() => setNavieraToDelete(naviera)}
+                            disabled={loading}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
-                  ) : navieras.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                        No hay navieras registradas
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    navieras.map((naviera) => (
-                      <TableRow key={naviera._id}>
-                        <TableCell className="font-medium">{naviera.name}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{naviera.code}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={naviera.isActive ? "default" : "secondary"}>
-                            {naviera.isActive ? "Activa" : "Inactiva"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button 
-                              size="sm" 
-                              variant="outline"
-                              onClick={() => handleToggleNavieraStatus(naviera)}
-                              disabled={loading}
-                            >
-                              {naviera.isActive ? "Desactivar" : "Activar"}
-                            </Button>
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
-                              onClick={() => setNavieraToDelete(naviera)}
-                              disabled={loading}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Modal de confirmación para eliminar naviera */}
       <Dialog open={!!navieraToDelete} onOpenChange={() => setNavieraToDelete(null)}>
