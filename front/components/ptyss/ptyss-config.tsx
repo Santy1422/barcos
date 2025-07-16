@@ -55,14 +55,10 @@ export function PTYSSConfig() {
     }
   }, [error, toast, dispatch])
 
-
-
   const [newNaviera, setNewNaviera] = useState({
     name: "",
     code: ""
   })
-
-
 
   const handleAddNaviera = async () => {
     if (!newNaviera.name || !newNaviera.code) {
