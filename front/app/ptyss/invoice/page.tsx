@@ -1,5 +1,5 @@
-import { PTYSSInvoice } from "@/components/ptyss/ptyss-invoice"
+import { PTYSSPrefactura } from "@/components/ptyss/ptyss-prefactura"
 
-export default function PTYSSInvoicePage() {
-  return <PTYSSInvoice />
+export default function PTYSSPrefacturaPage() {
+  return <PTYSSPrefactura />
 } 

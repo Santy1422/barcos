@@ -9,6 +9,7 @@ import config from './config';
 import dashboard from './dashboard';
 import truckingRoutes from './truckingRoutes';
 import navieras from './navieras';
+import services from './services';
 
 router.use('/api/user', user);
 router.use('/api/clients', clients);
@@ -19,5 +20,6 @@ router.use('/api/config', config);
 router.use('/api/dashboard', dashboard);
 router.use('/api/trucking-routes', truckingRoutes);
 router.use('/api/navieras', navieras);
+router.use('/api/services', services);
 
 export default router;

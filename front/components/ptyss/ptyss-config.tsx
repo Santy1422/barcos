@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Settings2, Plus, Edit, Trash2, Ship, Anchor } from "lucide-react"
+import { Settings2, Plus, Edit, Trash2, Ship, Anchor, Wrench } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { 
@@ -24,6 +24,7 @@ import {
   type Naviera
 } from "@/lib/features/naviera/navieraSlice"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { ServicesManagement } from '@/components/services-management'
 
 export function PTYSSConfig() {
   const dispatch = useAppDispatch()
@@ -35,6 +36,7 @@ export function PTYSSConfig() {
   
   const [showAddNavieraForm, setShowAddNavieraForm] = useState(false)
   const [navieraToDelete, setNavieraToDelete] = useState<Naviera | null>(null)
+  const [activeTab, setActiveTab] = useState<'navieras' | 'services'>('navieras')
 
   // Cargar navieras al montar el componente
   useEffect(() => {
@@ -146,17 +148,26 @@ export function PTYSSConfig() {
         <CardContent>
           <div className="flex space-x-2">
             <Button
-              variant="default"
-              className="bg-blue-600 hover:bg-blue-700"
+              variant={activeTab === 'navieras' ? "default" : "outline"}
+              className={activeTab === 'navieras' ? "bg-blue-600 hover:bg-blue-700" : ""}
+              onClick={() => setActiveTab('navieras')}
             >
               <Ship className="h-4 w-4 mr-2" />
               Navieras
+            </Button>
+            <Button
+              variant={activeTab === 'services' ? "default" : "outline"}
+              className={activeTab === 'services' ? "bg-blue-600 hover:bg-blue-700" : ""}
+              onClick={() => setActiveTab('services')}
+            >
+              <Wrench className="h-4 w-4 mr-2" />
+              Servicios Adicionales
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      <Card>
+      {activeTab === 'navieras' && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -273,6 +284,13 @@ export function PTYSSConfig() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {activeTab === 'services' && (
+        <ServicesManagement 
+          module="ptyss" 
+          title="Gestión de Servicios Adicionales PTYSS" 
+        />
       )}
 
       {/* Modal de confirmación para eliminar naviera */}

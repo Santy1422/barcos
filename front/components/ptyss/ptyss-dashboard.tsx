@@ -152,7 +152,7 @@ export function PTYSSDashboard() {
         <Card className="cursor-pointer hover:shadow-md transition-shadow">
           <CardContent className="p-6 text-center">
             <DollarSign className="h-12 w-12 mx-auto text-yellow-500 mb-4" />
-            <h3 className="font-semibold mb-2">Crear Factura</h3>
+                            <h3 className="font-semibold mb-2">Crear Prefactura</h3>
             <p className="text-sm text-muted-foreground">Genera facturas de servicios completados</p>
           </CardContent>
         </Card>

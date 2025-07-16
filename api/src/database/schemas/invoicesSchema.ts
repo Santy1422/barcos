@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const invoicesSchema = new mongoose.Schema({
   module: {
     type: String,
-    enum: ["trucking", "shipchandler", "agency"],
+    enum: ["trucking", "shipchandler", "agency", "ptyss"],
     required: true
   },
   invoiceNumber: {
@@ -68,7 +68,23 @@ const invoicesSchema = new mongoose.Schema({
   details: {
     type: mongoose.Schema.Types.Mixed,
     required: false
-  }
+  },
+  // Servicios adicionales para PTYSS
+  additionalServices: [{
+    serviceId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Service',
+      required: false
+    },
+    serviceName: {
+      type: String,
+      required: false
+    },
+    amount: {
+      type: Number,
+      required: false
+    }
+  }]
 }, {
   timestamps: true
 });

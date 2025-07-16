@@ -1,6 +1,6 @@
 module.exports = (fn) => {
   return function (req, res, next) {
-    fn(req, res).catch((e) => {
+    Promise.resolve(fn(req, res, next)).catch((e) => {
       next(e);
     });
   };

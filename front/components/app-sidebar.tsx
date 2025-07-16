@@ -95,7 +95,7 @@ export function AppSidebar() {
       icon: Ship,
       children: [
         { title: "Crear Registros", href: "/ptyss/upload", icon: Plus },
-        { title: "Crear Factura", href: "/ptyss/invoice", icon: FilePlus2 },
+                    { title: "Crear Prefactura", href: "/ptyss/invoice", icon: FilePlus2 },
         { title: "Registros", href: "/ptyss/records", icon: ListOrdered },
         { title: "Configuración", href: "/ptyss/config", icon: Settings2 },
       ],
