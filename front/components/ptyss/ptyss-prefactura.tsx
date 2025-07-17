@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Ship, DollarSign, FileText, Search, Calendar, Clock, Database, Loader2, Download, Eye, ArrowRight, ArrowLeft, CheckCircle, Info, Trash2 } from "lucide-react"
+import { Ship, DollarSign, FileText, Search, Calendar, Clock, Database, Loader2, Download, Eye, ArrowRight, ArrowLeft, CheckCircle, Info, Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import jsPDF from "jspdf"
@@ -23,10 +23,12 @@ import {
   fetchPendingRecordsByModule,
   markRecordsAsInvoiced,
   addInvoice,
+  createInvoiceAsync,
+  deleteRecordAsync,
   type ExcelRecord as IndividualExcelRecord,
   type InvoiceRecord as PersistedInvoiceRecord
 } from "@/lib/features/records/recordsSlice"
-import { selectAllClients } from "@/lib/features/clients/clientsSlice"
+import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSlice"
 import { selectServicesByModule, fetchServices, selectServicesLoading } from "@/lib/features/services/servicesSlice"
 
 export function PTYSSPrefactura() {
@@ -40,6 +42,11 @@ export function PTYSSPrefactura() {
   const clients = useAppSelector(selectAllClients)
   const additionalServices = useAppSelector((state) => selectServicesByModule(state, "ptyss"))
   const servicesLoading = useAppSelector(selectServicesLoading)
+  
+  // Debug: Log registros pendientes
+  console.log('🔍 PTYSSPrefactura - pendingPTYSSRecords:', pendingPTYSSRecords)
+  console.log('🔍 PTYSSPrefactura - pendingPTYSSRecords.length:', pendingPTYSSRecords.length)
+  console.log('🔍 PTYSSPrefactura - isLoadingRecords:', isLoadingRecords)
   
   // Debug: Log services
   console.log('🔍 PTYSSPrefactura - additionalServices:', additionalServices)
@@ -59,6 +66,8 @@ export function PTYSSPrefactura() {
     description: string
     amount: number
   }>>([])
+  const [currentServiceToAdd, setCurrentServiceToAdd] = useState<any>(null)
+  const [currentServiceAmount, setCurrentServiceAmount] = useState<number>(0)
   const [generatedPdf, setGeneratedPdf] = useState<Blob | null>(null)
   const [previewPdf, setPreviewPdf] = useState<Blob | null>(null)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
@@ -68,6 +77,11 @@ export function PTYSSPrefactura() {
   // Cargar registros PTYSS al montar el componente
   useEffect(() => {
     dispatch(fetchPendingRecordsByModule("ptyss"))
+  }, [dispatch])
+
+  // Cargar clientes al montar el componente
+  useEffect(() => {
+    dispatch(fetchClients())
   }, [dispatch])
 
   // Cargar servicios adicionales al montar el componente
@@ -151,6 +165,29 @@ export function PTYSSPrefactura() {
     setIsRecordModalOpen(true)
   }
 
+  const handleDeleteRecord = async (record: IndividualExcelRecord) => {
+    const recordId = getRecordId(record)
+    
+    try {
+      await dispatch(deleteRecordAsync(recordId)).unwrap()
+      
+      toast({
+        title: "Registro eliminado",
+        description: "El registro ha sido eliminado exitosamente",
+      })
+      
+      // Refrescar los registros pendientes
+      dispatch(fetchPendingRecordsByModule("ptyss"))
+      
+    } catch (error: any) {
+      toast({
+        title: "Error al eliminar registro",
+        description: error.message || "Error al eliminar el registro",
+        variant: "destructive"
+      })
+    }
+  }
+
   const handleAddAdditionalService = (service: any) => {
     const isAlreadySelected = selectedAdditionalServices.some(s => s.serviceId === service._id)
     if (!isAlreadySelected) {
@@ -171,6 +208,43 @@ export function PTYSSPrefactura() {
     setSelectedAdditionalServices(prev => 
       prev.map(s => s.serviceId === serviceId ? { ...s, amount } : s)
     )
+  }
+
+  const handleAddServiceWithAmount = () => {
+    if (!currentServiceToAdd || currentServiceAmount <= 0) {
+      toast({
+        title: "Error",
+        description: "Selecciona un servicio y especifica un importe válido",
+        variant: "destructive"
+      })
+      return
+    }
+
+    const isAlreadySelected = selectedAdditionalServices.some(s => s.serviceId === currentServiceToAdd._id)
+    if (isAlreadySelected) {
+      toast({
+        title: "Error",
+        description: "Este servicio ya ha sido agregado",
+        variant: "destructive"
+      })
+      return
+    }
+
+    setSelectedAdditionalServices(prev => [...prev, {
+      serviceId: currentServiceToAdd._id,
+      name: currentServiceToAdd.name,
+      description: currentServiceToAdd.description,
+      amount: currentServiceAmount
+    }])
+
+    // Limpiar el formulario
+    setCurrentServiceToAdd(null)
+    setCurrentServiceAmount(0)
+
+    toast({
+      title: "Servicio agregado",
+      description: `${currentServiceToAdd.name} agregado con importe $${currentServiceAmount.toFixed(2)}`,
+    })
   }
 
   // Función para generar PDF de la prefactura PTYSS
@@ -210,23 +284,23 @@ export function PTYSSPrefactura() {
     doc.text('DAY MO YR', 195, 40, { align: 'right' })
     
     // Información de la empresa (PTY SHIP SUPPLIERS, S.A.)
-    doc.setFontSize(12)
+    doc.setFontSize(9)
     doc.setFont(undefined, 'bold')
     doc.text('PTY SHIP SUPPLIERS, S.A.', 15, 50)
-    doc.setFontSize(10)
+    doc.setFontSize(8)
     doc.setFont(undefined, 'normal')
-    doc.text('RUC: 155600922-2-2015 D.V. 69', 15, 55)
-    doc.text('PANAMA PACIFICO, INTERNATIONAL BUSINESS PARK', 15, 60)
-    doc.text('BUILDING 3855, FLOOR 2', 15, 65)
-    doc.text('PANAMA, REPUBLICA DE PANAMA', 15, 70)
-    doc.text('T. (507) 838-9806', 15, 75)
-    doc.text('C. (507) 6349-1326', 15, 80)
+    doc.text('RUC: 155600922-2-2015 D.V. 69', 15, 54)
+    doc.text('PANAMA PACIFICO, INTERNATIONAL BUSINESS PARK', 15, 58)
+    doc.text('BUILDING 3855, FLOOR 2', 15, 62)
+    doc.text('PANAMA, REPUBLICA DE PANAMA', 15, 66)
+    doc.text('T. (507) 838-9806', 15, 70)
+    doc.text('C. (507) 6349-1326', 15, 74)
     
     // Información del cliente
-    doc.setFontSize(12)
+    doc.setFontSize(9)
     doc.setFont(undefined, 'bold')
-    doc.text('CUSTOMER:', 15, 95)
-    doc.setFontSize(10)
+    doc.text('CUSTOMER:', 15, 82)
+    doc.setFontSize(8)
     doc.setFont(undefined, 'normal')
     
     // Extraer información del cliente del primer registro
@@ -244,13 +318,13 @@ export function PTYSSPrefactura() {
     ) : "N/A"
     const clientPhone = client?.phone || "N/A"
     
-    doc.text(clientName, 15, 100)
-    doc.text(`RUC: ${clientRuc}`, 15, 105)
-    doc.text(`ADDRESS: ${clientAddress}`, 15, 110)
-    doc.text(`TELEPHONE: ${clientPhone}`, 15, 115)
+    doc.text(clientName, 15, 86)
+    doc.text(`RUC: ${clientRuc}`, 15, 90)
+    doc.text(`ADDRESS: ${clientAddress}`, 15, 94)
+    doc.text(`TELEPHONE: ${clientPhone}`, 15, 98)
     
     // Tabla de items
-    const startY = 130
+    const startY = 115
     const tableWidth = 180
     const tableX = 15
     
@@ -304,6 +378,17 @@ export function PTYSSPrefactura() {
       }
     })
     
+    // Agregar servicios adicionales seleccionados
+    selectedAdditionalServices.forEach((service) => {
+      items.push([
+        itemIndex.toString(),
+        service.name,
+        `$${service.amount.toFixed(2)}`,
+        `$${service.amount.toFixed(2)}`
+      ])
+      itemIndex++
+    })
+    
     // Crear tabla con autoTable
     autoTable(doc, {
       startY: startY + 10,
@@ -330,18 +415,18 @@ export function PTYSSPrefactura() {
     })
     
     // Información de contenedores después de la tabla
-    const tableEndY = (doc as any).lastAutoTable.finalY + 8
+    const tableEndY = (doc as any).lastAutoTable.finalY + 5
     
-    doc.setFontSize(9)
+    doc.setFontSize(8)
     doc.setTextColor(100, 100, 100)
     doc.setFont(undefined, 'bold')
     doc.text('Detalles de Contenedores:', 15, tableEndY)
     
-    let containerY = tableEndY + 5
+    let containerY = tableEndY + 3
     selectedRecords.forEach((record, index) => {
       const data = record.data as Record<string, any>
       
-      doc.setFontSize(8)
+      doc.setFontSize(7)
       doc.setFont(undefined, 'normal')
       doc.text(`Contenedor ${index + 1}:`, 15, containerY)
       doc.text(`  CTN: ${data.container || 'N/A'}`, 25, containerY + 3)
@@ -349,60 +434,46 @@ export function PTYSSPrefactura() {
       doc.text(`  HACIA: ${data.to || 'N/A'}`, 25, containerY + 9)
       doc.text(`  EMBARQUE: ${data.order || 'N/A'}`, 25, containerY + 12)
       
-      containerY += 15
+      containerY += 18
     })
     
     // Totales
-    const finalY = containerY + 5
+    const finalY = containerY + 3
     const totalX = 120
     const amountX = 170
-    const totalBarWidth = 80
-    
-    doc.setFontSize(12)
+    // Mostrar solo el total, sin fondo
+    doc.setFontSize(14)
     doc.setFont(undefined, 'bold')
-    doc.text('Subtotal:', totalX, finalY)
+    doc.setTextColor(0, 0, 0)
+    doc.text('TOTAL:', totalX, finalY)
     doc.text(`$${totalAmount.toFixed(2)}`, amountX, finalY, { align: 'right' })
     
-    doc.text('Tax:', totalX, finalY + 6)
-    doc.text('$0.00', amountX, finalY + 6, { align: 'right' })
-    
-    // Total final - barra horizontal
-    const totalBarY = finalY + 10
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(totalX, totalBarY, totalBarWidth, 8, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.text('TOTAL', totalX + 5, totalBarY + 5)
-    
-    // Parte derecha de la barra con el monto - ajustada para alineación
-    doc.setTextColor(0, 0, 0)
-    doc.setFillColor(173, 216, 230) // light blue background
-    doc.rect(amountX - 20, totalBarY, 25, 8, 'F')
-    doc.text(`$${totalAmount.toFixed(2)}`, amountX - 5, totalBarY + 5, { align: 'right' })
-    
     // Términos y condiciones
-    const termsY = finalY + 20
+    let termsY = finalY + 15
+    const pageHeight = doc.internal.pageSize.getHeight()
+    if (termsY + 35 > pageHeight) {
+      doc.addPage()
+      termsY = 20
+    }
     doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, termsY, 180, 6, 'F')
+    doc.rect(15, termsY, 180, 5, 'F')
     doc.setTextColor(255, 255, 255)
-    doc.setFontSize(10)
+    doc.setFontSize(9)
     doc.setFont(undefined, 'bold')
-    doc.text('TERMS AND CONDITIONS', 20, termsY + 4)
+    doc.text('TERMS AND CONDITIONS', 20, termsY + 3)
     
     doc.setTextColor(0, 0, 0)
-    doc.setFontSize(9)
+    doc.setFontSize(8)
     doc.setFont(undefined, 'normal')
-    doc.text('Make check payments payable to: PTY SHIP SUPPLIERS, S.A.', 15, termsY + 12)
-    doc.text('Money transfer to:', 15, termsY + 16)
-    doc.text('Banco General', 15, termsY + 20)
-    doc.text('Checking Account', 15, termsY + 24)
-    doc.text('Account No. 03-72-01-124081-1', 15, termsY + 28)
+    doc.text('Make check payments payable to: PTY SHIP SUPPLIERS, S.A.', 15, termsY + 10)
+    doc.text('Money transfer to: Banco General - Checking Account', 15, termsY + 13)
+    doc.text('Account No. 03-72-01-124081-1', 15, termsY + 16)
     
     // Confirmación
-    const confirmY = termsY + 35
-    doc.setFontSize(10)
+    const confirmY = termsY + 22
+    doc.setFontSize(8)
     doc.text('I Confirmed that I have received the original prefactura and documents.', 15, confirmY)
-    doc.text('Received by: ___________', 15, confirmY + 6)
-    doc.text('Date: ___________', 15, confirmY + 12)
+    doc.text('Received by: ___________        Date: ___________', 15, confirmY + 4)
     
     return new Blob([doc.output('blob')], { type: 'application/pdf' })
   }
@@ -503,8 +574,8 @@ export function PTYSSPrefactura() {
         dueDate: new Date().toISOString().split("T")[0],
         currency: "USD",
         subtotal: grandTotal,
-        taxAmount: grandTotal * 0.07,
-        totalAmount: grandTotal + (grandTotal * 0.07),
+        taxAmount: 0,
+        totalAmount: grandTotal,
         status: "generada",
         relatedRecordIds: selectedRecords.map((r: IndividualExcelRecord) => getRecordId(r)),
         notes: prefacturaData.notes,
@@ -520,38 +591,65 @@ export function PTYSSPrefactura() {
         createdAt: new Date().toISOString(),
       }
       
-      dispatch(addInvoice(newPrefactura))
-      dispatch(markRecordsAsInvoiced({ 
-        recordIds: selectedRecords.map((r: IndividualExcelRecord) => getRecordId(r)), 
-        invoiceId: newPrefactura.id 
-      }))
-      dispatch(fetchPendingRecordsByModule("ptyss"))
+      const response = await dispatch(createInvoiceAsync(newPrefactura))
 
-      // Usar el PDF de previsualización si existe, sino generar uno nuevo
-      if (previewPdf) {
-        setGeneratedPdf(previewPdf)
+      console.log("Respuesta completa de createInvoiceAsync:", response)
+      console.log("response.payload:", response.payload)
+      console.log("response.payload?.id:", response.payload?.id)
+
+      if (createInvoiceAsync.fulfilled.match(response)) {
+        console.log("✅ createInvoiceAsync fulfilled")
+        console.log("ID de la factura creada:", response.payload.id)
+        
+        console.log("🔍 PTYSSPrefactura - Marcando registros como facturados...")
+        console.log("🔍 PTYSSPrefactura - Registros a marcar:", selectedRecords.map((r: IndividualExcelRecord) => getRecordId(r)))
+        
+        dispatch(markRecordsAsInvoiced({ 
+          recordIds: selectedRecords.map((r: IndividualExcelRecord) => getRecordId(r)), 
+          invoiceId: response.payload.id 
+        }))
+        
+        console.log("🔍 PTYSSPrefactura - Registros marcados como facturados")
+        
+        // Esperar un poco antes de refrescar los registros para asegurar que el backend procese la actualización
+        setTimeout(() => {
+          console.log("🔍 PTYSSPrefactura - Refrescando registros pendientes...")
+          dispatch(fetchPendingRecordsByModule("ptyss"))
+        }, 100)
+
+        // Usar el PDF de previsualización si existe, sino generar uno nuevo
+        if (previewPdf) {
+          setGeneratedPdf(previewPdf)
+        } else {
+          const pdfBlob = generatePTYSSPrefacturaPDF(prefacturaData, selectedRecords)
+          setGeneratedPdf(pdfBlob)
+        }
+
+        toast({
+          title: "Prefactura creada",
+          description: `Prefactura ${prefacturaData.prefacturaNumber} creada con ${selectedRecords.length} registros. PDF generado.`,
+        })
+
+        // Cerrar previsualización y resetear
+        setIsPreviewOpen(false)
+        setPreviewPdf(null)
+
+        // Resetear el formulario y volver al paso 1
+        setSelectedRecordIds([])
+        setPrefacturaData({
+          prefacturaNumber: `PTY-PRE-${Date.now().toString().slice(-5)}`,
+          notes: ""
+        })
+        setSelectedAdditionalServices([])
+        setCurrentStep(1)
       } else {
-        const pdfBlob = generatePTYSSPrefacturaPDF(prefacturaData, selectedRecords)
-        setGeneratedPdf(pdfBlob)
+        toast({
+          title: "Error al crear prefactura",
+          description: "Hubo un problema al crear la prefactura en el servidor.",
+          variant: "destructive"
+        })
+        console.error("Error al crear prefactura:", response.error)
       }
-
-      toast({
-        title: "Prefactura creada",
-        description: `Prefactura ${prefacturaData.prefacturaNumber} creada con ${selectedRecords.length} registros. PDF generado.`,
-      })
-
-      // Cerrar previsualización y resetear
-      setIsPreviewOpen(false)
-      setPreviewPdf(null)
-
-      // Resetear el formulario y volver al paso 1
-      setSelectedRecordIds([])
-      setPrefacturaData({
-        prefacturaNumber: `PTY-PRE-${Date.now().toString().slice(-5)}`,
-        notes: ""
-      })
-      setSelectedAdditionalServices([])
-      setCurrentStep(1)
     } catch (error) {
       console.error("Error al crear prefactura:", error)
       toast({
@@ -579,57 +677,36 @@ export function PTYSSPrefactura() {
   const isIndeterminate = selectedRecordIds.length > 0 && selectedRecordIds.length < filteredRecords.length
 
   return (
-    <div className="space-y-6">
-      {/* Indicador de Pasos */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-center justify-center space-x-8">
-            <div className={`flex items-center space-x-2 ${currentStep >= 1 ? 'text-blue-600' : 'text-gray-400'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
-                currentStep >= 1 ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300'
-              }`}>
-                {currentStep > 1 ? <CheckCircle className="h-5 w-5" /> : '1'}
-              </div>
-              <span className="font-medium">Selección de Registros</span>
-            </div>
-            
-            <ArrowRight className="h-6 w-6 text-gray-400" />
-            
-            <div className={`flex items-center space-x-2 ${currentStep >= 2 ? 'text-blue-600' : 'text-gray-400'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
-                currentStep >= 2 ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300'
-              }`}>
-                2
-              </div>
-              <span className="font-medium">Configuración de Prefactura</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="space-y-6 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen p-6">
 
       {/* Paso 1: Selección de Registros */}
       {currentStep === 1 && (
-        <Card>
-          <CardHeader>
+        <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-xl">
+          <CardHeader className="bg-gradient-to-r from-slate-700 to-slate-800 text-white rounded-t-lg">
             <CardTitle className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Ship className="h-5 w-5" />
-                Paso 1: Selección de Registros
-                {pendingPTYSSRecords.length > 0 && (
-                  <Badge variant="outline" className="ml-2">
-                    {pendingPTYSSRecords.length} disponibles
-                  </Badge>
-                )}
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <Ship className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="text-xl font-bold">Paso 1: Selección de Registros</div>
+                  {pendingPTYSSRecords.length > 0 && (
+                    <Badge variant="secondary" className="mt-1 bg-white/20 text-white border-white/30">
+                      {pendingPTYSSRecords.length} disponibles
+                    </Badge>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-4">
-                <div className="text-sm text-muted-foreground">
+                <div className="text-sm text-slate-200">
                   {selectedRecordIds.length} de {filteredRecords.length} seleccionados
                 </div>
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   onClick={() => setSelectedRecordIds([])}
                   disabled={selectedRecordIds.length === 0}
+                  className="bg-white/20 hover:bg-white/30 text-white border-white/30"
                 >
                   Limpiar Selección
                 </Button>
@@ -638,7 +715,7 @@ export function PTYSSPrefactura() {
           </CardHeader>
           <CardContent>
             {/* Búsqueda */}
-            <div className="mb-4">
+            <div className="mb-6 mt-4">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -652,43 +729,49 @@ export function PTYSSPrefactura() {
             </div>
 
             {/* Información del total de registros */}
-            <div className="mb-4 bg-blue-50 border border-blue-200 p-3 rounded-md">
-              <div className="flex items-center gap-2">
-                <Database className="h-4 w-4 text-blue-600" />
-                <span className="text-sm font-medium text-blue-800">
-                  Total de registros en la base de datos: {pendingPTYSSRecords.length}
-                </span>
-              </div>
-              {searchTerm && (
-                <div className="mt-2 text-sm text-blue-600">
-                  Mostrando {filteredRecords.length} registros filtrados
+            <div className="mb-4 bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-4 rounded-lg shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-600 rounded-lg">
+                  <Database className="h-5 w-5 text-white" />
                 </div>
-              )}
+                <div>
+                  <span className="text-sm font-semibold text-slate-900">
+                    Total de registros en la base de datos: {pendingPTYSSRecords.length}
+                  </span>
+                  {searchTerm && (
+                    <div className="mt-1 text-sm text-slate-700">
+                      Mostrando {filteredRecords.length} registros filtrados
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {isLoadingRecords ? (
-              <div className="flex justify-center items-center p-8">
-                <Loader2 className="h-8 w-8 animate-spin" />
-                <span className="ml-2">Cargando registros...</span>
+              <div className="flex justify-center items-center p-12 bg-gradient-to-r from-slate-50 to-blue-50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="h-10 w-10 animate-spin text-slate-600" />
+                  <span className="text-lg font-medium text-slate-800">Cargando registros...</span>
+                </div>
               </div>
             ) : filteredRecords.length > 0 ? (
-              <div className="border rounded-md">
+              <div className="border border-slate-200 rounded-lg shadow-sm overflow-hidden">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12 py-2 px-3">
+                    <TableRow className="bg-gradient-to-r from-slate-50 to-blue-50">
+                      <TableHead className="w-12 py-3 px-3 font-semibold text-gray-700">
                         <Checkbox
                           checked={isAllSelected}
                           onCheckedChange={handleSelectAll}
                         />
                       </TableHead>
-                      <TableHead className="py-2 px-3 text-sm">Contenedor</TableHead>
-                      <TableHead className="py-2 px-3 text-sm">Fecha Movimiento</TableHead>
-                      <TableHead className="py-2 px-3 text-sm">Cliente</TableHead>
-                      <TableHead className="py-2 px-3 text-sm">Orden</TableHead>
-                      <TableHead className="py-2 px-3 text-sm">Ruta</TableHead>
-                      <TableHead className="py-2 px-3 text-sm">Operación</TableHead>
-                      <TableHead className="w-12 py-2 px-3 text-sm">Acciones</TableHead>
+                      <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Contenedor</TableHead>
+                      <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Fecha Movimiento</TableHead>
+                      <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Cliente</TableHead>
+                      <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Orden</TableHead>
+                      <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Ruta</TableHead>
+                      <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Operación</TableHead>
+                      <TableHead className="w-12 py-3 px-3 text-sm font-semibold text-gray-700">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -745,14 +828,24 @@ export function PTYSSPrefactura() {
                             </Badge>
                           </TableCell>
                           <TableCell className="py-2 px-3">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleViewRecord(record)}
-                              className="h-8 w-8 p-0"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleViewRecord(record)}
+                                className="h-8 w-8 p-0"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteRecord(record)}
+                                className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       )
@@ -770,14 +863,14 @@ export function PTYSSPrefactura() {
             )}
 
             {/* Botón para continuar al siguiente paso */}
-            <div className="flex justify-end mt-6">
+            <div className="flex justify-end mt-8">
               <Button 
                 onClick={handleNextStep}
                 disabled={selectedRecords.length === 0}
-                className="bg-blue-600 hover:bg-blue-700"
+                className="bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white font-semibold px-8 py-3 rounded-lg shadow-lg transform transition-all duration-200 hover:scale-105"
               >
                 Continuar al Paso 2
-                <ArrowRight className="ml-2 h-4 w-4" />
+                <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </div>
           </CardContent>
@@ -786,204 +879,221 @@ export function PTYSSPrefactura() {
 
       {/* Paso 2: Configuración de Prefactura */}
       {currentStep === 2 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Paso 2: Configuración de Prefactura
+        <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-xl">
+          <CardHeader className="bg-gradient-to-r from-slate-700 to-slate-800 text-white rounded-t-lg">
+            <CardTitle className="flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-lg">
+                <FileText className="h-6 w-6" />
+              </div>
+              <div className="text-xl font-bold">Paso 2: Configuración de Prefactura</div>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Resumen de registros seleccionados */}
-            <div className="bg-blue-50 border border-blue-200 p-4 rounded-md">
-              <h3 className="font-medium text-blue-800 mb-2">Resumen de Registros Seleccionados</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                <div>
-                  <span className="text-blue-600 font-medium">Cantidad:</span> {selectedRecords.length} registro{selectedRecords.length !== 1 ? 's' : ''}
+            <div className="bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-4 rounded-lg shadow-sm mt-6">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="p-1.5 bg-slate-600 rounded-md">
+                  <CheckCircle className="h-4 w-4 text-white" />
                 </div>
-                <div>
-                  <span className="text-blue-600 font-medium">Total:</span> ${totalAmount.toFixed(2)}
+                <h3 className="font-semibold text-slate-900 text-base">Resumen de Registros Seleccionados</h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                <div className="bg-white/60 p-2 rounded-md">
+                  <span className="text-slate-600 font-medium text-xs">Cantidad:</span> 
+                  <div className="text-sm font-semibold text-slate-900">{selectedRecords.length} registro{selectedRecords.length !== 1 ? 's' : ''}</div>
                 </div>
-                <div>
-                  <span className="text-blue-600 font-medium">Cliente:</span> {
+                <div className="bg-white/60 p-2 rounded-md">
+                  <span className="text-slate-600 font-medium text-xs">Total:</span> 
+                  <div className="text-sm font-semibold text-slate-900">${totalAmount.toFixed(2)}</div>
+                </div>
+                <div className="bg-white/60 p-2 rounded-md">
+                  <span className="text-slate-600 font-medium text-xs">Cliente:</span> 
+                  <div className="text-sm font-semibold text-slate-900">{
                     (() => {
                       const firstRecord = selectedRecords[0]
                       const firstRecordData = firstRecord?.data as Record<string, any>
                       const client = clients.find((c: any) => (c._id || c.id) === firstRecordData?.clientId)
                       return client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
                     })()
-                  }
+                  }</div>
                 </div>
               </div>
             </div>
 
             {/* Configuración de la prefactura */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
+              <div className="space-y-6 bg-gradient-to-br from-slate-50 to-blue-50 p-6 rounded-lg border border-slate-300">
                 <div className="space-y-2">
-                  <Label htmlFor="prefactura-number">Número de Prefactura *</Label>
+                  <Label htmlFor="prefactura-number" className="text-sm font-semibold text-slate-700">Número de Prefactura *</Label>
                   <Input
                     id="prefactura-number"
                     value={prefacturaData.prefacturaNumber}
                     onChange={(e) => setPrefacturaData({...prefacturaData, prefacturaNumber: e.target.value})}
                     placeholder="PTY-PRE-2024-001"
+                    className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
                   />
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="notes">Notas (Opcional)</Label>
+                  <Label htmlFor="notes" className="text-sm font-semibold text-slate-700">Notas (Opcional)</Label>
                   <Textarea
                     id="notes"
                     value={prefacturaData.notes}
                     onChange={(e) => setPrefacturaData({...prefacturaData, notes: e.target.value})}
                     placeholder="Notas adicionales para la prefactura..."
                     rows={4}
+                    className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
                   />
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="bg-gray-50 p-4 rounded-md">
-                  <h4 className="font-medium text-gray-800 mb-2">Detalles de la Prefactura</h4>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>Subtotal Registros:</span>
-                      <span className="font-medium">${totalAmount.toFixed(2)}</span>
+              <div className="space-y-6 bg-gradient-to-br from-slate-50 to-blue-50 p-6 rounded-lg border border-slate-300">
+                <h3 className="text-lg font-bold text-slate-900 border-b border-slate-300 pb-2">Servicios Adicionales</h3>
+                
+                {/* Selección de servicios */}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-slate-700">Servicio</Label>
+                      {servicesLoading ? (
+                        <div className="flex items-center gap-2 text-sm text-slate-600 bg-white/60 p-3 rounded-lg">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Cargando servicios...
+                        </div>
+                      ) : (
+                        <Select onValueChange={(value) => {
+                          const service = additionalServices.find(s => s._id === value)
+                          if (service) {
+                            setCurrentServiceToAdd(service)
+                          }
+                        }}>
+                          <SelectTrigger className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500">
+                            <SelectValue placeholder="Seleccionar servicio..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {additionalServices.length === 0 ? (
+                              <div className="p-2 text-sm text-muted-foreground">
+                                No hay servicios disponibles
+                              </div>
+                            ) : (
+                              additionalServices
+                                .filter(service => !selectedAdditionalServices.some(s => s.serviceId === service._id))
+                                .map((service) => (
+                                  <SelectItem key={service._id} value={service._id}>
+                                    {service.name} - {service.description}
+                                  </SelectItem>
+                                ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
-                    <div className="flex justify-between">
-                      <span>Servicios Adicionales:</span>
-                      <span className="font-medium">${additionalServicesTotal.toFixed(2)}</span>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-slate-700">Importe</Label>
+                      <Input
+                        type="number"
+                        value={currentServiceAmount}
+                        onChange={(e) => setCurrentServiceAmount(parseFloat(e.target.value) || 0)}
+                        placeholder="0.00"
+                        min="0"
+                        step="0.01"
+                        className="w-full bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
+                      />
                     </div>
-                    <div className="flex justify-between">
-                      <span>Subtotal General:</span>
-                      <span className="font-medium">${grandTotal.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Impuestos (7%):</span>
-                      <span className="font-medium">${(grandTotal * 0.07).toFixed(2)}</span>
-                    </div>
-                    <div className="border-t pt-2 flex justify-between font-bold">
-                      <span>Total:</span>
-                      <span className="text-blue-600">${(grandTotal + (grandTotal * 0.07)).toFixed(2)}</span>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-slate-700">&nbsp;</Label>
+                      <Button 
+                        onClick={handleAddServiceWithAmount}
+                        disabled={!currentServiceToAdd || currentServiceAmount <= 0}
+                        className="w-full bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white font-semibold shadow-md"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Agregar Servicio
+                      </Button>
                     </div>
                   </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Servicios Adicionales */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-medium border-b pb-2">Servicios Adicionales</h3>
-              
-              {/* Selección de servicios */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-600">Agregar Servicio</Label>
-                <div className="flex gap-2">
-                  {servicesLoading ? (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Cargando servicios...
+                  
+                  {!servicesLoading && additionalServices.length === 0 && (
+                    <div className="text-sm text-muted-foreground">
+                      No hay servicios adicionales configurados para PTYSS. Ve a Configuración → Servicios Adicionales para agregar servicios.
                     </div>
-                  ) : (
-                    <Select onValueChange={(value) => {
-                      const service = additionalServices.find(s => s._id === value)
-                      if (service) {
-                        handleAddAdditionalService(service)
-                      }
-                    }}>
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Seleccionar servicio adicional..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {additionalServices.length === 0 ? (
-                          <div className="p-2 text-sm text-muted-foreground">
-                            No hay servicios disponibles
-                          </div>
-                        ) : (
-                          additionalServices
-                            .filter(service => !selectedAdditionalServices.some(s => s.serviceId === service._id))
-                            .map((service) => (
-                              <SelectItem key={service._id} value={service._id}>
-                                {service.name} - {service.description}
-                              </SelectItem>
-                            ))
-                        )}
-                      </SelectContent>
-                    </Select>
                   )}
                 </div>
-                {!servicesLoading && additionalServices.length === 0 && (
-                  <div className="text-sm text-muted-foreground">
-                    No hay servicios adicionales configurados para PTYSS. Ve a Configuración → Servicios Adicionales para agregar servicios.
+
+                {/* Lista de servicios seleccionados */}
+                {selectedAdditionalServices.length > 0 && (
+                  <div className="space-y-3">
+                    <Label className="text-sm font-semibold text-slate-700">Servicios Seleccionados</Label>
+                    {selectedAdditionalServices.map((service) => (
+                      <div key={service.serviceId} className="flex items-center gap-3 p-4 bg-white/70 border border-slate-200 rounded-lg shadow-sm">
+                        <div className="flex-1">
+                          <div className="font-semibold text-sm text-slate-900">{service.name}</div>
+                          <div className="text-xs text-slate-600">{service.description}</div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg font-bold text-slate-900 bg-slate-100 px-3 py-1 rounded-full">${service.amount.toFixed(2)}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveAdditionalService(service.serviceId)}
+                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
+            </div>
 
-              {/* Lista de servicios seleccionados */}
-              {selectedAdditionalServices.length > 0 && (
-                <div className="space-y-3">
-                  <Label className="text-sm font-medium text-gray-600">Servicios Seleccionados</Label>
-                  {selectedAdditionalServices.map((service) => (
-                    <div key={service.serviceId} className="flex items-center gap-3 p-3 border rounded-md">
-                      <div className="flex-1">
-                        <div className="font-medium text-sm">{service.name}</div>
-                        <div className="text-xs text-gray-600">{service.description}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Label className="text-xs">Monto:</Label>
-                        <Input
-                          type="number"
-                          value={service.amount}
-                          onChange={(e) => handleUpdateServiceAmount(service.serviceId, parseFloat(e.target.value) || 0)}
-                          className="w-24 h-8 text-sm"
-                          min="0"
-                          step="0.01"
-                        />
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveAdditionalService(service.serviceId)}
-                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
+            {/* Detalles de la Prefactura */}
+            <div className="bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-6 rounded-lg shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-slate-600 rounded-lg">
+                  <DollarSign className="h-5 w-5 text-white" />
                 </div>
-              )}
+                <h4 className="font-bold text-slate-900 text-lg">Detalles de la Prefactura</h4>
+              </div>
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
+                  <span className="font-semibold text-slate-800">Subtotal Registros:</span>
+                  <span className="font-bold text-lg text-slate-900">${totalAmount.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
+                  <span className="font-semibold text-slate-800">Servicios Adicionales:</span>
+                  <span className="font-bold text-lg text-slate-900">${additionalServicesTotal.toFixed(2)}</span>
+                </div>
+                <div className="border-t-2 border-slate-300 pt-3 flex justify-between items-center bg-gradient-to-r from-slate-200 to-blue-200 p-4 rounded-lg">
+                  <span className="font-bold text-lg text-slate-900">Total:</span>
+                  <span className="font-bold text-2xl text-slate-900">${grandTotal.toFixed(2)}</span>
+                </div>
+              </div>
             </div>
             <div className="flex justify-end"></div>
 
             {/* Botones de navegación */}
-            <div className="flex justify-between pt-4">
+            <div className="flex justify-between pt-6">
               <Button 
                 variant="outline"
                 onClick={handlePreviousStep}
+                className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold px-6 py-3"
               >
-                <ArrowLeft className="mr-2 h-4 w-4" />
+                <ArrowLeft className="mr-2 h-5 w-5" />
                 Volver al Paso 1
               </Button>
               
-              <div className="flex gap-2">
-                <Button 
-                  onClick={handlePreviewPDF} 
-                  variant="outline"
-                  className="border-blue-500 text-blue-600 hover:bg-blue-50"
-                  disabled={!prefacturaData.prefacturaNumber}
-                >
-                  <Eye className="mr-2 h-4 w-4" />
-                  Previsualizar
-                </Button>
-                <Button
-                  onClick={handleCreatePrefactura}
-                  className="bg-green-600 hover:bg-green-700"
-                  disabled={!prefacturaData.prefacturaNumber}
-                >
-                  <FileText className="mr-2 h-4 w-4" />
-                  Crear Prefactura
-                </Button>
-              </div>
+              <Button 
+                onClick={handlePreviewPDF} 
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold px-8 py-3 shadow-lg transform transition-all duration-200 hover:scale-105"
+                disabled={!prefacturaData.prefacturaNumber}
+              >
+                <Eye className="mr-2 h-5 w-5" />
+                Previsualizar
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -1118,7 +1228,7 @@ export function PTYSSPrefactura() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <Label className="text-sm font-medium text-gray-600">ID del Registro</Label>
-                    <p className="text-sm font-mono text-xs">{getRecordId(selectedRecordForView)}</p>
+                    <p className="text-sm font-mono ">{getRecordId(selectedRecordForView)}</p>
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Fecha de Creación</Label>

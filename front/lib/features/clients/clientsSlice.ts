@@ -117,13 +117,25 @@ const initialState: ClientsState = {
 export const fetchClients = createAsyncThunk(
   'clients/fetchClients',
   async () => {
+    console.log('🔍 fetchClients - Iniciando fetch de clientes...')
     const response = await fetch('/api/clients')
+    console.log('🔍 fetchClients - Response status:', response.status)
+    
     if (!response.ok) {
+      console.error('🔍 fetchClients - Error response:', response.status, response.statusText)
       throw new Error('Error al obtener clientes')
     }
+    
     const data = await response.json()
-    console.log('Fetch clients response:', data)
-    return data.payload?.clients || data.payload || data
+    console.log('🔍 fetchClients - Response data:', data)
+    console.log('🔍 fetchClients - data.payload:', data.payload)
+    console.log('🔍 fetchClients - data.payload?.clients:', data.payload?.clients)
+    
+    const clients = data.payload?.clients || data.payload || data
+    console.log('🔍 fetchClients - Clientes finales:', clients)
+    console.log('🔍 fetchClients - Cantidad de clientes:', clients.length)
+    
+    return clients
   }
 )
 

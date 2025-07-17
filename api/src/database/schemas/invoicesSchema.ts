@@ -89,6 +89,9 @@ const invoicesSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Aplicar plugins
+invoicesSchema.plugin(require('./plugins/toJSON.plugin'));
+
 // Índices
 invoicesSchema.index({ module: 1 });
 invoicesSchema.index({ status: 1 });

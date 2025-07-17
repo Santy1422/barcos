@@ -1,4 +1,4 @@
-import { invoices } from "../../database";
+import { invoices, records } from "../../database";
 import { response } from "../../utils";
 
 export default async (req, res) => {
@@ -16,8 +16,27 @@ export default async (req, res) => {
     }
     
     const invoice = await invoices.create(invoiceData);
+    
+    // Marcar los registros asociados como facturados
+    if (invoiceData.relatedRecordIds && invoiceData.relatedRecordIds.length > 0) {
+      console.log("🔍 createInvoice - Marcando registros como facturados:", invoiceData.relatedRecordIds);
+      
+      const updateResult = await records.updateMany(
+        { _id: { $in: invoiceData.relatedRecordIds } },
+        {
+          $set: { 
+            status: "facturado",
+            invoiceId: invoice._id
+          }
+        }
+      );
+      
+      console.log("🔍 createInvoice - Registros actualizados:", updateResult);
+    }
+    
     return response(res, 201, { invoice });
   } catch (error) {
+    console.error("❌ Error al crear factura:", error);
     return response(res, 500, { error: "Error al crear factura" });
   }
 };

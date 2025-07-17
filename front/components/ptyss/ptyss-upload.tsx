@@ -30,6 +30,7 @@ import { createPTYSSRecords } from "@/lib/features/records/recordsSlice"
 import { 
   selectAllClients,
   createClientAsync,
+  fetchClients,
   type Client,
   type NaturalClient,
   type JuridicalClient,
@@ -100,10 +101,21 @@ export function PTYSSUpload() {
   // Obtener clientes y navieras del store de Redux
   const clients = useAppSelector(selectAllClients)
   const navieras = useAppSelector(selectActiveNavieras)
+  const clientsLoading = useAppSelector((state) => state.clients.loading)
+
+  // Debug: Log clientes cargados
+  console.log('🔍 PTYSSUpload - clients:', clients)
+  console.log('🔍 PTYSSUpload - clients.length:', clients.length)
+  console.log('🔍 PTYSSUpload - clientsLoading:', clientsLoading)
 
   // Cargar navieras al montar el componente
   useEffect(() => {
     dispatch(fetchNavieras('active'))
+  }, [dispatch])
+
+  // Cargar clientes al montar el componente
+  useEffect(() => {
+    dispatch(fetchClients())
   }, [dispatch])
 
   // Estado para el formulario de nuevo cliente
@@ -449,11 +461,36 @@ export function PTYSSUpload() {
                         <SelectValue placeholder="Seleccionar cliente" />
                       </SelectTrigger>
                       <SelectContent>
-                        {clients.filter(client => client && client.isActive).map((client) => (
-                          <SelectItem key={client._id || client.id} value={client._id || client.id}>
-                            {client.type === "natural" ? client.fullName : client.companyName} - {client.sapCode || "Sin SAP"}
-                          </SelectItem>
-                        ))}
+                        {(() => {
+                          if (clientsLoading) {
+                            return (
+                              <div className="p-2 text-sm text-muted-foreground">
+                                <div className="flex items-center gap-2">
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                                  Cargando clientes...
+                                </div>
+                              </div>
+                            )
+                          }
+                          
+                          const activeClients = clients.filter(client => client && client.isActive)
+                          console.log('🔍 PTYSSUpload - activeClients:', activeClients)
+                          console.log('🔍 PTYSSUpload - activeClients.length:', activeClients.length)
+                          
+                          if (activeClients.length === 0) {
+                            return (
+                              <div className="p-2 text-sm text-muted-foreground">
+                                No hay clientes activos disponibles
+                              </div>
+                            )
+                          }
+                          
+                          return activeClients.map((client) => (
+                            <SelectItem key={client._id || client.id} value={client._id || client.id}>
+                              {client.type === "natural" ? client.fullName : client.companyName} - {client.sapCode || "Sin SAP"}
+                            </SelectItem>
+                          ))
+                        })()}
                       </SelectContent>
                     </Select>
                     <Dialog open={showAddClientDialog} onOpenChange={setShowAddClientDialog}>

@@ -250,6 +250,86 @@ export const createPTYSSRecords = createAsyncThunk(
   }
 )
 
+export const createInvoiceAsync = createAsyncThunk(
+  'records/createInvoice',
+  async (invoiceData: InvoiceRecord, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+      
+      console.log("Enviando factura al backend:", invoiceData)
+      
+      const response = await fetch('/api/invoices', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(invoiceData)
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error("Error al crear factura:", errorData)
+        throw new Error(errorData.error || `Error al crear factura (${response.status})`)
+      }
+      
+      const data = await response.json()
+      console.log("Factura creada exitosamente:", data)
+      
+      // El backend devuelve { error: false, payload: { invoice: ... } }
+      if (data.payload && data.payload.invoice) {
+        return data.payload.invoice
+      } else {
+        throw new Error('Respuesta del servidor inválida')
+      }
+    } catch (error) {
+      console.error("Error en createInvoiceAsync:", error)
+      return rejectWithValue(error instanceof Error ? error.message : 'Error desconocido')
+    }
+  }
+)
+
+export const fetchInvoicesAsync = createAsyncThunk(
+  'records/fetchInvoices',
+  async (module?: string, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+      
+      const url = module ? `/api/invoices/module/${module}` : '/api/invoices'
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `Error al obtener facturas (${response.status})`)
+      }
+      
+      const data = await response.json()
+      
+      // El backend devuelve { error: false, payload:[object Object] invoices: [...] } }
+      if (data.payload && data.payload.invoices) {
+        return data.payload.invoices
+      } else {
+        return []
+      }
+    } catch (error) {
+      console.error("Error en fetchInvoicesAsync:", error)
+      return rejectWithValue(error instanceof Error ? error.message : 'Error desconocido')
+    }
+  }
+)
+
 export const updateRecordStatus = createAsyncThunk(
   'records/updateStatus',
   async ({ recordId, status, invoiceId }: {
@@ -342,6 +422,68 @@ export const updateRecordAsync = createAsyncThunk(
   }
 )
 
+export const deleteInvoiceAsync = createAsyncThunk(
+  'records/deleteInvoice',
+  async (invoiceId: string, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+      
+      const response = await fetch(`/api/invoices/${invoiceId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || `Error al eliminar factura (${response.status})`)
+      }
+      
+      const data = await response.json()
+      return { invoiceId, data: data.data }
+    } catch (error) {
+      console.error("Error en deleteInvoiceAsync:", error)
+      return rejectWithValue(error instanceof Error ? error.message : 'Error desconocido')
+    }
+  }
+)
+
+export const deleteRecordAsync = createAsyncThunk(
+  'records/deleteRecord',
+  async (recordId: string, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+      
+      const response = await fetch(`/api/records/${recordId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || `Error al eliminar registro (${response.status})`)
+      }
+      
+      const data = await response.json()
+      return { recordId, data: data.data }
+    } catch (error) {
+      console.error("Error en deleteRecordAsync:", error)
+      return rejectWithValue(error instanceof Error ? error.message : 'Error desconocido')
+    }
+  }
+)
+
 interface RecordsState {
   individualRecords: ExcelRecord[]
   invoices: InvoiceRecord[]
@@ -405,6 +547,13 @@ const recordsSlice = createSlice({
           record.invoiceId = action.payload.invoiceId
         }
       })
+      
+      // También actualizar pendingRecordsByModule para todos los módulos
+      Object.keys(state.pendingRecordsByModule).forEach(module => {
+        state.pendingRecordsByModule[module] = state.pendingRecordsByModule[module].filter(
+          record => !action.payload.recordIds.includes(record.id)
+        )
+      })
     },
     // This reducer adds a completed invoice document to the state.
     addInvoice: (state, action: PayloadAction<InvoiceRecord>) => {
@@ -415,6 +564,29 @@ const recordsSlice = createSlice({
       if (invoice) {
         invoice.status = action.payload.status
       }
+    },
+    // This reducer releases records when an invoice is deleted
+    releaseRecordsFromInvoice: (state, action: PayloadAction<{ invoiceId: string; recordIds: string[] }>) => {
+      action.payload.recordIds.forEach((recordId) => {
+        const record = state.individualRecords.find((r) => r.id === recordId)
+        if (record && record.invoiceId === action.payload.invoiceId) {
+          record.status = "pendiente"
+          record.invoiceId = undefined
+        }
+      })
+      
+      // También actualizar pendingRecordsByModule para todos los módulos
+      Object.keys(state.pendingRecordsByModule).forEach(module => {
+        const releasedRecords = state.individualRecords.filter(
+          record => action.payload.recordIds.includes(record.id) && 
+                   record.module === module && 
+                   record.status === "pendiente"
+        )
+        state.pendingRecordsByModule[module] = [
+          ...state.pendingRecordsByModule[module],
+          ...releasedRecords
+        ]
+      })
     },
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload
@@ -507,6 +679,34 @@ const recordsSlice = createSlice({
         state.error = action.payload as string
       })
       
+      // Create invoice
+      .addCase(createInvoiceAsync.pending, (state) => {
+        state.creatingRecords = true
+        state.error = null
+      })
+      .addCase(createInvoiceAsync.fulfilled, (state, action) => {
+        state.creatingRecords = false
+        state.invoices.push(action.payload)
+      })
+      .addCase(createInvoiceAsync.rejected, (state, action) => {
+        state.creatingRecords = false
+        state.error = action.payload as string
+      })
+      
+      // Fetch invoices
+      .addCase(fetchInvoicesAsync.pending, (state) => {
+        state.fetchingRecords = true
+        state.error = null
+      })
+      .addCase(fetchInvoicesAsync.fulfilled, (state, action) => {
+        state.fetchingRecords = false
+        state.invoices = action.payload
+      })
+      .addCase(fetchInvoicesAsync.rejected, (state, action) => {
+        state.fetchingRecords = false
+        state.error = action.payload as string
+      })
+      
       // Update record status
       .addCase(updateRecordStatus.fulfilled, (state, action) => {
         const record = state.individualRecords.find(r => r.id === action.payload.id)
@@ -540,6 +740,51 @@ const recordsSlice = createSlice({
         state.fetchingRecords = false
         state.error = action.payload as string
       })
+
+      // Delete invoice
+      .addCase(deleteInvoiceAsync.pending, (state) => {
+        state.creatingRecords = true // Assuming creatingRecords is used for deletion
+        state.error = null
+      })
+      .addCase(deleteInvoiceAsync.fulfilled, (state, action) => {
+        state.creatingRecords = false
+        // Remove the deleted invoice from the state
+        state.invoices = state.invoices.filter(inv => inv.id !== action.payload.invoiceId)
+        // Release records associated with the deleted invoice
+        state.individualRecords = state.individualRecords.map(record => {
+          if (record.invoiceId === action.payload.invoiceId) {
+            record.status = "pendiente"
+            record.invoiceId = undefined
+          }
+          return record
+        })
+      })
+      .addCase(deleteInvoiceAsync.rejected, (state, action) => {
+        state.creatingRecords = false
+        state.error = action.payload as string
+      })
+
+      // Delete record
+      .addCase(deleteRecordAsync.pending, (state) => {
+        state.creatingRecords = true // Assuming creatingRecords is used for deletion
+        state.error = null
+      })
+      .addCase(deleteRecordAsync.fulfilled, (state, action) => {
+        state.creatingRecords = false
+        // Remove the deleted record from the state
+        state.individualRecords = state.individualRecords.filter(record => record.id !== action.payload.recordId)
+        
+        // También eliminar de pendingRecordsByModule para todos los módulos
+        Object.keys(state.pendingRecordsByModule).forEach(module =>
+          state.pendingRecordsByModule[module] = state.pendingRecordsByModule[module].filter(
+            record => record.id !== action.payload.recordId
+          )
+        )
+      })
+      .addCase(deleteRecordAsync.rejected, (state, action) => {
+        state.creatingRecords = false
+        state.error = action.payload as string
+      })
   },
 })
 
@@ -549,11 +794,14 @@ export const {
   markRecordsAsInvoiced, 
   addInvoice, 
   updateInvoiceStatus, 
+  releaseRecordsFromInvoice,
   setLoading, 
   setError,
   clearRecords,
   setRecords
 } = recordsSlice.actions
+
+
 
 // Selectores actualizados
 export const selectAllIndividualRecords = (state: RootState) => state.records.individualRecords
@@ -566,10 +814,11 @@ export const selectSapCodePagination = (state: RootState) => state.records.sapCo
 export const selectSapCodeSummary = (state: RootState) => state.records.sapCodeSummary
 
 export const selectPendingRecordsByModule = createSelector(
-  [(state: RootState) => state.records.individualRecords, (state: RootState, moduleName: ExcelRecord["module"]) => moduleName],
-  (individualRecords, moduleName) => 
-                                     //@ts-ignore
-
+  [
+    (state: RootState) => state.records.individualRecords,
+    (state: RootState, moduleName: ExcelRecord["module"]) => moduleName
+  ],
+  (individualRecords, moduleName) =>
     individualRecords.filter((record) => record.module === moduleName && record.status === "pendiente")
 )
 

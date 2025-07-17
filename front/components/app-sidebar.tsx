@@ -96,7 +96,7 @@ export function AppSidebar() {
       children: [
         { title: "Crear Registros", href: "/ptyss/upload", icon: Plus },
                     { title: "Crear Prefactura", href: "/ptyss/invoice", icon: FilePlus2 },
-        { title: "Registros", href: "/ptyss/records", icon: ListOrdered },
+        { title: "Facturas", href: "/ptyss/records", icon: ListOrdered },
         { title: "Configuración", href: "/ptyss/config", icon: Settings2 },
       ],
     },
