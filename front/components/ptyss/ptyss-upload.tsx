@@ -333,6 +333,29 @@ export function PTYSSUpload() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Crear Registro Trasiego
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-medium">Subir Excel</h3>
+              <p className="text-sm text-muted-foreground">
+                Sube un archivo Excel para crear registros de trasiego
+              </p>
+            </div>
+            <Button>
+              <FileText className="mr-2 h-4 w-4" />
+              Subir Excel
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Lista de registros */}
       {records.length > 0 && (
         <Card>
