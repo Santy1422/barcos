@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Separator } from "@/components/ui/separator"
-import { Truck, Save, Plus, Edit, Trash2, MapPin, Clock, Settings } from "lucide-react"
+import { Truck, Save, Plus, Edit, Trash2, MapPin, Clock, Settings, Settings2 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -51,6 +51,7 @@ import {
   type TruckingRouteInput,
 } from "@/lib/features/truckingRoutes/truckingRoutesSlice"
 import { selectCurrentUser } from "@/lib/features/auth/authSlice"
+import { ServicesManagement } from '@/components/services-management'
 
 export function TruckingConfig() {
   const dispatch = useAppDispatch()
@@ -308,7 +309,7 @@ export function TruckingConfig() {
       </div>
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 md:w-auto md:inline-grid">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-6 md:w-auto md:inline-grid">
           <TabsTrigger value="general">
             <Settings className="h-4 w-4 mr-2" />
             General
@@ -328,6 +329,10 @@ export function TruckingConfig() {
           <TabsTrigger value="custom-fields">
             <Plus className="h-4 w-4 mr-2" />
             Campos Personalizados
+          </TabsTrigger>
+          <TabsTrigger value="services">
+            <Settings2 className="h-4 w-4 mr-2" />
+            Servicios Adicionales
           </TabsTrigger>
         </TabsList>
 
@@ -725,6 +730,13 @@ export function TruckingConfig() {
               </Table>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="services" className="space-y-4">
+          <ServicesManagement 
+            module="trucking" 
+            title="Gestión de Servicios Adicionales Trucking" 
+          />
         </TabsContent>
       </Tabs>
 

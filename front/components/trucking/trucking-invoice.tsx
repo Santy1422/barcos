@@ -41,7 +41,8 @@ import {
   Hash,
   Database,
   Clock,
-  Plus
+  Plus,
+  Trash2
 } from "lucide-react"
 import {
   addInvoice,
@@ -62,6 +63,7 @@ import {
   selectServiceSapCodesByModule,
   fetchServiceSapCodes,
 } from "@/lib/features/config/configSlice"
+import { selectServicesByModule, fetchServices, selectServicesLoading } from "@/lib/features/services/servicesSlice"
 import { generateInvoiceXML, validateXMLForSAP } from "@/lib/xml-generator"
 import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features/invoice/invoiceSlice"
 import { TRUCKING_OPTIONS } from "@/lib/constants/trucking-options"
@@ -118,6 +120,13 @@ interface TruckingFormData {
   taxAmntDocCur: number
   taxAmntCpyCur: number
   profitCenter: string
+  // Servicios adicionales
+  additionalServices: Array<{
+    serviceId: string
+    name: string
+    description: string
+    amount: number
+  }>
   serviceItems: Array<{
     id: string
     containerNumber: string
@@ -194,6 +203,7 @@ const getNewInvoiceState = (): TruckingFormData => ({
   taxAmntDocCur: 0,
   taxAmntCpyCur: 0,
   profitCenter: "1000",
+  additionalServices: [],
   serviceItems: []
 })
 
@@ -324,6 +334,8 @@ export default function TruckingInvoice() {
   const configuredVehicles = useAppSelector(selectTruckingVehicles)
   const truckingCustomFields = useAppSelector((state) => selectModuleCustomFields(state, "trucking"))
   const serviceSapCodes = useAppSelector((state) => selectServiceSapCodesByModule(state, "trucking"))
+  const additionalServices = useAppSelector((state) => selectServicesByModule(state, "trucking"))
+  const servicesLoading = useAppSelector(selectServicesLoading)
 
   const [currentStep, setCurrentStep] = useState<InvoiceStep>("select")
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([])
@@ -337,6 +349,9 @@ export default function TruckingInvoice() {
   })
   const [activeSection, setActiveSection] = useState(FORM_SECTIONS[0].id)
   const [isClientModalOpen, setIsClientModalOpen] = useState(false)
+  // Estado para servicios adicionales
+  const [currentServiceToAdd, setCurrentServiceToAdd] = useState<any>(null)
+  const [currentServiceAmount, setCurrentServiceAmount] = useState<number>(0)
 
   // Estado para paginación
   const [currentPage, setCurrentPage] = useState(1)
@@ -345,6 +360,7 @@ export default function TruckingInvoice() {
   useEffect(() => {
     dispatch(fetchPendingRecordsByModule("trucking"))
     dispatch(fetchServiceSapCodes("trucking"))
+    dispatch(fetchServices("trucking"))
   }, [dispatch])
 
   // Extraer valor de un registro basado en mapeo de campos
@@ -778,6 +794,10 @@ export default function TruckingInvoice() {
         // Calcular subtotal basado en los montos totales
         const subtotal = newServiceItems.reduce((sum, item) => sum + item.totalAmount, 0)
         
+        // Agregar servicios adicionales al subtotal
+        const additionalServicesTotal = prev.additionalServices.reduce((sum, service) => sum + service.amount, 0)
+        const totalSubtotal = subtotal + additionalServicesTotal
+        
         // Extraer datos del cliente del primer registro (solo nombre se autocompleta)
         const associate = extractFieldValue(firstRecordData, FIELD_MAPPING.company)
         const clientName = associate // Solo el nombre se autocompleta desde associate
@@ -837,9 +857,9 @@ export default function TruckingInvoice() {
           sealNumber: extractFieldValue(firstRecordData, FIELD_MAPPING.seal),
           weight: extractFieldValue(firstRecordData, FIELD_MAPPING.weight),
           weightInTons: parseFloat(extractFieldValue(firstRecordData, FIELD_MAPPING.weight)?.replace(/[^\d.]/g, '') || '0') / 1000,
-          subtotal,
-          taxAmount: subtotal * 0.07,
-          total: subtotal + (subtotal * 0.07),
+          subtotal: totalSubtotal,
+          taxAmount: totalSubtotal * 0.07,
+          total: totalSubtotal + (totalSubtotal * 0.07),
           serviceItems: newServiceItems
         }
 
@@ -898,7 +918,81 @@ export default function TruckingInvoice() {
       dateRange: 'all',
       amountRange: 'all',
     })
-    setSearchTerm('')
+  }
+
+  // Funciones para manejar servicios adicionales
+  const handleAddServiceWithAmount = () => {
+    if (!currentServiceToAdd || currentServiceAmount <= 0) {
+      toast({
+        title: "Error",
+        description: "Selecciona un servicio y especifica un importe válido",
+        variant: "destructive"
+      })
+      return
+    }
+
+    const isAlreadySelected = formData.additionalServices.some(s => s.serviceId === currentServiceToAdd._id)
+    if (isAlreadySelected) {
+      toast({
+        title: "Error",
+        description: "Este servicio ya ha sido agregado",
+        variant: "destructive"
+      })
+      return
+    }
+
+    const newAdditionalServices = [...formData.additionalServices, {
+      serviceId: currentServiceToAdd._id,
+      name: currentServiceToAdd.name,
+      description: currentServiceToAdd.description,
+      amount: currentServiceAmount
+    }]
+
+    const additionalServicesTotal = newAdditionalServices.reduce((sum, service) => sum + service.amount, 0)
+    const newSubtotal = formData.subtotal + currentServiceAmount
+    const newTaxAmount = newSubtotal * 0.07
+    const newTotal = newSubtotal + newTaxAmount
+
+    setFormData(prev => ({
+      ...prev,
+      additionalServices: newAdditionalServices,
+      subtotal: newSubtotal,
+      taxAmount: newTaxAmount,
+      total: newTotal
+    }))
+
+    // Limpiar el formulario
+    setCurrentServiceToAdd(null)
+    setCurrentServiceAmount(0)
+
+    toast({
+      title: "Servicio agregado",
+      description: `${currentServiceToAdd.name} agregado con importe $${currentServiceAmount.toFixed(2)}`,
+    })
+  }
+
+  const handleRemoveAdditionalService = (serviceId: string) => {
+    const serviceToRemove = formData.additionalServices.find(s => s.serviceId === serviceId)
+    if (!serviceToRemove) return
+
+    const newAdditionalServices = formData.additionalServices.filter(s => s.serviceId !== serviceId)
+    const additionalServicesTotal = newAdditionalServices.reduce((sum, service) => sum + service.amount, 0)
+    const newSubtotal = formData.subtotal - serviceToRemove.amount
+    const newTaxAmount = newSubtotal * 0.07
+    const newTotal = newSubtotal + newTaxAmount
+
+    setFormData(prev => ({
+      ...prev,
+      additionalServices: newAdditionalServices,
+      subtotal: newSubtotal,
+      taxAmount: newTaxAmount,
+      total: newTotal
+    }))
+
+    toast({
+      title: "Servicio removido",
+      description: `${serviceToRemove.name} ha sido removido`,
+    })
   }
 
   const validateStep = (step: InvoiceStep): boolean => {
@@ -1768,8 +1862,8 @@ export default function TruckingInvoice() {
                   </div>
                 ))}
                 
-                {/* Sección de items de servicio */}
-                {formData.serviceItems.length > 0 && (
+                {/* Sección de items de servicio - OCULTA - Reemplazada por servicios adicionales */}
+                {/* {formData.serviceItems.length > 0 && (
                   <div className="mt-8 space-y-4">
                     <h3 className="text-lg font-semibold flex items-center">
                       <Package className="mr-2 h-5 w-5" />
@@ -1778,7 +1872,6 @@ export default function TruckingInvoice() {
                     
                     <div className="space-y-4">
                       {formData.serviceItems.map((item, index) => (
-                        console.log(item),
                         <Card key={item.id}>
                           <CardHeader className="pb-2">
                             <CardTitle className="flex items-center">
@@ -1815,28 +1908,6 @@ export default function TruckingInvoice() {
                               </Select>
                             </div>
                             
-                            {/* <div>
-                              <Label>Código Actividad</Label>
-                              <Select
-                                value={item.activityCode}
-                                onValueChange={(val) => {
-                                  const newItems = [...formData.serviceItems]
-                                  newItems[index].activityCode = val
-                                  setFormData(prev => ({ ...prev, serviceItems: newItems }))
-                                }}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="ACT205">ACT205 - CONTAINER 20FT</SelectItem>
-                                  <SelectItem value="ACT206">ACT206 - CONTAINER 40FT</SelectItem>
-                                  <SelectItem value="ACT207">ACT207 - REEFER</SelectItem>
-                                  <SelectItem value="ACT208">ACT208 - FREIGHT</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div> */}
-                            
                             <div>
                               <Label className="flex items-center gap-2">
                                 Monto de Ruta
@@ -1860,9 +1931,7 @@ export default function TruckingInvoice() {
                                 type="number"
                                 value={item.serviceAmount}
                                 onChange={(e) => {
-                                  console.log('Editando servicio SAP:', e.target.value)
                                   const newServiceAmount = Number(e.target.value) || 0
-                                  console.log('Nuevo monto servicio:', newServiceAmount)
                                   
                                   setFormData(prev => {
                                     const newItems = [...prev.serviceItems]
@@ -1871,8 +1940,11 @@ export default function TruckingInvoice() {
                                     
                                     // Recalcular subtotal, tax y total
                                     const newSubtotal = newItems.reduce((sum, item) => sum + item.totalAmount, 0)
-                                    const newTaxAmount = newSubtotal * 0.07
-                                    const newTotal = newSubtotal + newTaxAmount
+                                    // Agregar servicios adicionales al subtotal
+                                    const additionalServicesTotal = prev.additionalServices.reduce((sum, service) => sum + service.amount, 0)
+                                    const totalSubtotal = newSubtotal + additionalServicesTotal
+                                    const newTaxAmount = totalSubtotal * 0.07
+                                    const newTotal = totalSubtotal + newTaxAmount
                                     
                                     // Actualizar descripción automáticamente
                                     const serviceLines = newItems.map((item, idx) => {
@@ -1882,8 +1954,6 @@ export default function TruckingInvoice() {
                                     }).join('\n')
                                     
                                     const newDescription = `Servicios de transporte terrestre (${newItems.length} registros)\n${serviceLines}`
-                                    
-                                    console.log('Nuevos cálculos:', { newSubtotal, newTaxAmount, newTotal })
                                     
                                     return {
                                       ...prev,
@@ -1919,7 +1989,7 @@ export default function TruckingInvoice() {
                       ))}
                     </div>
                   </div>
-                )}
+                )} */}
                 
                 {/* Campos personalizados */}
                 {truckingCustomFields.length > 0 && (
@@ -1988,6 +2058,112 @@ export default function TruckingInvoice() {
                   </div>
                 )}
                 
+                {/* Servicios Adicionales */}
+                <div className="mt-8 space-y-4">
+                  <h3 className="text-lg font-semibold flex items-center">
+                    <Package className="mr-2 h-5 w-5" />
+                    Servicios Adicionales
+                  </h3>
+                  
+                  {/* Selección de servicios */}
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-semibold text-slate-700">Servicio</Label>
+                        {servicesLoading ? (
+                          <div className="flex items-center gap-2 text-sm text-slate-600 bg-white/60 p-3 rounded-lg">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Cargando servicios...
+                          </div>
+                        ) : (
+                          <Select onValueChange={(value) => {
+                            const service = additionalServices.find(s => s._id === value)
+                            if (service) {
+                              setCurrentServiceToAdd(service)
+                            }
+                          }}>
+                            <SelectTrigger className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500">
+                              <SelectValue placeholder="Seleccionar servicio..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {additionalServices.length === 0 ? (
+                                <div className="p-2 text-sm text-muted-foreground">
+                                  No hay servicios disponibles
+                                </div>
+                              ) : (
+                                additionalServices
+                                  .filter(service => !formData.additionalServices.some(s => s.serviceId === service._id))
+                                  .map((service) => (
+                                    <SelectItem key={service._id} value={service._id}>
+                                      {service.name} - {service.description}
+                                    </SelectItem>
+                                  ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label className="text-sm font-semibold text-slate-700">Importe</Label>
+                        <Input
+                          type="number"
+                          value={currentServiceAmount}
+                          onChange={(e) => setCurrentServiceAmount(parseFloat(e.target.value) || 0)}
+                          placeholder="0.00"
+                          min="0"
+                          step="0.01"
+                          className="w-full bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label className="text-sm font-semibold text-slate-700">&nbsp;</Label>
+                        <Button 
+                          onClick={handleAddServiceWithAmount}
+                          disabled={!currentServiceToAdd || currentServiceAmount <= 0}
+                          className="w-full bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white font-semibold shadow-md"
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Agregar Servicio
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    {!servicesLoading && additionalServices.length === 0 && (
+                      <div className="text-sm text-muted-foreground">
+                        No hay servicios adicionales configurados para Trucking. Ve a Configuración → Servicios Adicionales para agregar servicios.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Lista de servicios seleccionados */}
+                  {formData.additionalServices.length > 0 && (
+                    <div className="space-y-3">
+                      <Label className="text-sm font-semibold text-slate-700">Servicios Seleccionados</Label>
+                      {formData.additionalServices.map((service) => (
+                        <div key={service.serviceId} className="flex items-center gap-3 p-4 bg-white/70 border border-slate-200 rounded-lg shadow-sm">
+                          <div className="flex-1">
+                            <div className="font-semibold text-sm text-slate-900">{service.name}</div>
+                            <div className="text-xs text-slate-600">{service.description}</div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-lg font-bold text-slate-900 bg-slate-100 px-3 py-1 rounded-full">${service.amount.toFixed(2)}</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveAdditionalService(service.serviceId)}
+                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
                 {/* Notas y montos */}
                 <div className="mt-8 space-y-4">
                   <h3 className="text-lg font-semibold">Notas y Montos</h3>
@@ -2040,6 +2216,26 @@ export default function TruckingInvoice() {
                       />
                     </div>
                   </div>
+                  
+                  {formData.additionalServices.length > 0 && (
+                    <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <h4 className="font-semibold text-blue-900 mb-2">Desglose de Servicios Adicionales</h4>
+                      <div className="space-y-2">
+                        {formData.additionalServices.map((service) => (
+                          <div key={service.serviceId} className="flex justify-between items-center text-sm">
+                            <span className="text-blue-800">{service.name}</span>
+                            <span className="font-semibold text-blue-900">${service.amount.toFixed(2)}</span>
+                          </div>
+                        ))}
+                        <div className="border-t border-blue-300 pt-2 mt-2">
+                          <div className="flex justify-between items-center font-semibold text-blue-900">
+                            <span>Total Servicios Adicionales:</span>
+                            <span>${formData.additionalServices.reduce((sum, service) => sum + service.amount, 0).toFixed(2)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -2113,28 +2309,43 @@ export default function TruckingInvoice() {
                     const size = extractFieldValue(r.data, FIELD_MAPPING.size)
                     const client = extractFieldValue(r.data, FIELD_MAPPING.client)
                     
+                    // Buscar el item de servicio correspondiente
+                    const serviceItem = formData.serviceItems.find(item => item.id === getRecordId(r))
+                    const routeAmount = serviceItem?.routeAmount || 0
+                    
                     return (
                       <div key={r.id} className="mb-1 pb-1 border-b border-muted last:border-b-0">
-                        <strong>{index + 1}. {formData.serviceCode}</strong> - {client}<br/>
+                        <strong>{index + 1}. ${routeAmount.toFixed(2)}</strong> - {client}<br/>
                         <span className="text-muted-foreground">
                           Contenedor: {container} ({size}) - ${r.totalValue.toFixed(2)}
                         </span>
                       </div>
                     )
                   })}
+                  
+                  {/* Mostrar servicios adicionales */}
+                  {formData.additionalServices.length > 0 && (
+                    <>
+                      <div className="mt-2 pt-2 border-t border-muted">
+                        <strong className="text-blue-600">Servicios Adicionales:</strong>
+                      </div>
+                      {formData.additionalServices.map((service, index) => (
+                        <div key={service.serviceId} className="mb-1 pb-1 border-b border-muted last:border-b-0">
+                          <strong className="text-blue-600">{selectedRecordDetails.length + index + 1}. {service.name}</strong><br/>
+                          <span className="text-muted-foreground">
+                            {service.description} - ${service.amount.toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
               </div>
             </div>
             
             <div className="text-right space-y-1 mt-4">
-              <p>
-                <strong>Subtotal:</strong> {formData.currency} {formData.subtotal.toFixed(2)}
-              </p>
-              <p>
-                <strong>ITBMS (7%):</strong> {formData.currency} {formData.taxAmount.toFixed(2)}
-              </p>
               <p className="text-xl font-bold">
-                <strong>Total:</strong> {formData.currency} {formData.total.toFixed(2)}
+                <strong>Total:</strong> {formData.currency} {formData.subtotal.toFixed(2)}
               </p>
             </div>
             
@@ -2195,7 +2406,7 @@ export default function TruckingInvoice() {
               <p className="text-lg">
                 Total a Facturar:{" "}
                 <strong className="text-2xl">
-                  {formData.currency} {formData.total.toFixed(2)}
+                  {formData.currency} {formData.subtotal.toFixed(2)}
                 </strong>
               </p>
             </div>

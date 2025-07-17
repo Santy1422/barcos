@@ -79,7 +79,7 @@ export function AppSidebar() {
   const mainNavItems: NavItem[] = [
     { title: "Dashboard", href: "/", icon: LayoutDashboard },
     {
-      title: "Trucking PTG",
+      title: "PTG",
       href: "/trucking",
       icon: Truck,
       children: [
