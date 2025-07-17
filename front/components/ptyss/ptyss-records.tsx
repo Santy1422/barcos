@@ -8,10 +8,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2 } from "lucide-react"
+import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Database } from "lucide-react"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { selectInvoicesByModule, fetchInvoicesAsync, deleteInvoiceAsync, selectRecordsLoading, selectRecordsError, updateInvoiceAsync, updateInvoiceStatus, selectAllIndividualRecords, fetchAllRecordsByModule } from "@/lib/features/records/recordsSlice"
+import { PTYSSPrefacturaEditModal } from "./ptyss-prefactura-edit-modal"
+import { PTYSSPdfViewer } from "./ptyss-pdf-viewer"
+import { PTYSSFacturacionModal } from "./ptyss-facturacion-modal"
+import { PTYSSRecordsViewModal } from "./ptyss-records-view-modal"
+import { fetchClients } from "@/lib/features/clients/clientsSlice"
 
 export function PTYSSRecords() {
   const dispatch = useAppDispatch()
@@ -20,12 +25,22 @@ export function PTYSSRecords() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [invoiceToDelete, setInvoiceToDelete] = useState<any>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [editInvoice, setEditInvoice] = useState<any>(null)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [pdfInvoice, setPdfInvoice] = useState<any>(null)
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false)
+  const [facturarInvoice, setFacturarInvoice] = useState<any>(null)
+  const [isFacturarModalOpen, setIsFacturarModalOpen] = useState(false)
+  // Estado para ver registros asociados
+  const [viewRecordsInvoice, setViewRecordsInvoice] = useState<any>(null)
+  const [isViewRecordsModalOpen, setIsViewRecordsModalOpen] = useState(false)
 
   // Obtener prefacturas PTYSS del store
   const ptyssInvoices = useAppSelector((state) => selectInvoicesByModule(state, "ptyss"))
   const isLoading = useAppSelector(selectRecordsLoading)
   const error = useAppSelector(selectRecordsError)
   const allRecords = useAppSelector(selectAllIndividualRecords)
+  const clients = useAppSelector((state) => state.clients.clients)
 
   // Función para obtener los contenedores de una factura
   const getContainersForInvoice = (invoice: any) => {
@@ -43,7 +58,7 @@ export function PTYSSRecords() {
       return "N/A"
     }
     
-    const relatedRecords = allRecords.filter(record => {
+    const relatedRecords = allRecords.filter((record: any) => {
       const isRelated = invoice.relatedRecordIds.includes(record._id || record.id)
       console.log(`🔍 getContainersForInvoice - Record ${record._id || record.id} isRelated: ${isRelated}`)
       return isRelated
@@ -57,13 +72,13 @@ export function PTYSSRecords() {
       return "N/A"
     }
     
-    const containers = relatedRecords.map(record => {
+    const containers = relatedRecords.map((record: any) => {
       const data = record.data as Record<string, any>
       console.log("🔍 getContainersForInvoice - record data:", data)
       const container = data?.container || "N/A"
       console.log("🔍 getContainersForInvoice - container extraído:", container)
       return container
-    }).filter(container => container !== "N/A")
+    }).filter((container: string) => container !== "N/A")
     
     console.log("🔍 getContainersForInvoice - containers extraídos:", containers)
     
@@ -83,13 +98,13 @@ export function PTYSSRecords() {
   // Debug: Verificar IDs de registros en facturas
   if (ptyssInvoices.length > 0) {
     console.log("🔍 PTYSSRecords - Primera factura relatedRecordIds:", ptyssInvoices[0].relatedRecordIds)
-    console.log("🔍PTYSSRecords - IDs de registros disponibles:", allRecords.map(r => r._id || r.id))
+    console.log("🔍PTYSSRecords - IDs de registros disponibles:", allRecords.map((r: any) => r._id || r.id))
     console.log("🔍 PTYSSRecords - Todos los registros:", allRecords)
     
     // Verificar si el registro relacionado existe
     const firstInvoice = ptyssInvoices[0]
     const relatedRecordId = firstInvoice.relatedRecordIds[0]
-    const relatedRecord = allRecords.find(r => (r._id || r.id) === relatedRecordId)
+    const relatedRecord = allRecords.find((r: any) => (r._id || r.id) === relatedRecordId)
     console.log("🔍 PTYSSRecords - Registro relacionado encontrado:", relatedRecord)
     console.log("🔍 PTYSSRecords - Estado del registro relacionado:", relatedRecord?.status)
   }
@@ -106,12 +121,18 @@ export function PTYSSRecords() {
     dispatch(fetchAllRecordsByModule("ptyss"))
   }, [dispatch])
 
+  // Cargar clientes para el visor de PDF
+  useEffect(() => {
+    console.log("🔍 PTYSSRecords - Cargando clientes para visor de PDF...")
+    dispatch(fetchClients())
+  }, [dispatch])
+
   // Debug: Monitorear cambios en los registros
   useEffect(() => {
     console.log("🔍 PTYSSRecords - allRecords actualizado:", allRecords.length)
     if (allRecords.length > 0) {
       console.log("🔍 PTYSSRecords - Primer registro:", allRecords[0])
-      console.log("🔍 PTYSSRecords - Módulos disponibles:", [...new Set(allRecords.map(r => r.module))])
+      console.log("🔍 PTYSSRecords - Módulos disponibles:", [...new Set(allRecords.map((r: any) => r.module))])
     }
   }, [allRecords])
 
@@ -141,7 +162,12 @@ export function PTYSSRecords() {
     }
   }
 
-  const filteredInvoices = ptyssInvoices.filter(invoice => {
+  const handleEditSuccess = () => {
+    // Recargar las facturas para actualizar la lista después de editar
+    dispatch(fetchInvoicesAsync("ptyss"))
+  }
+
+  const filteredInvoices = ptyssInvoices.filter((invoice: any) => {
     const containers = getContainersForInvoice(invoice)
     const matchesSearch = 
       invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -170,6 +196,46 @@ export function PTYSSRecords() {
 
   return (
     <div className="space-y-6">
+      {/* Modal de edición de prefactura */}
+      <PTYSSPrefacturaEditModal
+        open={isEditModalOpen}
+        onOpenChange={setIsEditModalOpen}
+        invoice={editInvoice}
+        onClose={() => setIsEditModalOpen(false)}
+        onEditSuccess={handleEditSuccess}
+      />
+      {/* Modal de facturación */}
+      <PTYSSFacturacionModal
+        open={isFacturarModalOpen}
+        onOpenChange={(open) => {
+          setIsFacturarModalOpen(open)
+          if (!open) setFacturarInvoice(null)
+        }}
+        invoice={facturarInvoice}
+        onFacturar={async (newInvoiceNumber: string) => {
+          if (!facturarInvoice) return
+          await dispatch(updateInvoiceAsync({ id: facturarInvoice.id, updates: { status: "facturada", invoiceNumber: newInvoiceNumber } })).unwrap()
+          dispatch(updateInvoiceStatus({ id: facturarInvoice.id, status: "facturada", invoiceNumber: newInvoiceNumber }))
+          dispatch(fetchInvoicesAsync("ptyss"))
+        }}
+      />
+      {/* Modal de ver registros asociados */}
+      <PTYSSRecordsViewModal
+        open={isViewRecordsModalOpen}
+        onOpenChange={(open) => {
+          setIsViewRecordsModalOpen(open)
+          if (!open) setViewRecordsInvoice(null)
+        }}
+        invoice={viewRecordsInvoice}
+      />
+      {/* Modal de visor de PDF */}
+      <PTYSSPdfViewer
+        open={isPdfModalOpen}
+        onOpenChange={setIsPdfModalOpen}
+        invoice={pdfInvoice}
+        clients={clients}
+        allRecords={allRecords}
+      />
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -241,7 +307,7 @@ export function PTYSSRecords() {
                     </TableCell>
                   </TableRow>
                 ) : filteredInvoices.length > 0 ? (
-                  filteredInvoices.map((invoice) => {
+                  filteredInvoices.map((invoice: any) => {
                     console.log("🔍 Renderizando factura:", invoice.invoiceNumber)
                     const containers = getContainersForInvoice(invoice)
                     console.log("🔍 Contenedores calculados:", containers)
@@ -278,33 +344,55 @@ export function PTYSSRecords() {
                       <TableCell>{getStatusBadge(invoice.status)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end space-x-2">
-                          {invoice.status === "prefactura" && (
+                                                      {/* Botón para ver registros asociados */}
                             <Button
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
-                              className="h-8 w-auto text-green-600 border-green-600 hover:bg-green-50"
-                              onClick={async () => {
-                                const newNumber = invoice.invoiceNumber.replace(/^PTY-PRE-/, "PTY-FAC-")
-                                try {
-                                  await dispatch(updateInvoiceAsync({ id: invoice.id, updates: { status: "facturada", invoiceNumber: newNumber } })).unwrap()
-                                  dispatch(updateInvoiceStatus({ id: invoice.id, status: "facturada", invoiceNumber: newNumber }))
-                                  toast({
-                                    title: "Factura actualizada",
-                                    description: `La prefactura ${invoice.invoiceNumber} ahora es Facturada (${newNumber})`,
-                                    className: "bg-green-600 text-white"
-                                  })
-                                  dispatch(fetchInvoicesAsync("ptyss"))
-                                } catch (error: any) {
-                                  toast({
-                                    title: "Error al actualizar factura",
-                                    description: error.message || "No se pudo actualizar el estado",
-                                    variant: "destructive"
-                                  })
-                                }
+                              className="h-8 w-8 text-purple-600 hover:text-purple-700 hover:bg-purple-50"
+                              onClick={() => {
+                                setViewRecordsInvoice(invoice)
+                                setIsViewRecordsModalOpen(true)
                               }}
+                              title="Ver registros asociados"
                             >
-                              Marcar como Facturada
+                              <Database className="h-4 w-4" />
                             </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            onClick={() => {
+                              setPdfInvoice(invoice)
+                              setIsPdfModalOpen(true)
+                            }}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          {invoice.status === "prefactura" && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 w-auto text-blue-600 border-blue-600 hover:bg-blue-50"
+                                onClick={() => {
+                                  setEditInvoice(invoice)
+                                  setIsEditModalOpen(true)
+                                }}
+                              >
+                                Editar
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 w-auto text-green-600 border-green-600 hover:bg-green-50"
+                                onClick={() => {
+                                  setFacturarInvoice(invoice)
+                                  setIsFacturarModalOpen(true)
+                                }}
+                              >
+                                Facturar
+                              </Button>
+                            </>
                           )}
                           <Button
                             variant="ghost"
@@ -333,7 +421,7 @@ export function PTYSSRecords() {
 
           <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
             <span>Mostrando {filteredInvoices.length} de {ptyssInvoices.length} prefacturas</span>
-            <span>Total: ${filteredInvoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0).toFixed(2)}</span>
+            <span>Total: ${filteredInvoices.reduce((sum: number, invoice: any) => sum + invoice.totalAmount, 0).toFixed(2)}</span>
           </div>
         </CardContent>
       </Card>
