@@ -310,7 +310,7 @@ export function PTYSSUpload() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Ship className="h-5 w-5" />
-            Crear Registros PTYSS
+            Crear Registros Local
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -444,7 +444,7 @@ export function PTYSSUpload() {
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingIndex !== null ? "Editar Registro PTYSS" : "Crear Nuevo Registro PTYSS"}
+              {editingIndex !== null ? "Editar Registro Local" : "Crear Nuevo Registro Local"}
             </DialogTitle>
           </DialogHeader>
           
