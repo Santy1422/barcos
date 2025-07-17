@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2 } from "lucide-react"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { useToast } from "@/hooks/use-toast"
-import { selectInvoicesByModule, fetchInvoicesAsync, deleteInvoiceAsync, selectRecordsLoading, selectRecordsError } from "@/lib/features/records/recordsSlice"
+import { selectInvoicesByModule, fetchInvoicesAsync, deleteInvoiceAsync, selectRecordsLoading, selectRecordsError, updateInvoiceAsync, updateInvoiceStatus, selectAllIndividualRecords, fetchAllRecordsByModule } from "@/lib/features/records/recordsSlice"
 
 export function PTYSSRecords() {
   const dispatch = useAppDispatch()
@@ -25,18 +25,95 @@ export function PTYSSRecords() {
   const ptyssInvoices = useAppSelector((state) => selectInvoicesByModule(state, "ptyss"))
   const isLoading = useAppSelector(selectRecordsLoading)
   const error = useAppSelector(selectRecordsError)
+  const allRecords = useAppSelector(selectAllIndividualRecords)
+
+  // Función para obtener los contenedores de una factura
+  const getContainersForInvoice = (invoice: any) => {
+    console.log("🔍 getContainersForInvoice - invoice:", invoice)
+    console.log("🔍 getContainersForInvoice - relatedRecordIds:", invoice.relatedRecordIds)
+    console.log("🔍 getContainersForInvoice - allRecords length:", allRecords.length)
+    
+    if (!invoice.relatedRecordIds || invoice.relatedRecordIds.length === 0) {
+      console.log("🔍 getContainersForInvoice - No hay relatedRecordIds")
+      return "N/A"
+    }
+    
+    if (allRecords.length === 0) {
+      console.log("🔍 getContainersForInvoice - No hay registros cargados")
+      return "N/A"
+    }
+    
+    const relatedRecords = allRecords.filter(record => {
+      const isRelated = invoice.relatedRecordIds.includes(record._id || record.id)
+      console.log(`🔍 getContainersForInvoice - Record ${record._id || record.id} isRelated: ${isRelated}`)
+      return isRelated
+    })
+    
+    console.log("🔍 getContainersForInvoice - relatedRecords encontrados:", relatedRecords.length)
+    console.log("🔍 getContainersForInvoice - relatedRecords:", relatedRecords)
+    
+    if (relatedRecords.length === 0) {
+      console.log("🔍 getContainersForInvoice - No se encontraron registros relacionados")
+      return "N/A"
+    }
+    
+    const containers = relatedRecords.map(record => {
+      const data = record.data as Record<string, any>
+      console.log("🔍 getContainersForInvoice - record data:", data)
+      const container = data?.container || "N/A"
+      console.log("🔍 getContainersForInvoice - container extraído:", container)
+      return container
+    }).filter(container => container !== "N/A")
+    
+    console.log("🔍 getContainersForInvoice - containers extraídos:", containers)
+    
+    if (containers.length === 0) return "N/A"
+    if (containers.length === 1) return containers[0]
+    return `${containers[0]} y ${containers.length - 1} más`
+  }
 
   // Debug: Log las facturas cargadas
   console.log("🔍 PTYSSRecords - ptyssInvoices:", ptyssInvoices)
   console.log("🔍 PTYSSRecords - Cantidad de facturas:", ptyssInvoices.length)
   console.log("🔍 PTYSSRecords - isLoading:", isLoading)
   console.log("🔍 PTYSSRecords - error:", error)
+  console.log("🔍PTYSSRecords - allRecords:", allRecords)
+  console.log("🔍 PTYSSRecords - Cantidad de registros:", allRecords.length)
+  
+  // Debug: Verificar IDs de registros en facturas
+  if (ptyssInvoices.length > 0) {
+    console.log("🔍 PTYSSRecords - Primera factura relatedRecordIds:", ptyssInvoices[0].relatedRecordIds)
+    console.log("🔍PTYSSRecords - IDs de registros disponibles:", allRecords.map(r => r._id || r.id))
+    console.log("🔍 PTYSSRecords - Todos los registros:", allRecords)
+    
+    // Verificar si el registro relacionado existe
+    const firstInvoice = ptyssInvoices[0]
+    const relatedRecordId = firstInvoice.relatedRecordIds[0]
+    const relatedRecord = allRecords.find(r => (r._id || r.id) === relatedRecordId)
+    console.log("🔍 PTYSSRecords - Registro relacionado encontrado:", relatedRecord)
+    console.log("🔍 PTYSSRecords - Estado del registro relacionado:", relatedRecord?.status)
+  }
 
   // Cargar facturas del backend al montar el componente
   useEffect(() => {
     console.log("🔍 PTYSSRecords - Cargando facturas PTYSS del backend...")
     dispatch(fetchInvoicesAsync("ptyss"))
   }, [dispatch])
+
+  // Cargar todos los registros PTYSS para mostrar contenedores
+  useEffect(() => {
+    console.log("🔍 PTYSSRecords - Cargando registros PTYSS para contenedores...")
+    dispatch(fetchAllRecordsByModule("ptyss"))
+  }, [dispatch])
+
+  // Debug: Monitorear cambios en los registros
+  useEffect(() => {
+    console.log("🔍 PTYSSRecords - allRecords actualizado:", allRecords.length)
+    if (allRecords.length > 0) {
+      console.log("🔍 PTYSSRecords - Primer registro:", allRecords[0])
+      console.log("🔍 PTYSSRecords - Módulos disponibles:", [...new Set(allRecords.map(r => r.module))])
+    }
+  }, [allRecords])
 
   const handleDeleteInvoice = async (invoice: any) => {
     setIsDeleting(true)
@@ -65,26 +142,23 @@ export function PTYSSRecords() {
   }
 
   const filteredInvoices = ptyssInvoices.filter(invoice => {
+    const containers = getContainersForInvoice(invoice)
     const matchesSearch = 
       invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      invoice.clientRuc.toLowerCase().includes(searchTerm.toLowerCase())
-    
+      containers.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesStatus = statusFilter === "all" || invoice.status === statusFilter
-    
     return matchesSearch && matchesStatus
   })
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "generada":
-        return <Badge variant="outline" className="text-blue-600 border-blue-600">Generada</Badge>
-      case "transmitida":
-        return <Badge variant="outline" className="text-green-600 border-green-600">Transmitida</Badge>
+      case "prefactura":
+        return <Badge variant="outline" className="text-blue-600 border-blue-600">Prefactura</Badge>
+      case "facturada":
+        return <Badge variant="outline" className="text-green-600 border-green-600">Facturada</Badge>
       case "anulada":
         return <Badge variant="outline" className="text-red-600 border-red-600">Anulada</Badge>
-      case "pagada":
-        return <Badge variant="outline" className="text-purple-600 border-purple-600">Pagada</Badge>
       default:
         return <Badge variant="outline">{status}</Badge>
     }
@@ -109,7 +183,7 @@ export function PTYSSRecords() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                 <Input
-                  placeholder="Buscar por número de prefactura, cliente..."
+                  placeholder="Buscar por número, cliente o contenedor..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -124,10 +198,8 @@ export function PTYSSRecords() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos los estados</SelectItem>
-                  <SelectItem value="generada">Generada</SelectItem>
-                  <SelectItem value="transmitida">Transmitida</SelectItem>
-                  <SelectItem value="anulada">Anulada</SelectItem>
-                  <SelectItem value="pagada">Pagada</SelectItem>
+                  <SelectItem value="prefactura">Prefactura</SelectItem>
+                  <SelectItem value="facturada">Facturada</SelectItem>
                 </SelectContent>
               </Select>
               <Button variant="outline">
@@ -141,22 +213,19 @@ export function PTYSSRecords() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Número Prefactura</TableHead>
+                  <TableHead>Número</TableHead>
                   <TableHead>Cliente</TableHead>
-                  <TableHead>RUC</TableHead>
+                  <TableHead>Contenedor</TableHead>
                   <TableHead>Fecha Emisión</TableHead>
-                  <TableHead>Fecha Vencimiento</TableHead>
-                  <TableHead>Subtotal</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead>Estado</TableHead>
-                  <TableHead>Registros</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8">
+                    <TableCell colSpan={7} className="text-center py-8">
                       <div className="flex items-center justify-center space-x-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         <span>Cargando prefacturas...</span>
@@ -165,15 +234,20 @@ export function PTYSSRecords() {
                   </TableRow>
                 ) : error ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8">
+                    <TableCell colSpan={7} className="text-center py-8">
                       <div className="text-red-600">
                         Error al cargar prefacturas: {error}
                       </div>
                     </TableCell>
                   </TableRow>
                 ) : filteredInvoices.length > 0 ? (
-                  filteredInvoices.map((invoice) => (
-                    <TableRow key={invoice.id}>
+                  filteredInvoices.map((invoice) => {
+                    console.log("🔍 Renderizando factura:", invoice.invoiceNumber)
+                    const containers = getContainersForInvoice(invoice)
+                    console.log("🔍 Contenedores calculados:", containers)
+                    
+                    return (
+                      <TableRow key={invoice.id}>
                       <TableCell className="font-medium font-mono text-sm">
                         {invoice.invoiceNumber}
                       </TableCell>
@@ -183,25 +257,16 @@ export function PTYSSRecords() {
                           {invoice.clientName}
                         </div>
                       </TableCell>
-                      <TableCell className="font-mono text-sm">
-                        {invoice.clientRuc}
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Ship className="h-4 w-4 text-muted-foreground" />
+                          {containers}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Calendar className="h-4 w-4 text-muted-foreground" />
                           {formatDate(invoice.issueDate)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4 text-muted-foreground" />
-                          {formatDate(invoice.dueDate)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <DollarSign className="h-4 w-4 text-muted-foreground" />
-                          ${invoice.subtotal.toFixed(2)}
                         </div>
                       </TableCell>
                       <TableCell className="font-bold">
@@ -211,27 +276,36 @@ export function PTYSSRecords() {
                         </div>
                       </TableCell>
                       <TableCell>{getStatusBadge(invoice.status)}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">
-                          {invoice.relatedRecordIds.length} registro{invoice.relatedRecordIds.length !== 1 ? 's' : ''}
-                        </Badge>
-                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end space-x-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0"
-                          >
-                            <Download className="h-4 w-4" />
-                          </Button>
+                          {invoice.status === "prefactura" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-auto text-green-600 border-green-600 hover:bg-green-50"
+                              onClick={async () => {
+                                const newNumber = invoice.invoiceNumber.replace(/^PTY-PRE-/, "PTY-FAC-")
+                                try {
+                                  await dispatch(updateInvoiceAsync({ id: invoice.id, updates: { status: "facturada", invoiceNumber: newNumber } })).unwrap()
+                                  dispatch(updateInvoiceStatus({ id: invoice.id, status: "facturada", invoiceNumber: newNumber }))
+                                  toast({
+                                    title: "Factura actualizada",
+                                    description: `La prefactura ${invoice.invoiceNumber} ahora es Facturada (${newNumber})`,
+                                    className: "bg-green-600 text-white"
+                                  })
+                                  dispatch(fetchInvoicesAsync("ptyss"))
+                                } catch (error: any) {
+                                  toast({
+                                    title: "Error al actualizar factura",
+                                    description: error.message || "No se pudo actualizar el estado",
+                                    variant: "destructive"
+                                  })
+                                }
+                              }}
+                            >
+                              Marcar como Facturada
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -243,10 +317,10 @@ export function PTYSSRecords() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))
+                  )})
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       {ptyssInvoices.length === 0
                         ? "No hay prefacturas PTYSS creadas"
                         : "No se encontraron prefacturas que coincidan con los filtros"}

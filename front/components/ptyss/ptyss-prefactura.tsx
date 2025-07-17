@@ -576,7 +576,7 @@ export function PTYSSPrefactura() {
         subtotal: grandTotal,
         taxAmount: 0,
         totalAmount: grandTotal,
-        status: "generada",
+        status: "prefactura",
         relatedRecordIds: selectedRecords.map((r: IndividualExcelRecord) => getRecordId(r)),
         notes: prefacturaData.notes,
         details: {

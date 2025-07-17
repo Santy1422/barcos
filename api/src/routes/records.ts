@@ -16,7 +16,7 @@ router.post('/trucking/bulk', jwtUtils, catchedAsync(recordsControllers.createTr
 router.post('/ptyss/bulk', jwtUtils, catchedAsync(recordsControllers.createPTYSSRecords));
 
 // Obtener todos los registros
-router.get('/', catchedAsync(recordsControllers.getAllRecords));
+router.get('/', jwtUtils, catchedAsync(recordsControllers.getAllRecords));
 
 // Obtener registros por módulo
 router.get('/module/:module', jwtUtils, catchedAsync(recordsControllers.getRecordsByModule));

@@ -15,9 +15,7 @@ const updateInvoice = async (req: Request, res: Response) => {
       id,
       updateData,
       { new: true, runValidators: true }
-    )
-      .populate('client', 'name email')
-      .populate('updatedBy', 'name lastName email');
+    );
     
     if (!invoice) {
       return res.status(404).json({

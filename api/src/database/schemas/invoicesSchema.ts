@@ -46,8 +46,8 @@ const invoicesSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["generada", "transmitida", "anulada", "pagada"],
-    default: "generada"
+    enum: ["prefactura", "facturada", "anulada"],
+    default: "prefactura"
   },
   xmlData: {
     type: String,
