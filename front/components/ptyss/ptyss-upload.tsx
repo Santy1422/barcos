@@ -26,7 +26,7 @@ import {
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
-import { createPTYSSRecords } from "@/lib/features/records/recordsSlice"
+import { createTruckingRecords, selectCreatingRecords, selectRecordsError } from "@/lib/features/records/recordsSlice"
 import { 
   selectAllClients,
   createClientAsync,
@@ -40,6 +40,13 @@ import {
   selectActiveNavieras,
   fetchNavieras
 } from "@/lib/features/naviera/navieraSlice"
+import { 
+  selectPTYSSRoutes,
+  fetchPTYSSRoutes,
+  selectPTYSSRoutesLoading,
+  selectPTYSSRoutesError
+} from "@/lib/features/ptyssRoutes/ptyssRoutesSlice"
+import { parseTruckingExcel, matchTruckingDataWithRoutes, type TruckingExcelData } from "@/lib/excel-parser"
 import { ClientModal } from "@/components/clients-management"
 
 interface PTYSSRecordData {
@@ -98,10 +105,23 @@ export function PTYSSUpload() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   
+  // Excel upload state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [previewData, setPreviewData] = useState<TruckingExcelData[]>([])
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  
   // Obtener clientes y navieras del store de Redux
   const clients = useAppSelector(selectAllClients)
   const navieras = useAppSelector(selectActiveNavieras)
   const clientsLoading = useAppSelector((state) => state.clients.loading)
+  
+  // PTYSS Routes state
+  const routes = useAppSelector(selectPTYSSRoutes)
+  const routesLoading = useAppSelector(selectPTYSSRoutesLoading)
+  const routesError = useAppSelector(selectPTYSSRoutesError)
+  const isCreatingRecords = useAppSelector(selectCreatingRecords)
+  const recordsError = useAppSelector(selectRecordsError)
 
   // Debug: Log clientes cargados
   console.log('🔍 PTYSSUpload - clients:', clients)
@@ -117,6 +137,22 @@ export function PTYSSUpload() {
   useEffect(() => {
     dispatch(fetchClients())
   }, [dispatch])
+
+  // Cargar rutas al montar el componente
+  useEffect(() => {
+    dispatch(fetchPTYSSRoutes())
+  }, [dispatch])
+
+  // Mostrar error si existe
+  useEffect(() => {
+    if (routesError) {
+      toast({
+        title: "Error al cargar rutas",
+        description: routesError,
+        variant: "destructive",
+      })
+    }
+  }, [routesError, toast])
 
   // Estado para el formulario de nuevo cliente
   const [newClient, setNewClient] = useState({
@@ -183,7 +219,7 @@ export function PTYSSUpload() {
   }
 
   const getSelectedClient = () => {
-    return clients.find(client => client && (client._id || client.id) === currentRecord.clientId)
+    return clients.find((client: any) => client && (client._id || client.id) === currentRecord.clientId)
   }
 
   const handleAddRecord = () => {
@@ -275,7 +311,7 @@ export function PTYSSUpload() {
         recordsData
       })
       
-      const result = await dispatch(createPTYSSRecords({
+      const result = await dispatch(createTruckingRecords({
         excelId: tempObjectId,
         recordsData
       })).unwrap()
@@ -299,6 +335,254 @@ export function PTYSSUpload() {
       })
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  // Función para hacer matching de datos de trucking con rutas de PTYSS
+  const matchTruckingDataWithPTYSSRoutes = (truckingData: TruckingExcelData[], ptyssRoutes: Array<{_id: string, name: string, from: string, to: string, containerType: string, routeType: "single" | "RT", price: number}>): TruckingExcelData[] => {
+    console.log("=== INICIANDO MATCHING PTYSS CON DATOS TRUCKING ===")
+    console.log("Rutas PTYSS disponibles:", ptyssRoutes)
+    console.log("")
+    
+    return truckingData.map((record, index) => {
+      console.log(`Procesando registro PTYSS ${index + 1}:`)
+      console.log(`  Leg: "${record.leg}"`)
+      console.log(`  MoveType: "${record.moveType}"`)
+      console.log(`  Type: "${record.type}"`)
+      
+      // Extraer from y to del campo leg (separado por "/")
+      const legParts = record.leg?.split('/').map(part => part.trim()) || [];
+      const from = legParts[0] || '';
+      const to = legParts[1] || '';
+      
+      console.log(`  From extraído: "${from}"`)
+      console.log(`  To extraído: "${to}"`)
+      
+      // Buscar coincidencia basada en los criterios de PTYSS:
+      // 1. from y to extraídos del leg
+      // 2. moveType (routeType de la ruta) - case insensitive
+      // 3. type (containerType de la ruta) - mapear tipos
+      
+      const matchedRoute = ptyssRoutes.find(route => {
+        // Matching por from y to extraídos del leg
+        const fromMatch = route.from?.toUpperCase() === from.toUpperCase();
+        const toMatch = route.to?.toUpperCase() === to.toUpperCase();
+        
+        // Matching por moveType (routeType de la ruta) - case insensitive
+        const normalizedMoveType = record.moveType?.trim().toLowerCase() || '';
+        const moveTypeMatch = 
+          (normalizedMoveType === 's' && route.routeType === 'single') ||
+          (normalizedMoveType === 'single' && route.routeType === 'single') ||
+          (normalizedMoveType === 'rt' && route.routeType === 'RT') ||
+          (normalizedMoveType === 'rt' && route.routeType === 'RT');
+        
+        // Matching por type (containerType de la ruta) - mapear tipos de PTYSS
+        const normalizedType = record.type?.trim().toUpperCase() || '';
+        const containerTypeMatch = route.containerType?.toUpperCase() === normalizedType;
+        
+        console.log(`  Comparando con ruta PTYSS "${route.name}":`)
+        console.log(`    From: "${from}" vs "${route.from}" = ${fromMatch}`)
+        console.log(`    To: "${to}" vs "${route.to}" = ${toMatch}`)
+        console.log(`    MoveType normalizado: "${normalizedMoveType}" vs "${route.routeType}" = ${moveTypeMatch}`)
+        console.log(`    Type normalizado: "${normalizedType}" vs "${route.containerType}" = ${containerTypeMatch}`)
+        console.log(`    Match total: ${fromMatch && toMatch && moveTypeMatch && containerTypeMatch}`)
+        
+        return fromMatch && toMatch && moveTypeMatch && containerTypeMatch;
+      });
+      
+      if (matchedRoute) {
+        console.log(`  ✅ MATCH ENCONTRADO: ${matchedRoute.name} - $${matchedRoute.price}`)
+        return {
+          ...record,
+          from: from, // Agregar from extraído del leg
+          to: to, // Agregar to extraído del leg
+          matchedPrice: matchedRoute.price,
+          matchedRouteId: matchedRoute._id || '',
+          matchedRouteName: matchedRoute.name || '',
+          isMatched: true,
+          sapCode: 'PTYSS001'
+        };
+      } else {
+        console.log(`  ❌ NO SE ENCONTRÓ MATCH`)
+        return {
+          ...record,
+          from: from, // Agregar from extraído del leg
+          to: to, // Agregar to extraído del leg
+          matchedPrice: 0,
+          isMatched: false,
+          sapCode: 'PTYSS001'
+        };
+      }
+    });
+  }
+
+  // Función para convertir datos de trucking a PTYSS
+  const convertTruckingToPTYSS = (truckingData: TruckingExcelData[]): PTYSSRecordData[] => {
+    return truckingData.map(record => ({
+      clientId: record.associate || '',
+      order: record.containerConsecutive || '',
+      container: record.container || '',
+      naviera: record.route || '',
+      from: record.pol || '',
+      to: record.pod || '',
+      operationType: record.moveType || '',
+      containerSize: record.size || '',
+      containerType: record.type || '',
+      estadia: '',
+      genset: '',
+      retencion: '',
+      pesaje: '',
+      ti: '',
+      matriculaCamion: record.plate || '',
+      conductor: record.driverName || '',
+      numeroChasisPlaca: '',
+      moveDate: record.moveDate || '',
+      notes: '',
+      totalValue: record.matchedPrice || 0
+    }))
+  }
+
+  // Excel upload handlers
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      setSelectedFile(file)
+      setIsLoading(true)
+      
+      try {
+        // Verificar que las rutas estén cargadas
+        if (routesLoading) {
+          toast({
+            title: "Cargando rutas",
+            description: "Espera un momento mientras se cargan las rutas configuradas...",
+          })
+          return
+        }
+
+        if (routes.length === 0) {
+          toast({
+            title: "No hay rutas configuradas",
+            description: "Debes configurar rutas en la sección de configuración antes de subir archivos.",
+            variant: "destructive",
+          })
+          return
+        }
+
+        // Parsear el archivo Excel real
+        const realData = await parseTruckingExcel(file)
+        
+        console.log("=== DEBUGGING MATCHING PTYSS ===")
+        console.log("Datos del Excel:", realData)
+        console.log("Rutas disponibles:", routes)
+        console.log("")
+        
+        // Aplicar matching con las rutas configuradas de PTYSS
+        const matchedData = matchTruckingDataWithPTYSSRoutes(realData, routes)
+        
+        console.log("Datos después del matching:", matchedData)
+        console.log("")
+        
+        setPreviewData(matchedData)
+        
+        // Contar registros con match
+        const matchedCount = matchedData.filter(record => record.isMatched).length
+        const unmatchedCount = matchedData.length - matchedCount
+        
+        console.log(`Registros con match: ${matchedCount}/${matchedData.length}`)
+        
+        toast({
+          title: "✅ Archivo Excel procesado",
+          description: `Se han leído ${realData.length} registros. ${matchedCount} con precio asignado, ${unmatchedCount} sin coincidencia.`,
+        })
+      } catch (error) {
+        console.error('Error al procesar archivo:', error)
+        toast({
+          title: "Error al procesar archivo",
+          description: "No se pudo leer el archivo Excel. Verifica que tenga el formato correcto.",
+          variant: "destructive",
+        })
+        setPreviewData([])
+      } finally {
+        setIsLoading(false)
+      }
+    } else {
+      setSelectedFile(null)
+      setPreviewData([])
+    }
+  }
+
+  const handleUpload = async () => {
+    if (!selectedFile || previewData.length === 0) {
+      toast({
+        title: "Error",
+        description: "Por favor selecciona un archivo y verifica que tenga datos válidos",
+        variant: "destructive"
+      })
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      console.log("=== INICIANDO GUARDADO PTYSS EXCEL ===")
+      console.log("Datos a guardar:", previewData)
+      
+      // Temporary workaround: Use a proper ObjectId format
+      const tempObjectId = new Date().getTime().toString(16).padStart(24, '0').substring(0, 24)
+      
+      console.log("ExcelId:", tempObjectId)
+      
+      // Filtrar solo los registros que tienen match
+      const matchedRecords = previewData.filter(record => record.isMatched);
+      
+      if (matchedRecords.length === 0) {
+        toast({
+          title: "No hay registros válidos",
+          description: "No se encontraron registros que coincidan con las rutas configuradas",
+          variant: "destructive"
+        })
+        return
+      }
+      
+      const recordsData = matchedRecords.map((record, index) => ({
+        data: record, // Datos completos del Excel incluyendo matchedPrice, matchedRouteId, etc.
+        totalValue: record.matchedPrice || 0 // Usar el precio de la ruta si está disponible
+      }))
+      
+      console.log("Records data preparado:", recordsData)
+      console.log("Payload a enviar:", {
+        excelId: tempObjectId,
+        recordsData
+      })
+      
+      const result = await dispatch(createTruckingRecords({
+        excelId: tempObjectId, // Use the generated ObjectId
+        recordsData
+      })).unwrap()
+      
+      console.log("Resultado del guardado:", result)
+      console.log("Result length:", result.length)
+      console.log("Result type:", typeof result)
+      console.log("Result is array:", Array.isArray(result))
+      
+      toast({
+        title: "Éxito",
+        description: `${result.length} registros con match guardados correctamente en el sistema (${previewData.length - matchedRecords.length} registros sin match fueron omitidos)`
+      })
+      
+      // Limpiar el estado
+      setPreviewData([])
+      setSelectedFile(null)
+      
+    } catch (error) {
+      console.error("Error al guardar:", error)
+      toast({
+        title: "Error",
+        description: recordsError || "Error al guardar los registros",
+        variant: "destructive"
+      })
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -340,19 +624,47 @@ export function PTYSSUpload() {
             Crear Registro Trasiego
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex justify-between items-center">
-            <div>
-              <h3 className="text-lg font-medium">Subir Excel</h3>
-              <p className="text-sm text-muted-foreground">
-                Sube un archivo Excel para crear registros de trasiego
-              </p>
-            </div>
-            <Button>
-              <FileText className="mr-2 h-4 w-4" />
-              Subir Excel
-            </Button>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="excel-file">Seleccionar archivo Excel</Label>
+            <Input
+              id="excel-file"
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleFileChange}
+              disabled={isLoading || isProcessing || routesLoading}
+            />
           </div>
+          
+          {/* Estado de carga de rutas */}
+          {routesLoading && (
+            <div className="flex items-center gap-2 text-sm text-blue-600">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+              Cargando rutas configuradas...
+            </div>
+          )}
+          
+          {!routesLoading && routes.length === 0 && (
+            <div className="flex items-center gap-2 text-sm text-orange-600">
+              <AlertCircle className="h-4 w-4" />
+              No hay rutas configuradas. Ve a Configuración para crear rutas.
+            </div>
+          )}
+          
+          {!routesLoading && routes.length > 0 && (
+            <div className="flex items-center gap-2 text-sm text-green-600">
+              <CheckCircle2 className="h-4 w-4" />
+              {routes.length} ruta{routes.length !== 1 ? 's' : ''} configurada{routes.length !== 1 ? 's' : ''} lista{routes.length !== 1 ? 's' : ''}
+            </div>
+          )}
+          
+          {selectedFile && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <FileText className="h-4 w-4" />
+              {selectedFile.name}
+              <Badge variant="secondary">{previewData.length} registros</Badge>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -402,7 +714,7 @@ export function PTYSSUpload() {
                 </TableHeader>
                 <TableBody>
                   {records.map((record, index) => {
-                    const client = clients.find(c => (c._id || c.id) === record.clientId)
+                    const client = clients.find((c: any) => (c._id || c.id) === record.clientId)
                     const naviera = navieras.find(n => n._id === record.naviera)
                     
                     return (
@@ -496,7 +808,7 @@ export function PTYSSUpload() {
                             )
                           }
                           
-                          const activeClients = clients.filter(client => client && client.isActive)
+                          const activeClients = clients.filter((client: any) => client && client.isActive)
                           console.log('🔍 PTYSSUpload - activeClients:', activeClients)
                           console.log('🔍 PTYSSUpload - activeClients.length:', activeClients.length)
                           
@@ -508,7 +820,7 @@ export function PTYSSUpload() {
                             )
                           }
                           
-                          return activeClients.map((client) => (
+                          return activeClients.map((client: any) => (
                             <SelectItem key={client._id || client.id} value={client._id || client.id}>
                               {client.type === "natural" ? client.fullName : client.companyName} - {client.sapCode || "Sin SAP"}
                             </SelectItem>
@@ -942,6 +1254,112 @@ export function PTYSSUpload() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Vista previa de datos del Excel */}
+      {previewData.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Vista Previa de Datos</CardTitle>
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+              <span>{previewData.length} registros encontrados</span>
+              <Badge variant="outline" className="text-green-600 border-green-600">
+                {previewData.filter(record => record.isMatched).length} con precio
+              </Badge>
+              {previewData.filter(record => !record.isMatched).length > 0 && (
+                <Badge variant="outline" className="text-orange-600 border-orange-600">
+                  {previewData.filter(record => !record.isMatched).length} sin coincidencia
+                </Badge>
+              )}
+              <span className="ml-auto font-medium">
+                Total: ${previewData.reduce((sum, record) => sum + (record.matchedPrice || 0), 0).toFixed(2)}
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border max-h-96 overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Contenedor</TableHead>
+                    <TableHead>From/To</TableHead>
+                    <TableHead>Operación</TableHead>
+                    <TableHead>Conductor</TableHead>
+                    <TableHead>Precio</TableHead>
+                    <TableHead>Estado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {previewData.map((record, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{record.associate}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{record.container}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {record.size}' {record.type}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="text-xs">{record.from}</span>
+                          <span className="text-xs">→ {record.to}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={record.moveType === "import" ? "default" : "secondary"}>
+                          {record.moveType?.toUpperCase() || ''}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{record.driverName}</TableCell>
+                      <TableCell>
+                        {record.isMatched ? (
+                          <span className="font-medium text-green-600">
+                            ${record.matchedPrice?.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {record.isMatched ? (
+                          <Badge variant="outline" className="text-green-600 border-green-600">
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                            Match
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-orange-600 border-orange-600">
+                            <AlertCircle className="h-3 w-3 mr-1" />
+                            Sin match
+                          </Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            
+            <div className="mt-4 flex justify-end">
+              <Button 
+                onClick={handleUpload}
+                disabled={isLoading || isCreatingRecords}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {isLoading || isCreatingRecords ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  "Guardar en Sistema"
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Modal de Clientes */}
       <ClientModal

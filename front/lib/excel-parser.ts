@@ -36,6 +36,9 @@ export interface TruckingExcelData {
   matchedRouteName?: string;
   isMatched?: boolean;
   sapCode?:string;
+  // Campos extraídos del leg para PTYSS
+  from?: string;
+  to?: string;
 }
 
 // Función para hacer matching con las rutas configuradas
@@ -324,3 +327,317 @@ export const parseTruckingExcel = async (file: File): Promise<TruckingExcelData[
     }
   });
 };
+
+export interface PTYSSExcelData {
+  clientId: string
+  order: string
+  container: string
+  naviera: string
+  from: string
+  to: string
+  operationType: string
+  containerSize: string
+  containerType: string
+  estadia: string
+  genset: string
+  retencion: string
+  pesaje: string
+  ti: string
+  matriculaCamion: string
+  conductor: string
+  numeroChasisPlaca: string
+  moveDate: string
+  notes: string
+  // Campos agregados para el matching
+  matchedPrice?: number
+  matchedRouteId?: string
+  matchedRouteName?: string
+  isMatched?: boolean
+}
+
+// Función para hacer matching con las rutas configuradas de PTYSS
+export const matchPTYSSDataWithRoutes = (
+  excelData: PTYSSExcelData[], 
+  routes: Array<{_id: string, name: string, from: string, to: string, containerType: string, routeType: "single" | "RT", price: number}>
+): PTYSSExcelData[] => {
+  console.log("=== INICIANDO MATCHING PTYSS ===")
+  console.log("Rutas disponibles:", routes)
+  console.log("")
+  
+  return excelData.map((record, index) => {
+    console.log(`Procesando registro PTYSS ${index + 1}:`)
+    console.log(`  From: "${record.from || 'undefined'}"`)
+    console.log(`  To: "${record.to || 'undefined'}"`)
+    console.log(`  ContainerType: "${record.containerType || 'undefined'}"`)
+    
+    // Buscar coincidencia basada en los criterios:
+    // 1. from (origen de la ruta)
+    // 2. to (destino de la ruta)
+    // 3. containerType (tipo de contenedor de la ruta)
+    
+    const matchedRoute = routes.find(route => {
+      const fromMatch = route.from.toLowerCase().trim() === (record.from || '').toLowerCase().trim()
+      const toMatch = route.to.toLowerCase().trim() === (record.to || '').toLowerCase().trim()
+      const containerTypeMatch = route.containerType.toLowerCase().trim() === (record.containerType || '').toLowerCase().trim()
+      
+      return fromMatch && toMatch && containerTypeMatch
+    })
+    
+    if (matchedRoute) {
+      console.log(`  ✅ Match encontrado: ${matchedRoute.name} - $${matchedRoute.price}`)
+      return {
+        ...record,
+        matchedPrice: matchedRoute.price,
+        matchedRouteId: matchedRoute._id,
+        matchedRouteName: matchedRoute.name,
+        isMatched: true
+      }
+    } else {
+      console.log(`  ❌ No se encontró match`)
+      return {
+        ...record,
+        isMatched: false
+      }
+    }
+  })
+}
+
+export const parsePTYSSExcel = async (file: File): Promise<PTYSSExcelData[]> => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Validaciones más flexibles
+      if (!file) {
+        reject(new Error('No se seleccionó ningún archivo'))
+        return
+      }
+
+      if (file.size === 0) {
+        reject(new Error('El archivo seleccionado está vacío'))
+        return
+      }
+
+      // Validación más flexible de extensiones
+      const fileName = file.name.toLowerCase()
+      const validExtensions = ['.xlsx', '.xls', '.csv']
+      const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext))
+      
+      if (!hasValidExtension) {
+        console.warn('Extensión no reconocida, intentando procesar como Excel:', fileName)
+      }
+
+      const reader = new FileReader()
+      
+      reader.onload = (e) => {
+        try {
+          console.log('Archivo PTYSS cargado exitosamente, procesando...')
+          
+          const arrayBuffer = e.target?.result as ArrayBuffer
+          if (!arrayBuffer) {
+            throw new Error('No se pudo obtener el contenido del archivo')
+          }
+
+          console.log('Tamaño del buffer:', arrayBuffer.byteLength)
+
+          // Usar XLSX
+          let workbook
+          try {
+            workbook = XLSX.read(arrayBuffer, { 
+              type: 'array',
+              cellText: false,
+              cellHTML: false,
+              sheetStubs: false,
+              bookVBA: false
+            })
+          } catch (xlsxError) {
+            console.error('Error al leer con XLSX:', xlsxError)
+            throw new Error('El archivo no es un Excel válido o está corrupto')
+          }
+          
+          if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+            throw new Error('El archivo Excel no contiene hojas de trabajo')
+          }
+          
+          console.log('Hojas encontradas:', workbook.SheetNames)
+          
+          const sheetName = workbook.SheetNames[0]
+          const worksheet = workbook.Sheets[sheetName]
+          
+          if (!worksheet) {
+            throw new Error(`No se pudo acceder a la hoja: ${sheetName}`)
+          }
+          
+          // Verificar si la hoja tiene datos
+          const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1')
+          console.log('Rango de datos:', worksheet['!ref'])
+          
+          if (range.e.r < 1) {
+            throw new Error('El archivo Excel no contiene suficientes filas de datos')
+          }
+          
+          // Convertir a array de arrays
+          const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, { 
+            header: 1, 
+            defval: '', 
+            raw: false 
+          })
+          
+          console.log('Datos en bruto extraídos:', rawData.length, 'filas')
+          console.log('Primera fila (headers):', rawData[0])
+          
+          if (rawData.length < 2) {
+            throw new Error('El archivo debe contener al menos una fila de encabezados y una fila de datos')
+          }
+          
+          // Primera fila como headers
+          const headers = rawData[0].map((header: any) => 
+            String(header || '').trim().toLowerCase()
+          )
+          
+          console.log('Headers procesados:', headers)
+          
+          // Mapeo de headers a campos del objeto PTYSS
+          const fieldMapping: { [key: string]: keyof PTYSSExcelData } = {
+            // Headers del archivo real de PTYSS
+            'containerconsecutive': 'order',
+            'container': 'container',
+            'size': 'containerSize',
+            'type': 'containerType',
+            'from vsl/voy': 'from',
+            'driver name': 'conductor',
+            'plate': 'matriculaCamion',
+            'associate': 'clientId',
+            'move date': 'moveDate',
+            'move type': 'operationType',
+            'leg': 'to',
+            'route': 'naviera',
+            // Mapeos adicionales para diferentes formatos
+            'rt from': 'from',
+            'rt to': 'to',
+            'pol': 'from',
+            'pod': 'to',
+            // Headers alternativos que podrían existir
+            'clientid': 'clientId',
+            'order': 'order',
+            'naviera': 'naviera',
+            'from': 'from',
+            'to': 'to',
+            'operationtype': 'operationType',
+            'containersize': 'containerSize',
+            'containertype': 'containerType',
+            'estadia': 'estadia',
+            'genset': 'genset',
+            'retencion': 'retencion',
+            'pesaje': 'pesaje',
+            'ti': 'ti',
+            'matriculacamion': 'matriculaCamion',
+            'conductor': 'conductor',
+            'numerochasisplaca': 'numeroChasisPlaca',
+            'movedate': 'moveDate',
+            'notes': 'notes'
+          }
+          
+          // Crear mapeo de índices
+          const columnIndexes: { [key in keyof PTYSSExcelData]?: number } = {}
+          
+          headers.forEach((header, index) => {
+            const field = fieldMapping[header]
+            if (field) {
+              columnIndexes[field] = index
+              console.log(`Mapeado: "${header}" -> ${field} (columna ${index})`)
+            } else {
+              console.warn(`Header no reconocido: "${header}"`)
+            }
+          })
+          
+          console.log('Mapeo de columnas:', columnIndexes)
+          
+          // Procesar filas de datos
+          const parsedData: PTYSSExcelData[] = []
+          
+          for (let i = 1; i < rawData.length; i++) {
+            const row = rawData[i]
+            
+            // Verificar si la fila tiene datos
+            const hasData = row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '')
+            if (!hasData) {
+              console.log(`Fila ${i + 1} vacía, saltando...`)
+              continue
+            }
+            
+            const record: Partial<PTYSSExcelData> = {}
+            
+            // Mapear cada campo
+            Object.entries(columnIndexes).forEach(([field, columnIndex]) => {
+              if (columnIndex !== undefined && columnIndex < row.length) {
+                const cellValue = row[columnIndex]
+                ;(record as any)[field] = cellValue ? String(cellValue).trim() : ''
+              }
+            })
+            
+            // Validar que al menos algunos campos importantes estén presentes
+            if (record.container || record.order || record.clientId) {
+              // Agregar valores por defecto para campos faltantes
+              const completeRecord: PTYSSExcelData = {
+                clientId: record.clientId || '',
+                order: record.order || '',
+                container: record.container || '',
+                naviera: record.naviera || '',
+                from: record.from || '',
+                to: record.to || '',
+                operationType: record.operationType || '',
+                containerSize: record.containerSize || '',
+                containerType: record.containerType || '',
+                estadia: record.estadia || '',
+                genset: record.genset || '',
+                retencion: record.retencion || '',
+                pesaje: record.pesaje || '',
+                ti: record.ti || '',
+                matriculaCamion: record.matriculaCamion || '',
+                conductor: record.conductor || '',
+                numeroChasisPlaca: record.numeroChasisPlaca || '',
+                moveDate: record.moveDate || '',
+                notes: record.notes || ''
+              }
+              
+              parsedData.push(completeRecord)
+              console.log(`Fila ${i + 1} procesada:`, completeRecord)
+            } else {
+              console.warn(`Fila ${i + 1} no tiene datos suficientes, saltando:`, record)
+            }
+          }
+          
+          console.log('=== RESUMEN DEL PROCESAMIENTO PTYSS ===')
+          console.log('Total de filas procesadas:', rawData.length - 1)
+          console.log('Registros válidos extraídos:', parsedData.length)
+          
+          if (parsedData.length === 0) {
+            throw new Error('No se encontraron registros válidos en el archivo Excel')
+          }
+          
+          resolve(parsedData)
+          
+        } catch (error) {
+          console.error('Error completo en parsePTYSSExcel:', error)
+          reject(new Error(`Error al parsear Excel de PTYSS: ${error instanceof Error ? error.message : String(error)}`))
+        }
+      }
+      
+      reader.onerror = (error) => {
+        console.error('Error del FileReader:', error)
+        reject(new Error('Error al leer el archivo. El archivo podría estar corrupto o en un formato no compatible.'))
+      }
+      
+      console.log('=== INICIANDO PROCESAMIENTO PTYSS ===')
+      console.log('Archivo:', {
+        nombre: file.name,
+        tamaño: `${(file.size / 1024).toFixed(2)} KB`,
+        tipo: file.type || 'no especificado'
+      })
+      
+      reader.readAsArrayBuffer(file)
+      
+    } catch (error) {
+      reject(new Error(`Error al procesar archivo: ${error}`))
+    }
+  })
+}

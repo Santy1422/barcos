@@ -37,6 +37,13 @@ const excelRecordSchema = new mongoose.Schema({
     default: null
   },
   
+  // Campo específico para containerConsecutive (para consultas más eficientes)
+  containerConsecutive: {
+    type: String,
+    required: false,
+    default: null
+  },
+  
   // Relaciones
   clientId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -68,5 +75,6 @@ excelRecordSchema.index({ clientId: 1 });
 excelRecordSchema.index({ createdBy: 1 });
 excelRecordSchema.index({ createdAt: -1 });
 excelRecordSchema.index({ sapCode: 1 });
+excelRecordSchema.index({ containerConsecutive: 1 });
 
 export default excelRecordSchema;

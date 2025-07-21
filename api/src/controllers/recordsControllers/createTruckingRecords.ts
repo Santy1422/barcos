@@ -76,17 +76,23 @@ export default async (req, res) => {
       try {
         console.log(`💾 Guardando registro ${i + 1} en MongoDB...`);
         
-        // Extraer sapCode de los datos si existe
+        // Extraer sapCode y containerConsecutive de los datos si existen
         const sapCode = data.sapCode || null;
+        const containerConsecutive = data.containerConsecutive || null;
+        
+        // Determinar el módulo basado en el sapCode o en los datos
+        const module = data.sapCode === 'PTYSS001' ? 'ptyss' : 'trucking';
+        const type = module === 'ptyss' ? 'maritime' : 'transport';
         
         const record = await records.create({
           excelId: validExcelId,
-          module: "trucking",
-          type: "transport",
+          module: module,
+          type: type,
           status: "pendiente",
           totalValue: totalValue || 0,
           data, // Datos originales completos
           sapCode, // Campo específico para consultas
+          containerConsecutive, // Campo específico para consultas
           createdBy: userId
         });
         
