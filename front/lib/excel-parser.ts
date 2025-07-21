@@ -206,10 +206,17 @@ export const parseTruckingExcel = async (file: File): Promise<TruckingExcelData[
           );
           
           console.log('Headers procesados:', headers);
+          console.log('Headers originales (sin procesar):', rawData[0]);
+          console.log('Buscando containerConsecutive en headers:', headers.includes('containerconsecutive'));
+          console.log('Headers que contienen "consecutive":', headers.filter(h => h.includes('consecutive')));
           
           // Mapeo de headers a campos del objeto
           const fieldMapping: { [key: string]: keyof TruckingExcelData } = {
-            'containerConsecutive': 'containerConsecutive',
+            'containerconsecutive': 'containerConsecutive',
+            'container consecutive': 'containerConsecutive',
+            'consecutive': 'containerConsecutive',
+            'containerconsecutive': 'containerConsecutive',
+            'container consecutive': 'containerConsecutive',
             'container': 'container',
             'size': 'size',
             'type': 'type',
@@ -243,7 +250,21 @@ export const parseTruckingExcel = async (file: File): Promise<TruckingExcelData[
           const columnIndexes: { [key in keyof TruckingExcelData]?: number } = {};
           
           headers.forEach((header, index) => {
-            const field = fieldMapping[header];
+            // Buscar coincidencia exacta primero
+            let field = fieldMapping[header];
+            
+            // Si no hay coincidencia exacta, buscar case-insensitive
+            if (!field) {
+              const normalizedHeader = header.toLowerCase().replace(/\s+/g, '');
+              for (const [key, value] of Object.entries(fieldMapping)) {
+                const normalizedKey = key.toLowerCase().replace(/\s+/g, '');
+                if (normalizedKey === normalizedHeader) {
+                  field = value;
+                  break;
+                }
+              }
+            }
+            
             if (field) {
               columnIndexes[field] = index;
               console.log(`Mapeado: "${header}" -> ${field} (columna ${index})`);
@@ -253,6 +274,7 @@ export const parseTruckingExcel = async (file: File): Promise<TruckingExcelData[
           });
           
           console.log('Mapeo de columnas:', columnIndexes);
+          console.log('¿ContainerConsecutive mapeado?', columnIndexes.containerConsecutive !== undefined);
           
           // Procesar filas de datos
           const parsedData: TruckingExcelData[] = [];

@@ -12,6 +12,8 @@ export interface ExcelRecord {
   status: "pendiente" | "facturado" | "anulado" // Status of this individual record
   totalValue: number // The calculated total value for this specific record/line item
   data: any // The raw data object for this record (e.g., TruckingRecordData)
+  sapCode?: string // Campo específico para consultas
+  containerConsecutive?: string // Campo específico para consultas
   createdAt: string
   invoiceId?: string // ID of the invoice if it has been facturado
 }
@@ -141,6 +143,8 @@ export const fetchPendingRecordsByModule = createAsyncThunk(
         status: record.status,
         totalValue: record.totalValue || 0,
         data: record.data,
+        sapCode: record.sapCode || null,
+        containerConsecutive: record.containerConsecutive || null,
         createdAt: record.createdAt,
         invoiceId: record.invoiceId
       }))

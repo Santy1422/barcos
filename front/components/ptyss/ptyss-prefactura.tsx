@@ -48,6 +48,8 @@ export function PTYSSPrefactura() {
   console.log('🔍 PTYSSPrefactura - pendingPTYSSRecords.length:', pendingPTYSSRecords.length)
   console.log('🔍 PTYSSPrefactura - isLoadingRecords:', isLoadingRecords)
   
+
+  
   // Debug: Log services
   console.log('🔍 PTYSSPrefactura - additionalServices:', additionalServices)
   console.log('🔍 PTYSSPrefactura - servicesLoading:', servicesLoading)
@@ -56,6 +58,7 @@ export function PTYSSPrefactura() {
   const [currentStep, setCurrentStep] = useState(1)
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([])
   const [searchTerm, setSearchTerm] = useState("")
+  const [recordTypeFilter, setRecordTypeFilter] = useState<"all" | "local" | "trasiego">("all")
   const [prefacturaData, setPrefacturaData] = useState({
     prefacturaNumber: `PTY-PRE-${Date.now().toString().slice(-5)}`,
     notes: ""
@@ -99,9 +102,46 @@ export function PTYSSPrefactura() {
     return record.id || 'unknown'
   }
 
-  // Filtrar registros por búsqueda
+  // Función para obtener el containerConsecutive de un registro
+  const getContainerConsecutive = (record: IndividualExcelRecord): string => {
+    const data = record.data as Record<string, any>
+    
+    // Buscar en múltiples lugares posibles
+    return data.containerConsecutive || 
+           record.containerConsecutive || 
+           data.containerConsecutive || 
+           "N/A"
+  }
+
+  // Función para determinar el tipo de registro
+  const getRecordType = (record: IndividualExcelRecord): "local" | "trasiego" => {
+    const data = record.data as Record<string, any>
+    
+    // Los registros de trasiego tienen campos específicos del Excel de trucking
+    // como containerConsecutive, leg, moveType, etc.
+    if (data.containerConsecutive || data.leg || data.moveType || data.associate) {
+      return "trasiego"
+    }
+    
+    // Los registros locales tienen campos específicos de PTYSS
+    // como clientId, order, naviera, etc.
+    if (data.clientId || data.order || data.naviera) {
+      return "local"
+    }
+    
+    // Por defecto, si no podemos determinar, asumimos que es local
+    return "local"
+  }
+
+  // Filtrar registros por búsqueda y tipo
   const filteredRecords = pendingPTYSSRecords.filter((record: IndividualExcelRecord) => {
     const data = record.data as Record<string, any>
+    const recordType = getRecordType(record)
+    
+    // Aplicar filtro por tipo de registro
+    if (recordTypeFilter !== "all" && recordType !== recordTypeFilter) {
+      return false
+    }
     
     // Buscar el cliente por ID
     const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
@@ -110,6 +150,8 @@ export function PTYSSPrefactura() {
     const searchableText = [
       data.container || "",
       data.order || "",
+      data.containerConsecutive || "", // Incluir containerConsecutive para búsqueda
+      data.associate || "", // Incluir associate para búsqueda
       clientName,
       data.moveDate || "",
       getRecordId(record),
@@ -714,8 +756,8 @@ export function PTYSSPrefactura() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Búsqueda */}
-            <div className="mb-6 mt-4">
+            {/* Búsqueda y Filtros */}
+            <div className="mb-6 mt-4 space-y-4">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -726,6 +768,46 @@ export function PTYSSPrefactura() {
                   className="pl-8"
                 />
               </div>
+              
+              {/* Filtro por tipo de registro */}
+              <div className="flex items-center gap-4">
+                <Label className="text-sm font-semibold text-slate-700">Filtrar por tipo:</Label>
+                <div className="flex gap-2">
+                  <Button
+                    variant={recordTypeFilter === "all" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setRecordTypeFilter("all")
+                      setSelectedRecordIds([])
+                    }}
+                    className="text-xs"
+                  >
+                    Todos
+                  </Button>
+                  <Button
+                    variant={recordTypeFilter === "local" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setRecordTypeFilter("local")
+                      setSelectedRecordIds([])
+                    }}
+                    className="text-xs"
+                  >
+                    Registros Locales
+                  </Button>
+                  <Button
+                    variant={recordTypeFilter === "trasiego" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setRecordTypeFilter("trasiego")
+                      setSelectedRecordIds([])
+                    }}
+                    className="text-xs"
+                  >
+                    Registros Trasiego
+                  </Button>
+                </div>
+              </div>
             </div>
 
             {/* Información del total de registros */}
@@ -734,7 +816,7 @@ export function PTYSSPrefactura() {
                 <div className="p-2 bg-slate-600 rounded-lg">
                   <Database className="h-5 w-5 text-white" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <span className="text-sm font-semibold text-slate-900">
                     Total de registros en la base de datos: {pendingPTYSSRecords.length}
                   </span>
@@ -743,6 +825,20 @@ export function PTYSSPrefactura() {
                       Mostrando {filteredRecords.length} registros filtrados
                     </div>
                   )}
+                </div>
+                <div className="flex gap-4 text-xs">
+                  <div className="bg-white/60 px-3 py-1 rounded-md">
+                    <span className="font-medium text-slate-600">Locales:</span>
+                    <span className="ml-1 font-bold text-slate-900">
+                      {pendingPTYSSRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "local").length}
+                    </span>
+                  </div>
+                  <div className="bg-white/60 px-3 py-1 rounded-md">
+                    <span className="font-medium text-slate-600">Trasiego:</span>
+                    <span className="ml-1 font-bold text-slate-900">
+                      {pendingPTYSSRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "trasiego").length}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -767,6 +863,7 @@ export function PTYSSPrefactura() {
                       </TableHead>
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Contenedor</TableHead>
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Fecha Movimiento</TableHead>
+                      <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Tipo</TableHead>
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Cliente</TableHead>
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Orden</TableHead>
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Ruta</TableHead>
@@ -806,14 +903,32 @@ export function PTYSSPrefactura() {
                             </div>
                           </TableCell>
                           <TableCell className="py-2 px-3">
+                            <Badge 
+                              variant={getRecordType(record) === "local" ? "default" : "secondary"}
+                              className="text-xs"
+                            >
+                              {getRecordType(record) === "local" ? "Local" : "Trasiego"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="py-2 px-3">
                             <div className="text-sm">
                               {(() => {
+                                // Para registros de trasiego, el cliente está en el campo associate
+                                if (getRecordType(record) === "trasiego") {
+                                  return data.associate || "N/A"
+                                }
+                                // Para registros locales, buscar por clientId
                                 const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
                                 return client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
                               })()}
                             </div>
                           </TableCell>
-                          <TableCell className="py-2 px-3 text-sm">{data.order || "N/A"}</TableCell>
+                          <TableCell className="py-2 px-3 text-sm">
+                            {getRecordType(record) === "trasiego" 
+                              ? getContainerConsecutive(record)
+                              : (data.order || "N/A")
+                            }
+                          </TableCell>
                           <TableCell className="py-2 px-3">
                             <div className="space-y-0.5">
                               <div className="font-medium text-sm">{data.from || "N/A"} → {data.to || "N/A"}</div>
@@ -1120,15 +1235,34 @@ export function PTYSSPrefactura() {
                     <p className="text-sm">
                       {(() => {
                         const data = selectedRecordForView.data as Record<string, any>
+                        const recordType = getRecordType(selectedRecordForView)
+                        
+                        // Para registros de trasiego, el cliente está en el campo associate
+                        if (recordType === "trasiego") {
+                          return data.associate || "N/A"
+                        }
+                        // Para registros locales, buscar por clientId
                         const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
                         return client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
                       })()}
                     </p>
                   </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-600">Orden</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).order || "N/A"}</p>
-                  </div>
+                                      <div>
+                      <Label className="text-sm font-medium text-gray-600">Orden</Label>
+                      <p className="text-sm">
+                        {(() => {
+                          const recordType = getRecordType(selectedRecordForView)
+                          
+                          // Para registros de trasiego, usar containerConsecutive
+                          if (recordType === "trasiego") {
+                            return getContainerConsecutive(selectedRecordForView)
+                          }
+                          // Para registros locales, usar order
+                          const data = selectedRecordForView.data as Record<string, any>
+                          return data.order || "N/A"
+                        })()}
+                      </p>
+                    </div>
                 </div>
               </div>
 

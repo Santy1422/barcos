@@ -396,6 +396,7 @@ export function PTYSSUpload() {
           ...record,
           from: from, // Agregar from extraído del leg
           to: to, // Agregar to extraído del leg
+          operationType: 'import', // Siempre import para registros de trasiego
           matchedPrice: matchedRoute.price,
           matchedRouteId: matchedRoute._id || '',
           matchedRouteName: matchedRoute.name || '',
@@ -408,6 +409,7 @@ export function PTYSSUpload() {
           ...record,
           from: from, // Agregar from extraído del leg
           to: to, // Agregar to extraído del leg
+          operationType: 'import', // Siempre import para registros de trasiego
           matchedPrice: 0,
           isMatched: false,
           sapCode: 'PTYSS001'
@@ -425,7 +427,7 @@ export function PTYSSUpload() {
       naviera: record.route || '',
       from: record.pol || '',
       to: record.pod || '',
-      operationType: record.moveType || '',
+      operationType: 'import', // Siempre import para registros de trasiego
       containerSize: record.size || '',
       containerType: record.type || '',
       estadia: '',
@@ -473,6 +475,9 @@ export function PTYSSUpload() {
         
         console.log("=== DEBUGGING MATCHING PTYSS ===")
         console.log("Datos del Excel:", realData)
+        console.log("Primer registro containerConsecutive:", realData[0]?.containerConsecutive)
+        console.log("Primer registro keys:", Object.keys(realData[0] || {}))
+        console.log("Todos los registros containerConsecutive:", realData.map(r => r.containerConsecutive))
         console.log("Rutas disponibles:", routes)
         console.log("")
         
@@ -549,6 +554,10 @@ export function PTYSSUpload() {
         totalValue: record.matchedPrice || 0 // Usar el precio de la ruta si está disponible
       }))
       
+      console.log("=== DATOS A GUARDAR ===")
+      console.log("Primer registro completo:", recordsData[0])
+      console.log("ContainerConsecutive del primer registro:", recordsData[0]?.data?.containerConsecutive)
+      console.log("Todos los containerConsecutive:", recordsData.map(r => r.data.containerConsecutive))
       console.log("Records data preparado:", recordsData)
       console.log("Payload a enviar:", {
         excelId: tempObjectId,
@@ -1281,6 +1290,7 @@ export function PTYSSUpload() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Cliente</TableHead>
+                    <TableHead>Consecutivo</TableHead>
                     <TableHead>Contenedor</TableHead>
                     <TableHead>From/To</TableHead>
                     <TableHead>Operación</TableHead>
@@ -1293,6 +1303,7 @@ export function PTYSSUpload() {
                   {previewData.map((record, index) => (
                     <TableRow key={index}>
                       <TableCell>{record.associate}</TableCell>
+                      <TableCell className="font-mono text-sm">{record.containerConsecutive || "N/A"}</TableCell>
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="font-medium">{record.container}</span>
