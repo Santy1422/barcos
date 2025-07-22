@@ -6,27 +6,31 @@ const updateRecord = async (req: Request, res: Response) => {
     const { id } = req.params;
     const updateData = req.body;
     
+    console.log("🔍 updateRecord - ID:", id);
+    console.log("🔍 updateRecord - updateData:", updateData);
+    
     // Agregar información de auditoría
-        // @ts-ignore
-
-    updateData.updatedBy = req.user?.id;
     updateData.updatedAt = new Date();
+    
+    console.log("🔍 updateRecord - updateData final:", updateData);
     
     const record = await records.findByIdAndUpdate(
       id,
       updateData,
       { new: true, runValidators: true }
     )
-      .populate('client', 'name email')
-      .populate('excelFile', 'filename originalName')
-      .populate('updatedBy', 'name lastName email');
+      .populate('clientId', 'companyName fullName email')
+      .populate('excelId', 'filename originalName');
     
     if (!record) {
+      console.log("🔍 updateRecord - Registro no encontrado");
       return res.status(404).json({
         success: false,
         message: "Registro no encontrado"
       });
     }
+    
+    console.log("🔍 updateRecord - Registro actualizado exitosamente:", record._id);
     
     res.status(200).json({
       success: true,

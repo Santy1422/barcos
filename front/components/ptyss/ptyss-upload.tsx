@@ -26,7 +26,7 @@ import {
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
-import { createTruckingRecords, selectCreatingRecords, selectRecordsError } from "@/lib/features/records/recordsSlice"
+import { createTruckingRecords, createPTYSSRecords, selectCreatingRecords, selectRecordsError } from "@/lib/features/records/recordsSlice"
 import { 
   selectAllClients,
   createClientAsync,
@@ -70,6 +70,7 @@ interface PTYSSRecordData {
   moveDate: string
   notes: string
   totalValue: number
+  recordType: "local" | "trasiego" // Campo para identificar registros locales o de trasiego
 }
 
 const initialRecordData: PTYSSRecordData = {
@@ -92,7 +93,8 @@ const initialRecordData: PTYSSRecordData = {
   numeroChasisPlaca: "",
   moveDate: "",
   notes: "",
-  totalValue: 0
+  totalValue: 0,
+  recordType: "local"
 }
 
 export function PTYSSUpload() {
@@ -311,7 +313,7 @@ export function PTYSSUpload() {
         recordsData
       })
       
-      const result = await dispatch(createTruckingRecords({
+      const result = await dispatch(createPTYSSRecords({
         excelId: tempObjectId,
         recordsData
       })).unwrap()
@@ -440,7 +442,8 @@ export function PTYSSUpload() {
       numeroChasisPlaca: '',
       moveDate: record.moveDate || '',
       notes: '',
-      totalValue: record.matchedPrice || 0
+      totalValue: record.matchedPrice || 0,
+      recordType: "trasiego" // Campo para identificar registros de trasiego
     }))
   }
 
@@ -564,7 +567,7 @@ export function PTYSSUpload() {
         recordsData
       })
       
-      const result = await dispatch(createTruckingRecords({
+      const result = await dispatch(createPTYSSRecords({
         excelId: tempObjectId, // Use the generated ObjectId
         recordsData
       })).unwrap()

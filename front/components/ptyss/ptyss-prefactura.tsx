@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Ship, DollarSign, FileText, Search, Calendar, Clock, Database, Loader2, Download, Eye, ArrowRight, ArrowLeft, CheckCircle, Info, Trash2, Plus } from "lucide-react"
+import { Ship, DollarSign, FileText, Search, Calendar, Clock, Database, Loader2, Download, Eye, ArrowRight, ArrowLeft, CheckCircle, Info, Trash2, Plus, Edit, ChevronUp, ChevronDown } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import jsPDF from "jspdf"
@@ -19,33 +19,38 @@ import autoTable from "jspdf-autotable"
 import saveAs from "file-saver"
 import { 
   selectPendingRecordsByModuleFromDB,
+  selectRecordsByModule,
   selectRecordsLoading,
   fetchPendingRecordsByModule,
+  fetchRecordsByModule,
   markRecordsAsInvoiced,
   addInvoice,
   createInvoiceAsync,
   deleteRecordAsync,
+  updateRecordAsync,
   type ExcelRecord as IndividualExcelRecord,
   type InvoiceRecord as PersistedInvoiceRecord
 } from "@/lib/features/records/recordsSlice"
 import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSlice"
+import { selectActiveNavieras, fetchNavieras } from "@/lib/features/naviera/navieraSlice"
 import { selectServicesByModule, fetchServices, selectServicesLoading } from "@/lib/features/services/servicesSlice"
 
 export function PTYSSPrefactura() {
   const dispatch = useAppDispatch()
   const { toast } = useToast()
   
-  const pendingPTYSSRecords = useAppSelector((state) =>
-    selectPendingRecordsByModuleFromDB(state, "ptyss")
+  const ptyssRecords = useAppSelector((state) =>
+    selectRecordsByModule(state, "ptyss")
   )
   const isLoadingRecords = useAppSelector(selectRecordsLoading)
   const clients = useAppSelector(selectAllClients)
+  const navieras = useAppSelector(selectActiveNavieras)
   const additionalServices = useAppSelector((state) => selectServicesByModule(state, "ptyss"))
   const servicesLoading = useAppSelector(selectServicesLoading)
   
-  // Debug: Log registros pendientes
-  console.log('🔍 PTYSSPrefactura - pendingPTYSSRecords:', pendingPTYSSRecords)
-  console.log('🔍 PTYSSPrefactura - pendingPTYSSRecords.length:', pendingPTYSSRecords.length)
+  // Debug: Log registros PTYSS
+  console.log('🔍 PTYSSPrefactura - ptyssRecords:', ptyssRecords)
+  console.log('🔍 PTYSSPrefactura - ptyssRecords.length:', ptyssRecords.length)
   console.log('🔍 PTYSSPrefactura - isLoadingRecords:', isLoadingRecords)
   
 
@@ -59,6 +64,11 @@ export function PTYSSPrefactura() {
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [recordTypeFilter, setRecordTypeFilter] = useState<"all" | "local" | "trasiego">("all")
+  const [statusFilter, setStatusFilter] = useState<"all" | "pendiente" | "completado">("all")
+  const [dateFilter, setDateFilter] = useState<"all" | "createdAt" | "moveDate">("all")
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
+  const [showSelectionRules, setShowSelectionRules] = useState(false)
   const [prefacturaData, setPrefacturaData] = useState({
     prefacturaNumber: `PTY-PRE-${Date.now().toString().slice(-5)}`,
     notes: ""
@@ -74,12 +84,16 @@ export function PTYSSPrefactura() {
   const [generatedPdf, setGeneratedPdf] = useState<Blob | null>(null)
   const [previewPdf, setPreviewPdf] = useState<Blob | null>(null)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
   const [selectedRecordForView, setSelectedRecordForView] = useState<IndividualExcelRecord | null>(null)
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedRecord, setEditedRecord] = useState<any>(null)
 
   // Cargar registros PTYSS al montar el componente
   useEffect(() => {
-    dispatch(fetchPendingRecordsByModule("ptyss"))
+    dispatch(fetchRecordsByModule("ptyss"))
   }, [dispatch])
 
   // Cargar clientes al montar el componente
@@ -93,13 +107,19 @@ export function PTYSSPrefactura() {
     dispatch(fetchServices("ptyss"))
   }, [dispatch])
 
+  // Cargar navieras al montar el componente
+  useEffect(() => {
+    dispatch(fetchNavieras('active'))
+  }, [dispatch])
+
   // Función helper para obtener el ID correcto del registro
   const getRecordId = (record: IndividualExcelRecord): string => {
     if (!record) {
       return 'unknown'
     }
     
-    return record.id || 'unknown'
+    // Buscar el ID en múltiples lugares posibles
+    return record._id || record.id || 'unknown'
   }
 
   // Función para obtener el containerConsecutive de un registro
@@ -117,6 +137,11 @@ export function PTYSSPrefactura() {
   const getRecordType = (record: IndividualExcelRecord): "local" | "trasiego" => {
     const data = record.data as Record<string, any>
     
+    // Si el registro tiene el campo recordType, usarlo directamente
+    if (data.recordType) {
+      return data.recordType
+    }
+    
     // Los registros de trasiego tienen campos específicos del Excel de trucking
     // como containerConsecutive, leg, moveType, etc.
     if (data.containerConsecutive || data.leg || data.moveType || data.associate) {
@@ -133,14 +158,75 @@ export function PTYSSPrefactura() {
     return "local"
   }
 
-  // Filtrar registros por búsqueda y tipo
-  const filteredRecords = pendingPTYSSRecords.filter((record: IndividualExcelRecord) => {
+  // Debug: Log detallado de cada registro (después de definir getRecordType)
+  if (ptyssRecords.length > 0) {
+    console.log('🔍 PTYSSPrefactura - Análisis detallado de registros:')
+    ptyssRecords.forEach((record: IndividualExcelRecord, index: number) => {
+      const data = record.data as Record<string, any>
+      const recordType = getRecordType(record)
+      console.log(`  Registro ${index + 1}:`)
+      console.log(`    ID: ${getRecordId(record)}`)
+      console.log(`    Tipo detectado: ${recordType}`)
+      console.log(`    Módulo: ${record.module}`)
+      console.log(`    Data keys:`, Object.keys(data))
+      console.log(`    clientId: ${data.clientId}`)
+      console.log(`    order: ${data.order}`)
+      console.log(`    naviera: ${data.naviera}`)
+      console.log(`    containerConsecutive: ${data.containerConsecutive}`)
+      console.log(`    associate: ${data.associate}`)
+      console.log(`    leg: ${data.leg}`)
+      console.log(`    moveType: ${data.moveType}`)
+      console.log(`    recordType: ${data.recordType}`)
+      console.log(`    ================================`)
+    })
+  }
+
+  // Filtrar registros por búsqueda, tipo, estado y fecha
+  const filteredRecords = ptyssRecords.filter((record: IndividualExcelRecord) => {
     const data = record.data as Record<string, any>
     const recordType = getRecordType(record)
+    
+    // EXCLUIR registros que ya han sido prefacturados (tienen invoiceId)
+    if (record.invoiceId) {
+      return false
+    }
     
     // Aplicar filtro por tipo de registro
     if (recordTypeFilter !== "all" && recordType !== recordTypeFilter) {
       return false
+    }
+    
+    // Aplicar filtro por estado
+    if (statusFilter !== "all" && record.status !== statusFilter) {
+      return false
+    }
+    
+    // Aplicar filtro por fecha
+    if (dateFilter !== "all" && (startDate || endDate)) {
+      let dateToCheck: string = ""
+      
+      if (dateFilter === "createdAt") {
+        dateToCheck = record.createdAt
+      } else if (dateFilter === "moveDate") {
+        dateToCheck = data.moveDate || ""
+      }
+      
+      if (dateToCheck) {
+        const recordDate = new Date(dateToCheck)
+        
+        if (startDate) {
+          const start = new Date(startDate + "T00:00:00")
+          if (recordDate < start) return false
+        }
+        
+        if (endDate) {
+          const end = new Date(endDate + "T23:59:59.999")
+          if (recordDate > end) return false
+        }
+      } else if (dateFilter === "moveDate" && !dateToCheck) {
+        // Si estamos filtrando por fecha de movimiento pero no hay fecha, excluir
+        return false
+      }
     }
     
     // Buscar el cliente por ID
@@ -161,12 +247,60 @@ export function PTYSSPrefactura() {
   })
 
   // Obtener registros seleccionados
-  const selectedRecords = pendingPTYSSRecords.filter((record: IndividualExcelRecord) => 
+    const selectedRecords = ptyssRecords.filter((record: IndividualExcelRecord) =>
     selectedRecordIds.includes(getRecordId(record))
   )
 
+  // Función para obtener el cliente de un registro
+  const getRecordClient = (record: IndividualExcelRecord) => {
+    const data = record.data as Record<string, any>
+    return clients.find((c: any) => (c._id || c.id) === data?.clientId)
+  }
+
+  // Función para validar si un registro puede ser seleccionado
+  const canSelectRecord = (record: IndividualExcelRecord) => {
+    const recordClient = getRecordClient(record)
+    const recordType = getRecordType(record)
+    
+    // NO permitir seleccionar registros que ya han sido prefacturados
+    if (record.invoiceId) {
+      return false
+    }
+    
+    // Si no hay registros seleccionados, solo permitir registros completados
+    if (selectedRecordIds.length === 0) {
+      return record.status === "completado"
+    }
+    
+    // Obtener el primer registro seleccionado para comparar
+    const firstSelectedRecord = ptyssRecords.find((r: IndividualExcelRecord) => getRecordId(r) === selectedRecordIds[0])
+    if (!firstSelectedRecord) return false
+    
+    const firstSelectedClient = getRecordClient(firstSelectedRecord)
+    const firstSelectedType = getRecordType(firstSelectedRecord)
+    
+    // Validar que sea del mismo cliente, mismo tipo y estado completado
+    return (
+      record.status === "completado" &&
+      recordClient?._id === firstSelectedClient?._id &&
+      recordType === firstSelectedType
+    )
+  }
+
   const handleRecordSelection = (recordId: string, checked: boolean) => {
+    const record = ptyssRecords.find((r: IndividualExcelRecord) => getRecordId(r) === recordId)
+    if (!record) return
+    
     if (checked) {
+      // Validar si se puede seleccionar
+      if (!canSelectRecord(record)) {
+        toast({
+          title: "No se puede seleccionar este registro",
+          description: "Solo puedes seleccionar registros del mismo cliente, mismo tipo y estado completado",
+          variant: "destructive"
+        })
+        return
+      }
       setSelectedRecordIds(prev => [...prev, recordId])
     } else {
       setSelectedRecordIds(prev => prev.filter(id => id !== recordId))
@@ -175,7 +309,21 @@ export function PTYSSPrefactura() {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedRecordIds(filteredRecords.map((record: IndividualExcelRecord) => getRecordId(record)))
+      // Solo seleccionar registros que cumplan con las restricciones
+      const selectableIds = filteredRecords
+        .filter((record: IndividualExcelRecord) => canSelectRecord(record))
+        .map((record: IndividualExcelRecord) => getRecordId(record))
+      
+      if (selectableIds.length === 0) {
+        toast({
+          title: "No hay registros seleccionables",
+          description: "No hay registros completados del mismo cliente y tipo para seleccionar",
+          variant: "destructive"
+        })
+        return
+      }
+      
+      setSelectedRecordIds(selectableIds)
     } else {
       setSelectedRecordIds([])
     }
@@ -204,7 +352,106 @@ export function PTYSSPrefactura() {
 
   const handleViewRecord = (record: IndividualExcelRecord) => {
     setSelectedRecordForView(record)
+    setEditedRecord({ ...record.data })
+    setIsEditing(false)
     setIsRecordModalOpen(true)
+  }
+
+  const handleEditRecord = () => {
+    setIsEditing(true)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!selectedRecordForView || !editedRecord) return
+
+    try {
+      const recordId = getRecordId(selectedRecordForView)
+      
+      console.log("🔍 handleSaveEdit - recordId:", recordId);
+      console.log("🔍 handleSaveEdit - editedRecord:", editedRecord);
+      
+      // Calcular el valor total actualizado
+      const totalValue = (parseFloat(editedRecord.genset || '0') + 
+                         parseFloat(editedRecord.retencion || '0') + 
+                         parseFloat(editedRecord.pesaje || '0'))
+      
+      console.log("🔍 handleSaveEdit - totalValue calculado:", totalValue);
+      
+      const updatePayload = {
+        id: recordId,
+        updates: {
+          data: editedRecord,
+          totalValue: totalValue
+        }
+      };
+      
+      console.log("🔍 handleSaveEdit - updatePayload:", updatePayload);
+      
+      // Actualizar el registro en el backend
+      await dispatch(updateRecordAsync(updatePayload)).unwrap()
+      
+      toast({
+        title: "Registro actualizado",
+        description: "El registro ha sido actualizado exitosamente",
+      })
+      
+      // Refrescar los registros pendientes
+      dispatch(fetchPendingRecordsByModule("ptyss"))
+      
+      // Cerrar el modal
+      setIsRecordModalOpen(false)
+      setIsEditing(false)
+      setEditedRecord(null)
+      
+    } catch (error: any) {
+      console.error("Error al actualizar registro:", error)
+      toast({
+        title: "Error al actualizar registro",
+        description: error.message || "Error al actualizar el registro",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setIsEditing(false)
+    setEditedRecord(selectedRecordForView ? { ...selectedRecordForView.data } : null)
+  }
+
+  const handleStatusChange = async (record: IndividualExcelRecord, newStatus: "pendiente" | "completado") => {
+    try {
+      const recordId = getRecordId(record)
+      
+      console.log("🔍 handleStatusChange - record completo:", record);
+      console.log("🔍 handleStatusChange - record._id:", record._id);
+      console.log("🔍 handleStatusChange - record.id:", record.id);
+      console.log("🔍 handleStatusChange - recordId calculado:", recordId);
+      console.log("🔍 handleStatusChange - newStatus:", newStatus);
+      
+      // Actualizar el estado del registro en el backend
+      await dispatch(updateRecordAsync({
+        id: recordId,
+        updates: {
+          status: newStatus
+        }
+      })).unwrap()
+      
+      toast({
+        title: "Estado actualizado",
+        description: `El estado del registro ha sido cambiado a ${newStatus}`,
+      })
+      
+      // Refrescar todos los registros del módulo PTYSS
+      dispatch(fetchRecordsByModule("ptyss"))
+      
+    } catch (error: any) {
+      console.error("Error al actualizar estado:", error)
+      toast({
+        title: "Error al actualizar estado",
+        description: error.message || "Error al actualizar el estado del registro",
+        variant: "destructive"
+      })
+    }
   }
 
   const handleDeleteRecord = async (record: IndividualExcelRecord) => {
@@ -218,8 +465,8 @@ export function PTYSSPrefactura() {
         description: "El registro ha sido eliminado exitosamente",
       })
       
-      // Refrescar los registros pendientes
-      dispatch(fetchPendingRecordsByModule("ptyss"))
+      // Refrescar todos los registros del módulo PTYSS
+      dispatch(fetchRecordsByModule("ptyss"))
       
     } catch (error: any) {
       toast({
@@ -375,49 +622,58 @@ export function PTYSSPrefactura() {
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(10)
     doc.setFont(undefined, 'bold')
-    doc.text('ITEM', 25, startY + 5)
+    doc.text('QTY', 25, startY + 5)
     doc.text('DESCRIPTION', 60, startY + 5)
     doc.text('PRICE', 140, startY + 5)
     doc.text('TOTAL', 170, startY + 5)
     
-    // Generar items de la prefactura
+    // Generar items de la prefactura agrupados
     const items: string[][] = []
     let itemIndex = 1
     
+    // Agrupar y sumar items por tipo
+    const groupedItems: { [key: string]: { total: number, count: number } } = {}
+    
     selectedRecords.forEach((record, index) => {
       const data = record.data as Record<string, any>
-      const recordId = getRecordId(record)
       
-      // Item principal - Flete
-      items.push([
-        itemIndex.toString(),
-        'Flete',
-        `$${(record.totalValue || 0).toFixed(2)}`,
-        `$${(record.totalValue || 0).toFixed(2)}`
-      ])
-      itemIndex++
+      // Agrupar Flete
+      const fleteKey = 'Flete'
+      if (!groupedItems[fleteKey]) {
+        groupedItems[fleteKey] = { total: 0, count: 0 }
+      }
+      groupedItems[fleteKey].total += (record.totalValue || 0)
+      groupedItems[fleteKey].count += 1
       
-      // Item adicional - TI (si aplica)
+      // Agrupar TI
       if (data.ti === 'si') {
-        items.push([
-          itemIndex.toString(),
-          'TI',
-          '$10.00',
-          '$10.00'
-        ])
-        itemIndex++
+        const tiKey = 'TI'
+        if (!groupedItems[tiKey]) {
+          groupedItems[tiKey] = { total: 0, count: 0 }
+        }
+        groupedItems[tiKey].total += 10
+        groupedItems[tiKey].count += 1
       }
       
-      // Item adicional - Gen set (si aplica)
+      // Agrupar Gen set
       if (data.genset && data.genset !== '0') {
-        items.push([
-          itemIndex.toString(),
-          'Gen set',
-          `$${data.genset}.00`,
-          `$${data.genset}.00`
-        ])
-        itemIndex++
+        const gensetKey = 'Gen set'
+        if (!groupedItems[gensetKey]) {
+          groupedItems[gensetKey] = { total: 0, count: 0 }
+        }
+        groupedItems[gensetKey].total += parseFloat(data.genset)
+        groupedItems[gensetKey].count += 1
       }
+    })
+    
+    // Convertir items agrupados a array
+    Object.entries(groupedItems).forEach(([description, itemData]) => {
+      items.push([
+        itemData.count.toString(), // Cantidad en lugar de enumeración
+        description,
+        `$${(itemData.total / itemData.count).toFixed(2)}`, // Precio promedio por registro
+        `$${itemData.total.toFixed(2)}` // Total del item
+      ])
     })
     
     // Agregar servicios adicionales seleccionados
@@ -553,6 +809,66 @@ export function PTYSSPrefactura() {
       })
     }
   }
+
+  // Función para generar PDF en tiempo real
+  const generateRealtimePDF = () => {
+    if (!prefacturaData.prefacturaNumber || selectedRecords.length === 0) {
+      // Limpiar URL si no hay datos válidos
+      if (pdfUrl) {
+        URL.revokeObjectURL(pdfUrl)
+        setPdfUrl(null)
+      }
+      return
+    }
+
+    // Evitar generaciones simultáneas
+    if (isGeneratingPDF) {
+      return
+    }
+
+    setIsGeneratingPDF(true)
+
+    try {
+      // Limpiar URL anterior si existe
+      if (pdfUrl) {
+        URL.revokeObjectURL(pdfUrl)
+      }
+      
+      const pdfBlob = generatePTYSSPrefacturaPDF(prefacturaData, selectedRecords)
+      const url = URL.createObjectURL(pdfBlob)
+      setPdfUrl(url)
+    } catch (error) {
+      console.error("Error al generar PDF en tiempo real:", error)
+      // Limpiar URL en caso de error
+      if (pdfUrl) {
+        URL.revokeObjectURL(pdfUrl)
+        setPdfUrl(null)
+      }
+    } finally {
+      setIsGeneratingPDF(false)
+    }
+  }
+
+  // Generar PDF en tiempo real cuando cambien los datos
+  useEffect(() => {
+    if (currentStep === 2 && prefacturaData.prefacturaNumber && selectedRecords.length > 0) {
+      // Usar setTimeout para evitar bucles infinitos
+      const timeoutId = setTimeout(() => {
+        generateRealtimePDF()
+      }, 500) // Delay de 500ms para evitar actualizaciones excesivas
+      
+      return () => clearTimeout(timeoutId)
+    }
+  }, [prefacturaData.prefacturaNumber, selectedRecords.length, selectedAdditionalServices.length, currentStep])
+
+  // Limpiar URL del PDF cuando se desmonte el componente
+  useEffect(() => {
+    return () => {
+      if (pdfUrl) {
+        URL.revokeObjectURL(pdfUrl)
+      }
+    }
+  }, [pdfUrl])
 
   const handleDownloadPDF = () => {
     if (generatedPdf) {
@@ -719,7 +1035,7 @@ export function PTYSSPrefactura() {
   const isIndeterminate = selectedRecordIds.length > 0 && selectedRecordIds.length < filteredRecords.length
 
   return (
-    <div className="space-y-6 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen p-6">
+    <div className="space-y-4 bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen p-4">
 
       {/* Paso 1: Selección de Registros */}
       {currentStep === 1 && (
@@ -732,9 +1048,9 @@ export function PTYSSPrefactura() {
                 </div>
                 <div>
                   <div className="text-xl font-bold">Paso 1: Selección de Registros</div>
-                  {pendingPTYSSRecords.length > 0 && (
+                  {ptyssRecords.length > 0 && (
                     <Badge variant="secondary" className="mt-1 bg-white/20 text-white border-white/30">
-                      {pendingPTYSSRecords.length} disponibles
+                      {ptyssRecords.length} disponibles
                     </Badge>
                   )}
                 </div>
@@ -769,46 +1085,195 @@ export function PTYSSPrefactura() {
                 />
               </div>
               
-              {/* Filtro por tipo de registro */}
-              <div className="flex items-center gap-4">
-                <Label className="text-sm font-semibold text-slate-700">Filtrar por tipo:</Label>
-                <div className="flex gap-2">
+              {/* Filtros */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Filtro por tipo de registro */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-slate-700">Filtrar por tipo:</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      variant={recordTypeFilter === "all" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setRecordTypeFilter("all")
+                        setSelectedRecordIds([])
+                      }}
+                      className="text-xs"
+                    >
+                      Todos
+                    </Button>
+                    <Button
+                      variant={recordTypeFilter === "local" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setRecordTypeFilter("local")
+                        setSelectedRecordIds([])
+                      }}
+                      className="text-xs"
+                    >
+                      Locales
+                    </Button>
+                    <Button
+                      variant={recordTypeFilter === "trasiego" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setRecordTypeFilter("trasiego")
+                        setSelectedRecordIds([])
+                      }}
+                      className="text-xs"
+                    >
+                      Trasiego
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Filtro por estado */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-slate-700">Filtrar por estado:</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      variant={statusFilter === "all" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setStatusFilter("all")
+                        setSelectedRecordIds([])
+                      }}
+                      className="text-xs"
+                    >
+                      Todos
+                    </Button>
+                    <Button
+                      variant={statusFilter === "pendiente" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setStatusFilter("pendiente")
+                        setSelectedRecordIds([])
+                      }}
+                      className="text-xs"
+                    >
+                      Pendiente
+                    </Button>
+                    <Button
+                      variant={statusFilter === "completado" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setStatusFilter("completado")
+                        setSelectedRecordIds([])
+                      }}
+                      className="text-xs"
+                    >
+                      Completado
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Filtro por fecha */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-slate-700">Filtrar por fecha:</Label>
+                  <div className="flex gap-2">
+                    <Select value={dateFilter} onValueChange={(value: "all" | "createdAt" | "moveDate") => {
+                      setDateFilter(value)
+                      setSelectedRecordIds([])
+                    }}>
+                      <SelectTrigger className="w-40 h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Sin filtro</SelectItem>
+                        <SelectItem value="createdAt">Fecha de creación</SelectItem>
+                        <SelectItem value="moveDate">Fecha de movimiento</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filtros de fecha específicos */}
+              {dateFilter !== "all" && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-slate-700">Fecha desde:</Label>
+                    <Input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => {
+                        setStartDate(e.target.value)
+                        setSelectedRecordIds([])
+                      }}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-slate-700">Fecha hasta:</Label>
+                    <Input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => {
+                        setEndDate(e.target.value)
+                        setSelectedRecordIds([])
+                      }}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Botón para limpiar filtros */}
+              {(recordTypeFilter !== "all" || statusFilter !== "all" || dateFilter !== "all" || searchTerm || startDate || endDate) && (
+                <div className="flex justify-end">
                   <Button
-                    variant={recordTypeFilter === "all" ? "default" : "outline"}
+                    variant="outline"
                     size="sm"
                     onClick={() => {
                       setRecordTypeFilter("all")
+                      setStatusFilter("all")
+                      setDateFilter("all")
+                      setSearchTerm("")
+                      setStartDate("")
+                      setEndDate("")
                       setSelectedRecordIds([])
                     }}
                     className="text-xs"
                   >
-                    Todos
-                  </Button>
-                  <Button
-                    variant={recordTypeFilter === "local" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => {
-                      setRecordTypeFilter("local")
-                      setSelectedRecordIds([])
-                    }}
-                    className="text-xs"
-                  >
-                    Registros Locales
-                  </Button>
-                  <Button
-                    variant={recordTypeFilter === "trasiego" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => {
-                      setRecordTypeFilter("trasiego")
-                      setSelectedRecordIds([])
-                    }}
-                    className="text-xs"
-                  >
-                    Registros Trasiego
+                    Limpiar todos los filtros
                   </Button>
                 </div>
-              </div>
+              )}
             </div>
+
+            {/* Información de selección múltiple */}
+            {selectedRecordIds.length > 0 && (
+              <div className="mb-4 bg-gradient-to-r from-blue-100 to-indigo-100 border border-blue-300 p-4 rounded-lg shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-blue-600 rounded-md">
+                      <CheckCircle className="h-4 w-4 text-white" />
+                    </div>
+                    <h3 className="font-semibold text-blue-900 text-sm">Reglas de selección múltiple</h3>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowSelectionRules(!showSelectionRules)}
+                    className="h-6 w-6 p-0 text-blue-700 hover:text-blue-900 hover:bg-blue-200"
+                  >
+                    {showSelectionRules ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                {showSelectionRules && (
+                  <div className="text-xs text-blue-800 space-y-1 mt-3">
+                    <p>• Solo puedes seleccionar registros con estado <strong>completado</strong></p>
+                    <p>• Todos los registros deben ser del <strong>mismo cliente</strong></p>
+                    <p>• Todos los registros deben ser del <strong>mismo tipo</strong> (local o trasiego)</p>
+                    <p>• Los registros no seleccionables aparecen con opacidad reducida</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Información del total de registros */}
             <div className="mb-4 bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-4 rounded-lg shadow-sm">
@@ -818,9 +1283,9 @@ export function PTYSSPrefactura() {
                 </div>
                 <div className="flex-1">
                   <span className="text-sm font-semibold text-slate-900">
-                    Total de registros en la base de datos: {pendingPTYSSRecords.length}
+                    Total de registros en la base de datos: {ptyssRecords.length}
                   </span>
-                  {searchTerm && (
+                  {(searchTerm || recordTypeFilter !== "all" || statusFilter !== "all" || dateFilter !== "all") && (
                     <div className="mt-1 text-sm text-slate-700">
                       Mostrando {filteredRecords.length} registros filtrados
                     </div>
@@ -830,15 +1295,45 @@ export function PTYSSPrefactura() {
                   <div className="bg-white/60 px-3 py-1 rounded-md">
                     <span className="font-medium text-slate-600">Locales:</span>
                     <span className="ml-1 font-bold text-slate-900">
-                      {pendingPTYSSRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "local").length}
+                      {ptyssRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "local").length}
                     </span>
                   </div>
                   <div className="bg-white/60 px-3 py-1 rounded-md">
                     <span className="font-medium text-slate-600">Trasiego:</span>
                     <span className="ml-1 font-bold text-slate-900">
-                      {pendingPTYSSRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "trasiego").length}
+                      {ptyssRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "trasiego").length}
                     </span>
                   </div>
+                  <div className="bg-white/60 px-3 py-1 rounded-md">
+                    <span className="font-medium text-slate-600">Pendientes:</span>
+                    <span className="ml-1 font-bold text-slate-900">
+                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.status === "pendiente").length}
+                    </span>
+                  </div>
+                  <div className="bg-white/60 px-3 py-1 rounded-md">
+                    <span className="font-medium text-slate-600">Completados:</span>
+                    <span className="ml-1 font-bold text-slate-900">
+                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.status === "completado").length}
+                    </span>
+                  </div>
+                  <div className="bg-white/60 px-3 py-1 rounded-md">
+                    <span className="font-medium text-slate-600">Prefacturados:</span>
+                    <span className="ml-1 font-bold text-slate-900">
+                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.invoiceId).length}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Nota informativa sobre registros facturados */}
+            <div className="mb-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 p-3 rounded-lg">
+              <div className="flex items-center gap-2">
+                <div className="p-1 bg-green-600 rounded-md">
+                  <CheckCircle className="h-4 w-4 text-white" />
+                </div>
+                <div className="text-sm text-green-800">
+                  <strong>Nota:</strong> Solo se muestran registros disponibles para prefacturar. Los registros que ya han sido prefacturados no aparecen en esta lista para evitar facturación duplicada.
                 </div>
               </div>
             </div>
@@ -866,8 +1361,11 @@ export function PTYSSPrefactura() {
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Tipo</TableHead>
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Cliente</TableHead>
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Orden</TableHead>
-                      <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Ruta</TableHead>
+                      <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">
+                        {recordTypeFilter === "trasiego" ? "Subcliente" : "Ruta"}
+                      </TableHead>
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Operación</TableHead>
+                      <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Estado</TableHead>
                       <TableHead className="w-12 py-3 px-3 text-sm font-semibold text-gray-700">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -878,14 +1376,52 @@ export function PTYSSPrefactura() {
                       const recordId = getRecordId(record)
                       const isSelected = selectedRecordIds.includes(recordId)
                       
+                      // Debug: Log detallado para registros de trasiego
+                      if (getRecordType(record) === "trasiego") {
+                        console.log("🔍 REGISTRO TRASIEGO DETALLADO:")
+                        console.log("  Record completo:", record)
+                        console.log("  Data:", data)
+                        console.log("  containerSize:", data.containerSize)
+                        console.log("  containerType:", data.containerType)
+                        console.log("  size:", data.size)
+                        console.log("  type:", data.type)
+                        console.log("  container:", data.container)
+                        console.log("  containerConsecutive:", data.containerConsecutive)
+                        console.log("  leg:", data.leg)
+                        console.log("  moveType:", data.moveType)
+                        console.log("  associate:", data.associate)
+                        console.log("  from:", data.from)
+                        console.log("  to:", data.to)
+                        console.log("  naviera:", data.naviera)
+                        console.log("  order:", data.order)
+                        console.log("  clientId:", data.clientId)
+                        console.log("  operationType:", data.operationType)
+                        console.log("  moveDate:", data.moveDate)
+                        console.log("  conductor:", data.conductor)
+                        console.log("  plate:", data.plate)
+                        console.log("  driverName:", data.driverName)
+                        console.log("  route:", data.route)
+                        console.log("  pol:", data.pol)
+                        console.log("  pod:", data.pod)
+                        console.log("  matchedPrice:", data.matchedPrice)
+                        console.log("  matchedRouteId:", data.matchedRouteId)
+                        console.log("  matchedRouteName:", data.matchedRouteName)
+                        console.log("  isMatched:", data.isMatched)
+                        console.log("  sapCode:", data.sapCode)
+                        console.log("  line:", data.line)
+                        console.log("  totalValue:", record.totalValue)
+                        console.log("  =================================")
+                      }
+                      
                       return (
                         <TableRow 
                           key={recordId}
-                          className={isSelected ? "bg-blue-50" : ""}
+                          className={`${isSelected ? "bg-blue-50" : ""} ${selectedRecordIds.length > 0 && !canSelectRecord(record) && !isSelected ? "opacity-50" : ""}`}
                         >
                           <TableCell className="py-2 px-3">
                             <Checkbox
                               checked={isSelected}
+                              disabled={selectedRecordIds.length > 0 && !canSelectRecord(record) && !isSelected}
                               onCheckedChange={(checked) => handleRecordSelection(recordId, checked as boolean)}
                             />
                           </TableCell>
@@ -893,7 +1429,18 @@ export function PTYSSPrefactura() {
                             <div className="space-y-0.5">
                               <div className="text-sm">{data.container || "N/A"}</div>
                               <div className="text-xs text-muted-foreground">
-                                {data.containerSize || "N/A"}' {data.containerType || "N/A"}
+                                {(() => {
+                                  // Para registros de trasiego, usar size y type del Excel
+                                  if (getRecordType(record) === "trasiego") {
+                                    const size = data.size || data.containerSize || "N/A"
+                                    const type = data.type || data.containerType || "N/A"
+                                    return `${size}' ${type}`
+                                  }
+                                  // Para registros locales, usar containerSize y containerType
+                                  const size = data.containerSize || "N/A"
+                                  const type = data.containerType || "N/A"
+                                  return `${size}' ${type}`
+                                })()}
                               </div>
                             </div>
                           </TableCell>
@@ -931,16 +1478,63 @@ export function PTYSSPrefactura() {
                           </TableCell>
                           <TableCell className="py-2 px-3">
                             <div className="space-y-0.5">
-                              <div className="font-medium text-sm">{data.from || "N/A"} → {data.to || "N/A"}</div>
+                              <div className="font-medium text-sm">
+                                {(() => {
+                                  // Para registros de trasiego, usar from y to extraídos del leg
+                                  if (getRecordType(record) === "trasiego") {
+                                    const from = data.from || data.pol || "N/A"
+                                    const to = data.to || data.pod || "N/A"
+                                    return `${from} → ${to}`
+                                  }
+                                  // Para registros locales, usar from y to
+                                  return `${data.from || "N/A"} → ${data.to || "N/A"}`
+                                })()}
+                              </div>
                               <div className="text-xs text-muted-foreground">
-                                {data.naviera || "N/A"}
+                                {(() => {
+                                  // Para registros de trasiego, usar line como subcliente
+                                  if (getRecordType(record) === "trasiego") {
+                                    return data.line || "N/A"
+                                  }
+                                  // Para registros locales, buscar el nombre de la naviera por ID
+                                  const naviera = navieras.find(n => n._id === data.naviera)
+                                  return naviera ? `${naviera.name} (${naviera.code})` : "N/A"
+                                })()}
                               </div>
                             </div>
                           </TableCell>
                           <TableCell className="py-2 px-3">
                             <Badge variant={data.operationType === "import" ? "default" : "secondary"} className="text-xs">
-                              {data.operationType?.toUpperCase() || "N/A"}
+                              {(() => {
+                                // Para registros de trasiego, siempre es import
+                                if (getRecordType(record) === "trasiego") {
+                                  return "IMPORT"
+                                }
+                                // Para registros locales, usar operationType
+                                return data.operationType?.toUpperCase() || "N/A"
+                              })()}
                             </Badge>
+                          </TableCell>
+                          <TableCell className="py-2 px-3">
+                            <div className="space-y-1">
+                              <Select 
+                                value={record.status || "pendiente"} 
+                                onValueChange={(value: "pendiente" | "completado") => handleStatusChange(record, value)}
+                              >
+                                <SelectTrigger className="w-32 h-8 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="pendiente">Pendiente</SelectItem>
+                                  <SelectItem value="completado">Completado</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {record.invoiceId && (
+                                <Badge variant="outline" className="text-xs text-green-600 border-green-600">
+                                  Prefacturado
+                                </Badge>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="py-2 px-3">
                             <div className="flex items-center gap-1">
@@ -950,7 +1544,7 @@ export function PTYSSPrefactura() {
                                 onClick={() => handleViewRecord(record)}
                                 className="h-8 w-8 p-0"
                               >
-                                <Eye className="h-4 w-4" />
+                                <Edit className="h-4 w-4" />
                               </Button>
                               <Button
                                 variant="ghost"
@@ -970,7 +1564,7 @@ export function PTYSSPrefactura() {
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">
-                {pendingPTYSSRecords.length === 0 
+                {ptyssRecords.length === 0 
                   ? "No hay registros PTYSS disponibles para prefacturar"
                   : "No se encontraron registros que coincidan con la búsqueda"
                 }
@@ -1003,9 +1597,9 @@ export function PTYSSPrefactura() {
               <div className="text-xl font-bold">Paso 2: Configuración de Prefactura</div>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-4">
             {/* Resumen de registros seleccionados */}
-            <div className="bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-4 rounded-lg shadow-sm mt-6">
+            <div className="bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-3 rounded-lg shadow-sm mt-2">
               <div className="flex items-center gap-2 mb-3">
                 <div className="p-1.5 bg-slate-600 rounded-md">
                   <CheckCircle className="h-4 w-4 text-white" />
@@ -1036,38 +1630,46 @@ export function PTYSSPrefactura() {
             </div>
 
             {/* Configuración de la prefactura */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-6 bg-gradient-to-br from-slate-50 to-blue-50 p-6 rounded-lg border border-slate-300">
-                <div className="space-y-2">
-                  <Label htmlFor="prefactura-number" className="text-sm font-semibold text-slate-700">Número de Prefactura *</Label>
-                  <Input
-                    id="prefactura-number"
-                    value={prefacturaData.prefacturaNumber}
-                    onChange={(e) => setPrefacturaData({...prefacturaData, prefacturaNumber: e.target.value})}
-                    placeholder="PTY-PRE-2024-001"
-                    className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
-                  />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Columna izquierda: Configuración y Servicios */}
+              <div className="lg:col-span-1 space-y-4">
+                {/* Configuración básica */}
+                <div className="bg-gradient-to-br from-slate-50 to-blue-50 p-3 rounded-lg border border-slate-300">
+                  <h3 className="text-lg font-bold text-slate-900 border-b border-slate-300 pb-2 mb-2">Configuración de Prefactura</h3>
+                  
+                  <div className="space-y-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="prefactura-number" className="text-sm font-semibold text-slate-700">Número de Prefactura *</Label>
+                      <Input
+                        id="prefactura-number"
+                        value={prefacturaData.prefacturaNumber}
+                        onChange={(e) => setPrefacturaData({...prefacturaData, prefacturaNumber: e.target.value})}
+                        placeholder="PTY-PRE-2024-001"
+                        className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="notes" className="text-sm font-semibold text-slate-700">Notas (Opcional)</Label>
+                      <Textarea
+                        id="notes"
+                        value={prefacturaData.notes}
+                        onChange={(e) => setPrefacturaData({...prefacturaData, notes: e.target.value})}
+                        placeholder="Notas adicionales para la prefactura..."
+                        rows={4}
+                        className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
+                      />
+                    </div>
+                  </div>
                 </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="notes" className="text-sm font-semibold text-slate-700">Notas (Opcional)</Label>
-                  <Textarea
-                    id="notes"
-                    value={prefacturaData.notes}
-                    onChange={(e) => setPrefacturaData({...prefacturaData, notes: e.target.value})}
-                    placeholder="Notas adicionales para la prefactura..."
-                    rows={4}
-                    className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
-                  />
-                </div>
-              </div>
 
-              <div className="space-y-6 bg-gradient-to-br from-slate-50 to-blue-50 p-6 rounded-lg border border-slate-300">
-                <h3 className="text-lg font-bold text-slate-900 border-b border-slate-300 pb-2">Servicios Adicionales</h3>
-                
-                {/* Selección de servicios */}
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                {/* Servicios Adicionales */}
+                <div className="bg-gradient-to-br from-slate-50 to-blue-50 p-3 rounded-lg border border-slate-300">
+                  <h3 className="text-lg font-bold text-slate-900 border-b border-slate-300 pb-2 mb-2">Servicios Adicionales</h3>
+                  
+                                    {/* Selección de servicios */}
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     <div className="space-y-2">
                       <Label className="text-sm font-semibold text-slate-700">Servicio</Label>
                       {servicesLoading ? (
@@ -1125,7 +1727,7 @@ export function PTYSSPrefactura() {
                         className="w-full bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white font-semibold shadow-md"
                       >
                         <Plus className="h-4 w-4 mr-2" />
-                        Agregar Servicio
+                        Agregar
                       </Button>
                     </div>
                   </div>
@@ -1137,12 +1739,12 @@ export function PTYSSPrefactura() {
                   )}
                 </div>
 
-                {/* Lista de servicios seleccionados */}
-                {selectedAdditionalServices.length > 0 && (
-                  <div className="space-y-3">
-                    <Label className="text-sm font-semibold text-slate-700">Servicios Seleccionados</Label>
-                    {selectedAdditionalServices.map((service) => (
-                      <div key={service.serviceId} className="flex items-center gap-3 p-4 bg-white/70 border border-slate-200 rounded-lg shadow-sm">
+                                  {/* Lista de servicios seleccionados */}
+                  {selectedAdditionalServices.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-slate-700">Servicios Seleccionados</Label>
+                                          {selectedAdditionalServices.map((service) => (
+                        <div key={service.serviceId} className="flex items-center gap-3 p-3 bg-white/70 border border-slate-200 rounded-lg shadow-sm">
                         <div className="flex-1">
                           <div className="font-semibold text-sm text-slate-900">{service.name}</div>
                           <div className="text-xs text-slate-600">{service.description}</div>
@@ -1165,9 +1767,52 @@ export function PTYSSPrefactura() {
               </div>
             </div>
 
-            {/* Detalles de la Prefactura */}
-            <div className="bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-6 rounded-lg shadow-sm">
-              <div className="flex items-center gap-3 mb-4">
+            {/* Columna derecha: Vista previa del PDF */}
+            <div className="lg:col-span-2 bg-gradient-to-br from-slate-50 to-blue-50 p-3 rounded-lg border border-slate-300">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-bold text-slate-900">Vista Previa del PDF</h3>
+                {pdfUrl && (
+                  <Button 
+                    onClick={handlePreviewPDF} 
+                    variant="outline"
+                    size="sm"
+                    className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                  >
+                    <Eye className="mr-2 h-4 w-4" />
+                    Ver en Pantalla Completa
+                  </Button>
+                )}
+              </div>
+              
+              {isGeneratingPDF ? (
+                <div className="flex items-center justify-center h-[750px] border-2 border-dashed border-slate-300 rounded-lg">
+                  <div className="text-center text-slate-500">
+                    <Loader2 className="h-12 w-12 mx-auto mb-4 animate-spin" />
+                    <p className="text-sm">Generando vista previa...</p>
+                  </div>
+                </div>
+              ) : pdfUrl ? (
+                <div className="w-full h-[750px] border border-slate-300 rounded-lg overflow-hidden">
+                  <iframe
+                    src={pdfUrl}
+                    className="w-full h-full"
+                    title="Vista previa de la prefactura"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-[750px] border-2 border-dashed border-slate-300 rounded-lg">
+                  <div className="text-center text-slate-500">
+                    <FileText className="h-12 w-12 mx-auto mb-4" />
+                    <p className="text-sm">Ingresa el número de prefactura para ver la vista previa</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+                      {/* Detalles de la Prefactura */}
+            <div className="bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-3 rounded-lg shadow-sm">
+              <div className="flex items-center gap-3 mb-2">
                 <div className="p-2 bg-slate-600 rounded-lg">
                   <DollarSign className="h-5 w-5 text-white" />
                 </div>
@@ -1191,7 +1836,7 @@ export function PTYSSPrefactura() {
             <div className="flex justify-end"></div>
 
             {/* Botones de navegación */}
-            <div className="flex justify-between pt-6">
+            <div className="flex justify-between pt-4">
               <Button 
                 variant="outline"
                 onClick={handlePreviousStep}
@@ -1201,14 +1846,26 @@ export function PTYSSPrefactura() {
                 Volver al Paso 1
               </Button>
               
-              <Button 
-                onClick={handlePreviewPDF} 
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold px-8 py-3 shadow-lg transform transition-all duration-200 hover:scale-105"
-                disabled={!prefacturaData.prefacturaNumber}
-              >
-                <Eye className="mr-2 h-5 w-5" />
-                Previsualizar
-              </Button>
+              <div className="flex gap-3">
+                <Button 
+                  onClick={handleDownloadPDF} 
+                  variant="outline"
+                  className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold px-6 py-3"
+                  disabled={!pdfUrl}
+                >
+                  <Download className="mr-2 h-5 w-5" />
+                  Descargar PDF
+                </Button>
+                
+                <Button 
+                  onClick={handleCreatePrefactura}
+                  className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-semibold px-8 py-3 shadow-lg transform transition-all duration-200 hover:scale-105"
+                  disabled={!prefacturaData.prefacturaNumber || selectedRecords.length === 0}
+                >
+                  <FileText className="mr-2 h-5 w-5" />
+                  Crear Prefactura
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -1218,9 +1875,42 @@ export function PTYSSPrefactura() {
       <Dialog open={isRecordModalOpen} onOpenChange={setIsRecordModalOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Info className="h-5 w-5" />
-              Detalles del Registro PTYSS
+            <DialogTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Info className="h-5 w-5" />
+                Detalles del Registro PTYSS
+              </div>
+              {selectedRecordForView && (
+                <div className="flex gap-2 ml-auto">
+                  {isEditing ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCancelEdit}
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSaveEdit}
+                      >
+                        Guardar Cambios
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleEditRecord}
+                      disabled={getRecordType(selectedRecordForView) === "trasiego"}
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Editar
+                    </Button>
+                  )}
+                </div>
+              )}
             </DialogTitle>
           </DialogHeader>
           
@@ -1232,23 +1922,48 @@ export function PTYSSPrefactura() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Cliente</Label>
-                    <p className="text-sm">
-                      {(() => {
-                        const data = selectedRecordForView.data as Record<string, any>
-                        const recordType = getRecordType(selectedRecordForView)
-                        
-                        // Para registros de trasiego, el cliente está en el campo associate
-                        if (recordType === "trasiego") {
-                          return data.associate || "N/A"
-                        }
-                        // Para registros locales, buscar por clientId
-                        const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
-                        return client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
-                      })()}
-                    </p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Select 
+                        value={editedRecord?.clientId || ""} 
+                        onValueChange={(value) => setEditedRecord({...editedRecord, clientId: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar cliente" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {clients.map((client: any) => (
+                            <SelectItem key={client._id || client.id} value={client._id || client.id}>
+                              {client.type === "natural" ? client.fullName : client.companyName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm">
+                        {(() => {
+                          const data = selectedRecordForView.data as Record<string, any>
+                          const recordType = getRecordType(selectedRecordForView)
+                          
+                          // Para registros de trasiego, el cliente está en el campo associate
+                          if (recordType === "trasiego") {
+                            return data.associate || "N/A"
+                          }
+                          // Para registros locales, buscar por clientId
+                          const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
+                          return client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
+                        })()}
+                      </p>
+                    )}
                   </div>
-                                      <div>
-                      <Label className="text-sm font-medium text-gray-600">Orden</Label>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-600">Orden</Label>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Input
+                        value={editedRecord?.order || ""}
+                        onChange={(e) => setEditedRecord({...editedRecord, order: e.target.value})}
+                        placeholder="Número de orden"
+                      />
+                    ) : (
                       <p className="text-sm">
                         {(() => {
                           const recordType = getRecordType(selectedRecordForView)
@@ -1262,7 +1977,8 @@ export function PTYSSPrefactura() {
                           return data.order || "N/A"
                         })()}
                       </p>
-                    </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1272,40 +1988,246 @@ export function PTYSSPrefactura() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Contenedor</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).container || "N/A"}</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Input
+                        value={editedRecord?.container || ""}
+                        onChange={(e) => setEditedRecord({...editedRecord, container: e.target.value.toUpperCase()})}
+                        placeholder="MSCU1234567"
+                        maxLength={11}
+                      />
+                    ) : (
+                      <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).container || "N/A"}</p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Tamaño</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).containerSize || "N/A"}'</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Select 
+                        value={editedRecord?.containerSize || ""} 
+                        onValueChange={(value) => setEditedRecord({...editedRecord, containerSize: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar tamaño" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10' - 10 pies</SelectItem>
+                          <SelectItem value="20">20' - 20 pies</SelectItem>
+                          <SelectItem value="40">40' - 40 pies</SelectItem>
+                          <SelectItem value="45">45' - 45 pies</SelectItem>
+                          <SelectItem value="48">48' - 48 pies</SelectItem>
+                          <SelectItem value="53">53' - 53 pies</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm">
+                        {(() => {
+                          const data = selectedRecordForView.data as Record<string, any>
+                          const recordType = getRecordType(selectedRecordForView)
+                          
+                          // Para registros de trasiego, usar size del Excel
+                          if (recordType === "trasiego") {
+                            return (data.size || data.containerSize || "N/A") + "'"
+                          }
+                          // Para registros locales, usar containerSize
+                          return (data.containerSize || "N/A") + "'"
+                        })()}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Tipo</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).containerType || "N/A"}</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Select 
+                        value={editedRecord?.containerType || ""} 
+                        onValueChange={(value) => setEditedRecord({...editedRecord, containerType: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="DV">DV - Dry Van</SelectItem>
+                          <SelectItem value="HC">HC - High Cube</SelectItem>
+                          <SelectItem value="RE">RE - Reefer</SelectItem>
+                          <SelectItem value="TK">TK - Tank</SelectItem>
+                          <SelectItem value="FL">FL - Flat Rack</SelectItem>
+                          <SelectItem value="OS">OS - Open Side</SelectItem>
+                          <SelectItem value="OT">OT - Open Top</SelectItem>
+                          <SelectItem value="HR">HR - Hard Top</SelectItem>
+                          <SelectItem value="PL">PL - Platform</SelectItem>
+                          <SelectItem value="BV">BV - Bulk</SelectItem>
+                          <SelectItem value="VE">VE - Ventilated</SelectItem>
+                          <SelectItem value="PW">PW - Pallet Wide</SelectItem>
+                          <SelectItem value="HT">HT - Hard Top</SelectItem>
+                          <SelectItem value="IS">IS - Insulated</SelectItem>
+                          <SelectItem value="XX">XX - Special</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm">
+                        {(() => {
+                          const data = selectedRecordForView.data as Record<string, any>
+                          const recordType = getRecordType(selectedRecordForView)
+                          
+                          // Para registros de trasiego, usar type del Excel
+                          if (recordType === "trasiego") {
+                            return data.type || data.containerType || "N/A"
+                          }
+                          // Para registros locales, usar containerType
+                          return data.containerType || "N/A"
+                        })()}
+                      </p>
+                    )}
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-gray-600">Naviera</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).naviera || "N/A"}</p>
+                    <Label className="text-sm font-medium text-gray-600">
+                      {(() => {
+                        const recordType = getRecordType(selectedRecordForView)
+                        return recordType === "trasiego" ? "Subcliente" : "Naviera"
+                      })()}
+                    </Label>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Select 
+                        value={editedRecord?.naviera || ""} 
+                        onValueChange={(value) => setEditedRecord({...editedRecord, naviera: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar naviera" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {navieras.map((naviera) => (
+                            <SelectItem key={naviera._id} value={naviera._id}>
+                              {naviera.name} ({naviera.code})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm">
+                        {(() => {
+                          const data = selectedRecordForView.data as Record<string, any>
+                          const recordType = getRecordType(selectedRecordForView)
+                          
+                          // Para registros de trasiego, usar line como subcliente
+                          if (recordType === "trasiego") {
+                            return data.line || "N/A"
+                          }
+                          // Para registros locales, buscar el nombre de la naviera por ID
+                          const naviera = navieras.find(n => n._id === data.naviera)
+                          return naviera ? `${naviera.name} (${naviera.code})` : "N/A"
+                        })()}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-600">From</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).from || "N/A"}</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Select 
+                        value={editedRecord?.from || ""} 
+                        onValueChange={(value) => setEditedRecord({...editedRecord, from: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar From" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="MIT">MIT</SelectItem>
+                          <SelectItem value="BLB">BLB</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm">
+                        {(() => {
+                          const data = selectedRecordForView.data as Record<string, any>
+                          const recordType = getRecordType(selectedRecordForView)
+                          
+                          // Para registros de trasiego, usar from extraído del leg
+                          if (recordType === "trasiego") {
+                            return data.from || data.pol || "N/A"
+                          }
+                          // Para registros locales, usar from
+                          return data.from || "N/A"
+                        })()}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-600">To</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).to || "N/A"}</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Select 
+                        value={editedRecord?.to || ""} 
+                        onValueChange={(value) => setEditedRecord({...editedRecord, to: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar To" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Colon free zone">Colon free zone</SelectItem>
+                          <SelectItem value="Parque sur">Parque sur</SelectItem>
+                          <SelectItem value="Montemar">Montemar</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm">
+                        {(() => {
+                          const data = selectedRecordForView.data as Record<string, any>
+                          const recordType = getRecordType(selectedRecordForView)
+                          
+                          // Para registros de trasiego, usar to extraído del leg
+                          if (recordType === "trasiego") {
+                            return data.to || data.pod || "N/A"
+                          }
+                          // Para registros locales, usar to
+                          return data.to || "N/A"
+                        })()}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Tipo Operación</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).operationType?.toUpperCase() || "N/A"}</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Select 
+                        value={editedRecord?.operationType || ""} 
+                        onValueChange={(value) => setEditedRecord({...editedRecord, operationType: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar tipo de operación" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="import">Import</SelectItem>
+                          <SelectItem value="export">Export</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm">
+                        {(() => {
+                          const data = selectedRecordForView.data as Record<string, any>
+                          const recordType = getRecordType(selectedRecordForView)
+                          
+                          // Para registros de trasiego, siempre mostrar IMPORT
+                          if (recordType === "trasiego") {
+                            return "IMPORT"
+                          }
+                          // Para registros locales, usar operationType
+                          return data.operationType?.toUpperCase() || "N/A"
+                        })()}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Fecha Movimiento</Label>
-                    <p className="text-sm">
-                      {(selectedRecordForView.data as Record<string, any>).moveDate 
-                        ? new Date((selectedRecordForView.data as Record<string, any>).moveDate).toLocaleDateString('es-ES')
-                        : "N/A"
-                      }
-                    </p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Input
+                        type="date"
+                        value={editedRecord?.moveDate || ""}
+                        onChange={(e) => setEditedRecord({...editedRecord, moveDate: e.target.value})}
+                      />
+                    ) : (
+                      <p className="text-sm">
+                        {(selectedRecordForView.data as Record<string, any>).moveDate 
+                          ? new Date((selectedRecordForView.data as Record<string, any>).moveDate).toLocaleDateString('es-ES')
+                          : "N/A"
+                        }
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1316,23 +2238,86 @@ export function PTYSSPrefactura() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Estadia</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).estadia || "N/A"}</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Select 
+                        value={editedRecord?.estadia || ""} 
+                        onValueChange={(value) => setEditedRecord({...editedRecord, estadia: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="si">Sí</SelectItem>
+                          <SelectItem value="no">No</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).estadia || "N/A"}</p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Genset</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).genset || "N/A"}</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Input
+                        type="number"
+                        value={editedRecord?.genset || ""}
+                        onChange={(e) => setEditedRecord({...editedRecord, genset: e.target.value})}
+                        placeholder="Ingrese número"
+                        min="0"
+                        step="0.01"
+                      />
+                    ) : (
+                      <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).genset || "N/A"}</p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Retención</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).retencion || "N/A"}</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Input
+                        type="number"
+                        value={editedRecord?.retencion || ""}
+                        onChange={(e) => setEditedRecord({...editedRecord, retencion: e.target.value})}
+                        placeholder="Ingrese número"
+                        min="0"
+                        step="0.01"
+                      />
+                    ) : (
+                      <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).retencion || "N/A"}</p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Pesaje</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).pesaje || "N/A"}</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Input
+                        type="number"
+                        value={editedRecord?.pesaje || ""}
+                        onChange={(e) => setEditedRecord({...editedRecord, pesaje: e.target.value})}
+                        placeholder="Ingrese monto en moneda"
+                        min="0"
+                        step="0.01"
+                      />
+                    ) : (
+                      <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).pesaje || "N/A"}</p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-600">TI</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).ti || "N/A"}</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Select 
+                        value={editedRecord?.ti || ""} 
+                        onValueChange={(value) => setEditedRecord({...editedRecord, ti: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="si">Sí</SelectItem>
+                          <SelectItem value="no">No</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).ti || "N/A"}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1343,15 +2328,63 @@ export function PTYSSPrefactura() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Conductor</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).conductor || "N/A"}</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Input
+                        value={editedRecord?.conductor || ""}
+                        onChange={(e) => setEditedRecord({...editedRecord, conductor: e.target.value})}
+                        placeholder="Ingrese nombre del conductor"
+                      />
+                    ) : (
+                      <p className="text-sm">
+                        {(() => {
+                          const data = selectedRecordForView.data as Record<string, any>
+                          const recordType = getRecordType(selectedRecordForView)
+                          
+                          // Para registros de trasiego, usar driverName del Excel
+                          if (recordType === "trasiego") {
+                            return data.driverName || data.conductor || "N/A"
+                          }
+                          // Para registros locales, usar conductor
+                          return data.conductor || "N/A"
+                        })()}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Matrícula del Camión</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).matriculaCamion || "N/A"}</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Input
+                        value={editedRecord?.matriculaCamion || ""}
+                        onChange={(e) => setEditedRecord({...editedRecord, matriculaCamion: e.target.value})}
+                        placeholder="Ingrese matrícula alfanumérica"
+                      />
+                    ) : (
+                      <p className="text-sm">
+                        {(() => {
+                          const data = selectedRecordForView.data as Record<string, any>
+                          const recordType = getRecordType(selectedRecordForView)
+                          
+                          // Para registros de trasiego, usar plate del Excel
+                          if (recordType === "trasiego") {
+                            return data.plate || data.matriculaCamion || "N/A"
+                          }
+                          // Para registros locales, usar matriculaCamion
+                          return data.matriculaCamion || "N/A"
+                        })()}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-600">Número de Chasis/Placa</Label>
-                    <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).numeroChasisPlaca || "N/A"}</p>
+                    {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                      <Input
+                        value={editedRecord?.numeroChasisPlaca || ""}
+                        onChange={(e) => setEditedRecord({...editedRecord, numeroChasisPlaca: e.target.value})}
+                        placeholder="Ingrese número de chasis o placa"
+                      />
+                    ) : (
+                      <p className="text-sm">{(selectedRecordForView.data as Record<string, any>).numeroChasisPlaca || "N/A"}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1380,14 +2413,25 @@ export function PTYSSPrefactura() {
               </div>
 
               {/* Notas */}
-              {(selectedRecordForView.data as Record<string, any>).notes && (
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium border-b pb-2">Notas</h3>
-                  <p className="text-sm bg-gray-50 p-3 rounded-md">
-                    {(selectedRecordForView.data as Record<string, any>).notes}
-                  </p>
-                </div>
-              )}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium border-b pb-2">Notas</h3>
+                {isEditing && getRecordType(selectedRecordForView) === "local" ? (
+                  <Textarea
+                    value={editedRecord?.notes || ""}
+                    onChange={(e) => setEditedRecord({...editedRecord, notes: e.target.value})}
+                    placeholder="Notas adicionales sobre el registro..."
+                    rows={3}
+                  />
+                ) : (
+                  (selectedRecordForView.data as Record<string, any>).notes ? (
+                    <p className="text-sm bg-gray-50 p-3 rounded-md">
+                      {(selectedRecordForView.data as Record<string, any>).notes}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Sin notas</p>
+                  )
+                )}
+              </div>
             </div>
           )}
           

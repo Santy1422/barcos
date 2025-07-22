@@ -6,10 +6,11 @@ import { createApiUrl } from '@/lib/api-config'
 // Generic interface for a single record extracted from an Excel row
 export interface ExcelRecord {
   id: string // Unique ID for this specific record (e.g., TRK-REC-EXCELID-ROWID)
+  _id?: string // MongoDB ObjectId from database
   excelId: string // ID of the Excel file this record came from
   module: "trucking" | "ptyss"
   type: string // Type of data (e.g., "transport-services", "supply-order")
-  status: "pendiente" | "facturado" | "anulado" // Status of this individual record
+  status: "pendiente" | "completado" | "facturado" | "anulado" // Status of this individual record
   totalValue: number // The calculated total value for this specific record/line item
   data: any // The raw data object for this record (e.g., TruckingRecordData)
   sapCode?: string // Campo específico para consultas
@@ -60,10 +61,9 @@ export const fetchRecordsByModule = createAsyncThunk(
       
       const data = await response.json()
       console.log("Respuesta del backend:", data);
-      console.log("data.payload:", data.payload);
-      console.log("data.payload.records:", data.payload?.records);
-      console.log("data.payload.records length:", data.payload?.records?.length);
-      const result = data.payload?.records || [];
+      console.log("data.data:", data.data);
+      console.log("data.data length:", data.data?.length);
+      const result = data.data || [];
       console.log("Resultado final a retornar:", result);
       return result
     } catch (error) {
@@ -417,7 +417,9 @@ export const updateRecordAsync = createAsyncThunk(
       }
       
       const data = await response.json()
-      return { id, updates: data.data }
+      console.log("🔍 updateRecordAsync - Respuesta del backend:", data)
+      console.log("🔍 updateRecordAsync - data.data:", data.data)
+      return data.data // Devolver directamente el registro actualizado
     } catch (error) {
                                        //@ts-ignore
 
@@ -613,7 +615,7 @@ const recordsSlice = createSlice({
     // This reducer marks the selected individual records as "facturado"
     markRecordsAsInvoiced: (state, action: PayloadAction<{ recordIds: string[]; invoiceId: string }>) => {
       action.payload.recordIds.forEach((recordId) => {
-        const record = state.individualRecords.find((r) => r.id === recordId)
+        const record = state.individualRecords.find((r) => (r._id || r.id) === recordId)
         if (record) {
           record.status = "facturado"
           record.invoiceId = action.payload.invoiceId
@@ -623,7 +625,7 @@ const recordsSlice = createSlice({
       // También actualizar pendingRecordsByModule para todos los módulos
       Object.keys(state.pendingRecordsByModule).forEach(module => {
         state.pendingRecordsByModule[module] = state.pendingRecordsByModule[module].filter(
-          record => !action.payload.recordIds.includes(record.id)
+          record => !action.payload.recordIds.includes(record._id || record.id)
         )
       })
     },
@@ -643,7 +645,7 @@ const recordsSlice = createSlice({
     // This reducer releases records when an invoice is deleted
     releaseRecordsFromInvoice: (state, action: PayloadAction<{ invoiceId: string; recordIds: string[] }>) => {
       action.payload.recordIds.forEach((recordId) => {
-        const record = state.individualRecords.find((r) => r.id === recordId)
+        const record = state.individualRecords.find((r) => (r._id || r.id) === recordId)
         if (record && record.invoiceId === action.payload.invoiceId) {
           record.status = "pendiente"
           record.invoiceId = undefined
@@ -653,7 +655,7 @@ const recordsSlice = createSlice({
       // También actualizar pendingRecordsByModule para todos los módulos
       Object.keys(state.pendingRecordsByModule).forEach(module => {
         const releasedRecords = state.individualRecords.filter(
-          record => action.payload.recordIds.includes(record.id) && 
+          record => action.payload.recordIds.includes(record._id || record.id) && 
                    record.module === module && 
                    record.status === "pendiente"
         )
@@ -685,7 +687,20 @@ const recordsSlice = createSlice({
       })
       .addCase(fetchRecordsByModule.fulfilled, (state, action) => {
         state.fetchingRecords = false
-        state.individualRecords = action.payload
+        console.log("🔍 fetchRecordsByModule.fulfilled - Registros recibidos:", action.payload.length)
+        console.log("🔍 fetchRecordsByModule.fulfilled - Registros antes:", state.individualRecords.length)
+        
+        // Agregar los registros al estado individualRecords, evitando duplicados
+        action.payload.forEach((newRecord: ExcelRecord) => {
+          const existingIndex = state.individualRecords.findIndex(r => (r._id || r.id) === (newRecord._id || newRecord.id))
+          if (existingIndex >= 0) {
+            state.individualRecords[existingIndex] = newRecord
+          } else {
+            state.individualRecords.push(newRecord)
+          }
+        })
+        
+        console.log("🔍 fetchRecordsByModule.fulfilled - Registros después:", state.individualRecords.length)
       })
       .addCase(fetchRecordsByModule.rejected, (state, action) => {
         state.fetchingRecords = false
@@ -791,9 +806,19 @@ const recordsSlice = createSlice({
       })
       // En extraReducers, agregar:
       .addCase(updateRecordAsync.fulfilled, (state, action) => {
-        const record = state.individualRecords.find(r => r.id === action.payload.id)
-        if (record) {
-          Object.assign(record, action.payload.updates)
+        console.log("🔍 updateRecordAsync.fulfilled - action.payload:", action.payload)
+        console.log("🔍 updateRecordAsync.fulfilled - action.payload._id:", action.payload._id)
+        
+        // Buscar el registro por _id (que es el ID de MongoDB)
+        const recordIndex = state.individualRecords.findIndex(r => r._id === action.payload._id)
+        
+        if (recordIndex >= 0) {
+          console.log("🔍 updateRecordAsync.fulfilled - Registro encontrado en índice:", recordIndex)
+          // Reemplazar el registro completo con los datos actualizados del backend
+          state.individualRecords[recordIndex] = action.payload
+        } else {
+          console.log("🔍 updateRecordAsync.fulfilled - Registro NO encontrado")
+          console.log("🔍 updateRecordAsync.fulfilled - Registros disponibles:", state.individualRecords.map(r => ({ _id: r._id, id: r.id })))
         }
       })
       .addCase(updateRecordAsync.rejected, (state, action) => {
@@ -914,6 +939,15 @@ export const selectCreatingRecords = (state: RootState) => state.records.creatin
 export const selectSapCodeRecords = (state: RootState) => state.records.sapCodeRecords
 export const selectSapCodePagination = (state: RootState) => state.records.sapCodePagination
 export const selectSapCodeSummary = (state: RootState) => state.records.sapCodeSummary
+
+export const selectRecordsByModule = createSelector(
+  [
+    (state: RootState) => state.records.individualRecords,
+    (state: RootState, moduleName: ExcelRecord["module"]) => moduleName
+  ],
+  (individualRecords, moduleName) =>
+    individualRecords.filter((record) => record.module === moduleName)
+)
 
 export const selectPendingRecordsByModule = createSelector(
   [
