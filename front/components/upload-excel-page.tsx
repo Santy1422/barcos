@@ -29,7 +29,7 @@ export function UploadExcelPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Link href="/tracking" className="no-underline">
               <Card className="hover:shadow-md transition-shadow duration-200">
-                <CardHeader>
+                <CardHeader> 
                   <CardTitle>Tracking</CardTitle>
                 </CardHeader>
                 <CardContent>Sube aquí tus archivos Excel de tracking.</CardContent>
