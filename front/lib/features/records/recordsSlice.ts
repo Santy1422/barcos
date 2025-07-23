@@ -898,15 +898,37 @@ const recordsSlice = createSlice({
       })
       .addCase(deleteRecordAsync.fulfilled, (state, action) => {
         state.creatingRecords = false
-        // Remove the deleted record from the state
-        state.individualRecords = state.individualRecords.filter(record => record.id !== action.payload.recordId)
+        const deletedRecordId = action.payload.recordId
+        
+        console.log("🗑️ Eliminando registro del estado local:", deletedRecordId)
+        console.log("🗑️ Registros antes de eliminar:", state.individualRecords.length)
+        
+        // Remove the deleted record from the state using multiple ID fields
+        state.individualRecords = state.individualRecords.filter(record => {
+          const shouldKeep = record.id !== deletedRecordId && 
+                           record._id !== deletedRecordId &&
+                           record.id !== deletedRecordId.toString()
+          if (!shouldKeep) {
+            console.log("🗑️ Registro eliminado del estado:", record.id, record._id)
+          }
+          return shouldKeep
+        })
+        
+        console.log("🗑️ Registros después de eliminar:", state.individualRecords.length)
         
         // También eliminar de pendingRecordsByModule para todos los módulos
-        Object.keys(state.pendingRecordsByModule).forEach(module =>
+        Object.keys(state.pendingRecordsByModule).forEach(module => {
+          const beforeCount = state.pendingRecordsByModule[module].length
           state.pendingRecordsByModule[module] = state.pendingRecordsByModule[module].filter(
-            record => record.id !== action.payload.recordId
+            record => record.id !== deletedRecordId && 
+                     record._id !== deletedRecordId &&
+                     record.id !== deletedRecordId.toString()
           )
-        )
+          const afterCount = state.pendingRecordsByModule[module].length
+          if (beforeCount !== afterCount) {
+            console.log(`🗑️ Eliminados ${beforeCount - afterCount} registros del módulo ${module}`)
+          }
+        })
       })
       .addCase(deleteRecordAsync.rejected, (state, action) => {
         state.creatingRecords = false

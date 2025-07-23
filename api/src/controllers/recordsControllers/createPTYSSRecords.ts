@@ -87,11 +87,19 @@ export default async (req, res) => {
       try {
         console.log(`💾 Guardando registro PTYSS ${i + 1} en MongoDB...`);
         
+        // Determinar si es un registro de trasiego basándose en los campos del Excel
+        // Los registros de trasiego tienen campos específicos como containerConsecutive, leg, moveType, associate
+        const isTrasiego = data.containerConsecutive || data.leg || data.moveType || data.associate;
+        const recordStatus = isTrasiego ? "completado" : "pendiente";
+        
+        console.log(`  - Es trasiego: ${isTrasiego ? 'SÍ' : 'NO'}`);
+        console.log(`  - Estado asignado: ${recordStatus}`);
+        
         const record = await records.create({
           excelId: validExcelId,
           module: "ptyss",
           type: "maritime",
-          status: "pendiente",
+          status: recordStatus,
           totalValue: totalValue || 0,
           data, // Datos originales completos
           sapCode: data.clientId, // Usar clientId como sapCode para consultas

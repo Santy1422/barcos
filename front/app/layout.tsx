@@ -11,6 +11,9 @@ export const metadata: Metadata = {
   title: "Sistema de Facturación",
   description: "Gestión de facturas y XML",
   generator: "v0.dev",
+  icons: {
+    icon: '/placeholder-logo.png', // Usar el logo existente como favicon
+  },
 }
 
 export default function RootLayout({

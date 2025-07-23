@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Ship, DollarSign, FileText, Search, Calendar, Clock, Database, Loader2, Download, Eye, ArrowRight, ArrowLeft, CheckCircle, Info, Trash2, Plus, Edit, ChevronUp, ChevronDown } from "lucide-react"
+import { Ship, DollarSign, FileText, Search, Calendar, Clock, Database, Loader2, Download, Eye, ArrowRight, ArrowLeft, CheckCircle, Info, Trash2, Plus, Edit, ChevronUp, ChevronDown, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import jsPDF from "jspdf"
@@ -65,9 +65,12 @@ export function PTYSSPrefactura() {
   const [searchTerm, setSearchTerm] = useState("")
   const [recordTypeFilter, setRecordTypeFilter] = useState<"all" | "local" | "trasiego">("all")
   const [statusFilter, setStatusFilter] = useState<"all" | "pendiente" | "completado">("all")
-  const [dateFilter, setDateFilter] = useState<"all" | "createdAt" | "moveDate">("all")
+  const [dateFilter, setDateFilter] = useState<"createdAt" | "moveDate">("createdAt")
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
+  const [isUsingPeriodFilter, setIsUsingPeriodFilter] = useState(false)
+  const [activePeriodFilter, setActivePeriodFilter] = useState<"none" | "today" | "week" | "month" | "advanced">("none")
+  const [isDateModalOpen, setIsDateModalOpen] = useState(false)
   const [showSelectionRules, setShowSelectionRules] = useState(false)
   const [prefacturaData, setPrefacturaData] = useState({
     prefacturaNumber: `PTY-PRE-${Date.now().toString().slice(-5)}`,
@@ -202,7 +205,7 @@ export function PTYSSPrefactura() {
     }
     
     // Aplicar filtro por fecha
-    if (dateFilter !== "all" && (startDate || endDate)) {
+    if (startDate || endDate) {
       let dateToCheck: string = ""
       
       if (dateFilter === "createdAt") {
@@ -457,8 +460,16 @@ export function PTYSSPrefactura() {
   const handleDeleteRecord = async (record: IndividualExcelRecord) => {
     const recordId = getRecordId(record)
     
+    console.log("🗑️ handleDeleteRecord - Registro a eliminar:", record)
+    console.log("🗑️ handleDeleteRecord - ID calculado:", recordId)
+    console.log("🗑️ handleDeleteRecord - record._id:", record._id)
+    console.log("🗑️ handleDeleteRecord - record.id:", record.id)
+    
     try {
       await dispatch(deleteRecordAsync(recordId)).unwrap()
+      
+      // Remover el registro del estado local de selección si estaba seleccionado
+      setSelectedRecordIds(prev => prev.filter(id => id !== recordId))
       
       toast({
         title: "Registro eliminado",
@@ -1031,6 +1042,133 @@ export function PTYSSPrefactura() {
     }
   }
 
+  // Funciones para filtrar por períodos específicos
+  const getTodayDates = () => {
+    const today = new Date()
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999)
+    
+    return {
+      start: startOfDay.toISOString().split('T')[0],
+      end: endOfDay.toISOString().split('T')[0]
+    }
+  }
+
+  const getCurrentWeekDates = () => {
+    const today = new Date()
+    const dayOfWeek = today.getDay()
+    const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1) // Ajuste para que la semana empiece en lunes
+    
+    const startOfWeek = new Date(today.setDate(diff))
+    startOfWeek.setHours(0, 0, 0, 0)
+    
+    const endOfWeek = new Date(startOfWeek)
+    endOfWeek.setDate(startOfWeek.getDate() + 6)
+    endOfWeek.setHours(23, 59, 59, 999)
+    
+    return {
+      start: startOfWeek.toISOString().split('T')[0],
+      end: endOfWeek.toISOString().split('T')[0]
+    }
+  }
+
+  const getCurrentMonthDates = () => {
+    const today = new Date()
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999)
+    
+    return {
+      start: startOfMonth.toISOString().split('T')[0],
+      end: endOfMonth.toISOString().split('T')[0]
+    }
+  }
+
+  const handleFilterByPeriod = (period: 'today' | 'week' | 'month' | 'advanced') => {
+    // Si el filtro ya está activo, desactivarlo
+    if (activePeriodFilter === period) {
+      setIsUsingPeriodFilter(false)
+      setActivePeriodFilter("none")
+      setStartDate("")
+      setEndDate("")
+      setSelectedRecordIds([])
+      return
+    }
+    
+    // Activar el filtro de período y establecer las fechas
+    setIsUsingPeriodFilter(true)
+    setActivePeriodFilter(period)
+    
+    switch (period) {
+      case 'today':
+        const todayDates = getTodayDates()
+        setStartDate(todayDates.start)
+        setEndDate(todayDates.end)
+        break
+      case 'week':
+        const weekDates = getCurrentWeekDates()
+        setStartDate(weekDates.start)
+        setEndDate(weekDates.end)
+        break
+      case 'month':
+        const monthDates = getCurrentMonthDates()
+        setStartDate(monthDates.start)
+        setEndDate(monthDates.end)
+        break
+      case 'advanced':
+        // Para avanzado, abrir el modal de selección de fechas
+        setIsDateModalOpen(true)
+        break
+    }
+    
+    setSelectedRecordIds([])
+  }
+
+  const handleApplyDateFilter = (start: string, end: string) => {
+    setStartDate(start)
+    setEndDate(end)
+    setIsDateModalOpen(false)
+    setSelectedRecordIds([])
+  }
+
+  const handleCancelDateFilter = () => {
+    setIsDateModalOpen(false)
+    // Si no hay fechas establecidas, desactivar el filtro avanzado
+    if (!startDate || !endDate) {
+      setIsUsingPeriodFilter(false)
+      setActivePeriodFilter("none")
+    } else {
+      // Si hay fechas pero se cancela, mantener el filtro avanzado activo
+      setActivePeriodFilter("advanced")
+    }
+  }
+
+  // Función para obtener el texto del período activo
+  const getActivePeriodText = () => {
+    if (!isUsingPeriodFilter || activePeriodFilter === "advanced") return null
+    
+    if (startDate === endDate) {
+      return "Hoy"
+    }
+    
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    const today = new Date()
+    
+    // Verificar si es la semana actual
+    const weekDates = getCurrentWeekDates()
+    if (startDate === weekDates.start && endDate === weekDates.end) {
+      return "Semana en curso"
+    }
+    
+    // Verificar si es el mes actual
+    const monthDates = getCurrentMonthDates()
+    if (startDate === monthDates.start && endDate === monthDates.end) {
+      return "Mes en curso"
+    }
+    
+    return "Período personalizado"
+  }
+
   const isAllSelected = filteredRecords.length > 0 && selectedRecordIds.length === filteredRecords.length
   const isIndeterminate = selectedRecordIds.length > 0 && selectedRecordIds.length < filteredRecords.length
 
@@ -1072,6 +1210,57 @@ export function PTYSSPrefactura() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {/* Información del total de registros */}
+            <div className="mb-4 mt-4 bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-4 rounded-lg shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-600 rounded-lg">
+                  <Database className="h-5 w-5 text-white" />
+                </div>
+                <div className="flex-1">
+                  <span className="text-sm font-semibold text-slate-900">
+                    Total de registros en la base de datos: {ptyssRecords.length}
+                  </span>
+                  {(searchTerm || recordTypeFilter !== "all" || statusFilter !== "all" || startDate || endDate) && (
+                    <div className="mt-1 text-sm text-slate-700">
+                      Mostrando {filteredRecords.length} registros filtrados
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-4 text-xs">
+                  <div className="bg-white/60 px-3 py-1 rounded-md">
+                    <span className="font-medium text-slate-600">Locales:</span>
+                    <span className="ml-1 font-bold text-slate-900">
+                      {ptyssRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "local").length}
+                    </span>
+                  </div>
+                  <div className="bg-white/60 px-3 py-1 rounded-md">
+                    <span className="font-medium text-slate-600">Trasiego:</span>
+                    <span className="ml-1 font-bold text-slate-900">
+                      {ptyssRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "trasiego").length}
+                    </span>
+                  </div>
+                  <div className="bg-white/60 px-3 py-1 rounded-md">
+                    <span className="font-medium text-slate-600">Pendientes:</span>
+                    <span className="ml-1 font-bold text-slate-900">
+                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.status === "pendiente").length}
+                    </span>
+                  </div>
+                  <div className="bg-white/60 px-3 py-1 rounded-md">
+                    <span className="font-medium text-slate-600">Completados:</span>
+                    <span className="ml-1 font-bold text-slate-900">
+                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.status === "completado").length}
+                    </span>
+                  </div>
+                  <div className="bg-white/60 px-3 py-1 rounded-md">
+                    <span className="font-medium text-slate-600">Prefacturados:</span>
+                    <span className="ml-1 font-bold text-slate-900">
+                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.invoiceId).length}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Búsqueda y Filtros */}
             <div className="mb-6 mt-4 space-y-4">
               <div className="relative">
@@ -1170,56 +1359,143 @@ export function PTYSSPrefactura() {
                 {/* Filtro por fecha */}
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold text-slate-700">Filtrar por fecha:</Label>
-                  <div className="flex gap-2">
-                    <Select value={dateFilter} onValueChange={(value: "all" | "createdAt" | "moveDate") => {
-                      setDateFilter(value)
-                      setSelectedRecordIds([])
-                    }}>
-                      <SelectTrigger className="w-40 h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Sin filtro</SelectItem>
-                        <SelectItem value="createdAt">Fecha de creación</SelectItem>
-                        <SelectItem value="moveDate">Fecha de movimiento</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    {/* Botones de tipo de fecha */}
+                    <div className="flex gap-1">
+                      <Button
+                        variant={dateFilter === "createdAt" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setDateFilter("createdAt")
+                          setIsUsingPeriodFilter(false)
+                          setActivePeriodFilter("none")
+                          setSelectedRecordIds([])
+                        }}
+                        className="text-xs h-8 px-3"
+                      >
+                        Creación
+                      </Button>
+                      <Button
+                        variant={dateFilter === "moveDate" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setDateFilter("moveDate")
+                          setIsUsingPeriodFilter(false)
+                          setActivePeriodFilter("none")
+                          setSelectedRecordIds([])
+                        }}
+                        className="text-xs h-8 px-3"
+                      >
+                        Movimiento
+                      </Button>
+                    </div>
+                    
+                    {/* Separador visual */}
+                    <div className="hidden sm:block w-px h-6 bg-gray-300 mx-2 self-center"></div>
+                    
+                    {/* Botones de períodos rápidos */}
+                    <div className="flex gap-1 flex-wrap">
+                      <Button
+                        variant={activePeriodFilter === "today" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handleFilterByPeriod('today')}
+                        className="text-xs h-8 px-2"
+                      >
+                        Hoy
+                      </Button>
+                      <Button
+                        variant={activePeriodFilter === "week" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handleFilterByPeriod('week')}
+                        className="text-xs h-8 px-2"
+                      >
+                        Semana
+                      </Button>
+                      <Button
+                        variant={activePeriodFilter === "month" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handleFilterByPeriod('month')}
+                        className="text-xs h-8 px-2"
+                      >
+                        Mes
+                      </Button>
+                      <Button
+                        variant={activePeriodFilter === "advanced" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handleFilterByPeriod('advanced')}
+                        className="text-xs h-8 px-2 flex-1 min-w-[80px]"
+                      >
+                        Avanzado
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Filtros de fecha específicos */}
-              {dateFilter !== "all" && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold text-slate-700">Fecha desde:</Label>
-                    <Input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => {
-                        setStartDate(e.target.value)
-                        setSelectedRecordIds([])
+              {/* Indicador de período activo */}
+              {isUsingPeriodFilter && activePeriodFilter !== "advanced" && (
+                <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                  <Badge variant="default" className="bg-blue-600 text-white text-xs">
+                    {getActivePeriodText()}
+                  </Badge>
+                  <span className="text-sm text-blue-700">
+                    {startDate} - {endDate}
+                  </span>
+                                      <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setIsUsingPeriodFilter(false)
+                        setActivePeriodFilter("none")
+                        setStartDate("")
+                        setEndDate("")
+                        setDateFilter("createdAt")
                       }}
-                      className="h-8 text-xs"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold text-slate-700">Fecha hasta:</Label>
-                    <Input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => {
-                        setEndDate(e.target.value)
-                        setSelectedRecordIds([])
+                      className="h-6 w-6 p-0 ml-auto"
+                    >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+
+              {/* Indicador de filtro avanzado */}
+              {activePeriodFilter === "advanced" && startDate && endDate && (
+                <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                  <Badge variant="default" className="bg-blue-600 text-white text-xs">
+                    Filtro Avanzado
+                  </Badge>
+                  <span className="text-sm text-blue-700">
+                    {startDate} - {endDate}
+                  </span>
+                  <div className="flex gap-1 ml-auto">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsDateModalOpen(true)}
+                      className="h-6 w-6 p-0"
+                    >
+                      <Edit className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setIsUsingPeriodFilter(false)
+                        setActivePeriodFilter("none")
+                        setStartDate("")
+                        setEndDate("")
+                        setDateFilter("createdAt")
                       }}
-                      className="h-8 text-xs"
-                    />
+                      className="h-6 w-6 p-0"
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
                   </div>
                 </div>
               )}
 
               {/* Botón para limpiar filtros */}
-              {(recordTypeFilter !== "all" || statusFilter !== "all" || dateFilter !== "all" || searchTerm || startDate || endDate) && (
+              {(recordTypeFilter !== "all" || statusFilter !== "all" || searchTerm || startDate || endDate) && (
                 <div className="flex justify-end">
                   <Button
                     variant="outline"
@@ -1227,10 +1503,12 @@ export function PTYSSPrefactura() {
                     onClick={() => {
                       setRecordTypeFilter("all")
                       setStatusFilter("all")
-                      setDateFilter("all")
+                      setDateFilter("createdAt")
                       setSearchTerm("")
                       setStartDate("")
                       setEndDate("")
+                      setIsUsingPeriodFilter(false)
+                      setActivePeriodFilter("none")
                       setSelectedRecordIds([])
                     }}
                     className="text-xs"
@@ -1275,68 +1553,9 @@ export function PTYSSPrefactura() {
               </div>
             )}
 
-            {/* Información del total de registros */}
-            <div className="mb-4 bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-4 rounded-lg shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-slate-600 rounded-lg">
-                  <Database className="h-5 w-5 text-white" />
-                </div>
-                <div className="flex-1">
-                  <span className="text-sm font-semibold text-slate-900">
-                    Total de registros en la base de datos: {ptyssRecords.length}
-                  </span>
-                  {(searchTerm || recordTypeFilter !== "all" || statusFilter !== "all" || dateFilter !== "all") && (
-                    <div className="mt-1 text-sm text-slate-700">
-                      Mostrando {filteredRecords.length} registros filtrados
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-4 text-xs">
-                  <div className="bg-white/60 px-3 py-1 rounded-md">
-                    <span className="font-medium text-slate-600">Locales:</span>
-                    <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "local").length}
-                    </span>
-                  </div>
-                  <div className="bg-white/60 px-3 py-1 rounded-md">
-                    <span className="font-medium text-slate-600">Trasiego:</span>
-                    <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "trasiego").length}
-                    </span>
-                  </div>
-                  <div className="bg-white/60 px-3 py-1 rounded-md">
-                    <span className="font-medium text-slate-600">Pendientes:</span>
-                    <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.status === "pendiente").length}
-                    </span>
-                  </div>
-                  <div className="bg-white/60 px-3 py-1 rounded-md">
-                    <span className="font-medium text-slate-600">Completados:</span>
-                    <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.status === "completado").length}
-                    </span>
-                  </div>
-                  <div className="bg-white/60 px-3 py-1 rounded-md">
-                    <span className="font-medium text-slate-600">Prefacturados:</span>
-                    <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.invoiceId).length}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Nota informativa sobre registros facturados */}
-            <div className="mb-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 p-3 rounded-lg">
-              <div className="flex items-center gap-2">
-                <div className="p-1 bg-green-600 rounded-md">
-                  <CheckCircle className="h-4 w-4 text-white" />
-                </div>
-                <div className="text-sm text-green-800">
-                  <strong>Nota:</strong> Solo se muestran registros disponibles para prefacturar. Los registros que ya han sido prefacturados no aparecen en esta lista para evitar facturación duplicada.
-                </div>
-              </div>
-            </div>
+
+
 
             {isLoadingRecords ? (
               <div className="flex justify-center items-center p-12 bg-gradient-to-r from-slate-50 to-blue-50 rounded-lg">
@@ -1517,18 +1736,26 @@ export function PTYSSPrefactura() {
                           </TableCell>
                           <TableCell className="py-2 px-3">
                             <div className="space-y-1">
-                              <Select 
-                                value={record.status || "pendiente"} 
-                                onValueChange={(value: "pendiente" | "completado") => handleStatusChange(record, value)}
-                              >
-                                <SelectTrigger className="w-32 h-8 text-xs">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="pendiente">Pendiente</SelectItem>
-                                  <SelectItem value="completado">Completado</SelectItem>
-                                </SelectContent>
-                              </Select>
+                              {getRecordType(record) === "trasiego" ? (
+                                // Para registros de trasiego, mostrar solo badge "Completado"
+                                <Badge variant="default" className="text-xs bg-green-600 hover:bg-green-700">
+                                  Completado
+                                </Badge>
+                              ) : (
+                                // Para registros locales, permitir cambiar el estado
+                                <Select 
+                                  value={record.status || "pendiente"} 
+                                  onValueChange={(value: "pendiente" | "completado") => handleStatusChange(record, value)}
+                                >
+                                  <SelectTrigger className="w-32 h-8 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="pendiente">Pendiente</SelectItem>
+                                    <SelectItem value="completado">Completado</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              )}
                               {record.invoiceId && (
                                 <Badge variant="outline" className="text-xs text-green-600 border-green-600">
                                   Prefacturado
@@ -1544,7 +1771,11 @@ export function PTYSSPrefactura() {
                                 onClick={() => handleViewRecord(record)}
                                 className="h-8 w-8 p-0"
                               >
-                                <Edit className="h-4 w-4" />
+                                {getRecordType(record) === "trasiego" ? (
+                                  <Eye className="h-4 w-4" />
+                                ) : (
+                                  <Edit className="h-4 w-4" />
+                                )}
                               </Button>
                               <Button
                                 variant="ghost"
@@ -1570,6 +1801,18 @@ export function PTYSSPrefactura() {
                 }
               </div>
             )}
+
+            {/* Nota informativa al final del paso 1 */}
+            <div className="mt-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 p-3 rounded-lg">
+              <div className="flex items-center gap-2">
+                <div className="p-1 bg-green-600 rounded-md">
+                  <CheckCircle className="h-4 w-4 text-white" />
+                </div>
+                <div className="text-sm text-green-800">
+                  <strong>Nota:</strong> Solo se muestran registros disponibles para prefacturar. Los registros que ya han sido prefacturados no aparecen en esta lista para evitar facturación duplicada.
+                </div>
+              </div>
+            </div>
 
             {/* Botón para continuar al siguiente paso */}
             <div className="flex justify-end mt-8">
@@ -1899,15 +2142,16 @@ export function PTYSSPrefactura() {
                       </Button>
                     </>
                   ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleEditRecord}
-                      disabled={getRecordType(selectedRecordForView) === "trasiego"}
-                    >
-                      <Edit className="h-4 w-4 mr-2" />
-                      Editar
-                    </Button>
+                    getRecordType(selectedRecordForView) !== "trasiego" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleEditRecord}
+                      >
+                        <Edit className="h-4 w-4 mr-2" />
+                        Editar
+                      </Button>
+                    )
                   )}
                 </div>
               )}
@@ -2496,6 +2740,97 @@ export function PTYSSPrefactura() {
                 Crear Prefactura ({selectedRecords.length} registros)
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Selección de Fechas */}
+      <Dialog open={isDateModalOpen} onOpenChange={setIsDateModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Seleccionar Rango de Fechas
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Fecha desde:</Label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Fecha hasta:</Label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+            </div>
+            
+            {/* Botones de período rápido dentro del modal */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-600">Períodos rápidos:</Label>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const todayDates = getTodayDates()
+                    setStartDate(todayDates.start)
+                    setEndDate(todayDates.end)
+                  }}
+                  className="text-xs"
+                >
+                  Hoy
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const weekDates = getCurrentWeekDates()
+                    setStartDate(weekDates.start)
+                    setEndDate(weekDates.end)
+                  }}
+                  className="text-xs"
+                >
+                  Semana
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const monthDates = getCurrentMonthDates()
+                    setStartDate(monthDates.start)
+                    setEndDate(monthDates.end)
+                  }}
+                  className="text-xs"
+                >
+                  Mes
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={handleCancelDateFilter}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => handleApplyDateFilter(startDate, endDate)}
+              disabled={!startDate || !endDate}
+            >
+              Aplicar Filtro
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
