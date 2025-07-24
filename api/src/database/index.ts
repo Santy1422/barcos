@@ -10,6 +10,7 @@ import configSchema from './schemas/configSchema';
 import excelFilesSchema from './schemas/excelFilesSchema';
 import { Naviera } from './schemas/navieraSchema';
 import { Service } from './schemas/servicesSchema';
+import { LocalService } from './schemas/localServiceSchema';
 
 mongoose.set('strictQuery', false);
 
@@ -37,6 +38,7 @@ export const config = mongoose.model('config', configSchema);
 export const excelFiles = mongoose.model('excelFiles', excelFilesSchema);
 export const navieras = Naviera;
 export const services = Service;
+export const localServices = LocalService;
 
 // Manejo de eventos de conexión
 mongoose.connection.on('connected', () => {
@@ -68,7 +70,8 @@ export const getModels = () => {
     config,
     excelFiles,
     navieras,
-    services
+    services,
+    localServices
   };
 };
 
@@ -82,4 +85,5 @@ export type Models = {
   excelFiles: typeof excelFiles;
   navieras: typeof navieras;
   services: typeof services;
+  localServices: typeof localServices;
 };

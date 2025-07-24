@@ -46,6 +46,12 @@ import {
   selectPTYSSRoutesLoading,
   selectPTYSSRoutesError
 } from "@/lib/features/ptyssRoutes/ptyssRoutesSlice"
+import { 
+  selectPTYSSLocalRoutes,
+  fetchPTYSSLocalRoutes,
+  selectPTYSSLocalRoutesLoading,
+  selectPTYSSLocalRoutesError
+} from "@/lib/features/ptyssLocalRoutes/ptyssLocalRoutesSlice"
 import { parseTruckingExcel, matchTruckingDataWithRoutes, type TruckingExcelData } from "@/lib/excel-parser"
 import { ClientModal } from "@/components/clients-management"
 
@@ -71,6 +77,10 @@ interface PTYSSRecordData {
   notes: string
   totalValue: number
   recordType: "local" | "trasiego" // Campo para identificar registros locales o de trasiego
+  // Campos para rutas locales
+  localClientName?: string // cliente 1, cliente 2, etc.
+  localRouteId?: string // ID de la ruta local seleccionada
+  localRoutePrice?: number // Precio de la ruta local
 }
 
 const initialRecordData: PTYSSRecordData = {
@@ -94,7 +104,10 @@ const initialRecordData: PTYSSRecordData = {
   moveDate: "",
   notes: "",
   totalValue: 0,
-  recordType: "local"
+  recordType: "local",
+  localClientName: "",
+  localRouteId: "",
+  localRoutePrice: 0
 }
 
 export function PTYSSUpload() {
@@ -122,6 +135,12 @@ export function PTYSSUpload() {
   const routes = useAppSelector(selectPTYSSRoutes)
   const routesLoading = useAppSelector(selectPTYSSRoutesLoading)
   const routesError = useAppSelector(selectPTYSSRoutesError)
+  
+  // PTYSS Local Routes state
+  const localRoutes = useAppSelector(selectPTYSSLocalRoutes)
+  const localRoutesLoading = useAppSelector(selectPTYSSLocalRoutesLoading)
+  const localRoutesError = useAppSelector(selectPTYSSLocalRoutesError)
+  
   const isCreatingRecords = useAppSelector(selectCreatingRecords)
   const recordsError = useAppSelector(selectRecordsError)
 
@@ -143,6 +162,11 @@ export function PTYSSUpload() {
   // Cargar rutas al montar el componente
   useEffect(() => {
     dispatch(fetchPTYSSRoutes())
+  }, [dispatch])
+
+  // Cargar rutas locales al montar el componente
+  useEffect(() => {
+    dispatch(fetchPTYSSLocalRoutes())
   }, [dispatch])
 
   // Mostrar error si existe
@@ -224,9 +248,25 @@ export function PTYSSUpload() {
     return clients.find((client: any) => client && (client._id || client.id) === currentRecord.clientId)
   }
 
+  // Obtener clientes únicos de las rutas locales
+  const getLocalRouteClients = () => {
+    return [...new Set(localRoutes.map(route => route.clientName))].sort()
+  }
+
+  // Obtener rutas por cliente
+  const getLocalRoutesByClient = (clientName: string) => {
+    return localRoutes.filter(route => route.clientName === clientName)
+  }
+
+  // Obtener ruta seleccionada
+  const getSelectedLocalRoute = () => {
+    if (!currentRecord.localRouteId) return null
+    return localRoutes.find(route => route._id === currentRecord.localRouteId)
+  }
+
   const handleAddRecord = () => {
     if (!currentRecord.clientId || !currentRecord.order || !currentRecord.container || !currentRecord.naviera || 
-        !currentRecord.from || !currentRecord.to || !currentRecord.operationType || !currentRecord.containerSize || 
+        !currentRecord.localClientName || !currentRecord.localRouteId || !currentRecord.operationType || !currentRecord.containerSize || 
         !currentRecord.containerType || !currentRecord.estadia || !currentRecord.ti || !currentRecord.conductor) {
       toast({
         title: "Error",
@@ -253,12 +293,20 @@ export function PTYSSUpload() {
       toast({ title: "Registro agregado", description: "El registro ha sido agregado exitosamente." })
     }
 
-    setCurrentRecord(initialRecordData)
+    setCurrentRecord({
+      ...initialRecordData,
+      localClientName: "",
+      localRouteId: "",
+      localRoutePrice: 0
+    })
     setIsDialogOpen(false)
   }
 
   const calculateTotalValue = (record: PTYSSRecordData): number => {
     let total = 0
+    
+    // Agregar precio de ruta local si existe
+    if (record.localRoutePrice) total += record.localRoutePrice
     
     // Agregar valores numéricos si existen
     if (record.genset) total += parseFloat(record.genset) || 0
@@ -618,7 +666,12 @@ export function PTYSSUpload() {
               </p>
             </div>
             <Button onClick={() => {
-              setCurrentRecord(initialRecordData)
+              setCurrentRecord({
+                ...initialRecordData,
+                localClientName: "",
+                localRouteId: "",
+                localRoutePrice: 0
+              })
               setEditingIndex(null)
               setIsDialogOpen(true)
             }}>
@@ -748,6 +801,11 @@ export function PTYSSUpload() {
                           <div className="flex flex-col">
                             <span className="text-xs">{record.from}</span>
                             <span className="text-xs">→ {record.to}</span>
+                            {record.localClientName && (
+                              <Badge variant="outline" className="text-xs mt-1">
+                                {record.localClientName}
+                              </Badge>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -1032,31 +1090,80 @@ export function PTYSSUpload() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="from">From *</Label>
-                  <Select value={currentRecord.from} onValueChange={(value) => setCurrentRecord({...currentRecord, from: value})}>
+                  <Label htmlFor="localClient">Cliente Local *</Label>
+                  <Select 
+                    value={currentRecord.localClientName} 
+                    onValueChange={(value) => {
+                      setCurrentRecord({
+                        ...currentRecord, 
+                        localClientName: value,
+                        localRouteId: "",
+                        localRoutePrice: 0,
+                        from: "",
+                        to: ""
+                      })
+                    }}
+                  >
                     <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar From" />
+                      <SelectValue placeholder="Seleccionar cliente local" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="MIT">MIT</SelectItem>
-                      <SelectItem value="BLB">BLB</SelectItem>
+                      {getLocalRouteClients().map(client => (
+                        <SelectItem key={client} value={client}>
+                          {client}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="to">To *</Label>
-                  <Select value={currentRecord.to} onValueChange={(value) => setCurrentRecord({...currentRecord, to: value})}>
+                  <Label htmlFor="localRoute">Ruta Local *</Label>
+                  <Select 
+                    value={currentRecord.localRouteId} 
+                    onValueChange={(value) => {
+                      const selectedRoute = localRoutes.find(route => route._id === value)
+                      setCurrentRecord({
+                        ...currentRecord, 
+                        localRouteId: value,
+                        localRoutePrice: selectedRoute?.price || 0,
+                        from: selectedRoute?.from || "",
+                        to: selectedRoute?.to || ""
+                      })
+                    }}
+                    disabled={!currentRecord.localClientName}
+                  >
                     <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar To" />
+                      <SelectValue placeholder="Seleccionar ruta local" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Colon free zone">Colon free zone</SelectItem>
-                      <SelectItem value="Parque sur">Parque sur</SelectItem>
-                      <SelectItem value="Montemar">Montemar</SelectItem>
+                      {currentRecord.localClientName && getLocalRoutesByClient(currentRecord.localClientName).map(route => (
+                        <SelectItem key={route._id} value={route._id}>
+                          {route.from} → {route.to} - ${route.price.toFixed(2)}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
+                
+                {/* Mostrar información de la ruta seleccionada */}
+                {currentRecord.localRouteId && getSelectedLocalRoute() && (
+                  <div className="col-span-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-blue-700">
+                          Ruta seleccionada: {getSelectedLocalRoute()?.from} → {getSelectedLocalRoute()?.to}
+                        </span>
+                        <Badge variant="outline" className="text-blue-700 border-blue-700">
+                          {currentRecord.localClientName}
+                        </Badge>
+                      </div>
+                      <div className="text-sm font-bold text-blue-700">
+                        Precio: ${getSelectedLocalRoute()?.price.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
                 <div className="space-y-2">
                   <Label htmlFor="operationType">Tipo Operación *</Label>

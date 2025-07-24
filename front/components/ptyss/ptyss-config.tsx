@@ -36,6 +36,8 @@ import {
 } from "@/lib/features/ptyssRoutes/ptyssRoutesSlice"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { ServicesManagement } from '@/components/services-management'
+import { LocalServicesManagement } from '@/components/local-services-management'
+import { PTYSSLocalRoutes } from './ptyss-local-routes'
 
 export function PTYSSConfig() {
   const dispatch = useAppDispatch()
@@ -52,7 +54,7 @@ export function PTYSSConfig() {
   
   const [showAddNavieraForm, setShowAddNavieraForm] = useState(false)
   const [navieraToDelete, setNavieraToDelete] = useState<Naviera | null>(null)
-  const [activeTab, setActiveTab] = useState<'navieras' | 'routes' | 'services'>('navieras')
+  const [activeTab, setActiveTab] = useState<'navieras' | 'routes' | 'localRoutes' | 'services' | 'localServices'>('navieras')
 
   // PTYSS Routes form state
   const [showAddRouteForm, setShowAddRouteForm] = useState(false)
@@ -311,7 +313,15 @@ export function PTYSSConfig() {
               onClick={() => setActiveTab('routes')}
             >
               <MapPin className="h-4 w-4 mr-2" />
-              Rutas
+              Rutas Trasiego
+            </Button>
+            <Button
+              variant={activeTab === 'localRoutes' ? "default" : "outline"}
+              className={activeTab === 'localRoutes' ? "bg-blue-600 hover:bg-blue-700" : ""}
+              onClick={() => setActiveTab('localRoutes')}
+            >
+              <MapPin className="h-4 w-4 mr-2" />
+              Rutas Local
             </Button>
             <Button
               variant={activeTab === 'services' ? "default" : "outline"}
@@ -320,6 +330,14 @@ export function PTYSSConfig() {
             >
               <Wrench className="h-4 w-4 mr-2" />
               Servicios Adicionales
+            </Button>
+            <Button
+              variant={activeTab === 'localServices' ? "default" : "outline"}
+              className={activeTab === 'localServices' ? "bg-blue-600 hover:bg-blue-700" : ""}
+              onClick={() => setActiveTab('localServices')}
+            >
+              <Wrench className="h-4 w-4 mr-2" />
+              Servicios Locales
             </Button>
           </div>
         </CardContent>
@@ -448,7 +466,7 @@ export function PTYSSConfig() {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Gestión de Rutas PTYSS</CardTitle>
+              <CardTitle>Gestión de Rutas Trasiego PTYSS</CardTitle>
               <Button onClick={() => setShowAddRouteForm(!showAddRouteForm)}>
                 <Plus className="h-4 w-4 mr-2" />
                 Agregar Ruta
@@ -628,10 +646,21 @@ export function PTYSSConfig() {
         </Card>
       )}
 
+      {activeTab === 'localRoutes' && (
+        <PTYSSLocalRoutes />
+      )}
+
       {activeTab === 'services' && (
         <ServicesManagement 
           module="ptyss" 
           title="Gestión de Servicios Adicionales PTYSS" 
+        />
+      )}
+
+      {activeTab === 'localServices' && (
+        <LocalServicesManagement 
+          module="ptyss" 
+          title="Gestión de Servicios Locales PTYSS" 
         />
       )}
 

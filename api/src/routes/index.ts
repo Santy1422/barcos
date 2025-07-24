@@ -9,8 +9,12 @@ import config from './config';
 import dashboard from './dashboard';
 import truckingRoutes from './truckingRoutes';
 import ptyssRoutes from './ptyssRoutes';
+import ptyssLocalRoutes from './ptyssLocalRoutes';
+import localServices from './localServices';
 import navieras from './navieras';
 import services from './services';
+import health from './health';
+import seed from './seed';
 
 router.use('/api/user', user);
 router.use('/api/clients', clients);
@@ -21,7 +25,11 @@ router.use('/api/config', config);
 router.use('/api/dashboard', dashboard);
 router.use('/api/trucking-routes', truckingRoutes);
 router.use('/api/ptyss-routes', ptyssRoutes);
+router.use('/api/ptyss-local-routes', ptyssLocalRoutes);
+router.use('/api/local-services', localServices);
 router.use('/api/navieras', navieras);
 router.use('/api/services', services);
+router.use('/api/health', health);
+router.use('/api/seed', seed);
 
 export default router;

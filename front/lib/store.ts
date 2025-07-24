@@ -7,6 +7,8 @@ import excelReducer from './features/excel/excelSlice'
 import clientsReducer from './features/clients/clientsSlice'
 import truckingRoutesReducer from './features/truckingRoutes/truckingRoutesSlice'
 import ptyssRoutesReducer from './features/ptyssRoutes/ptyssRoutesSlice'
+import ptyssLocalRoutesReducer from './features/ptyssLocalRoutes/ptyssLocalRoutesSlice'
+import localServicesReducer from './features/localServices/localServicesSlice'
 import navieraReducer from './features/naviera/navieraSlice'
 import servicesReducer from './features/services/servicesSlice'
 import { loadState, saveState } from './storage'
@@ -25,6 +27,8 @@ export const makeStore = () => {
       clients: clientsReducer,
       truckingRoutes: truckingRoutesReducer,
       ptyssRoutes: ptyssRoutesReducer,
+      ptyssLocalRoutes: ptyssLocalRoutesReducer,
+  localServices: localServicesReducer,
       naviera: navieraReducer,
       services: servicesReducer,
     },

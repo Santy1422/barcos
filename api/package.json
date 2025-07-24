@@ -11,7 +11,11 @@
     "build": "tsc --noEmitOnError false",
     "start": "npm run tsc && NODE_ENV=PRODUCTION node dist/src/index.js",
     "lint": "eslint src/**/*.js --fix",
-    "seed:navieras": "node scripts/seedNavieras.js"
+    "seed:navieras": "node scripts/seedNavieras.js",
+    "seed:ptyss-local-routes": "ts-node scripts/seedPTYSSLocalRoutes.ts",
+    "seed:ptyss-local-routes-api": "ts-node scripts/seedPTYSSLocalRoutesAPI.ts",
+    "seed:localServices": "node scripts/seedLocalServices.js",
+    "test:seed": "ts-node scripts/test-seed-endpoint.ts"
   },
   "keywords": [],
   "author": "",
