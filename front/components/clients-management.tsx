@@ -158,13 +158,15 @@ export function ClientModal({
             isActive: true
           }
         
-        if (editingClient) {
+        if (editingClient && editingClient._id) {
+          // Cliente existente con _id válido - actualizar
           await dispatch(updateClientAsync({
             ...naturalClient,
-            id: editingClient._id || editingClient.id || ""
+            id: editingClient._id
           })).unwrap()
           toast({ title: "Cliente actualizado", description: "El cliente natural ha sido actualizado exitosamente." })
         } else {
+          // Cliente nuevo o temporal - crear
           await dispatch(createClientAsync(naturalClient)).unwrap()
           toast({ title: "Cliente creado", description: "El cliente natural ha sido creado exitosamente." })
           onClientCreated?.(naturalClient)
@@ -178,19 +180,22 @@ export function ClientModal({
             contactName: formData.contactName || undefined,
             email: formData.email,
             phone: formData.phone || undefined,
+            address: formData.address || undefined,
             sapCode: formData.sapCode,
             createdAt: editingClient?.createdAt || now,
             updatedAt: now,
             isActive: true
           }
         
-        if (editingClient) {
+        if (editingClient && editingClient._id) {
+          // Cliente existente con _id válido - actualizar
           await dispatch(updateClientAsync({
             ...juridicalClient,
-            id: editingClient._id || editingClient.id || ""
+            id: editingClient._id
           })).unwrap()
           toast({ title: "Cliente actualizado", description: "El cliente jurídico ha sido actualizado exitosamente." })
         } else {
+          // Cliente nuevo o temporal - crear
           await dispatch(createClientAsync(juridicalClient)).unwrap()
           toast({ title: "Cliente creado", description: "El cliente jurídico ha sido creado exitosamente." })
           onClientCreated?.(juridicalClient)
@@ -354,6 +359,17 @@ export function ClientModal({
             </div>
             
             <div>
+              <Label htmlFor="address">Dirección</Label>
+              <Textarea
+                id="address"
+                value={formData.address}
+                onChange={(e) => setFormData({...formData, address: e.target.value})}
+                placeholder="Dirección completa del cliente"
+                rows={3}
+              />
+            </div>
+            
+            <div>
               <Label htmlFor="sapCode">Código SAP Cliente *</Label>
               <Input
                 id="sapCode"
@@ -361,24 +377,6 @@ export function ClientModal({
                 onChange={(e) => setFormData({...formData, sapCode: e.target.value})}
                 placeholder="Código SAP del cliente"
                 required
-              />
-            </div>
-          </div>
-          
-          <Separator />
-          
-          {/* Dirección */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-medium">Dirección</h3>
-            
-            <div>
-              <Label htmlFor="address">Dirección</Label>
-              <Textarea
-                id="address"
-                value={formData.address}
-                onChange={(e) => setFormData({...formData, address: e.target.value})}
-                placeholder="Dirección completa del cliente"
-                rows={2}
               />
             </div>
           </div>

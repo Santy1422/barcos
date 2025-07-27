@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/toolkit"
 import type { RootState } from "@/lib/store"
+import { createApiUrl } from "@/lib/api-config"
 
 // Tipos de cliente
 export type ClientType = "natural" | "juridico"
@@ -118,7 +119,7 @@ export const fetchClients = createAsyncThunk(
   'clients/fetchClients',
   async () => {
     console.log('🔍 fetchClients - Iniciando fetch de clientes...')
-    const response = await fetch('/api/clients')
+          const response = await fetch(createApiUrl('/api/clients'))
     console.log('🔍 fetchClients - Response status:', response.status)
     
     if (!response.ok) {
@@ -149,7 +150,7 @@ export const createClientAsync = createAsyncThunk(
         throw new Error('No se encontró token de autenticación')
       }
       
-      const response = await fetch('/api/clients', {
+      const response = await fetch(createApiUrl('/api/clients'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -184,7 +185,10 @@ export const updateClientAsync = createAsyncThunk(
         throw new Error('No se encontró token de autenticación')
       }
       
-      const response = await fetch(`/api/clients/${id}`, {
+      console.log('Updating client with ID:', id)
+      console.log('Client data:', clientData)
+      
+      const response = await fetch(createApiUrl(`/api/clients/${id}`), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -192,6 +196,9 @@ export const updateClientAsync = createAsyncThunk(
         },
         body: JSON.stringify(clientData),
       })
+      
+      console.log('Response status:', response.status)
+      console.log('Response URL:', response.url)
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
@@ -219,7 +226,7 @@ export const deleteClientAsync = createAsyncThunk(
         throw new Error('No se encontró token de autenticación')
       }
       
-      const response = await fetch(`/api/clients/${id}`, {
+      const response = await fetch(createApiUrl(`/api/clients/${id}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,

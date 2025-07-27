@@ -57,6 +57,7 @@ import { ClientModal } from "@/components/clients-management"
 
 interface PTYSSRecordData {
   clientId: string
+  associate?: string // Nombre del cliente para búsqueda posterior
   order: string
   container: string
   naviera: string
@@ -193,6 +194,49 @@ export function PTYSSUpload() {
   
   const [showAddClientDialog, setShowAddClientDialog] = useState(false)
 
+  // Estado para manejar clientes faltantes del Excel de trasiego
+  const [missingClients, setMissingClients] = useState<Array<{
+    name: string
+    records: TruckingExcelData[]
+  }>>([])
+  const [showClientModal, setShowClientModal] = useState(false)
+  const [editingClient, setEditingClient] = useState<Client | null>(null)
+  const [clientToEdit, setClientToEdit] = useState<{
+    name: string
+    records: TruckingExcelData[]
+  } | null>(null)
+  
+  // Estado para tracking de clientes completos/incompletos
+  const [clientCompleteness, setClientCompleteness] = useState<Map<string, {
+    isComplete: boolean
+    missingFields: string[]
+  }>>(new Map())
+
+  // Recargar clientes cuando cambie el estado de completitud
+  useEffect(() => {
+    if (clientCompleteness.size > 0) {
+      dispatch(fetchClients())
+    }
+  }, [clientCompleteness.size, dispatch])
+
+  // Actualizar completitud cuando cambien los clientes
+  useEffect(() => {
+    if (clients.length > 0 && clientCompleteness.size > 0) {
+      // Recalcular completitud para todos los clientes en el estado
+      const newCompleteness = new Map<string, { isComplete: boolean; missingFields: string[] }>()
+      
+      for (const [clientName, _] of clientCompleteness) {
+        const client = findClientByName(clientName)
+        if (client) {
+          const completeness = checkClientCompleteness(client)
+          newCompleteness.set(clientName, completeness)
+        }
+      }
+      
+      setClientCompleteness(newCompleteness)
+    }
+  }, [clients, clientCompleteness.size])
+
   // Funciones para manejar clientes
   const handleAddClient = async () => {
     if (!newClient.sapCode || !newClient.companyName || !newClient.ruc || !newClient.email) {
@@ -246,6 +290,198 @@ export function PTYSSUpload() {
 
   const getSelectedClient = () => {
     return clients.find((client: any) => client && (client._id || client.id) === currentRecord.clientId)
+  }
+
+  // Función para verificar si un cliente existe por nombre
+  const findClientByName = (name: string): Client | null => {
+    return clients.find((client: any) => {
+      if (client.type === 'juridico') {
+        return client.companyName?.toLowerCase() === name.toLowerCase()
+      } else if (client.type === 'natural') {
+        return client.fullName?.toLowerCase() === name.toLowerCase()
+      }
+      return false
+    }) || null
+  }
+
+  // Función para crear un cliente temporal con solo el nombre
+  const createTemporaryClient = async (name: string): Promise<Client> => {
+    const tempClientData = {
+      type: "juridico" as const,
+      companyName: name,
+      ruc: "",
+      contactName: "",
+      email: "",
+      phone: "",
+      address: "",
+      sapCode: "",
+      isActive: true
+    }
+
+    try {
+      const result = await dispatch(createClientAsync(tempClientData)).unwrap()
+      toast({
+        title: "Cliente temporal creado",
+        description: `Se creó un cliente temporal para "${name}". Completa los datos faltantes.`,
+      })
+      return result
+    } catch (error: any) {
+      console.error("Error al crear cliente temporal:", error)
+      toast({
+        title: "Error",
+        description: "Error al crear cliente temporal. Inténtalo de nuevo.",
+        variant: "destructive"
+      })
+      throw error
+    }
+  }
+
+  // Función para verificar y procesar clientes faltantes del Excel
+  const processMissingClients = async (excelData: TruckingExcelData[]): Promise<TruckingExcelData[]> => {
+    const missingClientsMap = new Map<string, TruckingExcelData[]>()
+    const newClientCompleteness = new Map<string, { isComplete: boolean; missingFields: string[] }>()
+    
+    // Agrupar registros por cliente SOLO para registros que hicieron match
+    excelData.forEach(record => {
+      const clientName = record.associate?.trim()
+      if (clientName && record.isMatched) {
+        if (!missingClientsMap.has(clientName)) {
+          missingClientsMap.set(clientName, [])
+        }
+        missingClientsMap.get(clientName)!.push(record)
+      }
+    })
+
+    // Verificar qué clientes faltan y su completitud
+    const missingClientsList: Array<{name: string, records: TruckingExcelData[]}> = []
+    
+    for (const [clientName, records] of missingClientsMap) {
+      const existingClient = findClientByName(clientName)
+      if (!existingClient) {
+        missingClientsList.push({ name: clientName, records })
+        // Marcar como incompleto
+        newClientCompleteness.set(clientName, { isComplete: false, missingFields: ['Todos los campos'] })
+      } else {
+        // Verificar completitud del cliente existente
+        const completeness = checkClientCompleteness(existingClient)
+        newClientCompleteness.set(clientName, completeness)
+      }
+    }
+
+    // Actualizar estado de completitud
+    setClientCompleteness(newClientCompleteness)
+
+    if (missingClientsList.length > 0) {
+      setMissingClients(missingClientsList)
+      setShowClientModal(true)
+      setClientToEdit(missingClientsList[0])
+      
+      // Contar total de registros con match
+      const totalMatchedRecords = missingClientsList.reduce((total, client) => total + client.records.length, 0)
+      
+      // Mostrar toast informativo
+      toast({
+        title: "Clientes faltantes detectados",
+        description: `Se encontraron ${missingClientsList.length} clientes que no existen en la base de datos para ${totalMatchedRecords} registros con match. Completa sus datos.`,
+      })
+      
+      // Retornar los datos originales por ahora
+      return excelData
+    }
+
+    return excelData
+  }
+
+  // Función para verificar si un cliente tiene todos los datos completos
+  const checkClientCompleteness = (client: any): { isComplete: boolean; missingFields: string[] } => {
+    const missingFields: string[] = []
+    
+    if (client.type === 'juridico') {
+      if (!client.companyName || client.companyName.trim() === '') missingFields.push('Nombre de empresa')
+      if (!client.ruc || client.ruc.trim() === '') missingFields.push('RUC')
+      if (!client.email || client.email.trim() === '') missingFields.push('Email')
+      if (!client.sapCode || client.sapCode.trim() === '') missingFields.push('Código SAP')
+    } else {
+      if (!client.fullName || client.fullName.trim() === '') missingFields.push('Nombre completo')
+      if (!client.documentNumber || client.documentNumber.trim() === '') missingFields.push('Número de documento')
+      if (!client.sapCode || client.sapCode.trim() === '') missingFields.push('Código SAP')
+    }
+    
+    console.log('Checking completeness for client:', client.companyName || client.fullName)
+    console.log('Missing fields:', missingFields)
+    console.log('Is complete:', missingFields.length === 0)
+    
+    return {
+      isComplete: missingFields.length === 0,
+      missingFields
+    }
+  }
+
+  // Función para actualizar el estado de completitud de un cliente
+  const updateClientCompleteness = (clientName: string, clientData: any) => {
+    // Buscar el cliente actualizado en la lista de clientes
+    const updatedClient = clients.find((c: any) => {
+      if (c.type === 'juridico') {
+        return c.companyName?.toLowerCase() === clientName.toLowerCase()
+      } else if (c.type === 'natural') {
+        return c.fullName?.toLowerCase() === clientName.toLowerCase()
+      }
+      return false
+    })
+    
+    if (updatedClient) {
+      const completeness = checkClientCompleteness(updatedClient)
+      setClientCompleteness(prev => new Map(prev).set(clientName, completeness))
+    }
+  }
+
+  // Función para verificar si todos los clientes están completos
+  const areAllClientsComplete = (): boolean => {
+    if (clientCompleteness.size === 0) return true
+    
+    for (const [_, completeness] of clientCompleteness) {
+      if (!completeness.isComplete) return false
+    }
+    return true
+  }
+
+  // Función para manejar la creación/edición de cliente desde el modal
+  const handleClientCreated = (client: any) => {
+    // Actualizar completitud del cliente
+    updateClientCompleteness(client.companyName || client.fullName, client)
+    
+    // Remover el cliente de la lista de faltantes
+    setMissingClients(prev => prev.filter(c => c.name !== clientToEdit?.name))
+    
+    // Si hay más clientes faltantes, mostrar el siguiente
+    if (missingClients.length > 1) {
+      const nextClient = missingClients.find(c => c.name !== clientToEdit?.name)
+      if (nextClient) {
+        setClientToEdit(nextClient)
+        setShowClientModal(true)
+      } else {
+        setShowClientModal(false)
+        setClientToEdit(null)
+      }
+    } else {
+      // No hay más clientes faltantes, cerrar modal
+      setShowClientModal(false)
+      setClientToEdit(null)
+      
+      // Reprocesar el Excel con los clientes creados
+      if (selectedFile) {
+        handleFileChange({ target: { files: [selectedFile] } } as any)
+      }
+    }
+  }
+
+  // Función para manejar clic en cliente para editarlo
+  const handleClientClick = (clientName: string) => {
+    const existingClient = findClientByName(clientName)
+    if (existingClient) {
+      setEditingClient(existingClient)
+    }
+    // Si no existe, no hacemos nada - el usuario debe crear el cliente desde el modal de faltantes
   }
 
   // Obtener clientes únicos de las rutas locales
@@ -470,29 +706,40 @@ export function PTYSSUpload() {
 
   // Función para convertir datos de trucking a PTYSS
   const convertTruckingToPTYSS = (truckingData: TruckingExcelData[]): PTYSSRecordData[] => {
-    return truckingData.map(record => ({
-      clientId: record.associate || '',
-      order: record.containerConsecutive || '',
-      container: record.container || '',
-      naviera: record.route || '',
-      from: record.pol || '',
-      to: record.pod || '',
-      operationType: 'import', // Siempre import para registros de trasiego
-      containerSize: record.size || '',
-      containerType: record.type || '',
-      estadia: '',
-      genset: '',
-      retencion: '',
-      pesaje: '',
-      ti: '',
-      matriculaCamion: record.plate || '',
-      conductor: record.driverName || '',
-      numeroChasisPlaca: '',
-      moveDate: record.moveDate || '',
-      notes: '',
-      totalValue: record.matchedPrice || 0,
-      recordType: "trasiego" // Campo para identificar registros de trasiego
-    }))
+    return truckingData.map(record => {
+      // Buscar el cliente por nombre para obtener su _id
+      const client = findClientByName(record.associate || '')
+      const clientId = client?._id || client?.id || ''
+      
+      console.log(`Convirtiendo registro para cliente: ${record.associate}`)
+      console.log(`Cliente encontrado:`, client)
+      console.log(`ClientId asignado: ${clientId}`)
+      
+      return {
+        clientId: clientId,
+        associate: record.associate || '', // Guardar el nombre del cliente para búsqueda posterior
+        order: record.containerConsecutive || '',
+        container: record.container || '',
+        naviera: record.route || '',
+        from: record.pol || '',
+        to: record.pod || '',
+        operationType: 'import', // Siempre import para registros de trasiego
+        containerSize: record.size || '',
+        containerType: record.type || '',
+        estadia: '',
+        genset: '',
+        retencion: '',
+        pesaje: '',
+        ti: '',
+        matriculaCamion: record.plate || '',
+        conductor: record.driverName || '',
+        numeroChasisPlaca: '',
+        moveDate: record.moveDate || '',
+        notes: '',
+        totalValue: record.matchedPrice || 0,
+        recordType: "trasiego" // Campo para identificar registros de trasiego
+      }
+    })
   }
 
   // Excel upload handlers
@@ -538,13 +785,16 @@ export function PTYSSUpload() {
         console.log("Datos después del matching:", matchedData)
         console.log("")
         
-        setPreviewData(matchedData)
+        // Verificar clientes faltantes antes de mostrar los datos
+        const processedData = await processMissingClients(matchedData)
+        
+        setPreviewData(processedData)
         
         // Contar registros con match
-        const matchedCount = matchedData.filter(record => record.isMatched).length
-        const unmatchedCount = matchedData.length - matchedCount
+        const matchedCount = processedData.filter(record => record.isMatched).length
+        const unmatchedCount = processedData.length - matchedCount
         
-        console.log(`Registros con match: ${matchedCount}/${matchedData.length}`)
+        console.log(`Registros con match: ${matchedCount}/${processedData.length}`)
         
         toast({
           title: "✅ Archivo Excel procesado",
@@ -572,6 +822,23 @@ export function PTYSSUpload() {
       toast({
         title: "Error",
         description: "Por favor selecciona un archivo y verifica que tenga datos válidos",
+        variant: "destructive"
+      })
+      return
+    }
+
+    // Verificar que todos los clientes estén completos
+    if (!areAllClientsComplete()) {
+      const incompleteClients = Array.from(clientCompleteness.entries())
+        .filter(([_, completeness]) => !completeness.isComplete)
+        .map(([clientName, completeness]) => ({
+          name: clientName,
+          missingFields: completeness.missingFields
+        }))
+
+      toast({
+        title: "Clientes incompletos",
+        description: `Hay ${incompleteClients.length} clientes con datos incompletos. Completa todos los datos antes de guardar.`,
         variant: "destructive"
       })
       return
@@ -1389,6 +1656,16 @@ export function PTYSSUpload() {
                   {previewData.filter(record => !record.isMatched).length} sin coincidencia
                 </Badge>
               )}
+              {clientCompleteness.size > 0 && (
+                <>
+                  <Badge variant="outline" className="text-green-600 border-green-600">
+                    {Array.from(clientCompleteness.values()).filter(c => c.isComplete).length} clientes completos
+                  </Badge>
+                  <Badge variant="outline" className="text-red-600 border-red-600">
+                    {Array.from(clientCompleteness.values()).filter(c => !c.isComplete).length} clientes incompletos
+                  </Badge>
+                </>
+              )}
               <span className="ml-auto font-medium">
                 Total: ${previewData.reduce((sum, record) => sum + (record.matchedPrice || 0), 0).toFixed(2)}
               </span>
@@ -1410,9 +1687,38 @@ export function PTYSSUpload() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {previewData.map((record, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{record.associate}</TableCell>
+                  {previewData.map((record, index) => {
+                    const clientName = record.associate?.trim()
+                    const clientStatus = clientName ? clientCompleteness.get(clientName) : null
+                    const isClickable = record.isMatched && clientStatus && !clientStatus.isComplete
+                    
+                    return (
+                      <TableRow key={index}>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            <span 
+                              className={isClickable ? "cursor-pointer text-blue-600 hover:text-blue-800 underline" : ""}
+                              onClick={isClickable ? () => handleClientClick(clientName!) : undefined}
+                            >
+                              {record.associate}
+                            </span>
+                            {record.isMatched && clientStatus && (
+                              <div className="flex items-center">
+                                {clientStatus.isComplete ? (
+                                  <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
+                                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                                    Completo
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-red-600 border-red-600 text-xs cursor-pointer" onClick={() => handleClientClick(clientName!)}>
+                                    <AlertCircle className="h-3 w-3 mr-1" />
+                                    Incompleto
+                                  </Badge>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
                       <TableCell className="font-mono text-sm">{record.containerConsecutive || "N/A"}</TableCell>
                       <TableCell>
                         <div className="flex flex-col">
@@ -1457,16 +1763,22 @@ export function PTYSSUpload() {
                         )}
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )})}
                 </TableBody>
               </Table>
             </div>
             
-            <div className="mt-4 flex justify-end">
+            <div className="mt-4 flex justify-end space-x-2">
+              {!areAllClientsComplete() && (
+                <div className="flex items-center space-x-2 text-sm text-red-600">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>Completa todos los datos de clientes antes de guardar</span>
+                </div>
+              )}
               <Button 
                 onClick={handleUpload}
-                disabled={isLoading || isCreatingRecords}
-                className="bg-blue-600 hover:bg-blue-700"
+                disabled={isLoading || isCreatingRecords || !areAllClientsComplete()}
+                className={`${areAllClientsComplete() ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
               >
                 {isLoading || isCreatingRecords ? (
                   <>
@@ -1493,6 +1805,107 @@ export function PTYSSUpload() {
             clientId: client._id || client.id || ""
           }))
           setShowAddClientDialog(false)
+        }}
+      />
+
+      {/* Modal para clientes faltantes del Excel de trasiego */}
+      {showClientModal && clientToEdit && (
+        <Dialog open={showClientModal} onOpenChange={setShowClientModal}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                Cliente Faltante: {clientToEdit.name}
+              </DialogTitle>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-center space-x-2">
+                  <AlertCircle className="h-5 w-5 text-yellow-600" />
+                  <h4 className="font-medium text-yellow-800">Cliente no encontrado</h4>
+                </div>
+                <p className="text-sm text-yellow-700 mt-2">
+                  El cliente "{clientToEdit.name}" no existe en la base de datos. 
+                  Se encontraron {clientToEdit.records.length} registros con match para este cliente en el Excel.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-medium">Registros con match asociados:</h4>
+                <div className="max-h-40 overflow-y-auto border rounded-lg p-2">
+                  {clientToEdit.records.slice(0, 5).map((record, index) => (
+                    <div key={index} className="text-sm text-muted-foreground py-1">
+                      • {record.containerConsecutive} - {record.container} ({record.size}' {record.type})
+                    </div>
+                  ))}
+                  {clientToEdit.records.length > 5 && (
+                    <div className="text-sm text-muted-foreground py-1">
+                      ... y {clientToEdit.records.length - 5} registros más
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Solo se muestran registros que hicieron match con las rutas configuradas.
+                </p>
+              </div>
+
+              <div className="flex justify-end space-x-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    // Crear cliente temporal automáticamente
+                    createTemporaryClient(clientToEdit.name).then(() => {
+                      handleClientCreated({ companyName: clientToEdit.name })
+                    })
+                  }}
+                >
+                  Crear Cliente Temporal
+                </Button>
+                <Button
+                  onClick={() => {
+                    // Abrir modal de edición de cliente
+                    setEditingClient({
+                      type: "juridico",
+                      companyName: clientToEdit.name,
+                      ruc: "",
+                      contactName: "",
+                      email: "",
+                      phone: "",
+                      address: "",
+                      sapCode: "",
+                      isActive: true
+                    } as any)
+                    setShowClientModal(false)
+                  }}
+                >
+                  Editar Datos del Cliente
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Modal de edición de cliente */}
+      <ClientModal
+        isOpen={!!editingClient}
+        onClose={() => setEditingClient(null)}
+        editingClient={editingClient}
+        onClientCreated={(client) => {
+          // Recargar clientes para obtener los datos actualizados
+          dispatch(fetchClients()).then(() => {
+            // Esperar un poco para que se actualice el estado de clientes
+            setTimeout(() => {
+              // Actualizar completitud del cliente
+              const clientName = client.type === 'juridico' ? client.companyName : client.fullName
+              updateClientCompleteness(clientName, client)
+              
+              // Si estamos editando un cliente temporal, cerrar el modal
+              if (editingClient && !editingClient._id) {
+                setEditingClient(null)
+              }
+            }, 100)
+          })
         }}
       />
     </div>

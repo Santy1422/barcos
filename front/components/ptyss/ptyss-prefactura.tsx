@@ -260,6 +260,11 @@ export function PTYSSPrefactura() {
     ].filter(Boolean).join(" ").toLowerCase()
     
     return searchTerm === "" || searchableText.includes(searchTerm.toLowerCase())
+  }).sort((a: IndividualExcelRecord, b: IndividualExcelRecord) => {
+    // Ordenar por fecha de creación: más nuevo primero
+    const dateA = new Date(a.createdAt || 0)
+    const dateB = new Date(b.createdAt || 0)
+    return dateB.getTime() - dateA.getTime()
   })
 
   // Obtener registros seleccionados
@@ -270,7 +275,36 @@ export function PTYSSPrefactura() {
   // Función para obtener el cliente de un registro
   const getRecordClient = (record: IndividualExcelRecord) => {
     const data = record.data as Record<string, any>
-    return clients.find((c: any) => (c._id || c.id) === data?.clientId)
+    const clientId = data?.clientId
+    
+    console.log('🔍 getRecordClient - ClientId:', clientId, 'Associate:', data?.associate, 'RecordType:', data?.recordType)
+    console.log('🔍 getRecordClient - Clientes disponibles:', clients.map((c: any) => c.type === 'juridico' ? c.companyName : c.fullName))
+    
+    // Si clientId está vacío, intentar buscar por nombre (para registros antiguos)
+    if (!clientId || clientId.trim() === '') {
+      // Para registros de trasiego, buscar por el nombre del cliente en el campo associate
+      const recordType = getRecordType(record)
+      if (recordType === 'trasiego' && data?.associate) {
+        console.log('🔍 getRecordClient - Buscando por associate:', data.associate)
+        const clientByName = clients.find((c: any) => {
+          if (c.type === 'juridico') {
+            return c.companyName?.toLowerCase() === data.associate.toLowerCase()
+          } else if (c.type === 'natural') {
+            return c.fullName?.toLowerCase() === data.associate.toLowerCase()
+          }
+          return false
+        })
+        console.log('🔍 getRecordClient - Cliente encontrado por nombre:', clientByName?.companyName || clientByName?.fullName)
+        return clientByName
+      }
+      console.log('🔍 getRecordClient - No es registro de trasiego o no tiene associate. RecordType:', recordType, 'Associate:', data?.associate)
+      return null
+    }
+    
+    // Buscar por ID
+    const clientById = clients.find((c: any) => (c._id || c.id) === clientId)
+    console.log('🔍 getRecordClient - Cliente encontrado por ID:', clientById?.companyName || clientById?.fullName)
+    return clientById
   }
 
   // Función para validar si un registro puede ser seleccionado
@@ -290,7 +324,9 @@ export function PTYSSPrefactura() {
     
     // Obtener el primer registro seleccionado para comparar
     const firstSelectedRecord = ptyssRecords.find((r: IndividualExcelRecord) => getRecordId(r) === selectedRecordIds[0])
-    if (!firstSelectedRecord) return false
+    if (!firstSelectedRecord) {
+      return false
+    }
     
     const firstSelectedClient = getRecordClient(firstSelectedRecord)
     const firstSelectedType = getRecordType(firstSelectedRecord)
@@ -711,17 +747,24 @@ export function PTYSSPrefactura() {
     
     // Extraer información del cliente del primer registro
     const firstRecord = selectedRecords[0]
-    const firstRecordData = firstRecord?.data as Record<string, any>
+    if (!firstRecord) {
+      console.log('🔍 generatePTYSSPrefacturaPDF - No hay registros seleccionados')
+      return doc
+    }
     
-    // Buscar el cliente por ID
-    const client = clients.find((c: any) => (c._id || c.id) === firstRecordData?.clientId)
+    // Buscar el cliente usando la función mejorada
+    const client = getRecordClient(firstRecord)
+    
+    console.log('🔍 generatePTYSSPrefacturaPDF - Primer registro:', firstRecord)
+    console.log('🔍 generatePTYSSPrefacturaPDF - Cliente encontrado:', client)
+    console.log('🔍 generatePTYSSPrefacturaPDF - Cliente address:', client?.address)
+    console.log('🔍 generatePTYSSPrefacturaPDF - Cliente phone:', client?.phone)
     
     const clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : "Cliente PTYSS"
     const clientRuc = client ? (client.type === "natural" ? client.documentNumber : client.ruc) : "N/A"
-    const clientAddress = client ? (client.type === "natural" ? 
-      (typeof client.address === "string" ? client.address : `${client.address?.district || ""}, ${client.address?.province || ""}`) :
-      (typeof client.fiscalAddress === "string" ? client.fiscalAddress : `${client.fiscalAddress?.district || ""}, ${client.fiscalAddress?.province || ""}`)
-    ) : "N/A"
+    const clientAddress = client ? 
+      (typeof client.address === "string" ? client.address : `${client.address?.district || ""}, ${client.address?.province || ""}`) 
+      : "N/A"
     const clientPhone = client?.phone || "N/A"
     
     doc.text(clientName, 15, 86)
@@ -940,7 +983,9 @@ export function PTYSSPrefactura() {
     try {
       // Generar PDF de previsualización
       const pdfBlob = generatePTYSSPrefacturaPDF(prefacturaData, selectedRecords)
-      setPreviewPdf(pdfBlob)
+      if (pdfBlob instanceof Blob) {
+        setPreviewPdf(pdfBlob)
+      }
       setIsPreviewOpen(true)
     } catch (error) {
       console.error("Error al generar previsualización:", error)
@@ -977,8 +1022,10 @@ export function PTYSSPrefactura() {
       }
       
       const pdfBlob = generatePTYSSPrefacturaPDF(prefacturaData, selectedRecords)
-      const url = URL.createObjectURL(pdfBlob)
-      setPdfUrl(url)
+      if (pdfBlob instanceof Blob) {
+        const url = URL.createObjectURL(pdfBlob)
+        setPdfUrl(url)
+      }
     } catch (error) {
       console.error("Error al generar PDF en tiempo real:", error)
       // Limpiar URL en caso de error
@@ -1002,6 +1049,14 @@ export function PTYSSPrefactura() {
       return () => clearTimeout(timeoutId)
     }
   }, [prefacturaData.prefacturaNumber, selectedRecords.length, selectedAdditionalServices.length, currentStep])
+
+  // Cargar clientes cuando se necesiten para el PDF
+  useEffect(() => {
+    if (currentStep === 2 && selectedRecords.length > 0 && clients.length === 0) {
+      console.log('🔍 Cargando clientes para PDF...')
+      dispatch(fetchClients())
+    }
+  }, [currentStep, selectedRecords.length, clients.length, dispatch])
 
   // Limpiar URL del PDF cuando se desmonte el componente
   useEffect(() => {
@@ -1050,18 +1105,33 @@ export function PTYSSPrefactura() {
     try {
       // Extraer información del cliente del primer registro
       const firstRecord = selectedRecords[0]
-      const firstRecordData = firstRecord?.data as Record<string, any>
+      if (!firstRecord) {
+        toast({
+          title: "Error",
+          description: "No se encontró el registro seleccionado",
+          variant: "destructive"
+        })
+        return
+      }
       
-      // Buscar el cliente por ID
-      const client = clients.find((c: any) => (c._id || c.id) === firstRecordData?.clientId)
+      // Buscar el cliente usando la función mejorada
+      const client = getRecordClient(firstRecord)
       
-      const clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : "Cliente PTYSS"
-      const clientRuc = client ? (client.type === "natural" ? client.documentNumber : client.ruc) : ""
-      const clientAddress = client ? (client.type === "natural" ? 
+      if (!client) {
+        toast({
+          title: "Error",
+          description: "No se encontró el cliente asociado al registro. Verifica que el cliente exista en la base de datos.",
+          variant: "destructive"
+        })
+        return
+      }
+      
+      const clientName = client.type === "natural" ? client.fullName : client.companyName
+      const clientRuc = client.type === "natural" ? client.documentNumber : client.ruc
+      const clientAddress = client.type === "natural" ? 
         (typeof client.address === "string" ? client.address : `${client.address?.district || ""}, ${client.address?.province || ""}`) :
         (typeof client.fiscalAddress === "string" ? client.fiscalAddress : `${client.fiscalAddress?.district || ""}, ${client.fiscalAddress?.province || ""}`)
-      ) : ""
-      const clientPhone = client?.phone || ""
+      const clientPhone = client.phone || ""
       
       // Crear la prefactura con los registros seleccionados
       const newPrefactura: PersistedInvoiceRecord = {
@@ -1122,7 +1192,9 @@ export function PTYSSPrefactura() {
           setGeneratedPdf(previewPdf)
         } else {
           const pdfBlob = generatePTYSSPrefacturaPDF(prefacturaData, selectedRecords)
-          setGeneratedPdf(pdfBlob)
+          if (pdfBlob instanceof Blob) {
+            setGeneratedPdf(pdfBlob)
+          }
         }
 
         toast({
@@ -1994,8 +2066,9 @@ export function PTYSSPrefactura() {
                   <div className="text-sm font-semibold text-slate-900">{
                     (() => {
                       const firstRecord = selectedRecords[0]
-                      const firstRecordData = firstRecord?.data as Record<string, any>
-                      const client = clients.find((c: any) => (c._id || c.id) === firstRecordData?.clientId)
+                      if (!firstRecord) return "N/A"
+                      
+                      const client = getRecordClient(firstRecord)
                       return client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
                     })()
                   }</div>
