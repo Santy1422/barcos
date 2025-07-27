@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose'
 export interface ILocalService extends Document {
   name: string
   description: string
+  price: number
   module: "ptyss" | "trucking" | "agency" | "shipchandler" | "all"
   isActive: boolean
   createdBy?: string
@@ -22,6 +23,12 @@ const localServiceSchema = new Schema<ILocalService>({
     required: [true, 'La descripción del servicio es obligatoria'],
     trim: true,
     maxlength: [500, 'La descripción no puede tener más de 500 caracteres']
+  },
+  price: {
+    type: Number,
+    required: [true, 'El precio del servicio es obligatorio'],
+    min: [0, 'El precio no puede ser negativo'],
+    default: 0
   },
   module: {
     type: String,

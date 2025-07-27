@@ -32,15 +32,22 @@ export function LocalServicesManagement({ module, title }: LocalServicesManageme
   const dispatch = useAppDispatch()
   const { toast } = useToast()
   
-  const services = useAppSelector(selectAllLocalServices)
+  const services = useAppSelector(selectAllLocalServices) || []
   const loading = useAppSelector(selectLocalServicesLoading)
   const error = useAppSelector(selectLocalServicesError)
   
   const [showAddServiceForm, setShowAddServiceForm] = useState(false)
   const [serviceToDelete, setServiceToDelete] = useState<LocalService | null>(null)
+  const [serviceToEdit, setServiceToEdit] = useState<LocalService | null>(null)
   const [newService, setNewService] = useState({
     name: "",
-    description: ""
+    description: "",
+    price: 0
+  })
+  const [editingService, setEditingService] = useState({
+    name: "",
+    description: "",
+    price: 0
   })
 
   // Cargar servicios al montar el componente
@@ -61,10 +68,10 @@ export function LocalServicesManagement({ module, title }: LocalServicesManageme
   }, [error, toast, dispatch])
 
   const handleAddService = async () => {
-    if (!newService.name || !newService.description) {
+    if (!newService.name || !newService.description || newService.price < 0) {
       toast({
         title: "Error",
-        description: "Completa todos los campos obligatorios",
+        description: "Completa todos los campos obligatorios. El precio debe ser mayor o igual a 0.",
         variant: "destructive"
       })
       return
@@ -74,12 +81,14 @@ export function LocalServicesManagement({ module, title }: LocalServicesManageme
       await dispatch(createLocalServiceAsync({
         name: newService.name,
         description: newService.description,
+        price: newService.price,
         module
       })).unwrap()
       
       setNewService({
         name: "",
-        description: ""
+        description: "",
+        price: 0
       })
       setShowAddServiceForm(false)
 
@@ -133,6 +142,56 @@ export function LocalServicesManagement({ module, title }: LocalServicesManageme
     }
   }
 
+  const handleEditService = (service: LocalService) => {
+    setServiceToEdit(service)
+    setEditingService({
+      name: service.name,
+      description: service.description,
+      price: service.price
+    })
+  }
+
+  const handleSaveEdit = async () => {
+    if (!serviceToEdit || !editingService.name || !editingService.description || editingService.price < 0) {
+      toast({
+        title: "Error",
+        description: "Completa todos los campos obligatorios. El precio debe ser mayor o igual a 0.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      await dispatch(updateLocalServiceAsync({
+        id: serviceToEdit._id,
+        serviceData: {
+          name: editingService.name,
+          description: editingService.description,
+          price: editingService.price
+        }
+      })).unwrap()
+      
+      setServiceToEdit(null)
+      setEditingService({ name: "", description: "", price: 0 })
+
+      toast({
+        title: "Servicio actualizado",
+        description: "El servicio ha sido actualizado correctamente",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Error al actualizar el servicio",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setServiceToEdit(null)
+    setEditingService({ name: "", description: "", price: 0 })
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -142,10 +201,12 @@ export function LocalServicesManagement({ module, title }: LocalServicesManageme
               <Settings2 className="h-5 w-5" />
               {title}
             </CardTitle>
-            <Button onClick={() => setShowAddServiceForm(!showAddServiceForm)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Agregar Servicio Local
-            </Button>
+            {!showAddServiceForm && (
+              <Button onClick={() => setShowAddServiceForm(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Agregar Servicio Local
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -155,14 +216,14 @@ export function LocalServicesManagement({ module, title }: LocalServicesManageme
                 <CardTitle className="text-lg">Nuevo Servicio Local</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="service-name">Nombre del Servicio *</Label>
                     <Input
                       id="service-name"
                       value={newService.name}
                       onChange={(e) => setNewService({...newService, name: e.target.value})}
-                      placeholder="Ej: Estacionamiento"
+                      placeholder="TRK006"
                     />
                   </div>
                   <div className="space-y-2">
@@ -173,6 +234,24 @@ export function LocalServicesManagement({ module, title }: LocalServicesManageme
                       onChange={(e) => setNewService({...newService, description: e.target.value})}
                       placeholder="Descripción del servicio"
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="service-price">Precio *</Label>
+                                          <Input
+                        id="service-price"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={newService.price === 0 ? "" : newService.price}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setNewService({
+                            ...newService, 
+                            price: value === "" ? 0 : parseFloat(value) || 0
+                          });
+                        }}
+                        placeholder="0.00"
+                      />
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -194,31 +273,72 @@ export function LocalServicesManagement({ module, title }: LocalServicesManageme
                 <TableRow>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Descripción</TableHead>
+                  <TableHead>Precio</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading && services.length === 0 ? (
+                {loading && (!Array.isArray(services) || services.length === 0) ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8">
+                    <TableCell colSpan={5} className="text-center py-8">
                       <div className="flex items-center justify-center space-x-2">
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                         <span>Cargando servicios...</span>
                       </div>
                     </TableCell>
                   </TableRow>
-                ) : services.length === 0 ? (
+                ) : !Array.isArray(services) || services.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                       No hay servicios locales registrados
                     </TableCell>
                   </TableRow>
                 ) : (
                   services.map((service) => (
                     <TableRow key={service._id}>
-                      <TableCell className="font-medium">{service.name}</TableCell>
-                      <TableCell>{service.description}</TableCell>
+                      <TableCell className="font-medium">
+                        {serviceToEdit?._id === service._id ? (
+                          <Input
+                            value={editingService.name}
+                            onChange={(e) => setEditingService({...editingService, name: e.target.value})}
+                            className="w-full"
+                          />
+                        ) : (
+                          service.name
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {serviceToEdit?._id === service._id ? (
+                          <Input
+                            value={editingService.description}
+                            onChange={(e) => setEditingService({...editingService, description: e.target.value})}
+                            className="w-full"
+                          />
+                        ) : (
+                          service.description
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {serviceToEdit?._id === service._id ? (
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={editingService.price === 0 ? "" : editingService.price}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setEditingService({
+                                ...editingService, 
+                                price: value === "" ? 0 : parseFloat(value) || 0
+                              });
+                            }}
+                            className="w-full"
+                          />
+                        ) : (
+                          `$${service.price.toFixed(2)}`
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={service.isActive ? "default" : "secondary"}>
                           {service.isActive ? "Activo" : "Inactivo"}
@@ -226,22 +346,53 @@ export function LocalServicesManagement({ module, title }: LocalServicesManageme
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2">
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => handleToggleServiceStatus(service)}
-                            disabled={loading}
-                          >
-                            {service.isActive ? "Desactivar" : "Activar"}
-                          </Button>
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
-                            onClick={() => setServiceToDelete(service)}
-                            disabled={loading}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                          {serviceToEdit?._id === service._id ? (
+                            <>
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={handleSaveEdit}
+                                disabled={loading}
+                              >
+                                Guardar
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={handleCancelEdit}
+                                disabled={loading}
+                              >
+                                Cancelar
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => handleEditService(service)}
+                                disabled={loading}
+                              >
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => handleToggleServiceStatus(service)}
+                                disabled={loading}
+                              >
+                                {service.isActive ? "Desactivar" : "Activar"}
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                onClick={() => setServiceToDelete(service)}
+                                disabled={loading}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

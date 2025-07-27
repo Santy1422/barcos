@@ -5,6 +5,7 @@ interface CreateLocalServiceRequest extends Request {
   body: {
     name: string
     description: string
+    price: number
     module: string
   }
   user?: {
@@ -14,7 +15,7 @@ interface CreateLocalServiceRequest extends Request {
 
 const createLocalService = async (req: CreateLocalServiceRequest, res: Response) => {
   try {
-    const { name, description, module } = req.body
+    const { name, description, price, module } = req.body
     const userId = req.user?._id
 
     if (!userId) {
@@ -25,10 +26,18 @@ const createLocalService = async (req: CreateLocalServiceRequest, res: Response)
     }
 
     // Validar campos requeridos
-    if (!name || !description || !module) {
+    if (!name || !description || price === undefined || price === null || !module) {
       return res.status(400).json({
         success: false,
-        message: 'Nombre, descripción y módulo son campos obligatorios'
+        message: 'Nombre, descripción, precio y módulo son campos obligatorios'
+      })
+    }
+
+    // Validar que el precio sea un número válido
+    if (typeof price !== 'number' || price < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'El precio debe ser un número mayor o igual a 0'
       })
     }
 
@@ -45,6 +54,7 @@ const createLocalService = async (req: CreateLocalServiceRequest, res: Response)
     const newService = await LocalService.create({
       name: name.trim(),
       description: description.trim(),
+      price: Number(price),
       module,
       createdBy: userId,
       isActive: true

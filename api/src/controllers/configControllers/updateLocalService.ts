@@ -5,6 +5,7 @@ interface UpdateLocalServiceRequest extends Request {
   body: {
     name?: string
     description?: string
+    price?: number
     module?: string
     isActive?: boolean
   }
@@ -19,7 +20,7 @@ interface UpdateLocalServiceRequest extends Request {
 const updateLocalService = async (req: UpdateLocalServiceRequest, res: Response) => {
   try {
     const { id } = req.params
-    const { name, description, module, isActive } = req.body
+    const { name, description, price, module, isActive } = req.body
     const userId = req.user?._id
 
     if (!userId) {
@@ -53,12 +54,23 @@ const updateLocalService = async (req: UpdateLocalServiceRequest, res: Response)
       }
     }
 
+    // Validar precio si se está actualizando
+    if (price !== undefined && price !== null) {
+      if (typeof price !== 'number' || price < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'El precio debe ser un número mayor o igual a 0'
+        })
+      }
+    }
+
     // Actualizar el servicio
     const updatedService = await LocalService.findByIdAndUpdate(
       id,
       {
         ...(name && { name: name.trim() }),
         ...(description && { description: description.trim() }),
+        ...(price !== undefined && price !== null && { price: Number(price) }),
         ...(module && { module }),
         ...(typeof isActive === 'boolean' && { isActive }),
         updatedBy: userId,

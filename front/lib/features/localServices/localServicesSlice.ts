@@ -6,6 +6,7 @@ export interface LocalService {
   _id: string
   name: string
   description: string
+  price: number
   module: string
   isActive: boolean
   createdAt: string
@@ -15,6 +16,7 @@ export interface LocalService {
 export interface LocalServiceInput {
   name: string
   description: string
+  price: number
   module: string
 }
 
@@ -26,7 +28,7 @@ interface LocalServicesState {
 }
 
 const initialState: LocalServicesState = {
-  services: [],
+  services: [] as LocalService[],
   loading: false,
   error: null
 }
@@ -39,6 +41,9 @@ export const fetchLocalServices = createAsyncThunk(
       const token = localStorage.getItem('token')
       const url = createApiUrl(`/api/local-services?module=${module}`)
       
+      console.log('Fetching local services for module:', module)
+      console.log('URL:', url)
+      
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -47,12 +52,19 @@ export const fetchLocalServices = createAsyncThunk(
       })
 
       if (!response.ok) {
-        throw new Error('Error al obtener servicios locales')
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || `Error al obtener servicios locales: ${response.status}`)
       }
 
       const data = await response.json()
-      return data.data || []
+      console.log('Local services response:', data)
+      
+      const services = Array.isArray(data.data?.services) ? data.data.services : []
+      console.log('Processed services:', services)
+      
+      return services
     } catch (error: any) {
+      console.error('Error fetching local services:', error)
       return rejectWithValue(error.message)
     }
   }
@@ -63,6 +75,8 @@ export const createLocalServiceAsync = createAsyncThunk(
   async (serviceData: LocalServiceInput, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem('token')
+      console.log('Creating local service:', serviceData)
+      
       const response = await fetch(createApiUrl('/api/local-services'), {
         method: 'POST',
         headers: {
@@ -73,13 +87,19 @@ export const createLocalServiceAsync = createAsyncThunk(
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.message || 'Error al crear servicio local')
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || `Error al crear servicio local: ${response.status}`)
       }
 
       const data = await response.json()
-      return data.data
+      console.log('Create service response:', data)
+      
+      const service = data.data?.service || data.data
+      console.log('Created service:', service)
+      
+      return service
     } catch (error: any) {
+      console.error('Error creating local service:', error)
       return rejectWithValue(error.message)
     }
   }
@@ -105,7 +125,7 @@ export const updateLocalServiceAsync = createAsyncThunk(
       }
 
       const data = await response.json()
-      return data.data
+      return data.data?.service || data.data
     } catch (error: any) {
       return rejectWithValue(error.message)
     }
@@ -155,7 +175,7 @@ const localServicesSlice = createSlice({
       })
       .addCase(fetchLocalServices.fulfilled, (state, action) => {
         state.loading = false
-        state.services = action.payload
+        state.services = Array.isArray(action.payload) ? action.payload : []
       })
       .addCase(fetchLocalServices.rejected, (state, action) => {
         state.loading = false

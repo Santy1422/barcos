@@ -34,6 +34,7 @@ import {
 import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSlice"
 import { selectActiveNavieras, fetchNavieras } from "@/lib/features/naviera/navieraSlice"
 import { selectServicesByModule, fetchServices, selectServicesLoading } from "@/lib/features/services/servicesSlice"
+import { selectAllLocalServices, selectLocalServicesLoading, fetchLocalServices } from "@/lib/features/localServices/localServicesSlice"
 
 export function PTYSSPrefactura() {
   const dispatch = useAppDispatch()
@@ -47,6 +48,8 @@ export function PTYSSPrefactura() {
   const navieras = useAppSelector(selectActiveNavieras)
   const additionalServices = useAppSelector((state) => selectServicesByModule(state, "ptyss"))
   const servicesLoading = useAppSelector(selectServicesLoading)
+  const localServices = useAppSelector(selectAllLocalServices)
+  const localServicesLoading = useAppSelector(selectLocalServicesLoading)
   
   // Debug: Log registros PTYSS
   console.log('🔍 PTYSSPrefactura - ptyssRecords:', ptyssRecords)
@@ -58,6 +61,8 @@ export function PTYSSPrefactura() {
   // Debug: Log services
   console.log('🔍 PTYSSPrefactura - additionalServices:', additionalServices)
   console.log('🔍 PTYSSPrefactura - servicesLoading:', servicesLoading)
+  console.log('🔍 PTYSSPrefactura - localServices:', localServices)
+  console.log('🔍 PTYSSPrefactura - localServicesLoading:', localServicesLoading)
   
   // Estado para los pasos
   const [currentStep, setCurrentStep] = useState(1)
@@ -94,6 +99,8 @@ export function PTYSSPrefactura() {
   const [isEditing, setIsEditing] = useState(false)
   const [editedRecord, setEditedRecord] = useState<any>(null)
 
+
+
   // Cargar registros PTYSS al montar el componente
   useEffect(() => {
     dispatch(fetchRecordsByModule("ptyss"))
@@ -108,6 +115,12 @@ export function PTYSSPrefactura() {
   useEffect(() => {
     console.log('🔍 PTYSSPrefactura - Loading services for module: ptyss')
     dispatch(fetchServices("ptyss"))
+  }, [dispatch])
+
+  // Cargar servicios locales al montar el componente
+  useEffect(() => {
+    console.log('🔍 PTYSSPrefactura - Loading local services for module: ptyss')
+    dispatch(fetchLocalServices("ptyss"))
   }, [dispatch])
 
   // Cargar navieras al montar el componente
@@ -362,10 +375,23 @@ export function PTYSSPrefactura() {
   
   const additionalServicesTotal = selectedAdditionalServices.reduce((sum, service) => sum + service.amount, 0)
   const grandTotal = totalAmount + servicesTotal + additionalServicesTotal
+  
+  // Debug logs para verificar cálculos
+  console.log('🔍 Total Calculation - totalAmount:', totalAmount)
+  console.log('🔍 Total Calculation - servicesTotal:', servicesTotal)
+  console.log('🔍 Total Calculation - additionalServicesTotal:', additionalServicesTotal)
+  console.log('🔍 Total Calculation - grandTotal:', grandTotal)
+  console.log('🔍 Total Calculation - selectedAdditionalServices:', selectedAdditionalServices)
+  console.log('🔍 Total Calculation - selectedAdditionalServices.length:', selectedAdditionalServices.length)
 
   // Verificar si hay registros de trasiego seleccionados
-  const hasTrasiegoRecords = selectedRecords.some(record => {
+  const hasTrasiegoRecords = selectedRecords.some((record: IndividualExcelRecord) => {
     return getRecordType(record) === 'trasiego'
+  })
+
+  // Verificar si hay registros locales seleccionados
+  const hasLocalRecords = selectedRecords.some((record: IndividualExcelRecord) => {
+    return getRecordType(record) === 'local'
   })
 
   // Navegación entre pasos
@@ -540,7 +566,17 @@ export function PTYSSPrefactura() {
     setSelectedAdditionalServices(prev => prev.filter(s => s.serviceId !== serviceId))
   }
 
+  const handleRemoveLocalService = (serviceId: string) => {
+    setSelectedAdditionalServices(prev => prev.filter(s => s.serviceId !== serviceId))
+  }
+
   const handleUpdateServiceAmount = (serviceId: string, amount: number) => {
+    setSelectedAdditionalServices(prev => 
+      prev.map(s => s.serviceId === serviceId ? { ...s, amount } : s)
+    )
+  }
+
+  const handleUpdateLocalServiceAmount = (serviceId: string, amount: number) => {
     setSelectedAdditionalServices(prev => 
       prev.map(s => s.serviceId === serviceId ? { ...s, amount } : s)
     )
@@ -583,8 +619,42 @@ export function PTYSSPrefactura() {
     })
   }
 
+  const handleAddLocalService = (service: any) => {
+    console.log('🔍 handleAddLocalService - Service to add:', service)
+    console.log('🔍 handleAddLocalService - Current selectedAdditionalServices:', selectedAdditionalServices)
+    
+    const isAlreadySelected = selectedAdditionalServices.some(s => s.serviceId === service._id)
+    console.log('🔍 handleAddLocalService - Is already selected:', isAlreadySelected)
+    
+    if (!isAlreadySelected) {
+      const newLocalService = {
+        serviceId: service._id,
+        name: service.name,
+        description: service.description,
+        amount: service.price // Usar el precio predefinido del servicio
+      }
+      
+      console.log('🔍 handleAddLocalService - New local service to add:', newLocalService)
+      
+      setSelectedAdditionalServices(prev => {
+        const updated = [...prev, newLocalService]
+        console.log('🔍 handleAddLocalService - Updated selectedAdditionalServices:', updated)
+        return updated
+      })
+
+      toast({
+        title: "Servicio local agregado",
+        description: `${service.name} agregado con precio $${service.price.toFixed(2)}`,
+      })
+    }
+  }
+
   // Función para generar PDF de la prefactura PTYSS
   const generatePTYSSPrefacturaPDF = (prefacturaData: any, selectedRecords: IndividualExcelRecord[]) => {
+    console.log('🔍 generatePTYSSPrefacturaPDF - Starting PDF generation')
+    console.log('🔍 generatePTYSSPrefacturaPDF - prefacturaData:', prefacturaData)
+    console.log('🔍 generatePTYSSPrefacturaPDF - selectedRecords:', selectedRecords)
+    console.log('🔍 generatePTYSSPrefacturaPDF - selectedAdditionalServices:', selectedAdditionalServices)
     const doc = new jsPDF()
     
     // Configuración de colores
@@ -755,6 +825,9 @@ export function PTYSSPrefactura() {
       ])
       itemIndex++
     })
+
+    console.log('🔍 PDF Generation - itemIndex after additional services:', itemIndex)
+    console.log('🔍 PDF Generation - Final items array:', items)
     
     // Crear tabla con autoTable
     autoTable(doc, {
@@ -1969,10 +2042,10 @@ export function PTYSSPrefactura() {
                 <div className="bg-gradient-to-br from-slate-50 to-blue-50 p-3 rounded-lg border border-slate-300">
                   <h3 className="text-lg font-bold text-slate-900 border-b border-slate-300 pb-2 mb-2">Servicios Adicionales</h3>
                   
-                                    {/* Selección de servicios */}
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                    <div className="space-y-2">
+                                                      {/* Selección de servicios */}
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="space-y-3">
                       <Label className="text-sm font-semibold text-slate-700">Servicio</Label>
                       {servicesLoading ? (
                         <div className="flex items-center gap-2 text-sm text-slate-600 bg-white/60 p-3 rounded-lg">
@@ -1985,8 +2058,8 @@ export function PTYSSPrefactura() {
                           if (service) {
                             setCurrentServiceToAdd(service)
                           }
-                        }}>
-                          <SelectTrigger className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500">
+                        }} value={currentServiceToAdd?._id || ""}>
+                          <SelectTrigger className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500 h-12 text-base">
                             <SelectValue placeholder="Seleccionar servicio..." />
                           </SelectTrigger>
                           <SelectContent>
@@ -2008,7 +2081,7 @@ export function PTYSSPrefactura() {
                       )}
                     </div>
                     
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <Label className="text-sm font-semibold text-slate-700">Importe</Label>
                       <Input
                         type="text"
@@ -2025,16 +2098,16 @@ export function PTYSSPrefactura() {
                           }
                         }}
                         placeholder="0.00"
-                        className="w-full bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className="w-full h-12 text-base bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                     </div>
                     
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <Label className="text-sm font-semibold text-slate-700">&nbsp;</Label>
                       <Button 
                         onClick={handleAddServiceWithAmount}
                         disabled={!currentServiceToAdd || currentServiceAmount <= 0}
-                        className="w-full bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white font-semibold shadow-md"
+                        className="w-full h-12 text-base bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white font-semibold shadow-md"
                       >
                         <Plus className="h-4 w-4 mr-2" />
                         Agregar
@@ -2049,17 +2122,17 @@ export function PTYSSPrefactura() {
                   )}
                 </div>
 
-                                  {/* Lista de servicios seleccionados */}
+                                                    {/* Lista de servicios seleccionados */}
                   {selectedAdditionalServices.length > 0 && (
-                    <div className="space-y-2">
+                    <div className="space-y-4">
                       <Label className="text-sm font-semibold text-slate-700">Servicios Seleccionados</Label>
-                                          {selectedAdditionalServices.map((service) => (
-                        <div key={service.serviceId} className="flex items-center gap-3 p-3 bg-white/70 border border-slate-200 rounded-lg shadow-sm">
+                      {selectedAdditionalServices.map((service) => (
+                        <div key={service.serviceId} className="flex items-center gap-4 p-4 bg-white/70 border border-slate-200 rounded-lg shadow-sm">
                         <div className="flex-1">
                           <div className="font-semibold text-sm text-slate-900">{service.name}</div>
                           <div className="text-xs text-slate-600">{service.description}</div>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-4">
                           <span className="text-lg font-bold text-slate-900 bg-slate-100 px-3 py-1 rounded-full">${service.amount.toFixed(2)}</span>
                           <Button
                             variant="ghost"
@@ -2074,6 +2147,80 @@ export function PTYSSPrefactura() {
                     ))}
                   </div>
                 )}
+                </div>
+              )}
+
+              {/* Servicios Locales - Solo para registros locales */}
+              {hasLocalRecords && (
+                        <div className="bg-gradient-to-br from-slate-50 to-blue-50 p-6 rounded-lg border border-slate-300">
+          <h3 className="text-lg font-bold text-slate-900 border-b border-slate-300 pb-3 mb-4">Servicios Adicionales</h3>
+                  
+                                    {/* Selección de servicios locales */}
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 gap-6">
+                      <div className="space-y-4">
+                        <Label className="text-sm font-semibold text-slate-700">Servicio</Label>
+                        {localServicesLoading ? (
+                          <div className="flex items-center gap-2 text-sm text-slate-600 bg-white/60 p-3 rounded-lg">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Cargando servicios locales...
+                          </div>
+                        ) : localServices.length === 0 ? (
+                          <div className="text-sm text-muted-foreground bg-white/60 p-3 rounded-lg">
+                            No hay servicios locales disponibles
+                          </div>
+                        ) : (
+                          <Select onValueChange={(value) => {
+                            const service = localServices.find((s: any) => s._id === value)
+                            if (service) {
+                              handleAddLocalService(service)
+                            }
+                          }} value="">
+                            <SelectTrigger className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500 h-14 text-lg">
+                              <SelectValue placeholder="Seleccionar servicio local..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {localServices
+                                .filter((service: any) => !selectedAdditionalServices.some((s: any) => s.serviceId === service._id))
+                                .map((service: any) => (
+                                  <SelectItem key={service._id} value={service._id}>
+                                    {service.name} - {service.description} (${service.price.toFixed(2)})
+                                  </SelectItem>
+                                ))
+                              }
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                                        </div>
+                  </div>
+
+                  {/* Lista de servicios locales seleccionados */}
+                  {selectedAdditionalServices.filter(s => localServices.some((ls: any) => ls._id === s.serviceId)).length > 0 && (
+                    <div className="space-y-4 mt-6">
+                      <Label className="text-sm font-semibold text-slate-700">Servicios Locales Seleccionados</Label>
+                      {selectedAdditionalServices.filter(s => localServices.some((ls: any) => ls._id === s.serviceId)).map((service) => (
+                        <div key={service.serviceId} className="flex items-center gap-4 p-4 bg-white/70 border border-slate-200 rounded-lg shadow-sm">
+                          <div className="flex-1">
+                            <div className="font-semibold text-sm text-slate-900">{service.name}</div>
+                            <div className="text-xs text-slate-600">{service.description}</div>
+                            <div className="text-xs text-slate-500">Precio fijo configurado</div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <span className="text-lg font-bold text-slate-900 bg-slate-100 px-3 py-1 rounded-full">${service.amount.toFixed(2)}</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveLocalService(service.serviceId)}
+                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
