@@ -23,7 +23,7 @@ export function UploadExcelPage() {
             </h3>
             <p className="mt-2 text-sm text-muted-foreground">
               Cada tipo de Excel (tracking, invoices, transport services, etc.) debe ser subido en su módulo específico.
-            </p>
+            </p> 
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
