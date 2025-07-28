@@ -152,7 +152,7 @@ export function PTYSSPrefactura() {
           )
           
           setFixedLocalServices(fixedServices)
-          console.log('🔍 PTYSSPrefactura - Fixed local services loaded:', fixedServices.map(s => ({ code: s.code, name: s.name, price: s.price })))
+          console.log('🔍 PTYSSPrefactura - Fixed local services loaded:', fixedServices.map((s: any) => ({ code: s.code, name: s.name, price: s.price })))
         } else {
           console.error('🔍 Error loading fixed local services:', response.status, response.statusText)
         }
@@ -826,15 +826,20 @@ export function PTYSSPrefactura() {
         })
       }
       
-      // Retencion (TRK163) - precio por día
+      // Retencion (TRK163) - precio por día después del tercer día
       if (data.retencion && parseFloat(data.retencion) > 0) {
-        allLocalServices.push({
-          serviceId: 'TRK163',
-          name: 'Demurrage/Retención',
-          description: `Demurrage/Retención (${data.retencion} días)`,
-          amount: getFixedLocalServicePrice('TRK163') * parseFloat(data.retencion),
-          isLocalService: true
-        })
+        const dias = parseFloat(data.retencion)
+        if (dias > 3) {
+          const diasCobrables = dias - 3 // Solo cobrar días después del tercero
+          allLocalServices.push({
+            serviceId: 'TRK163',
+            name: 'Demurrage/Retención',
+            description: `Demurrage/Retención (${diasCobrables} días cobrables de ${dias} total)`,
+            amount: getFixedLocalServicePrice('TRK163') * diasCobrables,
+            isLocalService: true
+          })
+        }
+        // Si son 3 días o menos, no se agrega el servicio
       }
       
       // Genset (SLR168) - precio por día
@@ -1295,14 +1300,29 @@ export function PTYSSPrefactura() {
       // Para servicios locales fijos, acumular por tipo
       if (service.isLocalService) {
         if (service.serviceId === 'TRK163' || service.serviceId === 'SLR168') { // Retención o Genset
-          // Extraer días de la descripción
-          const match = service.description.match(/\((\d+) días\)/)
-          const days = match ? parseInt(match[1]) : 1
-          groupedServices[serviceKey].count += days
-          groupedServices[serviceKey].total += service.amount
-          // Usar el precio configurado para servicios locales fijos
-          const unitPrice = service.serviceId === 'TRK163' ? getFixedLocalServicePrice('TRK163') : getFixedLocalServicePrice('SLR168')
-          groupedServices[serviceKey].unitPrice = unitPrice
+          if (service.serviceId === 'TRK163') {
+            // Para retención, extraer días cobrables de la descripción
+            const match = service.description.match(/\((\d+) días cobrables de (\d+) total\)/)
+            if (match) {
+              const diasCobrables = parseInt(match[1])
+              const diasTotal = parseInt(match[2])
+              groupedServices[serviceKey].count += diasCobrables
+              groupedServices[serviceKey].total += service.amount
+              groupedServices[serviceKey].unitPrice = getFixedLocalServicePrice('TRK163')
+            } else {
+              // Fallback si no se puede parsear la descripción
+              groupedServices[serviceKey].count += 1
+              groupedServices[serviceKey].total += service.amount
+              groupedServices[serviceKey].unitPrice = getFixedLocalServicePrice('TRK163')
+            }
+          } else {
+            // Para Genset, extraer días de la descripción
+            const match = service.description.match(/\((\d+) días\)/)
+            const days = match ? parseInt(match[1]) : 1
+            groupedServices[serviceKey].count += days
+            groupedServices[serviceKey].total += service.amount
+            groupedServices[serviceKey].unitPrice = getFixedLocalServicePrice('SLR168')
+          }
         } else if (service.serviceId === 'PESAJE') {
           // Pesaje es un valor directo, no un servicio configurado
           groupedServices[serviceKey].count += 1

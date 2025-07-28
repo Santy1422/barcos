@@ -553,7 +553,7 @@ export function PTYSSConfig() {
         
         // Actualizar el estado local después de guardar
         setLocalServices(prev => prev.map(service => 
-          service.code === serviceCode 
+          service.name === serviceCode 
             ? { ...service, price: newPrice }
             : service
         ))
@@ -1042,7 +1042,7 @@ export function PTYSSConfig() {
                     <TableRow>
                       <TableCell><Badge variant="outline">TRK163</Badge></TableCell>
                       <TableCell>Demurrage/Retención</TableCell>
-                      <TableCell>Demurrage/Retención</TableCell>
+                      <TableCell>Demurrage/Retención (se cobra después del 3er día)</TableCell>
                       <TableCell>
                         {editingLocalService === 'TRK163' ? (
                           <div className="flex items-center gap-2">
@@ -1077,7 +1077,7 @@ export function PTYSSConfig() {
                           <span>${localServicePrices.TRK163.toFixed(2)}</span>
                         )}
                       </TableCell>
-                      <TableCell><Badge variant="secondary">Por día</Badge></TableCell>
+                      <TableCell><Badge variant="secondary">Por día (después del 3er día)</Badge></TableCell>
                       <TableCell><Badge variant="default">Activo</Badge></TableCell>
                       <TableCell>
                         <Button

@@ -604,9 +604,14 @@ export function PTYSSUpload() {
       total += getServicePrice('TRK179')
     }
     
-    // Retencion (TRK163) - precio por día
+    // Retencion (TRK163) - precio por día después del tercer día
     if (record.retencion && parseFloat(record.retencion) > 0) {
-      total += getServicePrice('TRK163') * parseFloat(record.retencion)
+      const dias = parseFloat(record.retencion)
+      if (dias > 3) {
+        const diasCobrables = dias - 3 // Solo cobrar días después del tercero
+        total += getServicePrice('TRK163') * diasCobrables
+      }
+      // Si son 3 días o menos, no se cobra nada
     }
     
     // Genset (SLR168) - precio por día

@@ -38,6 +38,7 @@ import {
   Settings2,
   User,
   Plus,
+  History,
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -95,8 +96,9 @@ export function AppSidebar() {
       icon: Ship,
       children: [
         { title: "Crear Registros", href: "/ptyss/upload", icon: Plus },
-                    { title: "Crear Prefactura", href: "/ptyss/invoice", icon: FilePlus2 },
+        { title: "Crear Prefactura", href: "/ptyss/invoice", icon: FilePlus2 },
         { title: "Facturas", href: "/ptyss/records", icon: ListOrdered },
+        { title: "Historial", href: "/ptyss/historial", icon: History },
         { title: "Configuración", href: "/ptyss/config", icon: Settings2 },
       ],
     },
