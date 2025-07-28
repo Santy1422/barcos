@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Settings2, Plus, Edit, Trash2, Ship, Anchor, Wrench, MapPin } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
+
 import { 
   selectAllNavieras, 
   selectNavieraLoading,
@@ -36,8 +37,21 @@ import {
 } from "@/lib/features/ptyssRoutes/ptyssRoutesSlice"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { ServicesManagement } from '@/components/services-management'
-import { LocalServicesManagement } from '@/components/local-services-management'
 import { PTYSSLocalRoutes } from './ptyss-local-routes'
+import {
+  selectAllLocalServices as selectAllAdditionalServices,
+  selectLocalServicesLoading as selectAdditionalServicesLoading,
+  fetchLocalServices as fetchAdditionalServices,
+  createLocalServiceAsync,
+  updateLocalServiceAsync,
+  deleteLocalServiceAsync,
+  clearError as clearAdditionalServicesError,
+  type LocalService as AdditionalService,
+} from "@/lib/features/localServices/localServicesSlice"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Switch } from "@/components/ui/switch"
+import { Separator } from "@/components/ui/separator"
+import { Loader2 } from "lucide-react"
 
 export function PTYSSConfig() {
   const dispatch = useAppDispatch()
@@ -51,6 +65,14 @@ export function PTYSSConfig() {
   const routes = useAppSelector(selectPTYSSRoutes)
   const routesLoading = useAppSelector(selectPTYSSRoutesLoading)
   const routesError = useAppSelector(selectPTYSSRoutesError)
+
+  // Additional Services state (servicios adicionales)
+  const additionalServices = useAppSelector(selectAllAdditionalServices)
+  const additionalServicesLoading = useAppSelector(selectAdditionalServicesLoading)
+  
+  // Local Services state (servicios locales fijos)
+  const [localServices, setLocalServices] = useState<AdditionalService[]>([])
+  const [localServicesLoading, setLocalServicesLoading] = useState(false)
   
   const [showAddNavieraForm, setShowAddNavieraForm] = useState(false)
   const [navieraToDelete, setNavieraToDelete] = useState<Naviera | null>(null)
@@ -68,6 +90,24 @@ export function PTYSSConfig() {
     price: 0
   })
 
+  // Estado para servicios adicionales
+  const [showAddServiceForm, setShowAddServiceForm] = useState(false)
+  const [editingAdditionalService, setEditingAdditionalService] = useState<AdditionalService | null>(null)
+  const [newAdditionalService, setNewAdditionalService] = useState({
+    name: "",
+    description: "",
+    price: 10
+  })
+
+  // Estado para servicios locales fijos
+  const [editingLocalService, setEditingLocalService] = useState<string | null>(null)
+  const [localServicePrices, setLocalServicePrices] = useState({
+    CLG097: 10,
+    TRK163: 10,
+    TRK179: 10,
+    SLR168: 10
+  })
+
   // Cargar navieras al montar el componente
   useEffect(() => {
     dispatch(fetchNavieras())
@@ -77,6 +117,75 @@ export function PTYSSConfig() {
   useEffect(() => {
     dispatch(fetchPTYSSRoutes())
   }, [dispatch])
+
+  // Cargar servicios adicionales al montar el componente
+  useEffect(() => {
+    dispatch(fetchAdditionalServices('ptyss'))
+  }, [dispatch])
+
+  // Cargar servicios locales fijos
+  useEffect(() => {
+    const fetchLocalServices = async () => {
+      setLocalServicesLoading(true)
+      try {
+        const token = localStorage.getItem('token')
+        console.log('🔍 Fetching local services...')
+        console.log('🔍 Token:', token ? 'Present' : 'Missing')
+        
+        const response = await fetch('http://localhost:8080/api/local-services', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        console.log('🔍 Response status:', response.status)
+        
+        if (response.ok) {
+          const data = await response.json()
+          console.log('🔍 Response data:', data)
+          
+          const services = data.data?.services || []
+          console.log('🔍 All services:', services)
+          
+          // Filtrar solo los servicios locales fijos
+          const fixedServices = services.filter((service: any) => 
+            ['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)
+          )
+          console.log('🔍 Fixed services found:', fixedServices)
+          
+          setLocalServices(fixedServices)
+          console.log('🔍 Local services state updated:', fixedServices)
+        } else {
+          console.error('🔍 Response not ok:', response.status, response.statusText)
+          const errorText = await response.text()
+          console.error('🔍 Error response:', errorText)
+        }
+      } catch (error) {
+        console.error('🔍 Error loading local services:', error)
+      } finally {
+        setLocalServicesLoading(false)
+      }
+    }
+    
+    fetchLocalServices()
+  }, [])
+
+  // Cargar precios de servicios locales fijos cuando se carguen los servicios locales
+  useEffect(() => {
+    if (localServices.length > 0) {
+      const newPrices = { ...localServicePrices }
+      
+      // Buscar y actualizar precios de servicios locales fijos
+      localServices.forEach((service: any) => {
+        if (service.code === 'CLG097' || service.code === 'TRK163' || service.code === 'TRK179' || service.code === 'SLR168') {
+          newPrices[service.code as keyof typeof localServicePrices] = service.price || 10
+        }
+      })
+      
+      setLocalServicePrices(newPrices)
+    }
+  }, [localServices])
 
   // Limpiar errores cuando cambie el tab
   useEffect(() => {
@@ -286,6 +395,193 @@ export function PTYSSConfig() {
       routeType: "single",
       price: 0
     })
+  }
+
+  // Funciones para servicios adicionales
+  const handleEditAdditionalService = (service: AdditionalService) => {
+    setEditingAdditionalService(service)
+    setNewAdditionalService({
+      name: service.name,
+      description: service.description,
+      price: service.price || 0
+    })
+    setShowAddServiceForm(true)
+  }
+
+  const handleDeleteAdditionalService = async (serviceId: string) => {
+    try {
+      await dispatch(deleteLocalServiceAsync(serviceId)).unwrap()
+      toast({
+        title: "Servicio eliminado",
+        description: "El servicio adicional ha sido eliminado exitosamente",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Error al eliminar el servicio",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleAddAdditionalService = async () => {
+    if (!newAdditionalService.name || !newAdditionalService.description || newAdditionalService.price < 0) {
+      toast({
+        title: "Error",
+        description: "Completa todos los campos obligatorios. El precio debe ser mayor o igual a 0.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      if (editingAdditionalService) {
+        // Actualizar servicio existente
+        await dispatch(updateLocalServiceAsync({
+          id: editingAdditionalService._id,
+          serviceData: {
+            name: newAdditionalService.name,
+            description: newAdditionalService.description,
+            price: newAdditionalService.price
+          }
+        })).unwrap()
+        
+        toast({
+          title: "Servicio actualizado",
+          description: "El servicio adicional ha sido actualizado exitosamente",
+        })
+      } else {
+        // Crear nuevo servicio
+        await dispatch(createLocalServiceAsync({
+          name: newAdditionalService.name,
+          description: newAdditionalService.description,
+          price: newAdditionalService.price,
+          module: 'ptyss'
+        })).unwrap()
+        
+        toast({
+          title: "Servicio agregado",
+          description: "El nuevo servicio adicional ha sido configurado correctamente",
+        })
+      }
+      
+      setNewAdditionalService({
+        name: "",
+        description: "",
+        price: 10
+      })
+      setEditingAdditionalService(null)
+      setShowAddServiceForm(false)
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Error al guardar el servicio",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleCancelAddService = () => {
+    setNewAdditionalService({
+      name: "",
+      description: "",
+      price: 10
+    })
+    setEditingAdditionalService(null)
+    setShowAddServiceForm(false)
+  }
+
+  // Funciones para servicios locales fijos
+  const handleEditLocalService = (serviceCode: string) => {
+    setEditingLocalService(serviceCode)
+  }
+
+  const handleSaveLocalService = async (serviceCode: string) => {
+    const newPrice = localServicePrices[serviceCode as keyof typeof localServicePrices]
+    
+    if (newPrice < 0) {
+      toast({
+        title: "Error",
+        description: "El precio debe ser mayor o igual a 0.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      // Buscar el servicio en la base de datos por código
+      let serviceToUpdate = localServices.find((service: any) => service.code === serviceCode)
+      
+      console.log('🔍 Buscando servicio por código:', serviceCode)
+      console.log('🔍 Servicios locales disponibles:', localServices.map((s: any) => ({ code: s.code, name: s.name, price: s.price })))
+      console.log('🔍 Servicio encontrado en localServices:', serviceToUpdate)
+      
+      // Si no se encuentra en localServices, buscar en additionalServices como fallback
+      if (!serviceToUpdate) {
+        serviceToUpdate = additionalServices.find((service: AdditionalService) => service.name === serviceCode)
+        console.log('🔍 Servicios adicionales disponibles:', additionalServices.map((s: AdditionalService) => ({ name: s.name, price: s.price })))
+        console.log('🔍 Servicio encontrado en additionalServices:', serviceToUpdate)
+      }
+      
+      // Si aún no se encuentra, buscar por cualquier campo que contenga el código
+      if (!serviceToUpdate) {
+        serviceToUpdate = localServices.find((service: any) => 
+          service.code === serviceCode || 
+          service.name === serviceCode ||
+          service.description?.includes(serviceCode) ||
+          service._id === serviceCode
+        )
+        console.log('🔍 Búsqueda ampliada en localServices:', serviceToUpdate)
+      }
+      
+      if (!serviceToUpdate) {
+        serviceToUpdate = additionalServices.find((service: AdditionalService) => 
+          service.name === serviceCode || 
+          service.description?.includes(serviceCode) ||
+          service._id === serviceCode
+        )
+        console.log('🔍 Búsqueda ampliada en additionalServices:', serviceToUpdate)
+      }
+      
+      if (serviceToUpdate) {
+        await dispatch(updateLocalServiceAsync({
+          id: serviceToUpdate._id,
+          serviceData: {
+            price: newPrice
+          }
+        })).unwrap()
+        
+        // Actualizar el estado local después de guardar
+        setLocalServices(prev => prev.map(service => 
+          service.code === serviceCode 
+            ? { ...service, price: newPrice }
+            : service
+        ))
+        
+        toast({
+          title: "Precio actualizado",
+          description: `El precio del servicio ${serviceCode} ha sido actualizado exitosamente`,
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: `No se encontró el servicio ${serviceCode} en la base de datos. Verifica que el servicio esté configurado correctamente.`,
+          variant: "destructive"
+        })
+      }
+      
+      setEditingLocalService(null)
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Error al actualizar el precio del servicio",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleCancelEditLocalService = () => {
+    setEditingLocalService(null)
   }
 
   return (
@@ -658,10 +954,392 @@ export function PTYSSConfig() {
       )}
 
       {activeTab === 'localServices' && (
-        <LocalServicesManagement 
-          module="ptyss" 
-          title="Gestión de Servicios Locales PTYSS" 
-        />
+        <div className="space-y-6">
+          {/* Servicios Locales Fijos */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <Settings2 className="mr-2 h-5 w-5" />
+                  Servicios Locales Fijos
+                </div>
+              </CardTitle>
+              <CardDescription>
+                Servicios para cálculo automático en registros locales (TI, Estadia, Retención, Genset)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {localServicesLoading ? (
+                <div className="flex justify-center p-4">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Código</TableHead>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Descripción</TableHead>
+                      <TableHead>Precio</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell><Badge variant="outline">CLG097</Badge></TableCell>
+                      <TableCell>Customs/TI</TableCell>
+                      <TableCell>Customs/TI</TableCell>
+                      <TableCell>
+                        {editingLocalService === 'CLG097' ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={localServicePrices.CLG097}
+                              onChange={(e) => setLocalServicePrices({
+                                ...localServicePrices,
+                                CLG097: parseFloat(e.target.value) || 0
+                              })}
+                              className="w-20"
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleSaveLocalService('CLG097')}
+                              disabled={additionalServicesLoading}
+                            >
+                              ✓
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleCancelEditLocalService}
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ) : (
+                          <span>${localServicePrices.CLG097.toFixed(2)}</span>
+                        )}
+                      </TableCell>
+                      <TableCell><Badge variant="secondary">Fijo</Badge></TableCell>
+                      <TableCell><Badge variant="default">Activo</Badge></TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleEditLocalService('CLG097')}
+                          disabled={editingLocalService !== null && editingLocalService !== 'CLG097'}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell><Badge variant="outline">TRK163</Badge></TableCell>
+                      <TableCell>Demurrage/Retención</TableCell>
+                      <TableCell>Demurrage/Retención</TableCell>
+                      <TableCell>
+                        {editingLocalService === 'TRK163' ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={localServicePrices.TRK163}
+                              onChange={(e) => setLocalServicePrices({
+                                ...localServicePrices,
+                                TRK163: parseFloat(e.target.value) || 0
+                              })}
+                              className="w-20"
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleSaveLocalService('TRK163')}
+                              disabled={additionalServicesLoading}
+                            >
+                              ✓
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleCancelEditLocalService}
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ) : (
+                          <span>${localServicePrices.TRK163.toFixed(2)}</span>
+                        )}
+                      </TableCell>
+                      <TableCell><Badge variant="secondary">Por día</Badge></TableCell>
+                      <TableCell><Badge variant="default">Activo</Badge></TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleEditLocalService('TRK163')}
+                          disabled={editingLocalService !== null && editingLocalService !== 'TRK163'}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell><Badge variant="outline">TRK179</Badge></TableCell>
+                      <TableCell>Storage/Estadía</TableCell>
+                      <TableCell>Storage/Estadía</TableCell>
+                      <TableCell>
+                        {editingLocalService === 'TRK179' ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={localServicePrices.TRK179}
+                              onChange={(e) => setLocalServicePrices({
+                                ...localServicePrices,
+                                TRK179: parseFloat(e.target.value) || 0
+                              })}
+                              className="w-20"
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleSaveLocalService('TRK179')}
+                              disabled={additionalServicesLoading}
+                            >
+                              ✓
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleCancelEditLocalService}
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ) : (
+                          <span>${localServicePrices.TRK179.toFixed(2)}</span>
+                        )}
+                      </TableCell>
+                      <TableCell><Badge variant="secondary">Fijo</Badge></TableCell>
+                      <TableCell><Badge variant="default">Activo</Badge></TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleEditLocalService('TRK179')}
+                          disabled={editingLocalService !== null && editingLocalService !== 'TRK179'}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell><Badge variant="outline">SLR168</Badge></TableCell>
+                      <TableCell>Genset Rental</TableCell>
+                      <TableCell>Genset Rental</TableCell>
+                      <TableCell>
+                        {editingLocalService === 'SLR168' ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={localServicePrices.SLR168}
+                              onChange={(e) => setLocalServicePrices({
+                                ...localServicePrices,
+                                SLR168: parseFloat(e.target.value) || 0
+                              })}
+                              className="w-20"
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleSaveLocalService('SLR168')}
+                              disabled={additionalServicesLoading}
+                            >
+                              ✓
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleCancelEditLocalService}
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ) : (
+                          <span>${localServicePrices.SLR168.toFixed(2)}</span>
+                        )}
+                      </TableCell>
+                      <TableCell><Badge variant="secondary">Por día</Badge></TableCell>
+                      <TableCell><Badge variant="default">Activo</Badge></TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleEditLocalService('SLR168')}
+                          disabled={editingLocalService !== null && editingLocalService !== 'SLR168'}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Separator />
+
+          {/* Servicios Adicionales */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <Settings2 className="mr-2 h-5 w-5" />
+                  Servicios Adicionales
+                </div>
+                <Button onClick={() => setShowAddServiceForm(!showAddServiceForm)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Agregar Servicio
+                </Button>
+              </CardTitle>
+              <CardDescription>
+                Servicios que se seleccionan manualmente en el Paso 2 de crear prefactura
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {showAddServiceForm && (
+                <Card className="border-dashed mb-6">
+                  <CardHeader>
+                    <CardTitle className="text-lg">
+                      {editingAdditionalService ? "Editar Servicio Adicional" : "Nuevo Servicio Adicional"}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="service-name">Nombre del Servicio *</Label>
+                        <Input
+                          id="service-name"
+                          value={newAdditionalService.name}
+                          onChange={(e) => setNewAdditionalService({...newAdditionalService, name: e.target.value})}
+                          placeholder="TRK006"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="service-description">Descripción *</Label>
+                        <Input
+                          id="service-description"
+                          value={newAdditionalService.description}
+                          onChange={(e) => setNewAdditionalService({...newAdditionalService, description: e.target.value})}
+                          placeholder="Descripción del servicio"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="service-price">Precio *</Label>
+                        <Input
+                          id="service-price"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={newAdditionalService.price === 0 ? "" : newAdditionalService.price}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setNewAdditionalService({
+                              ...newAdditionalService, 
+                              price: value === "" ? 0 : parseFloat(value) || 0
+                            });
+                          }}
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={handleAddAdditionalService} disabled={additionalServicesLoading}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        {additionalServicesLoading ? "Guardando..." : (editingAdditionalService ? "Actualizar Servicio" : "Agregar Servicio")}
+                      </Button>
+                      <Button variant="outline" onClick={handleCancelAddService}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              
+              {additionalServicesLoading ? (
+                <div className="flex justify-center p-4">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nombre</TableHead>
+                        <TableHead>Descripción</TableHead>
+                        <TableHead>Precio</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead>Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {additionalServices.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                            No hay servicios adicionales registrados
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        additionalServices.map((service: AdditionalService) => (
+                          <TableRow key={service._id}>
+                            <TableCell className="font-medium">{service.name}</TableCell>
+                            <TableCell>{service.description}</TableCell>
+                            <TableCell>${(service.price || 0).toFixed(2)}</TableCell>
+                            <TableCell>
+                              <Badge variant={service.isActive ? "default" : "secondary"}>
+                                {service.isActive ? "Activo" : "Inactivo"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEditAdditionalService(service)}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteAdditionalService(service._id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Modal de confirmación para eliminar naviera */}

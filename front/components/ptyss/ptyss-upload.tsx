@@ -170,6 +170,44 @@ export function PTYSSUpload() {
     dispatch(fetchPTYSSLocalRoutes())
   }, [dispatch])
 
+  // Cargar servicios locales fijos al montar el componente
+  useEffect(() => {
+    const fetchLocalServices = async () => {
+      setLocalServicesLoading(true)
+      try {
+        const token = localStorage.getItem('token')
+        
+        const response = await fetch('http://localhost:8080/api/local-services', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          const services = data.data?.services || []
+          
+          // Filtrar solo los servicios locales fijos
+          const fixedServices = services.filter((service: any) => 
+            ['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)
+          )
+          
+          setLocalServices(fixedServices)
+          console.log('🔍 PTYSSUpload - Local services loaded:', fixedServices)
+        } else {
+          console.error('🔍 Error loading local services:', response.status, response.statusText)
+        }
+      } catch (error) {
+        console.error('🔍 Error loading local services:', error)
+      } finally {
+        setLocalServicesLoading(false)
+      }
+    }
+    
+    fetchLocalServices()
+  }, [])
+
   // Mostrar error si existe
   useEffect(() => {
     if (routesError) {
@@ -211,6 +249,10 @@ export function PTYSSUpload() {
     isComplete: boolean
     missingFields: string[]
   }>>(new Map())
+  
+  // Estado para servicios locales fijos
+  const [localServices, setLocalServices] = useState<any[]>([])
+  const [localServicesLoading, setLocalServicesLoading] = useState(false)
 
   // Recargar clientes cuando cambie el estado de completitud
   useEffect(() => {
@@ -544,9 +586,35 @@ export function PTYSSUpload() {
     // Agregar precio de ruta local si existe
     if (record.localRoutePrice) total += record.localRoutePrice
     
-    // Agregar valores numéricos si existen
-    if (record.genset) total += parseFloat(record.genset) || 0
-    if (record.retencion) total += parseFloat(record.retencion) || 0
+    // Obtener precios de servicios locales desde la configuración
+    const getServicePrice = (serviceCode: string): number => {
+      // Buscar en los servicios locales fijos
+      const localService = localServices.find((service: any) => service.code === serviceCode)
+      return localService?.price || 10 // Fallback a $10 si no se encuentra
+    }
+    
+    // Calcular servicios locales basados en la configuración
+    // TI (CLG097) - precio fijo
+    if (record.ti === 'si') {
+      total += getServicePrice('CLG097')
+    }
+    
+    // Estadia (TRK179) - precio fijo
+    if (record.estadia === 'si') {
+      total += getServicePrice('TRK179')
+    }
+    
+    // Retencion (TRK163) - precio por día
+    if (record.retencion && parseFloat(record.retencion) > 0) {
+      total += getServicePrice('TRK163') * parseFloat(record.retencion)
+    }
+    
+    // Genset (SLR168) - precio por día
+    if (record.genset && parseFloat(record.genset) > 0) {
+      total += getServicePrice('SLR168') * parseFloat(record.genset)
+    }
+    
+    // Agregar pesaje directamente (monto fijo)
     if (record.pesaje) total += parseFloat(record.pesaje) || 0
     
     return total

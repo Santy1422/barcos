@@ -86,6 +86,7 @@ export function PTYSSPrefactura() {
     name: string
     description: string
     amount: number
+    isLocalService?: boolean
   }>>([])
   const [currentServiceToAdd, setCurrentServiceToAdd] = useState<any>(null)
   const [currentServiceAmount, setCurrentServiceAmount] = useState<number>(0)
@@ -98,6 +99,10 @@ export function PTYSSPrefactura() {
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editedRecord, setEditedRecord] = useState<any>(null)
+  
+  // Estado para servicios locales fijos
+  const [fixedLocalServices, setFixedLocalServices] = useState<any[]>([])
+  const [fixedLocalServicesLoading, setFixedLocalServicesLoading] = useState(false)
 
 
 
@@ -123,10 +128,54 @@ export function PTYSSPrefactura() {
     dispatch(fetchLocalServices("ptyss"))
   }, [dispatch])
 
+  // Cargar servicios locales fijos al montar el componente
+  useEffect(() => {
+    const fetchFixedLocalServices = async () => {
+      setFixedLocalServicesLoading(true)
+      try {
+        const token = localStorage.getItem('token')
+        
+        const response = await fetch('http://localhost:8080/api/local-services', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          const services = data.data?.services || []
+          
+          // Filtrar solo los servicios locales fijos
+          const fixedServices = services.filter((service: any) => 
+            ['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)
+          )
+          
+          setFixedLocalServices(fixedServices)
+          console.log('🔍 PTYSSPrefactura - Fixed local services loaded:', fixedServices.map(s => ({ code: s.code, name: s.name, price: s.price })))
+        } else {
+          console.error('🔍 Error loading fixed local services:', response.status, response.statusText)
+        }
+      } catch (error) {
+        console.error('🔍 Error loading fixed local services:', error)
+      } finally {
+        setFixedLocalServicesLoading(false)
+      }
+    }
+    
+    fetchFixedLocalServices()
+  }, [])
+
   // Cargar navieras al montar el componente
   useEffect(() => {
     dispatch(fetchNavieras('active'))
   }, [dispatch])
+
+  // Función helper para obtener el precio de un servicio local fijo
+  const getFixedLocalServicePrice = (serviceCode: string): number => {
+    const service = fixedLocalServices.find((s: any) => s.code === serviceCode)
+    return service?.price || 10 // Fallback a $10 si no se encuentra
+  }
 
   // Función helper para obtener el ID correcto del registro
   const getRecordId = (record: IndividualExcelRecord): string => {
@@ -353,18 +402,260 @@ export function PTYSSPrefactura() {
         })
         return
       }
-      setSelectedRecordIds(prev => [...prev, recordId])
+      setSelectedRecordIds(prev => {
+        const newSelectedIds = [...prev, recordId]
+        return newSelectedIds
+      })
+      
+      // Si es un registro local, agregar automáticamente los servicios locales fijos
+      const data = record.data as Record<string, any>
+      if (data.recordType === 'local') {
+        const newLocalServices: Array<{
+          serviceId: string
+          name: string
+          description: string
+          amount: number
+          isLocalService: boolean
+        }> = []
+        
+        // TI (CLG097) - precio fijo
+        if (data.ti === 'si') {
+          newLocalServices.push({
+            serviceId: 'CLG097',
+            name: 'Customs/TI',
+            description: 'Customs/TI',
+            amount: 10,
+            isLocalService: true
+          })
+        }
+        
+        // Estadia (TRK179) - precio fijo
+        if (data.estadia === 'si') {
+          newLocalServices.push({
+            serviceId: 'TRK179',
+            name: 'Storage/Estadía',
+            description: 'Storage/Estadía',
+            amount: 10,
+            isLocalService: true
+          })
+        }
+        
+        // Retencion (TRK163) - precio por día
+        if (data.retencion && parseFloat(data.retencion) > 0) {
+          newLocalServices.push({
+            serviceId: 'TRK163',
+            name: 'Demurrage/Retención',
+            description: `Demurrage/Retención (${data.retencion} días)`,
+            amount: 10 * parseFloat(data.retencion),
+            isLocalService: true
+          })
+        }
+        
+        // Genset (SLR168) - precio por día
+        if (data.genset && parseFloat(data.genset) > 0) {
+          newLocalServices.push({
+            serviceId: 'SLR168',
+            name: 'Genset Rental',
+            description: `Genset Rental (${data.genset} días)`,
+            amount: 10 * parseFloat(data.genset),
+            isLocalService: true
+          })
+        }
+        
+        // Pesaje - precio directo
+        if (data.pesaje && parseFloat(data.pesaje) > 0) {
+          newLocalServices.push({
+            serviceId: 'PESAJE',
+            name: 'Pesaje',
+            description: 'Pesaje',
+            amount: parseFloat(data.pesaje),
+            isLocalService: true
+          })
+        }
+        
+        // Agregar los servicios locales fijos a selectedAdditionalServices
+        setSelectedAdditionalServices(prev => {
+          // Mantener servicios que no son locales fijos
+          const nonLocalServices = prev.filter(s => !s.isLocalService)
+          
+          // Obtener todos los registros locales seleccionados usando selectedRecordIds
+          const selectedLocalRecords = ptyssRecords.filter((record: IndividualExcelRecord) => {
+            const recordId = getRecordId(record)
+            const isSelected = selectedRecordIds.includes(recordId)
+            const data = record.data as Record<string, any>
+            return isSelected && data.recordType === 'local'
+          })
+          
+          // Acumular todos los servicios locales fijos de todos los registros seleccionados
+          const allLocalServices: Array<{
+            serviceId: string
+            name: string
+            description: string
+            amount: number
+            isLocalService: boolean
+          }> = []
+          
+          console.log('🔍 handleRecordSelection - selectedLocalRecords count:', selectedLocalRecords.length)
+          console.log('🔍 handleRecordSelection - selectedRecordIds:', selectedRecordIds)
+          
+          selectedLocalRecords.forEach((record: IndividualExcelRecord) => {
+            const data = record.data as Record<string, any>
+            
+            // TI (CLG097) - precio fijo
+            if (data.ti === 'si') {
+              allLocalServices.push({
+                serviceId: 'CLG097',
+                name: 'Customs/TI',
+                description: 'Customs/TI',
+                amount: 10,
+                isLocalService: true
+              })
+            }
+            
+            // Estadia (TRK179) - precio fijo
+            if (data.estadia === 'si') {
+              allLocalServices.push({
+                serviceId: 'TRK179',
+                name: 'Storage/Estadía',
+                description: 'Storage/Estadía',
+                amount: 10,
+                isLocalService: true
+              })
+            }
+            
+            // Retencion (TRK163) - precio por día
+            if (data.retencion && parseFloat(data.retencion) > 0) {
+              allLocalServices.push({
+                serviceId: 'TRK163',
+                name: 'Demurrage/Retención',
+                description: `Demurrage/Retención (${data.retencion} días)`,
+                amount: 10 * parseFloat(data.retencion),
+                isLocalService: true
+              })
+            }
+            
+            // Genset (SLR168) - precio por día
+            if (data.genset && parseFloat(data.genset) > 0) {
+              allLocalServices.push({
+                serviceId: 'SLR168',
+                name: 'Genset Rental',
+                description: `Genset Rental (${data.genset} días)`,
+                amount: 10 * parseFloat(data.genset),
+                isLocalService: true
+              })
+            }
+            
+            // Pesaje - precio directo
+            if (data.pesaje && parseFloat(data.pesaje) > 0) {
+              allLocalServices.push({
+                serviceId: 'PESAJE',
+                name: 'Pesaje',
+                description: 'Pesaje',
+                amount: parseFloat(data.pesaje),
+                isLocalService: true
+              })
+            }
+          })
+          
+          return [...nonLocalServices, ...allLocalServices]
+        })
+      }
     } else {
-      setSelectedRecordIds(prev => prev.filter(id => id !== recordId))
+      setSelectedRecordIds(prev => {
+        const newSelectedIds = prev.filter(id => id !== recordId)
+        
+        // Recalcular servicios locales fijos después de actualizar selectedRecordIds
+        setTimeout(() => {
+          const selectedLocalRecords = ptyssRecords.filter((record: IndividualExcelRecord) => {
+            const recordId = getRecordId(record)
+            const isSelected = newSelectedIds.includes(recordId)
+            const data = record.data as Record<string, any>
+            return isSelected && data.recordType === 'local'
+          })
+
+          const allLocalServices: Array<{
+            serviceId: string
+            name: string
+            description: string
+            amount: number
+            isLocalService: boolean
+          }> = []
+
+          selectedLocalRecords.forEach((record: IndividualExcelRecord) => {
+            const data = record.data as Record<string, any>
+            
+            // TI (CLG097) - precio fijo
+            if (data.ti === 'si') {
+              allLocalServices.push({
+                serviceId: 'CLG097',
+                name: 'Customs/TI',
+                description: 'Customs/TI',
+                amount: 10,
+                isLocalService: true
+              })
+            }
+            
+            // Estadia (TRK179) - precio fijo
+            if (data.estadia === 'si') {
+              allLocalServices.push({
+                serviceId: 'TRK179',
+                name: 'Storage/Estadía',
+                description: 'Storage/Estadía',
+                amount: 10,
+                isLocalService: true
+              })
+            }
+            
+            // Retencion (TRK163) - precio por día
+            if (data.retencion && parseFloat(data.retencion) > 0) {
+              allLocalServices.push({
+                serviceId: 'TRK163',
+                name: 'Demurrage/Retención',
+                description: `Demurrage/Retención (${data.retencion} días)`,
+                amount: 10 * parseFloat(data.retencion),
+                isLocalService: true
+              })
+            }
+            
+            // Genset (SLR168) - precio por día
+            if (data.genset && parseFloat(data.genset) > 0) {
+              allLocalServices.push({
+                serviceId: 'SLR168',
+                name: 'Genset Rental',
+                description: `Genset Rental (${data.genset} días)`,
+                amount: 10 * parseFloat(data.genset),
+                isLocalService: true
+              })
+            }
+            
+            // Pesaje - precio directo
+            if (data.pesaje && parseFloat(data.pesaje) > 0) {
+              allLocalServices.push({
+                serviceId: 'PESAJE',
+                name: 'Pesaje',
+                description: 'Pesaje',
+                amount: parseFloat(data.pesaje),
+                isLocalService: true
+              })
+            }
+          })
+
+          setSelectedAdditionalServices(prev => {
+            const nonLocalServices = prev.filter(s => !s.isLocalService)
+            return [...nonLocalServices, ...allLocalServices]
+          })
+        }, 0)
+        
+        return newSelectedIds
+      })
     }
   }
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       // Solo seleccionar registros que cumplan con las restricciones
-      const selectableIds = filteredRecords
-        .filter((record: IndividualExcelRecord) => canSelectRecord(record))
-        .map((record: IndividualExcelRecord) => getRecordId(record))
+      const selectableRecords = filteredRecords.filter((record: IndividualExcelRecord) => canSelectRecord(record))
+      const selectableIds = selectableRecords.map((record: IndividualExcelRecord) => getRecordId(record))
       
       if (selectableIds.length === 0) {
         toast({
@@ -376,8 +667,85 @@ export function PTYSSPrefactura() {
       }
       
       setSelectedRecordIds(selectableIds)
+      
+      // Agregar servicios locales fijos para registros locales
+      const newLocalServices: Array<{
+        serviceId: string
+        name: string
+        description: string
+        amount: number
+        isLocalService: boolean
+      }> = []
+      
+      selectableRecords.forEach((record: IndividualExcelRecord) => {
+        const data = record.data as Record<string, any>
+        if (data.recordType === 'local') {
+          // TI (CLG097) - precio fijo
+          if (data.ti === 'si') {
+            newLocalServices.push({
+              serviceId: 'CLG097',
+              name: 'Customs/TI',
+              description: 'Customs/TI',
+              amount: 10,
+              isLocalService: true
+            })
+          }
+          
+          // Estadia (TRK179) - precio fijo
+          if (data.estadia === 'si') {
+            newLocalServices.push({
+              serviceId: 'TRK179',
+              name: 'Storage/Estadía',
+              description: 'Storage/Estadía',
+              amount: 10,
+              isLocalService: true
+            })
+          }
+          
+          // Retencion (TRK163) - precio por día
+          if (data.retencion && parseFloat(data.retencion) > 0) {
+            newLocalServices.push({
+              serviceId: 'TRK163',
+              name: 'Demurrage/Retención',
+              description: `Demurrage/Retención (${data.retencion} días)`,
+              amount: 10 * parseFloat(data.retencion),
+              isLocalService: true
+            })
+          }
+          
+          // Genset (SLR168) - precio por día
+          if (data.genset && parseFloat(data.genset) > 0) {
+            newLocalServices.push({
+              serviceId: 'SLR168',
+              name: 'Genset Rental',
+              description: `Genset Rental (${data.genset} días)`,
+              amount: 10 * parseFloat(data.genset),
+              isLocalService: true
+            })
+          }
+          
+          // Pesaje - precio directo
+          if (data.pesaje && parseFloat(data.pesaje) > 0) {
+            newLocalServices.push({
+              serviceId: 'PESAJE',
+              name: 'Pesaje',
+              description: 'Pesaje',
+              amount: parseFloat(data.pesaje),
+              isLocalService: true
+            })
+          }
+        }
+      })
+      
+      // Agregar los servicios locales fijos a selectedAdditionalServices
+      setSelectedAdditionalServices(prev => {
+        const existingServices = prev.filter(s => !s.isLocalService || !newLocalServices.some(ns => ns.serviceId === s.serviceId))
+        return [...existingServices, ...newLocalServices]
+      })
     } else {
       setSelectedRecordIds([])
+      // Remover todos los servicios locales fijos
+      setSelectedAdditionalServices(prev => prev.filter(s => !s.isLocalService))
     }
   }
 
@@ -391,30 +759,11 @@ export function PTYSSPrefactura() {
     return sum + (record.totalValue || 0)
   }, 0)
   
-  // Calcular total de servicios adicionales (TI, Gen set, etc.)
-  const servicesTotal = selectedRecords.reduce((sum: number, record: IndividualExcelRecord) => {
-    const data = record.data as Record<string, any>
-    let recordServicesTotal = 0
-    
-    // Agregar TI si está marcado como 'si'
-    if (data.ti === 'si') {
-      recordServicesTotal += 10
-    }
-    
-    // Agregar Gen set si tiene valor
-    if (data.genset && data.genset !== '0') {
-      recordServicesTotal += parseFloat(data.genset)
-    }
-    
-    return sum + recordServicesTotal
-  }, 0)
-  
   const additionalServicesTotal = selectedAdditionalServices.reduce((sum, service) => sum + service.amount, 0)
-  const grandTotal = totalAmount + servicesTotal + additionalServicesTotal
+  const grandTotal = totalAmount + additionalServicesTotal
   
   // Debug logs para verificar cálculos
   console.log('🔍 Total Calculation - totalAmount:', totalAmount)
-  console.log('🔍 Total Calculation - servicesTotal:', servicesTotal)
   console.log('🔍 Total Calculation - additionalServicesTotal:', additionalServicesTotal)
   console.log('🔍 Total Calculation - grandTotal:', grandTotal)
   console.log('🔍 Total Calculation - selectedAdditionalServices:', selectedAdditionalServices)
@@ -429,6 +778,94 @@ export function PTYSSPrefactura() {
   const hasLocalRecords = selectedRecords.some((record: IndividualExcelRecord) => {
     return getRecordType(record) === 'local'
   })
+
+  // useEffect para recalcular servicios locales fijos cuando cambien los registros seleccionados
+  useEffect(() => {
+    
+    // Obtener todos los registros locales seleccionados
+    const selectedLocalRecords = ptyssRecords.filter((record: IndividualExcelRecord) => {
+      const recordId = getRecordId(record)
+      const isSelected = selectedRecordIds.includes(recordId)
+      const data = record.data as Record<string, any>
+      return isSelected && data.recordType === 'local'
+    })
+
+    // Acumular todos los servicios locales fijos de todos los registros seleccionados
+    const allLocalServices: Array<{
+      serviceId: string
+      name: string
+      description: string
+      amount: number
+      isLocalService: boolean
+    }> = []
+
+    selectedLocalRecords.forEach((record: IndividualExcelRecord) => {
+      const data = record.data as Record<string, any>
+      
+      // TI (CLG097) - precio fijo
+      if (data.ti === 'si') {
+        const tiPrice = getFixedLocalServicePrice('CLG097')
+        console.log('🔍 Calculando TI - precio:', tiPrice)
+        allLocalServices.push({
+          serviceId: 'CLG097',
+          name: 'Customs/TI',
+          description: 'Customs/TI',
+          amount: tiPrice,
+          isLocalService: true
+        })
+      }
+      
+      // Estadia (TRK179) - precio fijo
+      if (data.estadia === 'si') {
+        allLocalServices.push({
+          serviceId: 'TRK179',
+          name: 'Storage/Estadía',
+          description: 'Storage/Estadía',
+          amount: getFixedLocalServicePrice('TRK179'),
+          isLocalService: true
+        })
+      }
+      
+      // Retencion (TRK163) - precio por día
+      if (data.retencion && parseFloat(data.retencion) > 0) {
+        allLocalServices.push({
+          serviceId: 'TRK163',
+          name: 'Demurrage/Retención',
+          description: `Demurrage/Retención (${data.retencion} días)`,
+          amount: getFixedLocalServicePrice('TRK163') * parseFloat(data.retencion),
+          isLocalService: true
+        })
+      }
+      
+      // Genset (SLR168) - precio por día
+      if (data.genset && parseFloat(data.genset) > 0) {
+        allLocalServices.push({
+          serviceId: 'SLR168',
+          name: 'Genset Rental',
+          description: `Genset Rental (${data.genset} días)`,
+          amount: getFixedLocalServicePrice('SLR168') * parseFloat(data.genset),
+          isLocalService: true
+        })
+      }
+      
+      // Pesaje - precio directo
+      if (data.pesaje && parseFloat(data.pesaje) > 0) {
+        allLocalServices.push({
+          serviceId: 'PESAJE',
+          name: 'Pesaje',
+          description: 'Pesaje',
+          amount: parseFloat(data.pesaje),
+          isLocalService: true
+        })
+      }
+    })
+
+    // Actualizar selectedAdditionalServices manteniendo servicios no locales
+    setSelectedAdditionalServices(prev => {
+      const nonLocalServices = prev.filter(s => !s.isLocalService)
+      return [...nonLocalServices, ...allLocalServices]
+    })
+  }, [selectedRecordIds, ptyssRecords, fixedLocalServices])
 
   // Navegación entre pasos
   const handleNextStep = () => {
@@ -810,25 +1247,7 @@ export function PTYSSPrefactura() {
       }
       groupedItems[fleteKey].count += 1
       
-      // Agrupar TI
-      if (data.ti === 'si') {
-        const tiKey = 'TI'
-        if (!groupedItems[tiKey]) {
-          groupedItems[tiKey] = { total: 0, count: 0 }
-        }
-        groupedItems[tiKey].total += 10
-        groupedItems[tiKey].count += 1
-      }
-      
-      // Agrupar Gen set
-      if (data.genset && data.genset !== '0') {
-        const gensetKey = 'Gen set'
-        if (!groupedItems[gensetKey]) {
-          groupedItems[gensetKey] = { total: 0, count: 0 }
-        }
-        groupedItems[gensetKey].total += parseFloat(data.genset)
-        groupedItems[gensetKey].count += 1
-      }
+
     })
     
     // Convertir items agrupados a array
@@ -858,13 +1277,60 @@ export function PTYSSPrefactura() {
       ])
     })
     
-    // Agregar servicios adicionales seleccionados
+    // Agrupar servicios adicionales por tipo
+    const groupedServices: { [key: string]: { total: number, count: number, name: string, unitPrice: number } } = {}
+    
     selectedAdditionalServices.forEach((service) => {
+      const serviceKey = service.name // Usar el nombre como clave para agrupar
+      
+      if (!groupedServices[serviceKey]) {
+        groupedServices[serviceKey] = { 
+          total: 0, 
+          count: 0, 
+          name: service.name, 
+          unitPrice: service.amount 
+        }
+      }
+      
+      // Para servicios locales fijos, acumular por tipo
+      if (service.isLocalService) {
+        if (service.serviceId === 'TRK163' || service.serviceId === 'SLR168') { // Retención o Genset
+          // Extraer días de la descripción
+          const match = service.description.match(/\((\d+) días\)/)
+          const days = match ? parseInt(match[1]) : 1
+          groupedServices[serviceKey].count += days
+          groupedServices[serviceKey].total += service.amount
+          // Usar el precio configurado para servicios locales fijos
+          const unitPrice = service.serviceId === 'TRK163' ? getFixedLocalServicePrice('TRK163') : getFixedLocalServicePrice('SLR168')
+          groupedServices[serviceKey].unitPrice = unitPrice
+        } else if (service.serviceId === 'PESAJE') {
+          // Pesaje es un valor directo, no un servicio configurado
+          groupedServices[serviceKey].count += 1
+          groupedServices[serviceKey].total += service.amount
+          groupedServices[serviceKey].unitPrice = service.amount // El precio unitario es el mismo que el total para pesaje
+        } else {
+          // TI, Estadia son servicios fijos configurados
+          groupedServices[serviceKey].count += 1
+          groupedServices[serviceKey].total += service.amount
+          // Usar el precio configurado para servicios locales fijos
+          const unitPrice = service.serviceId === 'CLG097' ? getFixedLocalServicePrice('CLG097') : getFixedLocalServicePrice('TRK179')
+          groupedServices[serviceKey].unitPrice = unitPrice
+        }
+      } else {
+        // Para servicios adicionales no locales, mantener como están
+        groupedServices[serviceKey].count += 1
+        groupedServices[serviceKey].total += service.amount
+        groupedServices[serviceKey].unitPrice = service.amount
+      }
+    })
+    
+    // Agregar servicios agrupados a la tabla
+    Object.entries(groupedServices).forEach(([serviceKey, serviceData]) => {
       items.push([
-        itemIndex.toString(),
-        service.name,
-        `$${service.amount.toFixed(2)}`,
-        `$${service.amount.toFixed(2)}`
+        serviceData.count.toString(),
+        serviceData.name,
+        `$${serviceData.unitPrice.toFixed(2)}`,
+        `$${serviceData.total.toFixed(2)}`
       ])
       itemIndex++
     })
@@ -984,7 +1450,7 @@ export function PTYSSPrefactura() {
       // Generar PDF de previsualización
       const pdfBlob = generatePTYSSPrefacturaPDF(prefacturaData, selectedRecords)
       if (pdfBlob instanceof Blob) {
-        setPreviewPdf(pdfBlob)
+      setPreviewPdf(pdfBlob)
       }
       setIsPreviewOpen(true)
     } catch (error) {
@@ -1023,8 +1489,8 @@ export function PTYSSPrefactura() {
       
       const pdfBlob = generatePTYSSPrefacturaPDF(prefacturaData, selectedRecords)
       if (pdfBlob instanceof Blob) {
-        const url = URL.createObjectURL(pdfBlob)
-        setPdfUrl(url)
+      const url = URL.createObjectURL(pdfBlob)
+      setPdfUrl(url)
       }
     } catch (error) {
       console.error("Error al generar PDF en tiempo real:", error)
@@ -1193,7 +1659,7 @@ export function PTYSSPrefactura() {
         } else {
           const pdfBlob = generatePTYSSPrefacturaPDF(prefacturaData, selectedRecords)
           if (pdfBlob instanceof Blob) {
-            setGeneratedPdf(pdfBlob)
+          setGeneratedPdf(pdfBlob)
           }
         }
 
@@ -2353,7 +2819,7 @@ export function PTYSSPrefactura() {
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
                   <span className="font-semibold text-slate-800">Subtotal Registros:</span>
-                  <span className="font-bold text-lg text-slate-900">${grandTotal.toFixed(2)}</span>
+                  <span className="font-bold text-lg text-slate-900">${totalAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
                   <span className="font-semibold text-slate-800">Servicios Adicionales:</span>
