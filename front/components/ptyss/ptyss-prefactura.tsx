@@ -23,7 +23,9 @@ import {
   selectRecordsLoading,
   fetchPendingRecordsByModule,
   fetchRecordsByModule,
+  markRecordsAsPrefacturado,
   markRecordsAsInvoiced,
+  updateMultipleRecordsStatusAsync,
   addInvoice,
   createInvoiceAsync,
   deleteRecordAsync,
@@ -1657,21 +1659,22 @@ export function PTYSSPrefactura() {
         console.log("✅ createInvoiceAsync fulfilled")
         console.log("ID de la factura creada:", response.payload.id)
         
-        console.log("🔍 PTYSSPrefactura - Marcando registros como facturados...")
+        console.log("🔍 PTYSSPrefactura - Marcando registros como prefacturados en backend...")
         console.log("🔍 PTYSSPrefactura - Registros a marcar:", selectedRecords.map((r: IndividualExcelRecord) => getRecordId(r)))
         
-        dispatch(markRecordsAsInvoiced({ 
+        // Usar la nueva acción async que actualiza la base de datos
+        await dispatch(updateMultipleRecordsStatusAsync({ 
           recordIds: selectedRecords.map((r: IndividualExcelRecord) => getRecordId(r)), 
+          status: "prefacturado",
           invoiceId: response.payload.id 
-        }))
+        })).unwrap()
         
-        console.log("🔍 PTYSSPrefactura - Registros marcados como facturados")
+        console.log("🔍 PTYSSPrefactura - Registros marcados como prefacturados en backend")
         
-        // Esperar un poco antes de refrescar los registros para asegurar que el backend procese la actualización
-        setTimeout(() => {
-          console.log("🔍 PTYSSPrefactura - Refrescando registros pendientes...")
-          dispatch(fetchPendingRecordsByModule("ptyss"))
-        }, 100)
+        // Refrescar todos los registros PTYSS para actualizar el historial
+        console.log("🔍 PTYSSPrefactura - Refrescando todos los registros PTYSS...")
+        dispatch(fetchRecordsByModule("ptyss"))
+        dispatch(fetchPendingRecordsByModule("ptyss"))
 
         // Usar el PDF de previsualización si existe, sino generar uno nuevo
         if (previewPdf) {

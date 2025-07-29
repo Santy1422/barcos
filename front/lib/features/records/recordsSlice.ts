@@ -10,7 +10,7 @@ export interface ExcelRecord {
   excelId: string // ID of the Excel file this record came from
   module: "trucking" | "ptyss"
   type: string // Type of data (e.g., "transport-services", "supply-order")
-  status: "pendiente" | "completado" | "facturado" | "anulado" // Status of this individual record
+  status: "pendiente" | "completado" | "prefacturado" | "facturado" | "anulado" // Status of this individual record
   totalValue: number // The calculated total value for this specific record/line item
   data: any // The raw data object for this record (e.g., TruckingRecordData)
   sapCode?: string // Campo específico para consultas
@@ -48,7 +48,7 @@ export const fetchRecordsByModule = createAsyncThunk(
   async (module: string, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch(`/api/records/module/${module}`, {
+      const response = await fetch(createApiUrl(`/api/records/module/${module}`), {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -343,7 +343,7 @@ export const updateRecordStatus = createAsyncThunk(
   }, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch(`/api/records/${recordId}`, {
+      const response = await fetch(createApiUrl(`/api/records/${recordId}`), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -377,7 +377,7 @@ export const fetchRecordsBySapCode = createAsyncThunk(
   }, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch(`/api/records/sapcode/${sapCode}?module=${module}&page=${page}&limit=${limit}`, {
+      const response = await fetch(createApiUrl(`/api/records/sapcode/${sapCode}?module=${module}&page=${page}&limit=${limit}`), {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -403,7 +403,7 @@ export const updateRecordAsync = createAsyncThunk(
   async ({ id, updates }: { id: string; updates: Partial<ExcelRecord> }, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch(`/api/records/${id}`, {
+      const response = await fetch(createApiUrl(`/api/records/${id}`), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -436,7 +436,7 @@ export const updateInvoiceAsync = createAsyncThunk(
       if (!token) {
         throw new Error('No se encontró token de autenticación')
       }
-      const response = await fetch(`/api/invoices/${id}`, {
+      const response = await fetch(createApiUrl(`/api/invoices/${id}`), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -465,7 +465,7 @@ export const deleteInvoiceAsync = createAsyncThunk(
         throw new Error('No se encontró token de autenticación')
       }
       
-      const response = await fetch(`/api/invoices/${invoiceId}`, {
+      const response = await fetch(createApiUrl(`/api/invoices/${invoiceId}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -496,7 +496,7 @@ export const deleteRecordAsync = createAsyncThunk(
         throw new Error('No se encontró token de autenticación')
       }
       
-      const response = await fetch(`/api/records/${recordId}`, {
+      const response = await fetch(createApiUrl(`/api/records/${recordId}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -527,7 +527,7 @@ export const fetchAllRecordsByModule = createAsyncThunk(
         throw new Error('No se encontró token de autenticación')
       }
       
-      const response = await fetch(`/api/records?module=${module}&limit=1000`, {
+      const response = await fetch(createApiUrl(`/api/records?module=${module}&limit=1000`), {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -554,6 +554,53 @@ export const fetchAllRecordsByModule = createAsyncThunk(
     } catch (error) {
       console.error("Error en fetchAllRecordsByModule:", error)
       return rejectWithValue(error instanceof Error ? error.message : 'Error desconocido')
+    }
+  }
+)
+
+// Nueva acción async para actualizar múltiples registros en el backend
+export const updateMultipleRecordsStatusAsync = createAsyncThunk(
+  'records/updateMultipleStatus',
+  async ({ recordIds, status, invoiceId }: { recordIds: string[]; status: string; invoiceId: string }, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+
+      console.log(`🔍 updateMultipleRecordsStatusAsync - Actualizando ${recordIds.length} registros a estado: ${status}`)
+      
+      // Actualizar cada registro individualmente
+      const updatePromises = recordIds.map(async (recordId) => {
+        console.log(`🔍 Actualizando registro ${recordId} a estado ${status}`)
+        
+        const response = await fetch(createApiUrl(`/api/records/${recordId}`), {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            status: status,
+            invoiceId: invoiceId
+          })
+        })
+        
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(`Error actualizando registro ${recordId}: ${errorData.message || response.statusText}`)
+        }
+        
+        return await response.json()
+      })
+      
+      const results = await Promise.all(updatePromises)
+      console.log(`✅ updateMultipleRecordsStatusAsync - ${results.length} registros actualizados exitosamente`)
+      
+      return { recordIds, status, invoiceId, results }
+    } catch (error: any) {
+      console.error('❌ Error en updateMultipleRecordsStatusAsync:', error)
+      return rejectWithValue(error.message)
     }
   }
 )
@@ -612,7 +659,24 @@ const recordsSlice = createSlice({
         Object.assign(record, action.payload.updates)
       }
     },
-    // This reducer marks the selected individual records as "facturado"
+    // This reducer marks the selected individual records as "prefacturado" when creating a prefactura
+    markRecordsAsPrefacturado: (state, action: PayloadAction<{ recordIds: string[]; invoiceId: string }>) => {
+      action.payload.recordIds.forEach((recordId) => {
+        const record = state.individualRecords.find((r) => (r._id || r.id) === recordId)
+        if (record) {
+          record.status = "prefacturado"
+          record.invoiceId = action.payload.invoiceId
+        }
+      })
+      
+      // También actualizar pendingRecordsByModule para todos los módulos
+      Object.keys(state.pendingRecordsByModule).forEach(module => {
+        state.pendingRecordsByModule[module] = state.pendingRecordsByModule[module].filter(
+          record => !action.payload.recordIds.includes(record._id || record.id)
+        )
+      })
+    },
+    // This reducer marks the selected individual records as "facturado" when finalizing invoice
     markRecordsAsInvoiced: (state, action: PayloadAction<{ recordIds: string[]; invoiceId: string }>) => {
       action.payload.recordIds.forEach((recordId) => {
         const record = state.individualRecords.find((r) => (r._id || r.id) === recordId)
@@ -825,6 +889,32 @@ const recordsSlice = createSlice({
         state.error = action.payload as string
       })
       
+      // Update multiple records status
+      .addCase(updateMultipleRecordsStatusAsync.fulfilled, (state, action) => {
+        const { recordIds, status, invoiceId } = action.payload
+        // Actualizar los registros en el estado local
+        recordIds.forEach((recordId) => {
+          const record = state.individualRecords.find((r) => (r._id || r.id) === recordId)
+          if (record) {
+            record.status = status as any
+            record.invoiceId = invoiceId
+          }
+        })
+        
+        // También actualizar pendingRecordsByModule para todos los módulos
+        Object.keys(state.pendingRecordsByModule).forEach(module => {
+          state.pendingRecordsByModule[module] = state.pendingRecordsByModule[module].filter(
+            record => !recordIds.includes(record._id || record.id)
+          )
+        })
+        
+        console.log(`🔍 updateMultipleRecordsStatusAsync.fulfilled - ${recordIds.length} registros actualizados a ${status}`)
+      })
+      .addCase(updateMultipleRecordsStatusAsync.rejected, (state, action) => {
+        state.error = action.payload as string
+        console.error('❌ updateMultipleRecordsStatusAsync.rejected:', action.payload)
+      })
+      
       // Fetch records by sapCode
       .addCase(fetchRecordsBySapCode.pending, (state) => {
         state.fetchingRecords = true
@@ -940,6 +1030,7 @@ const recordsSlice = createSlice({
 export const { 
   addRecords, 
   updateRecord, 
+  markRecordsAsPrefacturado,
   markRecordsAsInvoiced, 
   addInvoice, 
   updateInvoiceStatus, 

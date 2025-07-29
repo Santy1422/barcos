@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Database } from "lucide-react"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { useToast } from "@/hooks/use-toast"
-import { selectInvoicesByModule, fetchInvoicesAsync, deleteInvoiceAsync, selectRecordsLoading, selectRecordsError, updateInvoiceAsync, updateInvoiceStatus, selectAllIndividualRecords, fetchAllRecordsByModule } from "@/lib/features/records/recordsSlice"
+import { selectInvoicesByModule, fetchInvoicesAsync, deleteInvoiceAsync, selectRecordsLoading, selectRecordsError, updateInvoiceAsync, updateInvoiceStatus, selectAllIndividualRecords, fetchAllRecordsByModule, markRecordsAsInvoiced, updateMultipleRecordsStatusAsync } from "@/lib/features/records/recordsSlice"
 import { PTYSSPrefacturaEditModal } from "./ptyss-prefactura-edit-modal"
 import { PTYSSPdfViewer } from "./ptyss-pdf-viewer"
 import { PTYSSFacturacionModal } from "./ptyss-facturacion-modal"
@@ -214,9 +214,36 @@ export function PTYSSRecords() {
         invoice={facturarInvoice}
         onFacturar={async (newInvoiceNumber: string) => {
           if (!facturarInvoice) return
-          await dispatch(updateInvoiceAsync({ id: facturarInvoice.id, updates: { status: "facturada", invoiceNumber: newInvoiceNumber } })).unwrap()
-          dispatch(updateInvoiceStatus({ id: facturarInvoice.id, status: "facturada", invoiceNumber: newInvoiceNumber }))
-          dispatch(fetchInvoicesAsync("ptyss"))
+          
+          try {
+            // Actualizar la factura
+            await dispatch(updateInvoiceAsync({ id: facturarInvoice.id, updates: { status: "facturada", invoiceNumber: newInvoiceNumber } })).unwrap()
+            dispatch(updateInvoiceStatus({ id: facturarInvoice.id, status: "facturada", invoiceNumber: newInvoiceNumber }))
+            
+            // Marcar los registros asociados como facturados en la base de datos
+            if (facturarInvoice.relatedRecordIds && facturarInvoice.relatedRecordIds.length > 0) {
+              await dispatch(updateMultipleRecordsStatusAsync({ 
+                recordIds: facturarInvoice.relatedRecordIds, 
+                status: "facturado",
+                invoiceId: facturarInvoice.id 
+              })).unwrap()
+            }
+            
+            // Recargar las facturas y registros para actualizar el historial
+            dispatch(fetchInvoicesAsync("ptyss"))
+            dispatch(fetchAllRecordsByModule("ptyss"))
+            
+            toast({
+              title: "Factura procesada",
+              description: `La prefactura ha sido facturada exitosamente como ${newInvoiceNumber}`,
+            })
+          } catch (error: any) {
+            toast({
+              title: "Error al facturar",
+              description: error.message || "Error al procesar la factura",
+              variant: "destructive"
+            })
+          }
         }}
       />
       {/* Modal de ver registros asociados */}

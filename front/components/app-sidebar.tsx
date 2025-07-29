@@ -107,6 +107,11 @@ export function AppSidebar() {
       href: "/clientes",
       icon: Users,
     },
+    {
+      title: "Historial General",
+      href: "/historial",
+      icon: History,
+    },
     // Add Users menu item conditionally for administrators
     ...(currentUser?.role === "administrador" ? [{
       title: "Usuarios",
