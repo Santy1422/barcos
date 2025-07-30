@@ -162,7 +162,7 @@ export function HistoryPage() {
   const exportToExcel = () => {
     const exportData = filteredRecords.map(record => ({
       'Referencia/Orden': getRecordReference(record),
-      'Módulo': record.module.toUpperCase(),
+      'Módulo': record.module === 'trucking' ? 'PTG' : record.module.toUpperCase(),
       'Tipo Registro': getRecordType(record) === 'local' ? 'Local' : 'Trasiego',
       'Cliente': getRecordClient(record),
       'Naviera': getRecordNaviera(record),
@@ -250,7 +250,7 @@ export function HistoryPage() {
             </div>
             <div className="flex gap-4 flex-wrap">
               <Badge variant="outline">PTYSS: <strong>{stats.ptyss}</strong></Badge>
-              <Badge variant="outline">Trucking: <strong>{stats.trucking}</strong></Badge>
+              <Badge variant="outline">PTG: <strong>{stats.trucking}</strong></Badge>
               <Badge variant="outline">Locales: <strong>{stats.locales}</strong></Badge>
               <Badge variant="outline">Trasiego: <strong>{stats.trasiego}</strong></Badge>
               <Badge variant="outline">Pendientes: <strong>{stats.pendientes}</strong></Badge>
@@ -307,7 +307,7 @@ export function HistoryPage() {
                   <SelectContent>
                     <SelectItem value="todos">Todos</SelectItem>
                     <SelectItem value="ptyss">PTYSS</SelectItem>
-                    <SelectItem value="trucking">Trucking</SelectItem>
+                    <SelectItem value="trucking">PTG</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -428,7 +428,7 @@ export function HistoryPage() {
                     <TableCell>{new Date(record.createdAt).toLocaleDateString('es-ES')}</TableCell>
                     <TableCell>
                       <Badge variant={record.module === 'ptyss' ? 'default' : 'secondary'}>
-                        {record.module.toUpperCase()}
+                        {record.module === 'trucking' ? 'PTG' : record.module.toUpperCase()}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -502,7 +502,7 @@ export function HistoryPage() {
                     <div>
                       <Label className="text-sm font-medium">Módulo</Label>
                       <Badge variant={selectedRecord.module === 'ptyss' ? 'default' : 'secondary'}>
-                        {selectedRecord.module.toUpperCase()}
+                        {selectedRecord.module === 'trucking' ? 'PTG' : selectedRecord.module.toUpperCase()}
                       </Badge>
                     </div>
                     <div>
