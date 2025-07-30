@@ -26,7 +26,7 @@ export function UploadExcelPage() {
             </p> 
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4"> 
             <Link href="/tracking" className="no-underline">
               <Card className="hover:shadow-md transition-shadow duration-200">
                 <CardHeader> 
