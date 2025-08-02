@@ -15,6 +15,7 @@
     "seed:ptyss-local-routes": "ts-node scripts/seedPTYSSLocalRoutes.ts",
     "seed:ptyss-local-routes-api": "ts-node scripts/seedPTYSSLocalRoutesAPI.ts",
     "seed:localServices": "node scripts/seedLocalServices.js",
+    "migrate:ptyss-local-routes": "ts-node scripts/migratePTYSSLocalRoutes.ts",
     "test:seed": "ts-node scripts/test-seed-endpoint.ts"
   },
   "keywords": [],

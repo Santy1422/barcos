@@ -7,21 +7,20 @@ const PTYSSLocalRoute = mongoose.model('PTYSSLocalRoute', ptyssLocalRouteSchema)
 
 const createPTYSSLocalRoute = async (req: Request, res: Response) => {
   try {
-    const { clientName, from, to, price } = req.body;
+    const { clientName, realClientId, from, to, price } = req.body;
 
     if (!clientName || !from || !to || price === undefined) {
       return response(res, 400, { message: 'Todos los campos son requeridos' });
     }
 
-    // Validar que el cliente esté en la lista permitida
-    const validClients = ['cliente 1', 'cliente 2', 'cliente 3', 'cliente 4', 'cliente 5'];
-    if (!validClients.includes(clientName)) {
+    // Validar que el nombre del esquema no esté vacío y sea válido
+    if (!clientName.trim() || clientName.trim().length < 3) {
       return response(res, 400, { 
-        message: `Cliente inválido. Debe ser uno de: ${validClients.join(', ')}` 
+        message: 'El nombre del esquema debe tener al menos 3 caracteres' 
       });
     }
 
-    // Verificar si ya existe una ruta para este cliente con el mismo origen y destino
+    // Verificar si ya existe una ruta para este esquema con el mismo origen y destino
     const existingRoute = await PTYSSLocalRoute.findOne({ 
       clientName, 
       from, 
@@ -33,8 +32,22 @@ const createPTYSSLocalRoute = async (req: Request, res: Response) => {
       });
     }
 
-    const newRoute = new PTYSSLocalRoute({ clientName, from, to, price });
+    // Validar realClientId si se proporciona
+    if (realClientId && !mongoose.Types.ObjectId.isValid(realClientId)) {
+      return response(res, 400, { message: 'ID de cliente real inválido' });
+    }
+
+    // Eliminar ruta placeholder si existe para este esquema
+    await PTYSSLocalRoute.deleteOne({ 
+      clientName, 
+      from: '__PLACEHOLDER__', 
+      to: '__PLACEHOLDER__' 
+    });
+
+    const newRoute = new PTYSSLocalRoute({ clientName, realClientId, from, to, price });
     await newRoute.save();
+
+    console.log(`Ruta real creada para ${clientName}, placeholder eliminado automáticamente`);
 
     return response(res, 201, { 
       message: 'Ruta local de PTYSS creada exitosamente',

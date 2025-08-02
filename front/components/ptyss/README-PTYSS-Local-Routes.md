@@ -2,24 +2,31 @@
 
 ## Descripción
 
-El componente `PTYSSLocalRoutes` permite gestionar las rutas locales de PTYSS, organizadas por clientes. Cada cliente puede tener múltiples rutas predefinidas con orígenes y destinos específicos, cada una con su propio precio.
+El componente `PTYSSLocalRoutes` permite gestionar las rutas locales de PTYSS, organizadas por esquemas de rutas. Cada esquema puede tener múltiples rutas predefinidas con orígenes y destinos específicos, cada una con su propio precio. Los esquemas pueden ser asociados a clientes reales del sistema.
 
 ## Características
 
-### 🏢 Gestión por Clientes
-- **5 clientes predefinidos**: cliente 1, cliente 2, cliente 3, cliente 4, cliente 5
-- **Vista organizada por pestañas**: Cada cliente tiene su propia pestaña para facilitar la gestión
-- **Rutas independientes**: Cada cliente puede tener sus propias rutas y precios
+### 🏢 Gestión por Esquemas de Rutas
+- **5 esquemas predefinidos**: esquema rutas 1, esquema rutas 2, esquema rutas 3, esquema rutas 4, esquema rutas 5
+- **Vista organizada por pestañas**: Cada esquema tiene su propia pestaña para facilitar la gestión
+- **Rutas independientes**: Cada esquema puede tener sus propias rutas y precios
+- **Asociación con clientes reales**: Los esquemas pueden asociarse a clientes reales del sistema
 
 ### 🗺️ Rutas Predefinidas
 - **Orígenes disponibles**: COLON, PSA
 - **Destinos dinámicos**: Los destinos se filtran automáticamente según el origen seleccionado
-- **Rutas del Cliente 1**: Basadas en la tabla "TARIFAS / cliente 1" del Excel proporcionado
+- **Rutas del Esquema Rutas 1**: Basadas en la tabla "TARIFAS / cliente 1" del Excel proporcionado
 
 ### 💰 Gestión de Precios
 - **Precios individuales**: Cada ruta tiene su propio precio
 - **Validación**: Los precios deben ser mayores a 0
 - **Formato**: Precios con 2 decimales
+
+### 🔗 Asociación con Clientes Reales
+- **Cliente único por esquema**: Cada esquema solo puede asociarse a un cliente real
+- **Esquema único por cliente**: Cada cliente real solo puede asociarse a un esquema
+- **Información visual**: Indicadores claros de qué esquemas están asociados
+- **Gestión completa**: Crear nuevas asociaciones y ver información del cliente asociado
 
 ## Estructura de Datos
 
@@ -27,7 +34,8 @@ El componente `PTYSSLocalRoutes` permite gestionar las rutas locales de PTYSS, o
 ```typescript
 interface PTYSSLocalRoute {
   _id: string
-  clientName: string // 'cliente 1' | 'cliente 2' | 'cliente 3' | 'cliente 4' | 'cliente 5'
+  clientName: string // 'esquema rutas 1' | 'esquema rutas 2' | 'esquema rutas 3' | 'esquema rutas 4' | 'esquema rutas 5'
+  realClientId?: ObjectId // Referencia opcional al cliente real asociado
   from: string       // Origen de la ruta
   to: string         // Destino de la ruta
   price: number      // Precio de la ruta
@@ -36,7 +44,7 @@ interface PTYSSLocalRoute {
 }
 ```
 
-### Rutas Predefinidas del Cliente 1
+### Rutas Predefinidas del Esquema Rutas 1
 
 #### Rutas desde COLON:
 - COLON → ANTON
@@ -63,110 +71,48 @@ interface PTYSSLocalRoute {
 - PSA → SAN MIGUELITO
 - PSA → CIUDAD PANAMA
 - PSA → RIO ABAJO
-- PSA → VILLA LUCRE
-- PSA → TOCUMEN
-- PSA → 24 DICIEMBRE
-- PSA → PACORA
-- PSA → FELIPILLO
-- PSA → METETI
-- PSA → DARIEN
 
 ## Funcionalidades
 
-### ✅ Crear Ruta
-1. Seleccionar cliente
-2. Seleccionar origen (COLON o PSA)
-3. Seleccionar destino (filtrado por origen)
-4. Establecer precio
-5. Guardar
+### ✅ Gestión de Rutas
+- Crear nuevas rutas en cualquier esquema
+- Editar rutas existentes
+- Eliminar rutas
+- Búsqueda por origen/destino
 
-### ✏️ Editar Ruta
-- Modificar cualquier campo de una ruta existente
-- Validación de duplicados
-- Actualización en tiempo real
+### ✅ Asociación de Clientes
+- Asociar esquemas de rutas a clientes reales
+- Ver información del cliente asociado
+- Validaciones para evitar dobles asociaciones
+- Indicadores visuales de estado de asociación
 
-### 🗑️ Eliminar Ruta
-- Confirmación antes de eliminar
-- Eliminación permanente de la base de datos
-
-### 📊 Visualización
-- **Tabla organizada**: Origen, Destino, Precio, Acciones
-- **Pestañas por cliente**: Navegación fácil entre clientes
-- **Estados de carga**: Indicadores visuales durante operaciones
+### ✅ Interfaz de Usuario
+- Pestañas organizadas por esquema
+- Indicadores visuales de asociación (✓ verde)
+- Información completa del cliente asociado
+- Filtros y búsquedas avanzadas
 
 ## API Endpoints
 
-### GET `/api/ptyss-local-routes`
-Obtener todas las rutas locales de PTYSS
+### Rutas Básicas
+- `GET /api/ptyss-local-routes` - Obtener todas las rutas
+- `POST /api/ptyss-local-routes` - Crear nueva ruta
+- `PUT /api/ptyss-local-routes/:id` - Actualizar ruta
+- `DELETE /api/ptyss-local-routes/:id` - Eliminar ruta
 
-### POST `/api/ptyss-local-routes`
-Crear una nueva ruta local
-
-### PUT `/api/ptyss-local-routes/:id`
-Actualizar una ruta existente
-
-### DELETE `/api/ptyss-local-routes/:id`
-Eliminar una ruta
-
-## Scripts de Base de Datos
-
-### Seed de Rutas Predefinidas
-```bash
-# Ejecutar desde la carpeta api/
-npm run seed:ptyss-local-routes
-```
-
-Este script:
-- Conecta a MongoDB
-- Elimina rutas existentes del cliente 1
-- Inserta todas las rutas predefinidas con precio 0
-- Muestra un resumen de la operación
-
-## Integración
-
-### En PTYSS Config
-El componente se integra en la configuración de PTYSS como una nueva pestaña:
-- **Navieras**: Gestión de navieras
-- **Rutas Trasiego**: Rutas de trasiego existentes
-- **Rutas Local**: Nuevo componente de rutas locales
-- **Servicios Adicionales**: Gestión de servicios
-
-### Redux Store
-```typescript
-// Estado en el store
-ptyssLocalRoutes: {
-  routes: PTYSSLocalRoute[]
-  loading: boolean
-  error: string | null
-}
-```
+### Asociación de Clientes
+- `POST /api/ptyss-local-routes/associate-client` - Asociar cliente real a esquema de rutas
 
 ## Validaciones
 
-### Frontend
-- Campos obligatorios completos
-- Precio mayor a 0
-- Selección de origen antes de destino
-- Destinos filtrados por origen
-
 ### Backend
-- Validación de cliente válido
-- Prevención de duplicados (cliente + origen + destino)
-- Validación de esquema MongoDB
-- Manejo de errores con mensajes descriptivos
+- Solo esquemas válidos permitidos
+- Validación de IDs de cliente real
+- Prevención de dobles asociaciones
+- Verificación de existencia de recursos
 
-## Uso
-
-1. **Acceder a Configuración PTYSS**
-2. **Seleccionar pestaña "Rutas Local"**
-3. **Navegar entre clientes** usando las pestañas
-4. **Agregar rutas** con el botón "Agregar Ruta"
-5. **Editar o eliminar** rutas existentes
-
-## Próximos Pasos
-
-- [ ] Agregar rutas predefinidas para clientes 2-5
-- [ ] Implementar importación masiva desde Excel
-- [ ] Agregar filtros y búsqueda
-- [ ] Implementar exportación de datos
-- [ ] Agregar historial de cambios 
+### Frontend  
+- Campos requeridos validados
+- Solo esquemas sin asociar disponibles
+- Solo clientes reales disponibles
+- Feedback visual completo 

@@ -7,7 +7,14 @@ const PTYSSLocalRoute = mongoose.model('PTYSSLocalRoute', ptyssLocalRouteSchema)
 
 const getAllPTYSSLocalRoutes = async (req: Request, res: Response) => {
   try {
-    const routes = await PTYSSLocalRoute.find().sort({ clientName: 1, from: 1, to: 1 });
+    const allRoutes = await PTYSSLocalRoute.find()
+      .populate('realClientId', 'type fullName companyName sapCode email phone isActive')
+      .sort({ clientName: 1, from: 1, to: 1 });
+
+    // Filtrar rutas placeholder para no mostrarlas al usuario
+    const routes = allRoutes.filter(route => 
+      route.from !== '__PLACEHOLDER__' && route.to !== '__PLACEHOLDER__'
+    );
     
     return response(res, 200, { data: routes });
   } catch (error) {
