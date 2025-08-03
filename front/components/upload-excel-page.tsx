@@ -13,7 +13,7 @@ export function UploadExcelPage() {
 
       <Card>
         <CardHeader> 
-          <CardTitle>Instrucciones para Subir Archivos Excel</CardTitle>
+          <CardTitle>Instrucciones para Subir Archivos Excel</CardTitle> 
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="text-center">
