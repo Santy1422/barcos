@@ -50,7 +50,8 @@ import {
   selectPTYSSLocalRoutes,
   fetchPTYSSLocalRoutes,
   selectPTYSSLocalRoutesLoading,
-  selectPTYSSLocalRoutesError
+  selectPTYSSLocalRoutesError,
+  type PTYSSLocalRoute
 } from "@/lib/features/ptyssLocalRoutes/ptyssLocalRoutesSlice"
 import { parseTruckingExcel, matchTruckingDataWithRoutes, type TruckingExcelData } from "@/lib/excel-parser"
 import { ClientModal } from "@/components/clients-management"
@@ -79,7 +80,6 @@ interface PTYSSRecordData {
   totalValue: number
   recordType: "local" | "trasiego" // Campo para identificar registros locales o de trasiego
   // Campos para rutas locales
-  localClientName?: string // cliente 1, cliente 2, etc.
   localRouteId?: string // ID de la ruta local seleccionada
   localRoutePrice?: number // Precio de la ruta local
 }
@@ -106,7 +106,6 @@ const initialRecordData: PTYSSRecordData = {
   notes: "",
   totalValue: 0,
   recordType: "local",
-  localClientName: "",
   localRouteId: "",
   localRoutePrice: 0
 }
@@ -526,14 +525,24 @@ export function PTYSSUpload() {
     // Si no existe, no hacemos nada - el usuario debe crear el cliente desde el modal de faltantes
   }
 
-  // Obtener clientes únicos de las rutas locales
-  const getLocalRouteClients = () => {
-    return [...new Set(localRoutes.map(route => route.clientName))].sort()
+  // Obtener rutas locales asociadas a un cliente específico por su realClientId
+  const getLocalRoutesByRealClientId = (clientId: string): PTYSSLocalRoute[] => {
+    return localRoutes.filter(route => {
+      // El realClientId puede ser un string (ID) o un objeto poblado
+      if (typeof route.realClientId === 'string') {
+        return route.realClientId === clientId
+      } else if (route.realClientId && typeof route.realClientId === 'object') {
+        return route.realClientId._id === clientId
+      }
+      return false
+    })
   }
 
-  // Obtener rutas por cliente
-  const getLocalRoutesByClient = (clientName: string) => {
-    return localRoutes.filter(route => route.clientName === clientName)
+  // Obtener el esquema de rutas asociado al cliente seleccionado
+  const getSelectedClientRouteSchema = () => {
+    if (!currentRecord.clientId) return null
+    const clientRoutes = getLocalRoutesByRealClientId(currentRecord.clientId)
+    return clientRoutes.length > 0 ? clientRoutes[0].clientName : null
   }
 
   // Obtener ruta seleccionada
@@ -542,13 +551,41 @@ export function PTYSSUpload() {
     return localRoutes.find(route => route._id === currentRecord.localRouteId)
   }
 
+  // Obtener precio correcto según el tipo de contenedor
+  const getRoutePrice = (route: PTYSSLocalRoute, containerType: string): number => {
+    if (!route) return 0
+    
+    // Determinar si es contenedor refrigerado
+    const isReefer = containerType === 'RE'
+    
+    if (isReefer) {
+      return route.priceReefer || route.price || 0
+    } else {
+      // Para DV, HC y otros tipos usar precio regular
+      return route.priceRegular || route.price || 0
+    }
+  }
+
   const handleAddRecord = () => {
+    // Verificar que el cliente tenga rutas locales asociadas
+    const clientRoutes = getLocalRoutesByRealClientId(currentRecord.clientId)
+    
     if (!currentRecord.clientId || !currentRecord.order || !currentRecord.container || !currentRecord.naviera || 
-        !currentRecord.localClientName || !currentRecord.localRouteId || !currentRecord.operationType || !currentRecord.containerSize || 
+        !currentRecord.localRouteId || !currentRecord.operationType || !currentRecord.containerSize || 
         !currentRecord.containerType || !currentRecord.estadia || !currentRecord.ti || !currentRecord.conductor) {
       toast({
         title: "Error",
         description: "Completa todos los campos obligatorios marcados con *",
+        variant: "destructive"
+      })
+      return
+    }
+
+    // Verificar que el cliente tenga rutas locales asociadas
+    if (clientRoutes.length === 0) {
+      toast({
+        title: "Error",
+        description: "El cliente seleccionado no tiene rutas locales asociadas. Configure las rutas en la sección de Configuración → Rutas Local.",
         variant: "destructive"
       })
       return
@@ -573,7 +610,6 @@ export function PTYSSUpload() {
 
     setCurrentRecord({
       ...initialRecordData,
-      localClientName: "",
       localRouteId: "",
       localRoutePrice: 0
     })
@@ -1008,7 +1044,6 @@ export function PTYSSUpload() {
             <Button onClick={() => {
               setCurrentRecord({
                 ...initialRecordData,
-                localClientName: "",
                 localRouteId: "",
                 localRoutePrice: 0
               })
@@ -1141,11 +1176,14 @@ export function PTYSSUpload() {
                           <div className="flex flex-col">
                             <span className="text-xs">{record.from}</span>
                             <span className="text-xs">→ {record.to}</span>
-                            {record.localClientName && (
-                              <Badge variant="outline" className="text-xs mt-1">
-                                {record.localClientName}
-                              </Badge>
-                            )}
+                            {(() => {
+                              const selectedRoute = localRoutes.find(route => route._id === record.localRouteId)
+                              return selectedRoute && (
+                                <Badge variant="outline" className="text-xs mt-1">
+                                  {selectedRoute.clientName}
+                                </Badge>
+                              )
+                            })()}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -1201,7 +1239,20 @@ export function PTYSSUpload() {
                 <div className="space-y-2">
                   <Label htmlFor="client">Cliente *</Label>
                   <div className="flex gap-2">
-                    <Select value={currentRecord.clientId} onValueChange={(value) => setCurrentRecord({...currentRecord, clientId: value})}>
+                    <Select 
+                      value={currentRecord.clientId} 
+                      onValueChange={(value) => {
+                        // Al cambiar el cliente, limpiar las rutas seleccionadas
+                        setCurrentRecord({
+                          ...currentRecord, 
+                          clientId: value,
+                          localRouteId: "",
+                          localRoutePrice: 0,
+                          from: "",
+                          to: ""
+                        })
+                      }}
+                    >
                       <SelectTrigger className="flex-1">
                         <SelectValue placeholder="Seleccionar cliente" />
                       </SelectTrigger>
@@ -1359,18 +1410,39 @@ export function PTYSSUpload() {
                     </Dialog>
                   </div>
                   {getSelectedClient() && (
-                    <div className="text-sm text-muted-foreground mt-1">
-                      {getSelectedClient()?.type === "juridico" ? (
-                        <>
-                          RUC: {getSelectedClient()?.ruc} | 
-                          Tel: {getSelectedClient()?.phone || "No especificado"}
-                        </>
-                      ) : (
-                        <>
-                          {getSelectedClient()?.documentType?.toUpperCase()}: {getSelectedClient()?.documentNumber} | 
-                          Tel: {getSelectedClient()?.phone || "No especificado"}
-                        </>
-                      )}
+                    <div className="space-y-1">
+                      <div className="text-sm text-muted-foreground">
+                        {getSelectedClient()?.type === "juridico" ? (
+                          <>
+                            RUC: {getSelectedClient()?.ruc} | 
+                            Tel: {getSelectedClient()?.phone || "No especificado"}
+                          </>
+                        ) : (
+                          <>
+                            {getSelectedClient()?.documentType?.toUpperCase()}: {getSelectedClient()?.documentNumber} | 
+                            Tel: {getSelectedClient()?.phone || "No especificado"}
+                          </>
+                        )}
+                      </div>
+                      {(() => {
+                        const clientRoutes = getLocalRoutesByRealClientId(currentRecord.clientId)
+                        const schemaName = getSelectedClientRouteSchema()
+                        
+                        if (clientRoutes.length > 0) {
+                          return (
+                            <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">
+                              ✓ {clientRoutes.length} ruta{clientRoutes.length !== 1 ? 's' : ''} disponible{clientRoutes.length !== 1 ? 's' : ''} 
+                              {schemaName && ` (${schemaName})`}
+                            </div>
+                          )
+                        } else {
+                          return (
+                            <div className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-200">
+                              ⚠ Sin rutas locales asociadas. Configure en Configuración → Rutas Local.
+                            </div>
+                          )
+                        }
+                      })()}
                     </div>
                   )}
                 </div>
@@ -1430,58 +1502,46 @@ export function PTYSSUpload() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="localClient">Cliente Local *</Label>
-                  <Select 
-                    value={currentRecord.localClientName} 
-                    onValueChange={(value) => {
-                      setCurrentRecord({
-                        ...currentRecord, 
-                        localClientName: value,
-                        localRouteId: "",
-                        localRoutePrice: 0,
-                        from: "",
-                        to: ""
-                      })
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar cliente local" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {getLocalRouteClients().map(client => (
-                        <SelectItem key={client} value={client}>
-                          {client}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="space-y-2">
                   <Label htmlFor="localRoute">Ruta Local *</Label>
                   <Select 
                     value={currentRecord.localRouteId} 
                     onValueChange={(value) => {
                       const selectedRoute = localRoutes.find(route => route._id === value)
+                      const routePrice = selectedRoute ? getRoutePrice(selectedRoute, currentRecord.containerType) : 0
                       setCurrentRecord({
                         ...currentRecord, 
                         localRouteId: value,
-                        localRoutePrice: selectedRoute?.price || 0,
+                        localRoutePrice: routePrice,
                         from: selectedRoute?.from || "",
                         to: selectedRoute?.to || ""
                       })
                     }}
-                    disabled={!currentRecord.localClientName}
+                    disabled={!currentRecord.clientId || getLocalRoutesByRealClientId(currentRecord.clientId).length === 0}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar ruta local" />
+                      <SelectValue placeholder={
+                        !currentRecord.clientId 
+                          ? "Seleccione un cliente primero"
+                          : getLocalRoutesByRealClientId(currentRecord.clientId).length === 0
+                            ? "Sin rutas locales asociadas"
+                            : "Seleccionar ruta local"
+                      } />
                     </SelectTrigger>
                     <SelectContent>
-                      {currentRecord.localClientName && getLocalRoutesByClient(currentRecord.localClientName).map(route => (
-                        <SelectItem key={route._id} value={route._id}>
-                          {route.from} → {route.to} - ${route.price.toFixed(2)}
-                        </SelectItem>
-                      ))}
+                      {currentRecord.clientId && getLocalRoutesByRealClientId(currentRecord.clientId).map(route => {
+                        const routePrice = getRoutePrice(route, currentRecord.containerType)
+                        const containerTypeLabel = currentRecord.containerType === 'RE' ? 'Reefer' : 'Regular'
+                        return (
+                          <SelectItem key={route._id} value={route._id}>
+                            <div className="flex flex-col">
+                              <span>{route.from} → {route.to}</span>
+                              <span className="text-xs text-muted-foreground">
+                                ${routePrice.toFixed(2)} ({containerTypeLabel})
+                              </span>
+                            </div>
+                          </SelectItem>
+                        )
+                      })}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1495,11 +1555,14 @@ export function PTYSSUpload() {
                           Ruta seleccionada: {getSelectedLocalRoute()?.from} → {getSelectedLocalRoute()?.to}
                         </span>
                         <Badge variant="outline" className="text-blue-700 border-blue-700">
-                          {currentRecord.localClientName}
+                          {getSelectedLocalRoute()?.clientName}
+                        </Badge>
+                        <Badge variant="outline" className="text-blue-700 border-blue-700">
+                          {currentRecord.containerType === 'RE' ? 'Reefer' : 'Regular'}
                         </Badge>
                       </div>
                       <div className="text-sm font-bold text-blue-700">
-                        Precio: ${getSelectedLocalRoute()?.price.toFixed(2)}
+                        Precio: ${getRoutePrice(getSelectedLocalRoute()!, currentRecord.containerType).toFixed(2)}
                       </div>
                     </div>
                   </div>
@@ -1537,7 +1600,19 @@ export function PTYSSUpload() {
                 
                 <div className="space-y-2">
                   <Label htmlFor="containerType">Tipo de Contenedor *</Label>
-                  <Select value={currentRecord.containerType} onValueChange={(value) => setCurrentRecord({...currentRecord, containerType: value})}>
+                  <Select 
+                    value={currentRecord.containerType} 
+                    onValueChange={(value) => {
+                      // Actualizar precio cuando cambie el tipo de contenedor
+                      const selectedRoute = currentRecord.localRouteId ? localRoutes.find(route => route._id === currentRecord.localRouteId) : null
+                      const newPrice = selectedRoute ? getRoutePrice(selectedRoute, value) : 0
+                      setCurrentRecord({
+                        ...currentRecord, 
+                        containerType: value,
+                        localRoutePrice: newPrice
+                      })
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar tipo" />
                     </SelectTrigger>

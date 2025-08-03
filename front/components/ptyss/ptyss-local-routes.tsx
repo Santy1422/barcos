@@ -66,7 +66,9 @@ export function PTYSSLocalRoutes() {
     clientName: '',
     from: "",
     to: "",
-    price: 0
+    priceRegular: 0,
+    priceReefer: 0,
+    price: 0 // Campo legacy para compatibilidad
   })
 
   // Estados para asociación de clientes
@@ -238,10 +240,10 @@ export function PTYSSLocalRoutes() {
   }
 
   const handleAddRoute = async () => {
-    if (!newRoute.clientName || !newRoute.from || !newRoute.to || newRoute.price <= 0) {
+    if (!newRoute.clientName || !newRoute.from || !newRoute.to || newRoute.priceRegular <= 0 || newRoute.priceReefer <= 0) {
       toast({
         title: "Error",
-        description: "Completa todos los campos obligatorios",
+        description: "Completa todos los campos obligatorios. Los precios deben ser mayores a 0.",
         variant: "destructive"
       })
       return
@@ -254,6 +256,8 @@ export function PTYSSLocalRoutes() {
         clientName: selectedClient,
         from: "",
         to: "",
+        priceRegular: 0,
+        priceReefer: 0,
         price: 0
       })
       setShowAddRouteForm(false)
@@ -272,10 +276,10 @@ export function PTYSSLocalRoutes() {
   }
 
   const handleEditRoute = async () => {
-    if (!editingRoute || !newRoute.clientName || !newRoute.from || !newRoute.to || newRoute.price <= 0) {
+    if (!editingRoute || !newRoute.clientName || !newRoute.from || !newRoute.to || newRoute.priceRegular <= 0 || newRoute.priceReefer <= 0) {
       toast({
         title: "Error",
-        description: "Completa todos los campos obligatorios",
+        description: "Completa todos los campos obligatorios. Los precios deben ser mayores a 0.",
         variant: "destructive"
       })
       return
@@ -288,6 +292,8 @@ export function PTYSSLocalRoutes() {
         clientName: selectedClient,
         from: "",
         to: "",
+        priceRegular: 0,
+        priceReefer: 0,
         price: 0
       })
       setEditingRoute(null)
@@ -328,7 +334,9 @@ export function PTYSSLocalRoutes() {
       clientName: route.clientName,
       from: route.from,
       to: route.to,
-      price: route.price
+      priceRegular: route.priceRegular || route.price || 0,
+      priceReefer: route.priceReefer || route.price || 0,
+      price: route.price || 0
     })
     setSelectedClient(route.clientName)
   }
@@ -339,6 +347,8 @@ export function PTYSSLocalRoutes() {
       clientName: selectedClient,
       from: "",
       to: "",
+      priceRegular: 0,
+      priceReefer: 0,
       price: 0
     })
   }
@@ -764,16 +774,30 @@ export function PTYSSLocalRoutes() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="route-price">Precio *</Label>
+                    <Label htmlFor="route-price-regular">Precio Regular (DV/HC) *</Label>
                     <Input
-                      id="route-price"
+                      id="route-price-regular"
                       type="number"
-                      value={newRoute.price}
-                      onChange={(e) => setNewRoute({...newRoute, price: parseFloat(e.target.value) || 0})}
+                      value={newRoute.priceRegular}
+                      onChange={(e) => setNewRoute({...newRoute, priceRegular: parseFloat(e.target.value) || 0})}
                       placeholder="250.00"
                       min="0"
                       step="0.01"
                     />
+                    <p className="text-xs text-muted-foreground">Para contenedores Dry Van y High Cube</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="route-price-reefer">Precio Reefer (RE) *</Label>
+                    <Input
+                      id="route-price-reefer"
+                      type="number"
+                      value={newRoute.priceReefer}
+                      onChange={(e) => setNewRoute({...newRoute, priceReefer: parseFloat(e.target.value) || 0})}
+                      placeholder="300.00"
+                      min="0"
+                      step="0.01"
+                    />
+                    <p className="text-xs text-muted-foreground">Para contenedores refrigerados</p>
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -787,6 +811,8 @@ export function PTYSSLocalRoutes() {
                       clientName: selectedClient,
                       from: "",
                       to: "",
+                      priceRegular: 0,
+                      priceReefer: 0,
                       price: 0
                     })
                   }}>
@@ -927,9 +953,17 @@ export function PTYSSLocalRoutes() {
                               <TableCell className="font-medium">{route.from}</TableCell>
                               <TableCell>{route.to}</TableCell>
                               <TableCell>
-                                <div className="flex items-center gap-1">
-                                  <DollarSign className="h-3 w-3" />
-                                  {route.price.toFixed(2)}
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex items-center gap-1">
+                                    <DollarSign className="h-3 w-3" />
+                                    {(route.priceRegular || route.price || 0).toFixed(2)}
+                                    <Badge variant="outline" className="text-xs">Regular</Badge>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <DollarSign className="h-3 w-3" />
+                                    {(route.priceReefer || route.price || 0).toFixed(2)}
+                                    <Badge variant="outline" className="text-xs">Reefer</Badge>
+                                  </div>
                                 </div>
                               </TableCell>
                               <TableCell>

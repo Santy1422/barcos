@@ -19,7 +19,9 @@ export interface PTYSSLocalRoute {
   realClientId?: RealClient | string // Puede ser objeto poblado o string ID
   from: string
   to: string
-  price: number
+  priceRegular: number // Precio para contenedores DV/HC (Dry Van/High Cube)
+  priceReefer: number  // Precio para contenedores RE (Reefer/Refrigerado)
+  price?: number       // Campo legacy para compatibilidad hacia atrás
   createdAt: string
   updatedAt: string
 }
@@ -30,7 +32,9 @@ export interface PTYSSLocalRouteInput {
   realClientId?: string
   from: string
   to: string
-  price: number
+  priceRegular: number // Precio para contenedores DV/HC (Dry Van/High Cube)
+  priceReefer: number  // Precio para contenedores RE (Reefer/Refrigerado)
+  price?: number       // Campo legacy para compatibilidad hacia atrás
 }
 
 // Interface para asociar cliente real a esquema de rutas

@@ -7,10 +7,23 @@ const PTYSSLocalRoute = mongoose.model('PTYSSLocalRoute', ptyssLocalRouteSchema)
 
 const createPTYSSLocalRoute = async (req: Request, res: Response) => {
   try {
-    const { clientName, realClientId, from, to, price } = req.body;
+    const { clientName, realClientId, from, to, price, priceRegular, priceReefer } = req.body;
 
-    if (!clientName || !from || !to || price === undefined) {
-      return response(res, 400, { message: 'Todos los campos son requeridos' });
+    // Validar nuevos campos de precio o campo legacy
+    const hasNewPrices = priceRegular !== undefined && priceReefer !== undefined;
+    const hasLegacyPrice = price !== undefined;
+    
+    if (!clientName || !from || !to || (!hasNewPrices && !hasLegacyPrice)) {
+      return response(res, 400, { message: 'Todos los campos son requeridos (clientName, from, to, y precios)' });
+    }
+
+    // Validar que los precios sean válidos
+    if (hasNewPrices && (priceRegular < 0 || priceReefer < 0)) {
+      return response(res, 400, { message: 'Los precios deben ser mayores o iguales a 0' });
+    }
+    
+    if (hasLegacyPrice && price < 0) {
+      return response(res, 400, { message: 'El precio debe ser mayor o igual a 0' });
     }
 
     // Validar que el nombre del esquema no esté vacío y sea válido
@@ -44,7 +57,22 @@ const createPTYSSLocalRoute = async (req: Request, res: Response) => {
       to: '__PLACEHOLDER__' 
     });
 
-    const newRoute = new PTYSSLocalRoute({ clientName, realClientId, from, to, price });
+    // Preparar datos para la nueva ruta
+    const routeData: any = { clientName, realClientId, from, to };
+    
+    if (hasNewPrices) {
+      // Usar nuevos campos de precio
+      routeData.priceRegular = priceRegular;
+      routeData.priceReefer = priceReefer;
+      routeData.price = priceRegular; // Usar precio regular como fallback para compatibilidad
+    } else {
+      // Usar precio legacy
+      routeData.price = price;
+      routeData.priceRegular = price;
+      routeData.priceReefer = price;
+    }
+    
+    const newRoute = new PTYSSLocalRoute(routeData);
     await newRoute.save();
 
     console.log(`Ruta real creada para ${clientName}, placeholder eliminado automáticamente`);

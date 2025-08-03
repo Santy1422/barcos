@@ -27,10 +27,28 @@ const ptyssLocalRouteSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  price: {
+  // Precios por tipo de contenedor
+  priceRegular: {
     type: Number,
     required: true,
-    min: 0
+    min: 0,
+    default: 0
+  },
+  priceReefer: {
+    type: Number,
+    required: true,
+    min: 0,
+    default: 0
+  },
+  // Campo legacy para compatibilidad hacia atrás
+  price: {
+    type: Number,
+    required: false,
+    min: 0,
+    // Si no hay precios específicos, usar este valor como fallback
+    default: function() {
+      return this.priceRegular || 0;
+    }
   }
 }, {
   timestamps: true

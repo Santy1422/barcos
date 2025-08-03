@@ -8,7 +8,7 @@ const PTYSSLocalRoute = mongoose.model('PTYSSLocalRoute', ptyssLocalRouteSchema)
 const updatePTYSSLocalRoute = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { clientName, realClientId, from, to, price } = req.body;
+    const { clientName, realClientId, from, to, price, priceRegular, priceReefer } = req.body;
 
     console.log('Actualizando ruta local de PTYSS:', { id, updates: req.body });
 
@@ -44,7 +44,19 @@ const updatePTYSSLocalRoute = async (req: Request, res: Response) => {
     if (realClientId !== undefined) updateData.realClientId = realClientId;
     if (from !== undefined) updateData.from = from;
     if (to !== undefined) updateData.to = to;
-    if (price !== undefined) updateData.price = price;
+    
+    // Manejar precios nuevos o legacy
+    if (priceRegular !== undefined && priceReefer !== undefined) {
+      // Usar nuevos campos de precio
+      updateData.priceRegular = priceRegular;
+      updateData.priceReefer = priceReefer;
+      updateData.price = priceRegular; // Usar precio regular como fallback
+    } else if (price !== undefined) {
+      // Usar precio legacy y actualizar ambos campos nuevos
+      updateData.price = price;
+      updateData.priceRegular = price;
+      updateData.priceReefer = price;
+    }
 
     const updated = await PTYSSLocalRoute.findByIdAndUpdate(
       id,
