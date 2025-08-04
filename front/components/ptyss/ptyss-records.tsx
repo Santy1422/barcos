@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Database } from "lucide-react"
+import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Database, Code } from "lucide-react"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { selectInvoicesByModule, fetchInvoicesAsync, deleteInvoiceAsync, selectRecordsLoading, selectRecordsError, updateInvoiceAsync, updateInvoiceStatus, selectAllIndividualRecords, fetchAllRecordsByModule, markRecordsAsInvoiced, updateMultipleRecordsStatusAsync } from "@/lib/features/records/recordsSlice"
@@ -16,7 +16,10 @@ import { PTYSSPrefacturaEditModal } from "./ptyss-prefactura-edit-modal"
 import { PTYSSPdfViewer } from "./ptyss-pdf-viewer"
 import { PTYSSFacturacionModal } from "./ptyss-facturacion-modal"
 import { PTYSSRecordsViewModal } from "./ptyss-records-view-modal"
+import { PTYSSXmlViewerModal } from "./ptyss-xml-viewer-modal"
 import { fetchClients } from "@/lib/features/clients/clientsSlice"
+import { saveAs } from "file-saver"
+import { generateXmlFileName } from "@/lib/xml-generator"
 
 export function PTYSSRecords() {
   const dispatch = useAppDispatch()
@@ -34,6 +37,9 @@ export function PTYSSRecords() {
   // Estado para ver registros asociados
   const [viewRecordsInvoice, setViewRecordsInvoice] = useState<any>(null)
   const [isViewRecordsModalOpen, setIsViewRecordsModalOpen] = useState(false)
+  // Estado para XML
+  const [xmlInvoice, setXmlInvoice] = useState<any>(null)
+  const [isXmlModalOpen, setIsXmlModalOpen] = useState(false)
 
   // Obtener prefacturas PTYSS del store
   const ptyssInvoices = useAppSelector((state) => selectInvoicesByModule(state, "ptyss"))
@@ -90,6 +96,7 @@ export function PTYSSRecords() {
   // Debug: Log las facturas cargadas
   console.log("🔍 PTYSSRecords - ptyssInvoices:", ptyssInvoices)
   console.log("🔍 PTYSSRecords - Cantidad de facturas:", ptyssInvoices.length)
+  console.log("🔍 PTYSSRecords - Estados de facturas:", ptyssInvoices.map((inv: any) => `${inv.invoiceNumber}: ${inv.status}`))
   console.log("🔍 PTYSSRecords - isLoading:", isLoading)
   console.log("🔍 PTYSSRecords - error:", error)
   console.log("🔍PTYSSRecords - allRecords:", allRecords)
@@ -167,6 +174,26 @@ export function PTYSSRecords() {
     dispatch(fetchInvoicesAsync("ptyss"))
   }
 
+  // Función para descargar XML
+  const handleDownloadXml = (invoice: any) => {
+    if (invoice.xmlData && invoice.xmlData.xml) {
+      const blob = new Blob([invoice.xmlData.xml], { type: "application/xml;charset=utf-8" })
+      const filename = generateXmlFileName()
+      
+      saveAs(blob, filename)
+      toast({ 
+        title: "XML Descargado", 
+        description: `El archivo XML ha sido descargado como ${filename}` 
+      })
+    } else {
+      toast({
+        title: "XML no disponible",
+        description: "Esta factura no tiene XML generado.",
+        variant: "destructive"
+      })
+    }
+  }
+
   const filteredInvoices = ptyssInvoices.filter((invoice: any) => {
     const containers = getContainersForInvoice(invoice)
     const matchesSearch = 
@@ -212,31 +239,81 @@ export function PTYSSRecords() {
           if (!open) setFacturarInvoice(null)
         }}
         invoice={facturarInvoice}
-        onFacturar={async (newInvoiceNumber: string) => {
+        onFacturar={async (newInvoiceNumber: string, xmlData?: { xml: string, isValid: boolean }, invoiceDate?: string) => {
           if (!facturarInvoice) return
           
+          const currentInvoice = facturarInvoice // Guardar referencia antes de cerrar modal
+          
           try {
+            // Preparar las actualizaciones de la factura
+            const updates: any = { 
+              status: "facturada", 
+              invoiceNumber: newInvoiceNumber 
+            }
+            
+            // Actualizar fecha de emisión si se proporcionó
+            if (invoiceDate) {
+              updates.issueDate = invoiceDate
+            }
+            
+            // Agregar XML si está disponible
+            console.log("🔍 PTYSSRecords - xmlData recibido:", xmlData)
+            if (xmlData) {
+              updates.xmlData = {
+                xml: xmlData.xml,
+                isValid: xmlData.isValid,
+                generatedAt: new Date().toISOString()
+              }
+              console.log("✅ PTYSSRecords - xmlData agregado a updates:", updates.xmlData)
+            } else {
+              console.log("⚠️ PTYSSRecords - No se recibió xmlData")
+            }
+            
             // Actualizar la factura
-            await dispatch(updateInvoiceAsync({ id: facturarInvoice.id, updates: { status: "facturada", invoiceNumber: newInvoiceNumber } })).unwrap()
-            dispatch(updateInvoiceStatus({ id: facturarInvoice.id, status: "facturada", invoiceNumber: newInvoiceNumber }))
+            console.log("🔍 PTYSSRecords - Enviando updates a la base de datos:", updates)
+            const updateResult = await dispatch(updateInvoiceAsync({ id: currentInvoice.id, updates })).unwrap()
+            console.log("✅ PTYSSRecords - Resultado de actualización:", updateResult)
             
             // Marcar los registros asociados como facturados en la base de datos
-            if (facturarInvoice.relatedRecordIds && facturarInvoice.relatedRecordIds.length > 0) {
+            if (currentInvoice.relatedRecordIds && currentInvoice.relatedRecordIds.length > 0) {
               await dispatch(updateMultipleRecordsStatusAsync({ 
-                recordIds: facturarInvoice.relatedRecordIds, 
+                recordIds: currentInvoice.relatedRecordIds, 
                 status: "facturado",
-                invoiceId: facturarInvoice.id 
+                invoiceId: currentInvoice.id 
               })).unwrap()
             }
             
-            // Recargar las facturas y registros para actualizar el historial
-            dispatch(fetchInvoicesAsync("ptyss"))
-            dispatch(fetchAllRecordsByModule("ptyss"))
+            // Recargar las facturas y registros para actualizar el historial - eliminar el estado local desactualizado
+            console.log("🔄 PTYSSRecords - Recargando facturas...")
+            const invoicesResult = await dispatch(fetchInvoicesAsync("ptyss")).unwrap()
+            console.log("✅ PTYSSRecords - Facturas recargadas desde servidor:", invoicesResult)
+            await dispatch(fetchAllRecordsByModule("ptyss"))
+            
+            // Verificar que la factura específica se actualizó
+            const updatedInvoice = invoicesResult.find((inv: any) => inv.id === currentInvoice.id)
+            console.log("🔍 PTYSSRecords - Factura actualizada encontrada:", updatedInvoice)
+            console.log("🔍 PTYSSRecords - Estado de la factura actualizada:", updatedInvoice?.status)
+            console.log("🔍 PTYSSRecords - XML en factura actualizada:", updatedInvoice?.xmlData ? "Presente" : "Ausente")
+            
+            // Forzar una actualización adicional si el estado no cambió
+            if (!updatedInvoice || updatedInvoice.status !== "facturada") {
+              console.log("⚠️ PTYSSRecords - Estado no se actualizó correctamente, intentando recarga adicional...")
+              setTimeout(async () => {
+                await dispatch(fetchInvoicesAsync("ptyss"))
+              }, 1000)
+            }
+            
+            const xmlMessage = xmlData ? " XML generado y guardado." : ""
             
             toast({
               title: "Factura procesada",
-              description: `La prefactura ha sido facturada exitosamente como ${newInvoiceNumber}`,
+              description: `La prefactura ha sido facturada exitosamente como ${newInvoiceNumber}.${xmlMessage}`,
             })
+            
+            // Cerrar el modal solo si todo fue exitoso
+            setIsFacturarModalOpen(false)
+            setFacturarInvoice(null)
+            
           } catch (error: any) {
             toast({
               title: "Error al facturar",
@@ -262,6 +339,15 @@ export function PTYSSRecords() {
         invoice={pdfInvoice}
         clients={clients}
         allRecords={allRecords}
+      />
+      {/* Modal de visor de XML */}
+      <PTYSSXmlViewerModal
+        open={isXmlModalOpen}
+        onOpenChange={(open) => {
+          setIsXmlModalOpen(open)
+          if (!open) setXmlInvoice(null)
+        }}
+        invoice={xmlInvoice}
       />
       <Card>
         <CardHeader>
@@ -336,6 +422,8 @@ export function PTYSSRecords() {
                 ) : filteredInvoices.length > 0 ? (
                   filteredInvoices.map((invoice: any) => {
                     console.log("🔍 Renderizando factura:", invoice.invoiceNumber)
+                    console.log("🔍 Estado de la factura:", invoice.status)
+                    console.log("🔍 xmlData en factura:", invoice.xmlData)
                     const containers = getContainersForInvoice(invoice)
                     console.log("🔍 Contenedores calculados:", containers)
                     
@@ -371,19 +459,19 @@ export function PTYSSRecords() {
                       <TableCell>{getStatusBadge(invoice.status)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end space-x-2">
-                                                      {/* Botón para ver registros asociados */}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 text-purple-600 hover:text-purple-700 hover:bg-purple-50"
-                              onClick={() => {
-                                setViewRecordsInvoice(invoice)
-                                setIsViewRecordsModalOpen(true)
-                              }}
-                              title="Ver registros asociados"
-                            >
-                              <Database className="h-4 w-4" />
-                            </Button>
+                          {/* Botón para ver registros asociados */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 text-purple-600 hover:text-purple-700 hover:bg-purple-50"
+                            onClick={() => {
+                              setViewRecordsInvoice(invoice)
+                              setIsViewRecordsModalOpen(true)
+                            }}
+                            title="Ver registros asociados"
+                          >
+                            <Database className="h-4 w-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -392,9 +480,45 @@ export function PTYSSRecords() {
                               setPdfInvoice(invoice)
                               setIsPdfModalOpen(true)
                             }}
+                            title="Ver PDF"
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
+                          {/* Botón para ver/descargar XML - solo para facturas con XML */}
+                          {invoice.status === "facturada" && (
+                            <>
+                              {invoice.xmlData ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                  onClick={() => {
+                                    setXmlInvoice(invoice)
+                                    setIsXmlModalOpen(true)
+                                  }}
+                                  title={`Ver XML ${invoice.xmlData.isValid ? '(Válido)' : '(Con errores)'}`}
+                                >
+                                  <Code className="h-4 w-4" />
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                  onClick={() => {
+                                    toast({
+                                      title: "XML no disponible",
+                                      description: "Esta factura no tiene XML generado. Solo las facturas procesadas después de la actualización incluyen XML.",
+                                      variant: "default"
+                                    })
+                                  }}
+                                  title="Factura sin XML (procesada antes de la actualización)"
+                                >
+                                  <Code className="h-4 w-4 opacity-50" />
+                                </Button>
+                              )}
+                            </>
+                          )}
                           {invoice.status === "prefactura" && (
                             <>
                               <Button

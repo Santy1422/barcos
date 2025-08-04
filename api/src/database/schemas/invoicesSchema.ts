@@ -50,7 +50,7 @@ const invoicesSchema = new mongoose.Schema({
     default: "prefactura"
   },
   xmlData: {
-    type: String,
+    type: mongoose.Schema.Types.Mixed,
     required: false
   },
   pdfData: {

@@ -2,6 +2,37 @@ import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features
 import { js2xml } from "xml-js"
 import { TRUCKING_DEFAULTS } from "./constants/trucking-options"
 
+// Tipos para PTYSS XML
+export interface PTYSSInvoiceForXml {
+  id: string
+  invoiceNumber: string
+  client: string
+  clientName: string
+  date: string
+  sapDate?: string
+  currency: string
+  total: number
+  records: PTYSSRecordForXml[]
+  sapDocumentNumber?: string
+}
+
+export interface PTYSSRecordForXml {
+  id: string
+  data: {
+    container: string
+    naviera: string
+    from: string
+    to: string
+    operationType: string
+    containerSize: string
+    containerType: string
+    moveDate: string
+    order: string
+    [key: string]: any
+  }
+  totalValue: number
+}
+
 function formatDateForXML(dateString: string): string {
   const date = new Date(dateString)
   const year = date.getFullYear()
@@ -16,6 +47,20 @@ function formatTimeForXML(dateString: string): string {
   const minutes = date.getMinutes().toString().padStart(2, "0")
   const seconds = date.getSeconds().toString().padStart(2, "0")
   return `${hours}${minutes}${seconds}`
+}
+
+// Función para generar nombre de archivo XML según estructura SAP
+export function generateXmlFileName(): string {
+  const now = new Date()
+  const year = now.getFullYear().toString().slice(-2) // últimos 2 dígitos del año
+  const month = (now.getMonth() + 1).toString().padStart(2, '0')
+  const day = now.getDate().toString().padStart(2, '0')
+  const hours = now.getHours().toString().padStart(2, '0')
+  const minutes = now.getMinutes().toString().padStart(2, '0')
+  const seconds = now.getSeconds().toString().padStart(2, '0')
+  
+  // Estructura: 9326_XL_yymmdd_hhmmss.XML
+  return `9326_XL_${year}${month}${day}_${hours}${minutes}${seconds}.XML`
 }
 
 export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
@@ -95,6 +140,128 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
               "Route": record.route || "STANDARD",
               "Commodity": record.commodity || "10",
               "SubContracting": record.subcontracting || "N"
+            }
+          })
+        }
+      }
+    }
+  }
+  
+  return js2xml(xmlObject, { compact: true, spaces: 2 })
+}
+
+export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
+  // Validar datos requeridos
+  if (!invoice.invoiceNumber || !invoice.client || !invoice.date) {
+    throw new Error("Datos requeridos faltantes para generar XML PTYSS")
+  }
+
+  // Calcular el monto total de los servicios
+  const totalAmount = invoice.records.reduce((sum, record) => {
+    return sum + (record.totalValue || 0)
+  }, 0)
+
+  const xmlObject = {
+    _declaration: { _attributes: { version: "1.0", encoding: "UTF-8" } },
+    "LogisticARInvoices": {
+      _attributes: {
+        "xmlns": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00",
+        "targetNamespace": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00"
+      },
+      "CustomerInvoice": {
+        // Protocol Section
+        "Protocol": {
+          "TechnicalContact": "almeida.kant@ptyrmgmt.com;renee.taylor@ptyrmgmt.com"
+        },
+        // Header Section
+        "Header": {
+          "CompanyCode": "9326",
+          "DocumentType": "XL",
+          "DocumentDate": formatDateForXML(invoice.date),
+          "PostingDate": invoice.sapDate ? formatDateForXML(invoice.sapDate) : formatDateForXML(invoice.date),
+          "TransactionCurrency": "USD",
+          "TranslationDate": formatDateForXML(invoice.date),
+          "Reference": invoice.invoiceNumber,
+          "EntityDocNbr": invoice.sapDocumentNumber || invoice.invoiceNumber
+        },
+        // AdditionalTexts Section
+        "AdditionalTexts": {
+          "LongHeaderTextLangKey": "EN"
+        },
+        // CustomerOpenItem Section
+        "CustomerOpenItem": {
+          "CustomerNbr": invoice.client,
+          "AmntTransactCur": totalAmount.toFixed(2)
+        },
+        // OtherItems Section
+        "OtherItems": {
+          "OtherItem": invoice.records.map((record: PTYSSRecordForXml, index: number) => {
+            // Determinar el valor de BusinessType para el XML (texto completo)
+            const businessTypeXmlValue = record.data.operationType === "export" ? "EXPORT" : "IMPORT"
+            
+            // Mapear tamaño de contenedor PTYSS a formato SAP
+            const containerSizeMap: { [key: string]: string } = {
+              "20": "20",
+              "40": "40",
+              "45": "45",
+              "20'": "20",
+              "40'": "40",
+              "45'": "45"
+            }
+            
+            const containerSize = containerSizeMap[record.data.containerSize] || "40"
+            
+            // Mapear tipo de contenedor PTYSS a formato SAP
+            const containerTypeMap: { [key: string]: string } = {
+              "DRY": "DV",
+              "DV": "DV",
+              "REEFER": "RF",
+              "RF": "RF",
+              "TANK": "TK",
+              "TK": "TK",
+              "FLAT": "FL",
+              "FL": "FL"
+            }
+            
+            const containerType = containerTypeMap[record.data.containerType] || "FL"
+            
+            // Generar ISO code basado en tamaño y tipo según el ejemplo
+            const generateIsoCode = (size: string, type: string): string => {
+              if (size === "40" && type === "FL") {
+                return "42P1" // Como en el ejemplo
+              }
+              // Otros mapeos básicos
+              const sizeCode = size === "20" ? "2" : size === "40" ? "4" : size === "45" ? "L" : "4"
+              const typeCode = type === "RF" ? "H" : type === "TK" ? "T" : type === "FL" ? "P" : "G"
+              return `${sizeCode}${typeCode}1`
+            }
+            
+            const isoCode = generateIsoCode(containerSize, containerType)
+            
+            // Determinar categoría del contenedor
+            const ctrCategory = containerType === "FL" ? "N" : containerType.substring(0, 1)
+            
+            return {
+              "IncomeRebateCode": "I",
+              "CompanyCode": "9326",
+              "BaseUnitMeasure": "EA",
+              "Qty": "1",
+              "ProfitCenter": "1000",
+              "Service": "TRK001",
+              "Activity": "TRK",
+              "Pillar": "TRSP",
+              "BUCountry": "PA",
+              "ServiceCountry": "PA",
+              "ClientType": "MEDLOG",
+              "BusinessType": businessTypeXmlValue,
+              "FullEmpty": "FULL",
+              "CtrISOcode": isoCode,
+              "CtrType": containerType,
+              "CtrSize": containerSize,
+              "CtrCategory": ctrCategory,
+              "SubContracting": "YES",
+              "AmntTransacCur": (record.totalValue || 0).toFixed(2),
+              "AmntCpyCur": (record.totalValue || 0).toFixed(2)
             }
           })
         }
@@ -269,7 +436,7 @@ export function generateTestXML(): string {
         containerSize: "N/A",
         containerType: "N/A",
         containerIsoCode: "N/A",
-        fullEmptyStatus: "N/A",
+        fullEmptyStatus: "EMPTY",
         route: "OFFICE",
         commodity: "DOCUMENTS",
         driverName: "Juan Pérez",
