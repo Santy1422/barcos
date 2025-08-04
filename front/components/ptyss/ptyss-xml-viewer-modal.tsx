@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Copy, Download, Send, CheckCircle, AlertTriangle, Code, Eye } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { saveAs } from "file-saver"
-import { generateXmlFileName } from "@/lib/xml-generator"
+import { generateXmlFileName, sendXmlToSap, debugFtpAuth } from "@/lib/xml-generator"
 
 interface PTYSSXmlViewerModalProps {
   open: boolean
@@ -23,6 +23,9 @@ export function PTYSSXmlViewerModal({
 }: PTYSSXmlViewerModalProps) {
   const { toast } = useToast()
   const [isSendingToSap, setIsSendingToSap] = useState(false)
+  const [sapLogs, setSapLogs] = useState<any[]>([])
+  const [showSapLogs, setShowSapLogs] = useState(false)
+  const [isDebugging, setIsDebugging] = useState(false)
 
   if (!invoice || !invoice.xmlData) return null
 
@@ -57,26 +60,91 @@ export function PTYSSXmlViewerModal({
     })
   }
 
-  // Función para enviar a SAP (placeholder)
+  // Función para enviar a SAP
   const handleSendToSap = async () => {
     setIsSendingToSap(true)
+    setSapLogs([])
+    setShowSapLogs(true)
+    
     try {
-      // TODO: Implementar envío real a SAP cuando tengamos las credenciales FTP
-      await new Promise(resolve => setTimeout(resolve, 2000)) // Simular envío
+      const fileName = generateXmlFileName()
+      console.log("🚀 Enviando XML a SAP:", { invoiceId: invoice.id, fileName })
+      
+      const result = await sendXmlToSap(invoice.id, xml, fileName)
+      
+      console.log("✅ Respuesta de SAP:", result)
+      setSapLogs(result.logs || [])
+      
+      if (result.success) {
+        toast({
+          title: "XML enviado exitosamente",
+          description: `Archivo ${fileName} enviado a SAP`,
+        })
+      } else {
+        throw new Error(result.message || "Error al enviar XML")
+      }
+      
+    } catch (error: any) {
+      console.error("❌ Error al enviar XML a SAP:", error)
+      setSapLogs(prev => [...prev, {
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        message: `Error: ${error.message}`,
+        details: error
+      }])
       
       toast({
-        title: "Funcionalidad pendiente",
-        description: "El envío a SAP estará disponible cuando se configuren las credenciales FTP.",
-        variant: "default"
-      })
-    } catch (error: any) {
-      toast({
-        title: "Error al enviar a SAP",
-        description: error.message || "No se pudo enviar el XML a SAP",
+        title: "Error al enviar XML",
+        description: error.message || "Error al conectar con SAP",
         variant: "destructive"
       })
     } finally {
       setIsSendingToSap(false)
+    }
+  }
+
+  // Función para debug de autenticación FTP
+  const handleDebugAuth = async () => {
+    setIsDebugging(true)
+    setSapLogs([])
+    setShowSapLogs(true)
+    
+    try {
+      console.log("🔍 Iniciando debug de autenticación FTP...")
+      const result = await debugFtpAuth()
+      
+      console.log("📋 Resultado del debug:", result)
+      setSapLogs(result.logs || [])
+      
+      if (result.success) {
+        toast({
+          title: "Debug completado",
+          description: `Resultado: ${result.authResult}`,
+        })
+      } else {
+        toast({
+          title: "Debug fallido",
+          description: result.message || "No se pudo autenticar",
+          variant: "destructive"
+        })
+      }
+      
+    } catch (error: any) {
+      console.error("❌ Error en debug:", error)
+      setSapLogs(prev => [...prev, {
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        message: `Error en debug: ${error.message}`,
+        details: error
+      }])
+      
+      toast({
+        title: "Error en debug",
+        description: error.message || "Error al ejecutar debug",
+        variant: "destructive"
+      })
+    } finally {
+      setIsDebugging(false)
     }
   }
 
@@ -178,6 +246,47 @@ export function PTYSSXmlViewerModal({
             </div>
           </div>
 
+          {/* Logs de envío a SAP */}
+          {showSapLogs && sapLogs.length > 0 && (
+            <div className="mt-4 p-4 border rounded-lg bg-gray-50">
+              <h4 className="font-semibold mb-3 text-sm flex items-center gap-2">
+                <Eye className="h-4 w-4" />
+                Logs de envío a SAP
+              </h4>
+              <div className="max-h-60 overflow-y-auto space-y-2">
+                {sapLogs.map((log, index) => (
+                  <div key={index} className={`text-xs p-2 rounded ${
+                    log.level === 'error' ? 'bg-red-100 text-red-800' :
+                    log.level === 'success' ? 'bg-green-100 text-green-800' :
+                    'bg-blue-100 text-blue-800'
+                  }`}>
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="font-mono text-xs opacity-75">
+                        {new Date(log.timestamp).toLocaleString()}
+                      </span>
+                      <span className={`text-xs px-1 rounded ${
+                        log.level === 'error' ? 'bg-red-200' :
+                        log.level === 'success' ? 'bg-green-200' :
+                        'bg-blue-200'
+                      }`}>
+                        {log.level.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="mt-1">{log.message}</div>
+                    {log.details && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs opacity-75">Ver detalles</summary>
+                        <pre className="mt-1 text-xs overflow-x-auto bg-white p-2 rounded">
+                          {JSON.stringify(log.details, null, 2)}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Acciones */}
           <div className="flex justify-between items-center pt-4 border-t">
             <Button
@@ -188,6 +297,25 @@ export function PTYSSXmlViewerModal({
             </Button>
             
             <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={handleDebugAuth}
+                disabled={isDebugging || isSendingToSap}
+                className="flex items-center gap-2 text-orange-600 border-orange-600 hover:bg-orange-50"
+              >
+                {isDebugging ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600"></div>
+                    Debugeando...
+                  </>
+                ) : (
+                  <>
+                    <Eye className="h-4 w-4" />
+                    Debug Auth
+                  </>
+                )}
+              </Button>
+              
               <Button
                 variant="outline"
                 onClick={handleSendToSap}

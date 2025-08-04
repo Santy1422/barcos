@@ -63,6 +63,84 @@ export function generateXmlFileName(): string {
   return `9326_XL_${year}${month}${day}_${hours}${minutes}${seconds}.XML`
 }
 
+// Función para enviar XML a SAP vía FTP
+export async function sendXmlToSap(invoiceId: string, xmlContent: string, fileName: string) {
+  try {
+    const response = await fetch(`/api/invoices/${invoiceId}/send-xml-to-sap`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({
+        xmlContent,
+        fileName
+      })
+    })
+
+    const result = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(result.message || 'Error al enviar XML a SAP')
+    }
+
+    return result
+  } catch (error: any) {
+    console.error('Error al enviar XML a SAP:', error)
+    throw error
+  }
+}
+
+// Función para probar la conexión FTP con diferentes configuraciones
+export async function testFtpConnection() {
+  try {
+    const response = await fetch('/api/invoices/test-ftp-connection', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+
+    const result = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(result.message || 'Error al probar conexión FTP')
+    }
+
+    return result
+  } catch (error: any) {
+    console.error('Error al probar conexión FTP:', error)
+    throw error
+  }
+}
+
+// Función para debug de autenticación FTP con credenciales exactas
+export async function debugFtpAuth() {
+  try {
+    const response = await fetch('/api/invoices/debug-ftp-auth', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+
+    const result = await response.json()
+    
+    console.log('🔍 Debug FTP Auth Result:', result)
+    
+    if (!response.ok) {
+      throw new Error(result.message || 'Error en debug de autenticación FTP')
+    }
+
+    return result
+  } catch (error: any) {
+    console.error('Error en debug FTP auth:', error)
+    throw error
+  }
+}
+
 export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
   // Validar datos requeridos
   if (!invoice.invoiceNumber || !invoice.client || !invoice.date) {

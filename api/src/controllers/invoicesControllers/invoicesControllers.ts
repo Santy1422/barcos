@@ -5,6 +5,9 @@ import updateInvoice from "./updateInvoice";
 import deleteInvoice from "./deleteInvoice";
 import getInvoicesByModule from "./getInvoicesByModule";
 import getInvoicesByStatus from "./getInvoicesByStatus";
+import sendXmlToSap from "./sendXmlToSap";
+import testFtpConnection from "./testFtpConnection";
+import debugFtpAuth from "./debugFtpAuth";
 
 const invoicesControllers = {
   createInvoice,
@@ -13,7 +16,10 @@ const invoicesControllers = {
   updateInvoice,
   deleteInvoice,
   getInvoicesByModule,
-  getInvoicesByStatus
+  getInvoicesByStatus,
+  sendXmlToSap,
+  testFtpConnection,
+  debugFtpAuth
 };
 
 export default invoicesControllers;

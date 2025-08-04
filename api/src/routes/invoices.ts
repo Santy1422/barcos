@@ -27,4 +27,13 @@ router.put('/:id', jwtUtils, catchedAsync(invoicesControllers.updateInvoice));
 // Eliminar factura
 router.delete('/:id', jwtUtils, catchedAsync(invoicesControllers.deleteInvoice));
 
+// Enviar XML a SAP por FTP
+router.post('/:invoiceId/send-xml-to-sap', jwtUtils, catchedAsync(invoicesControllers.sendXmlToSap));
+
+// Test de conexión FTP
+router.post('/test-ftp-connection', jwtUtils, catchedAsync(invoicesControllers.testFtpConnection));
+
+// Debug de autenticación FTP
+router.post('/debug-ftp-auth', jwtUtils, catchedAsync(invoicesControllers.debugFtpAuth));
+
 export default router;

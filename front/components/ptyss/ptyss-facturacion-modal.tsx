@@ -22,7 +22,7 @@ import { FileText,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { PTYSSRecordsViewModal } from "./ptyss-records-view-modal"
-import { generatePTYSSInvoiceXML, validateXMLForSAP, generateXmlFileName, type PTYSSInvoiceForXml } from "@/lib/xml-generator"
+import { generatePTYSSInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSap, type PTYSSInvoiceForXml } from "@/lib/xml-generator"
 import { useAppSelector } from "@/lib/hooks"
 import { selectAllIndividualRecords } from "@/lib/features/records/recordsSlice"
 import { saveAs } from "file-saver"
@@ -54,6 +54,9 @@ export function PTYSSFacturacionModal({
   const [showRecordsModal, setShowRecordsModal] = useState(false)
   const [generatedXml, setGeneratedXml] = useState<string>("")
   const [xmlValidation, setXmlValidation] = useState<{ isValid: boolean; errors: string[] } | null>(null)
+  const [isSendingToSap, setIsSendingToSap] = useState(false)
+  const [sapLogs, setSapLogs] = useState<any[]>([])
+  const [showSapLogs, setShowSapLogs] = useState(false)
   
   // Obtener registros asociados para generar XML
   const allRecords = useAppSelector(selectAllIndividualRecords)
@@ -67,6 +70,9 @@ export function PTYSSFacturacionModal({
     setGeneratedXml("")
     setXmlValidation(null)
     setNewInvoiceNumber("")
+    setIsSendingToSap(false)
+    setSapLogs([])
+    setShowSapLogs(false)
     const today = new Date()
     setInvoiceDate(today.toISOString().split('T')[0])
     setActions({
@@ -175,6 +181,49 @@ export function PTYSSFacturacionModal({
     }
   }
 
+  // Función para enviar XML a SAP
+  const handleSendToSap = async (invoiceId: string, xmlContent: string) => {
+    setIsSendingToSap(true)
+    setSapLogs([])
+    setShowSapLogs(true)
+    
+    try {
+      const fileName = generateXmlFileName()
+      console.log("🚀 Enviando XML a SAP:", { invoiceId, fileName })
+      
+      const result = await sendXmlToSap(invoiceId, xmlContent, fileName)
+      
+      console.log("✅ Respuesta de SAP:", result)
+      setSapLogs(result.logs || [])
+      
+      if (result.success) {
+        toast({
+          title: "XML enviado exitosamente",
+          description: `Archivo ${fileName} enviado a SAP`,
+        })
+      } else {
+        throw new Error(result.message || "Error al enviar XML")
+      }
+      
+    } catch (error: any) {
+      console.error("❌ Error al enviar XML a SAP:", error)
+      setSapLogs(prev => [...prev, {
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        message: `Error: ${error.message}`,
+        details: error
+      }])
+      
+      toast({
+        title: "Error al enviar XML",
+        description: error.message || "Error al conectar con SAP",
+        variant: "destructive"
+      })
+    } finally {
+      setIsSendingToSap(false)
+    }
+  }
+
   const handleFacturar = async () => {
     if (!newInvoiceNumber.trim()) {
       toast({
@@ -226,15 +275,23 @@ export function PTYSSFacturacionModal({
       
       await onFacturar(newInvoiceNumber, xmlData, invoiceDate)
       
+      // Si se marcó la opción de enviar a SAP, enviar después de facturar
+      if (actions.sendToSAP && xmlData && xmlData.xml && invoice?.id) {
+        console.log("📤 Enviando a SAP después de facturar...")
+        await handleSendToSap(invoice.id, xmlData.xml)
+      }
+      
       const xmlMessage = xmlData?.isValid 
         ? " XML generado y validado correctamente."
         : xmlData 
           ? " XML generado con advertencias."
           : " Error al generar XML."
       
+      const sapMessage = actions.sendToSAP ? " Enviado a SAP." : ""
+      
       toast({
         title: "Facturación completada",
-        description: `La prefactura ha sido facturada como ${newInvoiceNumber}.${xmlMessage}`,
+        description: `La prefactura ha sido facturada como ${newInvoiceNumber}.${xmlMessage}${sapMessage}`,
         className: "bg-green-600 text-white"
       })
       
@@ -403,7 +460,6 @@ export function PTYSSFacturacionModal({
                       Enviar XML a SAP (XML se genera automáticamente)
                     </Label>
                   </div>
-                  <Badge variant="outline" className="ml-auto">Próximamente</Badge>
                   {generatedXml && (
                     <div className="flex items-center gap-2">
                       <Badge 
@@ -502,7 +558,46 @@ export function PTYSSFacturacionModal({
               </div>
             )}
 
-
+            {/* Logs de envío a SAP */}
+            {showSapLogs && sapLogs.length > 0 && (
+              <div className="mt-4 p-4 border rounded-lg bg-gray-50">
+                <h4 className="font-semibold mb-3 text-sm flex items-center gap-2">
+                  <Eye className="h-4 w-4" />
+                  Logs de envío a SAP
+                </h4>
+                <div className="max-h-60 overflow-y-auto space-y-2">
+                  {sapLogs.map((log, index) => (
+                    <div key={index} className={`text-xs p-2 rounded ${
+                      log.level === 'error' ? 'bg-red-100 text-red-800' :
+                      log.level === 'success' ? 'bg-green-100 text-green-800' :
+                      'bg-blue-100 text-blue-800'
+                    }`}>
+                      <div className="flex justify-between items-start gap-2">
+                        <span className="font-mono text-xs opacity-75">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </span>
+                        <span className={`text-xs px-1 rounded ${
+                          log.level === 'error' ? 'bg-red-200' :
+                          log.level === 'success' ? 'bg-green-200' :
+                          'bg-blue-200'
+                        }`}>
+                          {log.level.toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="mt-1">{log.message}</div>
+                      {log.details && (
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-xs opacity-75">Ver detalles</summary>
+                          <pre className="mt-1 text-xs overflow-x-auto bg-white p-2 rounded">
+                            {JSON.stringify(log.details, null, 2)}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Botones */}
             <div className="flex justify-end gap-3 pt-4">
