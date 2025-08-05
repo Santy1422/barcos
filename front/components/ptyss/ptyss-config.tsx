@@ -625,7 +625,7 @@ export function PTYSSConfig() {
               onClick={() => setActiveTab('services')}
             >
               <Wrench className="h-4 w-4 mr-2" />
-              Servicios Adicionales
+              Servicios Trasiego
             </Button>
             <Button
               variant={activeTab === 'localServices' ? "default" : "outline"}
@@ -949,7 +949,7 @@ export function PTYSSConfig() {
       {activeTab === 'services' && (
         <ServicesManagement 
           module="ptyss" 
-          title="Gestión de Servicios Adicionales PTYSS" 
+          title="Gestión de Servicios Trasiego PTYSS" 
         />
       )}
 
@@ -1201,13 +1201,13 @@ export function PTYSSConfig() {
 
           <Separator />
 
-          {/* Servicios Adicionales */}
+          {/* Servicios Trasiego */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <div className="flex items-center">
                   <Settings2 className="mr-2 h-5 w-5" />
-                  Servicios Adicionales
+                  Servicios Trasiego
                 </div>
                 <Button onClick={() => setShowAddServiceForm(!showAddServiceForm)}>
                   <Plus className="h-4 w-4 mr-2" />
@@ -1215,7 +1215,7 @@ export function PTYSSConfig() {
                 </Button>
               </CardTitle>
               <CardDescription>
-                Servicios que se seleccionan manualmente en el Paso 2 de crear prefactura
+                Servicios de trasiego que se seleccionan manualmente en el Paso 2 de crear prefactura
               </CardDescription>
             </CardHeader>
             <CardContent>

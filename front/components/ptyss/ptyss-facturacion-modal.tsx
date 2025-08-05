@@ -9,7 +9,6 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { FileText, 
-  Mail, 
   Code, 
   AlertTriangle, 
   CheckCircle, 
@@ -48,7 +47,6 @@ export function PTYSSFacturacionModal({
     return today.toISOString().split('T')[0] // Formato YYYY-MM-DD
   })
   const [actions, setActions] = useState({
-    sendEmail: false,
     sendToSAP: false
   })
   const [showRecordsModal, setShowRecordsModal] = useState(false)
@@ -75,10 +73,9 @@ export function PTYSSFacturacionModal({
     setShowSapLogs(false)
     const today = new Date()
     setInvoiceDate(today.toISOString().split('T')[0])
-    setActions({
-      sendEmail: false,
-      sendToSAP: false
-    })
+         setActions({
+       sendToSAP: false
+     })
   }, [invoice?.id])
   
   // Función para generar XML de PTYSS
@@ -456,22 +453,8 @@ export function PTYSSFacturacionModal({
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                 <FileText className="h-4 w-4" /> Acciones Adicionales
               </h3>
-              <div className="space-y-3">
-                <div className="flex items-center space-x-3 p-3 border border-gray-200">
-                  <Checkbox
-                    id="send-email"
-                    checked={actions.sendEmail}
-                    onCheckedChange={(checked) => handleActionChange('sendEmail', checked as boolean)}
-                  />
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-blue-600" />
-                    <Label htmlFor="send-email" className="font-medium">
-                      Enviar factura por email al cliente
-                    </Label>
-                  </div>
-                  <Badge variant="outline" className="ml-auto">Próximamente</Badge>
-                </div>
-                <div className="flex items-center space-x-3 p-3 border border-gray-200">
+                             <div className="space-y-3">
+                 <div className="flex items-center space-x-3 p-3 border border-gray-200">
                   <Checkbox
                     id="send-to-sap"
                     checked={actions.sendToSAP}

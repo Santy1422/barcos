@@ -397,13 +397,16 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
             // Determinar categoría del contenedor
             const ctrCategory = containerType === "FL" ? "N" : containerType.substring(0, 1)
             
+            // Determinar el código de servicio basado en el cliente
+            const serviceCode = invoice.clientName === "PTG" ? "TRK002" : "TRK001"
+            
             return {
               "IncomeRebateCode": "I",
               "CompanyCode": "9326",
               "BaseUnitMeasure": "EA",
               "Qty": "1",
               "ProfitCenter": "1000",
-              "Service": "TRK001",
+              "Service": serviceCode,
               "Activity": "TRK",
               "Pillar": "TRSP",
               "BUCountry": "PA",

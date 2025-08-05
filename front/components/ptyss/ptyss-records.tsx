@@ -21,6 +21,7 @@ import { PTYSSXmlViewerModal } from "./ptyss-xml-viewer-modal"
 import { fetchClients } from "@/lib/features/clients/clientsSlice"
 import saveAs from "file-saver"
 import { generateXmlFileName } from "@/lib/xml-generator"
+import * as XLSX from "xlsx"
 
 export function PTYSSRecords() {
   const dispatch = useAppDispatch()
@@ -59,98 +60,49 @@ export function PTYSSRecords() {
 
   // Función para obtener los contenedores de una factura
   const getContainersForInvoice = (invoice: any) => {
-    console.log("🔍 getContainersForInvoice - invoice:", invoice)
-    console.log("🔍 getContainersForInvoice - relatedRecordIds:", invoice.relatedRecordIds)
-    console.log("🔍 getContainersForInvoice - allRecords length:", allRecords.length)
-    
     if (!invoice.relatedRecordIds || invoice.relatedRecordIds.length === 0) {
-      console.log("🔍 getContainersForInvoice - No hay relatedRecordIds")
       return "N/A"
     }
     
     if (allRecords.length === 0) {
-      console.log("🔍 getContainersForInvoice - No hay registros cargados")
       return "N/A"
     }
     
     const relatedRecords = allRecords.filter((record: any) => {
-      const isRelated = invoice.relatedRecordIds.includes(record._id || record.id)
-      console.log(`🔍 getContainersForInvoice - Record ${record._id || record.id} isRelated: ${isRelated}`)
-      return isRelated
+      const recordId = record._id || record.id
+      return invoice.relatedRecordIds.includes(recordId)
     })
     
-    console.log("🔍 getContainersForInvoice - relatedRecords encontrados:", relatedRecords.length)
-    console.log("🔍 getContainersForInvoice - relatedRecords:", relatedRecords)
-    
     if (relatedRecords.length === 0) {
-      console.log("🔍 getContainersForInvoice - No se encontraron registros relacionados")
       return "N/A"
     }
     
     const containers = relatedRecords.map((record: any) => {
       const data = record.data as Record<string, any>
-      console.log("🔍 getContainersForInvoice - record data:", data)
-      const container = data?.container || "N/A"
-      console.log("🔍 getContainersForInvoice - container extraído:", container)
-      return container
+      return data?.container || "N/A"
     }).filter((container: string) => container !== "N/A")
-    
-    console.log("🔍 getContainersForInvoice - containers extraídos:", containers)
     
     if (containers.length === 0) return "N/A"
     if (containers.length === 1) return containers[0]
     return `${containers[0]} y ${containers.length - 1} más`
   }
 
-  // Debug: Log las facturas cargadas
-  console.log("🔍 PTYSSRecords - ptyssInvoices:", ptyssInvoices)
-  console.log("🔍 PTYSSRecords - Cantidad de facturas:", ptyssInvoices.length)
-  console.log("🔍 PTYSSRecords - Estados de facturas:", ptyssInvoices.map((inv: any) => `${inv.invoiceNumber}: ${inv.status}`))
-  console.log("🔍 PTYSSRecords - isLoading:", isLoading)
-  console.log("🔍 PTYSSRecords - error:", error)
-  console.log("🔍PTYSSRecords - allRecords:", allRecords)
-  console.log("🔍 PTYSSRecords - Cantidad de registros:", allRecords.length)
-  
-  // Debug: Verificar IDs de registros en facturas
-  if (ptyssInvoices.length > 0) {
-    console.log("🔍 PTYSSRecords - Primera factura relatedRecordIds:", ptyssInvoices[0].relatedRecordIds)
-    console.log("🔍PTYSSRecords - IDs de registros disponibles:", allRecords.map((r: any) => r._id || r.id))
-    console.log("🔍 PTYSSRecords - Todos los registros:", allRecords)
-    
-    // Verificar si el registro relacionado existe
-    const firstInvoice = ptyssInvoices[0]
-    const relatedRecordId = firstInvoice.relatedRecordIds[0]
-    const relatedRecord = allRecords.find((r: any) => (r._id || r.id) === relatedRecordId)
-    console.log("🔍 PTYSSRecords - Registro relacionado encontrado:", relatedRecord)
-    console.log("🔍 PTYSSRecords - Estado del registro relacionado:", relatedRecord?.status)
-  }
+
 
   // Cargar facturas del backend al montar el componente
   useEffect(() => {
-    console.log("🔍 PTYSSRecords - Cargando facturas PTYSS del backend...")
     dispatch(fetchInvoicesAsync("ptyss"))
   }, [dispatch])
 
   // Cargar todos los registros PTYSS para mostrar contenedores
   useEffect(() => {
-    console.log("🔍 PTYSSRecords - Cargando registros PTYSS para contenedores...")
     dispatch(fetchAllRecordsByModule("ptyss"))
   }, [dispatch])
 
   // Cargar clientes para el visor de PDF
   useEffect(() => {
-    console.log("🔍 PTYSSRecords - Cargando clientes para visor de PDF...")
     dispatch(fetchClients())
   }, [dispatch])
-
-  // Debug: Monitorear cambios en los registros
-  useEffect(() => {
-    console.log("🔍 PTYSSRecords - allRecords actualizado:", allRecords.length)
-    if (allRecords.length > 0) {
-      console.log("🔍 PTYSSRecords - Primer registro:", allRecords[0])
-      console.log("🔍 PTYSSRecords - Módulos disponibles:", [...new Set(allRecords.map((r: any) => r.module))])
-    }
-  }, [allRecords])
 
   const handleDeleteInvoice = async (invoice: any) => {
     setIsDeleting(true)
@@ -201,6 +153,43 @@ export function PTYSSRecords() {
         variant: "destructive"
       })
     }
+  }
+
+  // Función para exportar a Excel
+  const exportToExcel = () => {
+    const exportData = filteredInvoices.map((invoice: any) => {
+      const containers = getContainersForInvoice(invoice)
+      const invoiceType = getInvoiceType(invoice)
+      
+      return {
+        'Número de Factura': invoice.invoiceNumber || 'N/A',
+        'Cliente': invoice.clientName || 'N/A',
+        'Contenedores': containers,
+        'Fecha Emisión': invoice.issueDate ? new Date(invoice.issueDate).toLocaleDateString('es-ES') : 'N/A',
+        'Fecha Creación': invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString('es-ES') : 'N/A',
+        'Total': invoice.totalAmount || 0,
+        'Estado': invoice.status === 'prefactura' ? 'Prefactura' : 
+                  invoice.status === 'facturada' ? 'Facturada' : 
+                  invoice.status === 'anulada' ? 'Anulada' : invoice.status,
+        'Tipo': invoiceType === 'local' ? 'Local' : 'Trasiego',
+        'XML Generado': invoice.xmlData ? 'Sí' : 'No',
+        'XML Enviado a SAP': invoice.xmlData?.sentToSap ? 'Sí' : 'No',
+        'Fecha Envío SAP': invoice.xmlData?.sentToSapAt ? new Date(invoice.xmlData.sentToSapAt).toLocaleDateString('es-ES') : 'N/A',
+        'Registros Asociados': invoice.relatedRecordIds?.length || 0
+      }
+    })
+
+    const ws = XLSX.utils.json_to_sheet(exportData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Facturas PTYSS')
+    
+    const fileName = `facturas_ptyss_${new Date().toISOString().split('T')[0]}.xlsx`
+    XLSX.writeFile(wb, fileName)
+
+    toast({
+      title: "Exportación exitosa",
+      description: `Se exportaron ${exportData.length} facturas a ${fileName}`,
+    })
   }
 
   // Funciones para filtros de fecha
@@ -324,25 +313,13 @@ export function PTYSSRecords() {
     return "Período personalizado"
   }
 
-  // Función para determinar el tipo de una factura basándose en sus registros relacionados
-  const getInvoiceType = (invoice: any): "local" | "trasiego" | "mixed" => {
-    const relatedRecords = allRecords.filter((record: any) => 
-      invoice.relatedRecordIds && invoice.relatedRecordIds.includes(record.id)
-    )
-    
-    if (relatedRecords.length === 0) return "local" // Default si no hay registros
-    
-    const hasLocal = relatedRecords.some((record: any) => 
-      record.movementType?.toLowerCase().includes('local') || 
-      record.serviceType?.toLowerCase().includes('local')
-    )
-    const hasTrasiego = relatedRecords.some((record: any) => 
-      record.movementType?.toLowerCase().includes('trasiego') || 
-      record.serviceType?.toLowerCase().includes('trasiego')
-    )
-    
-    if (hasLocal && hasTrasiego) return "mixed"
-    if (hasTrasiego) return "trasiego"
+  // Función para determinar el tipo de una factura basándose en el cliente
+  const getInvoiceType = (invoice: any): "local" | "trasiego" => {
+    // Si el cliente es PTG, es trasiego
+    if (invoice.clientName === "PTG") {
+      return "trasiego"
+    }
+    // Cualquier otro cliente es local
     return "local"
   }
 
@@ -354,11 +331,9 @@ export function PTYSSRecords() {
       containers.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesStatus = statusFilter === "all" || invoice.status === statusFilter
     
-    // Filtro por tipo de registro
-    const invoiceType = getInvoiceType(invoice)
-    const matchesType = recordTypeFilter === "all" || 
-                       (recordTypeFilter === "local" && (invoiceType === "local" || invoiceType === "mixed")) ||
-                       (recordTypeFilter === "trasiego" && (invoiceType === "trasiego" || invoiceType === "mixed"))
+         // Filtro por tipo de registro
+     const invoiceType = getInvoiceType(invoice)
+     const matchesType = recordTypeFilter === "all" || invoiceType === recordTypeFilter
     
     // Filtro por fecha (solo fecha de creación/issue)
     let matchesDate = true
@@ -555,7 +530,7 @@ export function PTYSSRecords() {
                   <SelectItem value="facturada">Facturada</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline">
+              <Button variant="outline" onClick={exportToExcel}>
                 <Download className="h-4 w-4 mr-2" />
                 Exportar
               </Button>
@@ -750,13 +725,9 @@ export function PTYSSRecords() {
                       </div>
                     </TableCell>
                   </TableRow>
-                ) : filteredInvoices.length > 0 ? (
-                  filteredInvoices.map((invoice: any) => {
-                    console.log("🔍 Renderizando factura:", invoice.invoiceNumber)
-                    console.log("🔍 Estado de la factura:", invoice.status)
-                    console.log("🔍 xmlData en factura:", invoice.xmlData)
-                    const containers = getContainersForInvoice(invoice)
-                    console.log("🔍 Contenedores calculados:", containers)
+                                 ) : filteredInvoices.length > 0 ? (
+                   filteredInvoices.map((invoice: any) => {
+                     const containers = getContainersForInvoice(invoice)
                     
                     return (
                       <TableRow key={invoice.id}>
