@@ -5,9 +5,12 @@ import updateInvoice from "./updateInvoice";
 import deleteInvoice from "./deleteInvoice";
 import getInvoicesByModule from "./getInvoicesByModule";
 import getInvoicesByStatus from "./getInvoicesByStatus";
-import sendXmlToSap from "./sendXmlToSap";
-import testFtpConnection from "./testFtpConnection";
-import debugFtpAuth from "./debugFtpAuth";
+import { sendXmlToSap } from "./sendXmlToSap";
+import { testFtpConnection } from "./testFtpConnection";
+import { debugFtpAuth } from "./debugFtpAuth";
+import { diagnoseFtpServer } from "./diagnoseFtpServer";
+import markXmlAsSentToSap from "./markXmlAsSentToSap";
+import markXmlAsSentToSapSimple from "./markXmlAsSentToSapSimple";
 
 const invoicesControllers = {
   createInvoice,
@@ -19,7 +22,10 @@ const invoicesControllers = {
   getInvoicesByStatus,
   sendXmlToSap,
   testFtpConnection,
-  debugFtpAuth
+  debugFtpAuth,
+  diagnoseFtpServer,
+  markXmlAsSentToSap,
+  markXmlAsSentToSapSimple
 };
 
 export default invoicesControllers;

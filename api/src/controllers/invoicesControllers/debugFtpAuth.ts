@@ -1,144 +1,181 @@
-import { Request, Response } from "express";
-import { Client } from "basic-ftp";
-import { getFtpConfigWithDebug } from "../../config/ftpConfig";
+import { Client as FtpClient } from 'basic-ftp';
+import { Request, Response } from 'express';
+import { getFtpConfigWithDebug } from '../../config/ftpConfig';
 
-const debugFtpAuth = async (req: Request, res: Response) => {
-  const logs: any[] = [];
-  
-  const addLog = (level: string, message: string, details?: any) => {
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      level,
-      message,
-      details
-    };
-    logs.push(logEntry);
-    console.log(`[FTP DEBUG ${level.toUpperCase()}] ${message}`, details || '');
-  };
-
+export const debugFtpAuth = async (req: Request, res: Response) => {
   try {
-    addLog('info', 'Iniciando debug de autenticación FTP');
-
-    // Obtener credenciales desde configuración (variables de entorno)
+    console.log('\n🔍 === DEBUG AUTENTICACIÓN FTP ===');
+    
     const ftpConfig = getFtpConfigWithDebug();
-    const { host: testHost, user: testUser, password: testPassword } = ftpConfig;
-
-    addLog('info', 'Credenciales a probar', {
-      host: testHost,
-      user: testUser,
-      passwordLength: testPassword.length,
-      passwordFirstChar: testPassword.charAt(0),
-      passwordLastChar: testPassword.charAt(testPassword.length - 1),
-      // Para verificar que no hay caracteres ocultos
-      passwordBytes: Buffer.from(testPassword, 'utf8').length,
-      passwordHex: Buffer.from(testPassword, 'utf8').toString('hex'),
-      sourceConfig: 'environment_variables'
-    });
-
-    const client = new Client();
-    client.ftp.verbose = true;
-
-    // Configuración más básica posible
-    const basicConfig = {
-      host: testHost,
-      user: testUser,
-      password: testPassword,
-      secure: false
+    const logs: string[] = [];
+    
+    const addLog = (message: string) => {
+      logs.push(`${new Date().toISOString()} - ${message}`);
+      console.log(message);
     };
 
-    addLog('info', 'Intentando conexión básica FTP (sin SSL)');
+    // Información detallada de credenciales
+    addLog('=== INFORMACIÓN DE CREDENCIALES FTP ===');
+    addLog(`Host: ${ftpConfig.host}`);
+    addLog(`Puerto: 21`);
+    addLog(`Usuario: ${ftpConfig.user}`);
+    addLog(`Contraseña longitud: ${ftpConfig.password.length}`);
+    addLog(`Contraseña primer carácter: "${ftpConfig.password.charAt(0)}"`);
+    addLog(`Contraseña último carácter: "${ftpConfig.password.charAt(ftpConfig.password.length - 1)}"`);
+    addLog(`Contraseña (hex): ${Buffer.from(ftpConfig.password).toString('hex')}`);
+    addLog(`Path destino: ${ftpConfig.path}`);
+
+    // Detectar caracteres invisibles
+    const hasCarriageReturn = ftpConfig.password.includes('\r');
+    const hasNewline = ftpConfig.password.includes('\n');
+    const hasTabs = ftpConfig.password.includes('\t');
     
-    try {
-      await client.access(basicConfig);
-      addLog('success', '✅ ÉXITO: Autenticación FTP básica exitosa');
-      
-      // Probar operaciones básicas
-      try {
-        const rootList = await client.list();
-        addLog('success', 'Listado de directorio raíz exitoso', {
-          fileCount: rootList.length,
-          files: rootList.slice(0, 5).map(f => f.name)
-        });
-      } catch (listError) {
-        addLog('warning', 'Autenticación exitosa pero error al listar', listError);
+    if (hasCarriageReturn || hasNewline || hasTabs) {
+      addLog('⚠️  ADVERTENCIA: Se detectaron caracteres especiales en la contraseña:');
+      if (hasCarriageReturn) addLog('   - Carriage Return (\\r) detectado');
+      if (hasNewline) addLog('   - Newline (\\n) detectado');
+      if (hasTabs) addLog('   - Tab (\\t) detectado');
+    } else {
+      addLog('✅ No se detectaron caracteres especiales en la contraseña');
+    }
+
+    // Probar diferentes configuraciones FTP
+    const testConfigs = [
+      {
+        name: 'FTP Estándar',
+        config: {
+          host: ftpConfig.host,
+          user: ftpConfig.user,
+          password: ftpConfig.password,
+          secure: false
+        }
+      },
+      {
+        name: 'FTP con timeout extendido',
+        config: {
+          host: ftpConfig.host,
+          user: ftpConfig.user,
+          password: ftpConfig.password,
+          secure: false,
+          timeout: 30000
+        }
+      },
+      {
+        name: 'FTP modo pasivo',
+        config: {
+          host: ftpConfig.host,
+          user: ftpConfig.user,
+          password: ftpConfig.password,
+          secure: false,
+          pasv: true
+        }
       }
+    ];
+
+    let successfulConfig = null;
+
+    for (const testConfig of testConfigs) {
+      addLog(`\n=== PROBANDO: ${testConfig.name} ===`);
       
-      client.close();
-      
-      return res.status(200).json({
-        success: true,
-        message: "Autenticación FTP exitosa",
-        authResult: "SUCCESS",
-        logs
-      });
-      
-    } catch (authError: any) {
-      addLog('error', '❌ Error en autenticación básica', {
-        message: authError.message,
-        code: authError.code,
-        stack: authError.stack?.split('\n')[0]
-      });
-      
-      client.close();
-      
-      // Intentar con puerto específico
-      addLog('info', 'Probando con puerto 21 explícito');
-      const clientPort21 = new Client();
-      clientPort21.ftp.verbose = true;
+      const client = new FtpClient();
+      client.ftp.verbose = true;
       
       try {
-        const configPort21 = {
-          ...basicConfig,
-          port: 21
-        };
+        addLog(`Intentando conectar con ${testConfig.name}...`);
+        await client.access(testConfig.config);
+        addLog(`✅ Conexión exitosa con ${testConfig.name}`);
         
-        await clientPort21.access(configPort21);
-        addLog('success', '✅ ÉXITO: Autenticación con puerto 21 explícito');
-        clientPort21.close();
+        // Probar listar directorio raíz
+        try {
+          const rootList = await client.list('/');
+          addLog(`✅ Listado de directorio raíz exitoso (${rootList.length} elementos)`);
+        } catch (listError: any) {
+          addLog(`⚠️  Error al listar directorio raíz: ${listError.message}`);
+        }
         
-        return res.status(200).json({
-          success: true,
-          message: "Autenticación FTP exitosa con puerto 21",
-          authResult: "SUCCESS_PORT_21",
-          logs
-        });
+        // Probar acceso al directorio de destino
+        try {
+          await client.cd(ftpConfig.path);
+          addLog(`✅ Directorio de destino accesible: ${ftpConfig.path}`);
+          
+          try {
+            const targetList = await client.list();
+            addLog(`✅ Listado de directorio de destino exitoso (${targetList.length} elementos)`);
+          } catch (targetListError: any) {
+            addLog(`⚠️  Error al listar directorio de destino: ${targetListError.message}`);
+          }
+        } catch (pathError: any) {
+          addLog(`❌ Error al verificar directorio de destino: ${pathError.message}`);
+        }
         
-      } catch (port21Error: any) {
-        addLog('error', '❌ Error con puerto 21 explícito', port21Error);
-        clientPort21.close();
+        successfulConfig = testConfig.name;
+        client.close();
+        break;
         
-        // Intentar verificar si las credenciales exactas son correctas
-        addLog('error', 'TODAS LAS CONFIGURACIONES FALLARON');
-        addLog('error', 'Posibles problemas:', {
-          options: [
-            'Credenciales incorrectas',
-            'Usuario no existe',
-            'Contraseña incorrecta', 
-            'Servidor FTP no accesible',
-            'Restricciones de IP',
-            'Configuración de firewall'
-          ]
-        });
+      } catch (error: any) {
+        addLog(`❌ Error con ${testConfig.name}: ${error.message}`);
+        if (error.code) addLog(`   Código de error: ${error.code}`);
         
-        return res.status(400).json({
-          success: false,
-          message: "No se pudo autenticar con ninguna configuración",
-          authResult: "FAILED_ALL",
-          logs
-        });
+        // Análisis específico del error
+        if (error.code === 530) {
+          addLog(`   DIAGNÓSTICO: Error de autenticación - Credenciales incorrectas`);
+        } else if (error.code === 421) {
+          addLog(`   DIAGNÓSTICO: Servidor demasiado ocupado o límite de conexiones`);
+        } else if (error.code === 425 || error.code === 426) {
+          addLog(`   DIAGNÓSTICO: Error de conexión de datos - Problemas de firewall/NAT`);
+        }
+      } finally {
+        try {
+          client.close();
+        } catch (closeError) {
+          // Ignorar errores de cierre
+        }
       }
     }
 
+    addLog('\n=== RESUMEN DE DEBUG ===');
+    if (successfulConfig) {
+      addLog(`✅ Autenticación exitosa con: ${successfulConfig}`);
+      addLog('✅ Las credenciales FTP están correctas');
+    } else {
+      addLog('❌ Todas las configuraciones FTP fallaron');
+      addLog('❌ Verificar credenciales con el proveedor');
+      
+      // Sugerencias específicas
+      addLog('\n=== SUGERENCIAS DE SOLUCIÓN ===');
+      addLog('1. Verificar que el usuario existe en el servidor FTP');
+      addLog('2. Confirmar que la contraseña no ha cambiado');
+      addLog('3. Verificar que la cuenta no está bloqueada');
+      addLog('4. Contactar al administrador del servidor FTP');
+    }
+
+    res.json({
+      success: !!successfulConfig,
+      message: successfulConfig 
+        ? `Autenticación FTP exitosa con ${successfulConfig}` 
+        : 'Todas las configuraciones FTP fallaron',
+      logs,
+      credentials: {
+        host: ftpConfig.host,
+        port: 21,
+        user: ftpConfig.user,
+        passwordLength: ftpConfig.password.length,
+        path: ftpConfig.path
+      },
+      successfulConfig,
+      authResult: successfulConfig ? 'SUCCESS' : 'FAILED'
+    });
+
   } catch (error: any) {
-    addLog('error', 'Error general en debug', error);
+    console.error('❌ Error en debugFtpAuth:', error);
     
     res.status(500).json({
       success: false,
-      message: "Error interno durante debug",
-      error: error.message,
-      logs
+      message: error.message || "Error interno del servidor",
+      error: {
+        name: error.name,
+        message: error.message
+      }
     });
   }
 };
-
-export default debugFtpAuth;

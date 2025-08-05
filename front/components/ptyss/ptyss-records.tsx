@@ -4,11 +4,12 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Database, Code } from "lucide-react"
+import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Database, Code, X, Edit } from "lucide-react"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { selectInvoicesByModule, fetchInvoicesAsync, deleteInvoiceAsync, selectRecordsLoading, selectRecordsError, updateInvoiceAsync, updateInvoiceStatus, selectAllIndividualRecords, fetchAllRecordsByModule, markRecordsAsInvoiced, updateMultipleRecordsStatusAsync } from "@/lib/features/records/recordsSlice"
@@ -18,7 +19,7 @@ import { PTYSSFacturacionModal } from "./ptyss-facturacion-modal"
 import { PTYSSRecordsViewModal } from "./ptyss-records-view-modal"
 import { PTYSSXmlViewerModal } from "./ptyss-xml-viewer-modal"
 import { fetchClients } from "@/lib/features/clients/clientsSlice"
-import { saveAs } from "file-saver"
+import saveAs from "file-saver"
 import { generateXmlFileName } from "@/lib/xml-generator"
 
 export function PTYSSRecords() {
@@ -40,6 +41,14 @@ export function PTYSSRecords() {
   // Estado para XML
   const [xmlInvoice, setXmlInvoice] = useState<any>(null)
   const [isXmlModalOpen, setIsXmlModalOpen] = useState(false)
+
+  // Estados para filtros
+  const [recordTypeFilter, setRecordTypeFilter] = useState<"all" | "local" | "trasiego">("all")
+  const [activePeriodFilter, setActivePeriodFilter] = useState<"none" | "today" | "week" | "month" | "advanced">("none")
+  const [isUsingPeriodFilter, setIsUsingPeriodFilter] = useState(false)
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
+  const [isDateModalOpen, setIsDateModalOpen] = useState(false)
 
   // Obtener prefacturas PTYSS del store
   const ptyssInvoices = useAppSelector((state) => selectInvoicesByModule(state, "ptyss"))
@@ -194,6 +203,149 @@ export function PTYSSRecords() {
     }
   }
 
+  // Funciones para filtros de fecha
+  const getTodayDates = () => {
+    const today = new Date()
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999)
+    
+    return {
+      start: startOfDay.toISOString().split('T')[0],
+      end: endOfDay.toISOString().split('T')[0]
+    }
+  }
+
+  const getCurrentWeekDates = () => {
+    const today = new Date()
+    const dayOfWeek = today.getDay()
+    const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1) // Ajuste para que la semana empiece en lunes
+    
+    const startOfWeek = new Date(today.getFullYear(), today.getMonth(), diff)
+    startOfWeek.setHours(0, 0, 0, 0)
+    
+    const endOfWeek = new Date(startOfWeek)
+    endOfWeek.setDate(startOfWeek.getDate() + 6)
+    endOfWeek.setHours(23, 59, 59, 999)
+    
+    return {
+      start: startOfWeek.toISOString().split('T')[0],
+      end: endOfWeek.toISOString().split('T')[0]
+    }
+  }
+
+  const getCurrentMonthDates = () => {
+    const today = new Date()
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999)
+    
+    return {
+      start: startOfMonth.toISOString().split('T')[0],
+      end: endOfMonth.toISOString().split('T')[0]
+    }
+  }
+
+  const handleFilterByPeriod = (period: 'today' | 'week' | 'month' | 'advanced') => {
+    // Si el filtro ya está activo, desactivarlo
+    if (activePeriodFilter === period) {
+      setIsUsingPeriodFilter(false)
+      setActivePeriodFilter("none")
+      setStartDate("")
+      setEndDate("")
+      return
+    }
+    
+    // Activar el filtro de período y establecer las fechas
+    setIsUsingPeriodFilter(true)
+    setActivePeriodFilter(period)
+    
+    switch (period) {
+      case 'today':
+        const todayDates = getTodayDates()
+        setStartDate(todayDates.start)
+        setEndDate(todayDates.end)
+        break
+      case 'week':
+        const weekDates = getCurrentWeekDates()
+        setStartDate(weekDates.start)
+        setEndDate(weekDates.end)
+        break
+      case 'month':
+        const monthDates = getCurrentMonthDates()
+        setStartDate(monthDates.start)
+        setEndDate(monthDates.end)
+        break
+      case 'advanced':
+        // Para avanzado, abrir el modal de selección de fechas
+        setIsDateModalOpen(true)
+        break
+    }
+  }
+
+  const handleApplyDateFilter = (start: string, end: string) => {
+    setStartDate(start)
+    setEndDate(end)
+    setIsUsingPeriodFilter(true)
+    setActivePeriodFilter("advanced")
+    setIsDateModalOpen(false)
+  }
+
+  const handleCancelDateFilter = () => {
+    setIsDateModalOpen(false)
+    // Si no hay fechas establecidas, desactivar el filtro avanzado
+    if (!startDate || !endDate) {
+      setIsUsingPeriodFilter(false)
+      setActivePeriodFilter("none")
+    } else {
+      // Si hay fechas pero se cancela, mantener el filtro avanzado activo
+      setActivePeriodFilter("advanced")
+    }
+  }
+
+  // Función para obtener el texto del período activo
+  const getActivePeriodText = () => {
+    if (!isUsingPeriodFilter || activePeriodFilter === "advanced") return null
+    
+    if (startDate === endDate) {
+      return "Hoy"
+    }
+    
+    // Verificar si es la semana actual
+    const weekDates = getCurrentWeekDates()
+    if (startDate === weekDates.start && endDate === weekDates.end) {
+      return "Semana en curso"
+    }
+    
+    // Verificar si es el mes actual
+    const monthDates = getCurrentMonthDates()
+    if (startDate === monthDates.start && endDate === monthDates.end) {
+      return "Mes en curso"
+    }
+    
+    return "Período personalizado"
+  }
+
+  // Función para determinar el tipo de una factura basándose en sus registros relacionados
+  const getInvoiceType = (invoice: any): "local" | "trasiego" | "mixed" => {
+    const relatedRecords = allRecords.filter((record: any) => 
+      invoice.relatedRecordIds && invoice.relatedRecordIds.includes(record.id)
+    )
+    
+    if (relatedRecords.length === 0) return "local" // Default si no hay registros
+    
+    const hasLocal = relatedRecords.some((record: any) => 
+      record.movementType?.toLowerCase().includes('local') || 
+      record.serviceType?.toLowerCase().includes('local')
+    )
+    const hasTrasiego = relatedRecords.some((record: any) => 
+      record.movementType?.toLowerCase().includes('trasiego') || 
+      record.serviceType?.toLowerCase().includes('trasiego')
+    )
+    
+    if (hasLocal && hasTrasiego) return "mixed"
+    if (hasTrasiego) return "trasiego"
+    return "local"
+  }
+
   const filteredInvoices = ptyssInvoices.filter((invoice: any) => {
     const containers = getContainersForInvoice(invoice)
     const matchesSearch = 
@@ -201,7 +353,25 @@ export function PTYSSRecords() {
       invoice.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       containers.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesStatus = statusFilter === "all" || invoice.status === statusFilter
-    return matchesSearch && matchesStatus
+    
+    // Filtro por tipo de registro
+    const invoiceType = getInvoiceType(invoice)
+    const matchesType = recordTypeFilter === "all" || 
+                       (recordTypeFilter === "local" && (invoiceType === "local" || invoiceType === "mixed")) ||
+                       (recordTypeFilter === "trasiego" && (invoiceType === "trasiego" || invoiceType === "mixed"))
+    
+    // Filtro por fecha (solo fecha de creación/issue)
+    let matchesDate = true
+    if (isUsingPeriodFilter && startDate && endDate) {
+      const invoiceDate = new Date(invoice.issueDate || invoice.createdAt)
+      const filterStartDate = new Date(startDate)
+      const filterEndDate = new Date(endDate)
+      filterEndDate.setHours(23, 59, 59, 999) // Incluir todo el día
+      
+      matchesDate = invoiceDate >= filterStartDate && invoiceDate <= filterEndDate
+    }
+    
+    return matchesSearch && matchesStatus && matchesType && matchesDate
   })
 
   const getStatusBadge = (status: string) => {
@@ -348,6 +518,10 @@ export function PTYSSRecords() {
           if (!open) setXmlInvoice(null)
         }}
         invoice={xmlInvoice}
+        onXmlSentToSap={() => {
+          console.log("🔄 XML enviado a SAP - Recargando facturas...")
+          dispatch(fetchInvoicesAsync())
+        }}
       />
       <Card>
         <CardHeader>
@@ -386,6 +560,163 @@ export function PTYSSRecords() {
                 Exportar
               </Button>
             </div>
+          </div>
+
+          {/* Filtros */}
+          <div className="bg-slate-50 p-4 rounded-lg border">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Filtro por tipo de registro */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-slate-700">Filtrar por tipo:</Label>
+                <div className="flex gap-2">
+                  <Button
+                    variant={recordTypeFilter === "all" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setRecordTypeFilter("all")}
+                    className="text-xs"
+                  >
+                    Todos
+                  </Button>
+                  <Button
+                    variant={recordTypeFilter === "local" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setRecordTypeFilter("local")}
+                    className="text-xs"
+                  >
+                    Locales
+                  </Button>
+                  <Button
+                    variant={recordTypeFilter === "trasiego" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setRecordTypeFilter("trasiego")}
+                    className="text-xs"
+                  >
+                    Trasiego
+                  </Button>
+                </div>
+                
+                {/* Botón para limpiar todos los filtros - movido aquí para optimizar espacio */}
+                {(recordTypeFilter !== "all" || statusFilter !== "all" || searchTerm || startDate || endDate) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setRecordTypeFilter("all")
+                      setStatusFilter("all")
+                      setSearchTerm("")
+                      setIsUsingPeriodFilter(false)
+                      setActivePeriodFilter("none")
+                      setStartDate("")
+                      setEndDate("")
+                    }}
+                    className="text-xs text-slate-600 hover:text-slate-700 mt-2"
+                  >
+                    🗑️ Limpiar todos los filtros
+                  </Button>
+                )}
+              </div>
+
+              {/* Filtro por fecha */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-slate-700">Filtrar por fecha:</Label>
+                <div className="flex gap-1 flex-wrap">
+                  <Button
+                    variant={activePeriodFilter === "today" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handleFilterByPeriod('today')}
+                    className="text-xs h-8 px-2"
+                  >
+                    Hoy
+                  </Button>
+                  <Button
+                    variant={activePeriodFilter === "week" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handleFilterByPeriod('week')}
+                    className="text-xs h-8 px-2"
+                  >
+                    Semana
+                  </Button>
+                  <Button
+                    variant={activePeriodFilter === "month" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handleFilterByPeriod('month')}
+                    className="text-xs h-8 px-2"
+                  >
+                    Mes
+                  </Button>
+                  <Button
+                    variant={activePeriodFilter === "advanced" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handleFilterByPeriod('advanced')}
+                    className="text-xs h-8 px-2"
+                  >
+                    Avanzado
+                  </Button>
+                </div>
+                
+                {/* Indicador de período activo */}
+                {isUsingPeriodFilter && activePeriodFilter !== "advanced" && (
+                  <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md mt-2">
+                    <Badge variant="default" className="bg-blue-600 text-white text-xs">
+                      {getActivePeriodText()}
+                    </Badge>
+                    <span className="text-sm text-blue-700">
+                      {startDate} - {endDate}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setIsUsingPeriodFilter(false)
+                        setActivePeriodFilter("none")
+                        setStartDate("")
+                        setEndDate("")
+                      }}
+                      className="h-6 w-6 p-0 ml-auto"
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
+
+                {/* Indicador de filtro avanzado */}
+                {activePeriodFilter === "advanced" && startDate && endDate && (
+                  <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md mt-2">
+                    <Badge variant="default" className="bg-blue-600 text-white text-xs">
+                      Filtro Avanzado
+                    </Badge>
+                    <span className="text-sm text-blue-700">
+                      {startDate} - {endDate}
+                    </span>
+                    <div className="flex gap-1 ml-auto">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsDateModalOpen(true)}
+                        className="h-6 w-6 p-0"
+                      >
+                        <Edit className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setIsUsingPeriodFilter(false)
+                          setActivePeriodFilter("none")
+                          setStartDate("")
+                          setEndDate("")
+                        }}
+                        className="h-6 w-6 p-0"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+
           </div>
 
           <div className="rounded-md border">
@@ -491,12 +822,18 @@ export function PTYSSRecords() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                  className={`h-8 w-8 ${
+                                    invoice.xmlData.sentToSap 
+                                      ? 'text-green-600 hover:text-green-700 hover:bg-green-50' 
+                                      : 'text-orange-600 hover:text-orange-700 hover:bg-orange-50'
+                                  }`}
                                   onClick={() => {
                                     setXmlInvoice(invoice)
                                     setIsXmlModalOpen(true)
                                   }}
-                                  title={`Ver XML ${invoice.xmlData.isValid ? '(Válido)' : '(Con errores)'}`}
+                                  title={`Ver XML ${invoice.xmlData.isValid ? '(Válido)' : '(Con errores)'} - ${
+                                    invoice.xmlData.sentToSap ? 'Enviado a SAP' : 'Pendiente de envío a SAP'
+                                  }`}
                                 >
                                   <Code className="h-4 w-4" />
                                 </Button>
@@ -620,6 +957,97 @@ export function PTYSSRecords() {
                   Eliminar
                 </>
               )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Selección de Fechas */}
+      <Dialog open={isDateModalOpen} onOpenChange={setIsDateModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Seleccionar Rango de Fechas
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Fecha desde:</Label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Fecha hasta:</Label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+            </div>
+            
+            {/* Botones de período rápido dentro del modal */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-600">Períodos rápidos:</Label>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const todayDates = getTodayDates()
+                    setStartDate(todayDates.start)
+                    setEndDate(todayDates.end)
+                  }}
+                  className="text-xs"
+                >
+                  Hoy
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const weekDates = getCurrentWeekDates()
+                    setStartDate(weekDates.start)
+                    setEndDate(weekDates.end)
+                  }}
+                  className="text-xs"
+                >
+                  Semana
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const monthDates = getCurrentMonthDates()
+                    setStartDate(monthDates.start)
+                    setEndDate(monthDates.end)
+                  }}
+                  className="text-xs"
+                >
+                  Mes
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={handleCancelDateFilter}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => handleApplyDateFilter(startDate, endDate)}
+              disabled={!startDate || !endDate}
+            >
+              Aplicar Filtro
             </Button>
           </div>
         </DialogContent>

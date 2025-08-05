@@ -81,12 +81,12 @@ export async function sendXmlToSap(invoiceId: string, xmlContent: string, fileNa
     const result = await response.json()
     
     if (!response.ok) {
-      throw new Error(result.message || 'Error al enviar XML a SAP')
+      throw new Error(result.message || 'Error al enviar XML a SAP via FTP')
     }
 
     return result
   } catch (error: any) {
-    console.error('Error al enviar XML a SAP:', error)
+    console.error('Error al enviar XML a SAP via FTP:', error)
     throw error
   }
 }
@@ -137,6 +137,84 @@ export async function debugFtpAuth() {
     return result
   } catch (error: any) {
     console.error('Error en debug FTP auth:', error)
+    throw error
+  }
+}
+
+// Función para diagnóstico híbrido FTP/SFTP
+export async function diagnoseFtpServer() {
+  try {
+    const response = await fetch('/api/invoices/diagnose-ftp-server', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+
+    const result = await response.json()
+    
+    console.log('🔍 Diagnóstico FTP/SFTP Result:', result)
+    
+    if (!response.ok) {
+      throw new Error(result.message || 'Error en diagnóstico FTP/SFTP')
+    }
+
+    return result
+  } catch (error: any) {
+    console.error('Error en diagnóstico FTP/SFTP:', error)
+    throw error
+  }
+}
+
+// Función para marcar XML como enviado a SAP
+export async function markXmlAsSentToSap(invoiceId: string) {
+  try {
+    const response = await fetch(`/api/invoices/${invoiceId}/mark-xml-sent-to-sap`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+
+    const result = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(result.message || 'Error al marcar XML como enviado a SAP')
+    }
+
+    return result
+  } catch (error: any) {
+    console.error('Error al marcar XML como enviado a SAP:', error)
+    throw error
+  }
+}
+
+// Función para marcar XML como enviado a SAP (versión robusta con múltiples estrategias)
+export async function markXmlAsSentToSapSimple(invoiceId: string) {
+  try {
+    console.log('🔍 Usando función simple para marcar XML como enviado a SAP:', invoiceId)
+    
+    const response = await fetch(`/api/invoices/${invoiceId}/mark-xml-sent-to-sap-simple`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+
+    const result = await response.json()
+    
+    console.log('🔍 Respuesta del endpoint simple:', result)
+    
+    if (!response.ok) {
+      throw new Error(result.message || 'Error al marcar XML como enviado a SAP (simple)')
+    }
+
+    return result
+  } catch (error: any) {
+    console.error('Error al marcar XML como enviado a SAP (simple):', error)
     throw error
   }
 }

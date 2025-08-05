@@ -273,13 +273,36 @@ export function PTYSSFacturacionModal({
       
       console.log("🔍 PTYSSFacturacionModal - xmlData final que se enviará:", xmlData)
       
-      await onFacturar(newInvoiceNumber, xmlData, invoiceDate)
-      
-      // Si se marcó la opción de enviar a SAP, enviar después de facturar
+      // Si se marcó la opción de enviar a SAP, enviar antes de facturar para actualizar el estado
       if (actions.sendToSAP && xmlData && xmlData.xml && invoice?.id) {
-        console.log("📤 Enviando a SAP después de facturar...")
-        await handleSendToSap(invoice.id, xmlData.xml)
+        console.log("📤 Enviando a SAP antes de facturar para marcar estado...")
+        try {
+          const fileName = generateXmlFileName()
+          const result = await sendXmlToSap(invoice.id, xmlData.xml, fileName)
+          
+          if (result.success) {
+            // Marcar el xmlData como enviado a SAP
+            xmlData = {
+              ...xmlData,
+              sentToSap: true,
+              sentToSapAt: new Date().toISOString()
+            }
+            console.log("✅ XML enviado a SAP exitosamente, estado actualizado")
+          } else {
+            throw new Error(result.message || "Error al enviar XML")
+          }
+        } catch (sapError: any) {
+          console.error("❌ Error al enviar XML a SAP:", sapError)
+          toast({
+            title: "Error al enviar XML a SAP",
+            description: sapError.message || "Error al conectar con SAP",
+            variant: "destructive"
+          })
+          // Continuar con la facturación aunque falle el envío a SAP
+        }
       }
+      
+      await onFacturar(newInvoiceNumber, xmlData, invoiceDate)
       
       const xmlMessage = xmlData?.isValid 
         ? " XML generado y validado correctamente."

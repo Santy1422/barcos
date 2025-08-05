@@ -1818,6 +1818,8 @@ export function PTYSSPrefactura() {
   const handleApplyDateFilter = (start: string, end: string) => {
     setStartDate(start)
     setEndDate(end)
+    setIsUsingPeriodFilter(true)
+    setActivePeriodFilter("advanced")
     setIsDateModalOpen(false)
     setSelectedRecordIds([])
   }
@@ -2006,6 +2008,28 @@ export function PTYSSPrefactura() {
                       Trasiego
                     </Button>
                   </div>
+                  
+                  {/* Botón para limpiar todos los filtros - movido aquí para optimizar espacio */}
+                  {(recordTypeFilter !== "all" || statusFilter !== "all" || searchTerm || startDate || endDate) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setRecordTypeFilter("all")
+                        setStatusFilter("all")
+                        setDateFilter("createdAt")
+                        setSearchTerm("")
+                        setStartDate("")
+                        setEndDate("")
+                        setIsUsingPeriodFilter(false)
+                        setActivePeriodFilter("none")
+                        setSelectedRecordIds([])
+                      }}
+                      className="text-xs text-slate-600 hover:text-slate-700 mt-2"
+                    >
+                      🗑️ Limpiar todos los filtros
+                    </Button>
+                  )}
                 </div>
 
                 {/* Filtro por estado */}
@@ -2115,100 +2139,79 @@ export function PTYSSPrefactura() {
                         variant={activePeriodFilter === "advanced" ? "default" : "outline"}
                         size="sm"
                         onClick={() => handleFilterByPeriod('advanced')}
-                        className="text-xs h-8 px-2 flex-1 min-w-[80px]"
+                        className="text-xs h-8 px-2"
                       >
                         Avanzado
                       </Button>
                     </div>
                   </div>
-                </div>
-              </div>
+                  
+                  {/* Indicadores de período - movidos fuera del contenedor de botones */}
+                  <div className="mt-2">
+                    {/* Indicador de período activo */}
+                    {isUsingPeriodFilter && activePeriodFilter !== "advanced" && (
+                      <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                        <Badge variant="default" className="bg-blue-600 text-white text-xs">
+                          {getActivePeriodText()}
+                        </Badge>
+                        <span className="text-sm text-blue-700">
+                          {startDate} - {endDate}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setIsUsingPeriodFilter(false)
+                            setActivePeriodFilter("none")
+                            setStartDate("")
+                            setEndDate("")
+                            setDateFilter("createdAt")
+                          }}
+                          className="h-6 w-6 p-0 ml-auto"
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
 
-              {/* Indicador de período activo */}
-              {isUsingPeriodFilter && activePeriodFilter !== "advanced" && (
-                <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
-                  <Badge variant="default" className="bg-blue-600 text-white text-xs">
-                    {getActivePeriodText()}
-                  </Badge>
-                  <span className="text-sm text-blue-700">
-                    {startDate} - {endDate}
-                  </span>
-                                      <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setIsUsingPeriodFilter(false)
-                        setActivePeriodFilter("none")
-                        setStartDate("")
-                        setEndDate("")
-                        setDateFilter("createdAt")
-                      }}
-                      className="h-6 w-6 p-0 ml-auto"
-                    >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              )}
-
-              {/* Indicador de filtro avanzado */}
-              {activePeriodFilter === "advanced" && startDate && endDate && (
-                <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
-                  <Badge variant="default" className="bg-blue-600 text-white text-xs">
-                    Filtro Avanzado
-                  </Badge>
-                  <span className="text-sm text-blue-700">
-                    {startDate} - {endDate}
-                  </span>
-                  <div className="flex gap-1 ml-auto">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setIsDateModalOpen(true)}
-                      className="h-6 w-6 p-0"
-                    >
-                      <Edit className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setIsUsingPeriodFilter(false)
-                        setActivePeriodFilter("none")
-                        setStartDate("")
-                        setEndDate("")
-                        setDateFilter("createdAt")
-                      }}
-                      className="h-6 w-6 p-0"
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
+                    {/* Indicador de filtro avanzado */}
+                    {activePeriodFilter === "advanced" && startDate && endDate && (
+                      <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                        <Badge variant="default" className="bg-blue-600 text-white text-xs">
+                          Filtro Avanzado
+                        </Badge>
+                        <span className="text-sm text-blue-700">
+                          {startDate} - {endDate}
+                        </span>
+                        <div className="flex gap-1 ml-auto">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsDateModalOpen(true)}
+                            className="h-6 w-6 p-0"
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setIsUsingPeriodFilter(false)
+                              setActivePeriodFilter("none")
+                              setStartDate("")
+                              setEndDate("")
+                              setDateFilter("createdAt")
+                            }}
+                            className="h-6 w-6 p-0"
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
-
-              {/* Botón para limpiar filtros */}
-              {(recordTypeFilter !== "all" || statusFilter !== "all" || searchTerm || startDate || endDate) && (
-                <div className="flex justify-end">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setRecordTypeFilter("all")
-                      setStatusFilter("all")
-                      setDateFilter("createdAt")
-                      setSearchTerm("")
-                      setStartDate("")
-                      setEndDate("")
-                      setIsUsingPeriodFilter(false)
-                      setActivePeriodFilter("none")
-                      setSelectedRecordIds([])
-                    }}
-                    className="text-xs"
-                  >
-                    Limpiar todos los filtros
-                  </Button>
-                </div>
-              )}
+              </div>
             </div>
 
             {/* Información de selección múltiple */}

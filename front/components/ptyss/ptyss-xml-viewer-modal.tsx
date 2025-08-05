@@ -1,35 +1,54 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Copy, Download, Send, CheckCircle, AlertTriangle, Code, Eye } from "lucide-react"
+import { Copy, Download, Send, CheckCircle, AlertTriangle, FileText, Info, ScrollText } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { saveAs } from "file-saver"
-import { generateXmlFileName, sendXmlToSap, debugFtpAuth } from "@/lib/xml-generator"
+import { generateXmlFileName, sendXmlToSap, markXmlAsSentToSapSimple } from "@/lib/xml-generator"
 
 interface PTYSSXmlViewerModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   invoice: any
+  onXmlSentToSap?: () => void // Callback para notificar al padre que se envió a SAP
 }
 
 export function PTYSSXmlViewerModal({ 
   open, 
   onOpenChange, 
-  invoice 
+  invoice,
+  onXmlSentToSap 
 }: PTYSSXmlViewerModalProps) {
   const { toast } = useToast()
   const [isSendingToSap, setIsSendingToSap] = useState(false)
   const [sapLogs, setSapLogs] = useState<any[]>([])
   const [showSapLogs, setShowSapLogs] = useState(false)
-  const [isDebugging, setIsDebugging] = useState(false)
+  // Estado local para manejar inmediatamente el estado "enviado a SAP"
+  const [localSentToSap, setLocalSentToSap] = useState<boolean | null>(null)
+  const [localSentToSapAt, setLocalSentToSapAt] = useState<string | null>(null)
 
+  // Resetear estado local cuando cambie el invoice (ANTES del return condicional)
+  useEffect(() => {
+    if (invoice?.id) {
+      setLocalSentToSap(null)
+      setLocalSentToSapAt(null)
+      setSapLogs([])
+      setShowSapLogs(false)
+    }
+  }, [invoice?.id])
+
+  // Return condicional DESPUÉS de todos los hooks
   if (!invoice || !invoice.xmlData) return null
 
-  const { xml, isValid, generatedAt } = invoice.xmlData
+  const { xml, isValid, generatedAt, sentToSap, sentToSapAt } = invoice.xmlData
+
+  // Usar el estado local si está disponible, sino usar los datos del invoice
+  const effectiveSentToSap = localSentToSap !== null ? localSentToSap : sentToSap
+  const effectiveSentToSapAt = localSentToSapAt || sentToSapAt
 
   // Función para copiar XML al portapapeles
   const handleCopyXml = async () => {
@@ -76,10 +95,42 @@ export function PTYSSXmlViewerModal({
       setSapLogs(result.logs || [])
       
       if (result.success) {
-        toast({
-          title: "XML enviado exitosamente",
-          description: `Archivo ${fileName} enviado a SAP`,
-        })
+        // Marcar como enviado a SAP usando endpoint específico (versión robusta)
+        try {
+          console.log("🔍 Marcando XML como enviado a SAP (versión robusta)...")
+          const markResult = await markXmlAsSentToSapSimple(invoice.id)
+          console.log("✅ Estado actualizado exitosamente:", markResult)
+          
+          // Actualizar estado local inmediatamente para UI responsive
+          setLocalSentToSap(true)
+          setLocalSentToSapAt(markResult.sentToSapAt)
+          
+          // Notificar al componente padre para que actualice su estado
+          if (onXmlSentToSap) {
+            console.log("🔄 Notificando al componente padre...")
+            onXmlSentToSap()
+          }
+          
+          toast({
+            title: "XML enviado exitosamente",
+            description: `Archivo ${fileName} enviado a SAP (${markResult.strategy || 'estrategia no especificada'})`,
+          })
+          
+          // NO cerrar el modal automáticamente para que el usuario vea el cambio
+          console.log("✅ Estado local actualizado - UI debería mostrar 'Enviado a SAP'")
+        } catch (updateError: any) {
+          console.error("❌ Error al actualizar estado de envío:", updateError)
+          console.error("❌ Detalles del error:", {
+            errorMessage: updateError.message,
+            invoiceId: invoice.id,
+            xmlDataOriginal: invoice.xmlData
+          })
+          toast({
+            title: "XML enviado pero error al actualizar estado",
+            description: "El XML se envió correctamente pero hubo un error al guardar el estado. Revisa los logs del servidor.",
+            variant: "destructive"
+          })
+        }
       } else {
         throw new Error(result.message || "Error al enviar XML")
       }
@@ -103,50 +154,7 @@ export function PTYSSXmlViewerModal({
     }
   }
 
-  // Función para debug de autenticación FTP
-  const handleDebugAuth = async () => {
-    setIsDebugging(true)
-    setSapLogs([])
-    setShowSapLogs(true)
-    
-    try {
-      console.log("🔍 Iniciando debug de autenticación FTP...")
-      const result = await debugFtpAuth()
-      
-      console.log("📋 Resultado del debug:", result)
-      setSapLogs(result.logs || [])
-      
-      if (result.success) {
-        toast({
-          title: "Debug completado",
-          description: `Resultado: ${result.authResult}`,
-        })
-      } else {
-        toast({
-          title: "Debug fallido",
-          description: result.message || "No se pudo autenticar",
-          variant: "destructive"
-        })
-      }
-      
-    } catch (error: any) {
-      console.error("❌ Error en debug:", error)
-      setSapLogs(prev => [...prev, {
-        timestamp: new Date().toISOString(),
-        level: 'error',
-        message: `Error en debug: ${error.message}`,
-        details: error
-      }])
-      
-      toast({
-        title: "Error en debug",
-        description: error.message || "Error al ejecutar debug",
-        variant: "destructive"
-      })
-    } finally {
-      setIsDebugging(false)
-    }
-  }
+
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('es-ES')
@@ -157,7 +165,7 @@ export function PTYSSXmlViewerModal({
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Code className="h-5 w-5" />
+            <FileText className="h-5 w-5" />
             XML SAP - {invoice.invoiceNumber}
           </DialogTitle>
         </DialogHeader>
@@ -167,14 +175,31 @@ export function PTYSSXmlViewerModal({
           <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 p-4 rounded-lg">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-green-900 flex items-center gap-2">
-                <Eye className="h-4 w-4" /> Información del XML
+                <Info className="h-4 w-4" /> Información del XML
               </h3>
-              <Badge 
-                variant={isValid ? "default" : "destructive"}
-                className="text-xs"
-              >
-                {isValid ? "✓ Válido" : "⚠ Con errores"}
-              </Badge>
+              <div className="flex gap-2">
+                <Badge 
+                  variant={isValid ? "default" : "destructive"}
+                  className="text-xs"
+                >
+                  {isValid ? "✓ Válido" : "⚠ Con errores"}
+                </Badge>
+                {effectiveSentToSap ? (
+                  <Badge 
+                    variant="secondary"
+                    className="text-xs bg-blue-100 text-blue-800 border-blue-200"
+                  >
+                    ✓ Enviado a SAP
+                  </Badge>
+                ) : (
+                  <Badge 
+                    variant="secondary"
+                    className="text-xs bg-orange-100 text-orange-800 border-orange-200"
+                  >
+                    ⏳ Pendiente de envío a SAP
+                  </Badge>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
@@ -189,6 +214,12 @@ export function PTYSSXmlViewerModal({
                 <span className="font-medium text-green-800">Generado:</span>
                 <span className="ml-2">{formatDate(generatedAt)}</span>
               </div>
+              {effectiveSentToSapAt && (
+                <div>
+                  <span className="font-medium text-green-800">Enviado a SAP:</span>
+                  <span className="ml-2">{formatDate(effectiveSentToSapAt)}</span>
+                </div>
+              )}
               <div>
                 <span className="font-medium text-green-800">Total:</span>
                 <span className="ml-2">${invoice.totalAmount.toFixed(2)}</span>
@@ -237,6 +268,34 @@ export function PTYSSXmlViewerModal({
                   <Download className="h-4 w-4" />
                   Descargar
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSendToSap}
+                  disabled={isSendingToSap || !isValid || effectiveSentToSap}
+                  className={`flex items-center gap-2 ${
+                    effectiveSentToSap 
+                      ? 'text-green-600 border-green-600 bg-green-50' 
+                      : 'text-blue-600 border-blue-600 hover:bg-blue-50'
+                  }`}
+                >
+                  {isSendingToSap ? (
+                    <>
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                      Enviando...
+                    </>
+                  ) : effectiveSentToSap ? (
+                    <>
+                      <CheckCircle className="h-3 w-3" />
+                      Enviado
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-3 w-3" />
+                      Enviar a SAP
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
             <div className="border rounded-md p-3 bg-gray-50 min-h-[300px] max-h-[400px] overflow-auto">
@@ -250,7 +309,7 @@ export function PTYSSXmlViewerModal({
           {showSapLogs && sapLogs.length > 0 && (
             <div className="mt-4 p-4 border rounded-lg bg-gray-50">
               <h4 className="font-semibold mb-3 text-sm flex items-center gap-2">
-                <Eye className="h-4 w-4" />
+                <ScrollText className="h-4 w-4" />
                 Logs de envío a SAP
               </h4>
               <div className="max-h-60 overflow-y-auto space-y-2">
@@ -269,7 +328,7 @@ export function PTYSSXmlViewerModal({
                         log.level === 'success' ? 'bg-green-200' :
                         'bg-blue-200'
                       }`}>
-                        {log.level.toUpperCase()}
+                        {(log.level || 'info').toUpperCase()}
                       </span>
                     </div>
                     <div className="mt-1">{log.message}</div>
@@ -288,53 +347,13 @@ export function PTYSSXmlViewerModal({
           )}
 
           {/* Acciones */}
-          <div className="flex justify-between items-center pt-4 border-t">
+          <div className="flex justify-center pt-4 border-t">
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
             >
               Cerrar
             </Button>
-            
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={handleDebugAuth}
-                disabled={isDebugging || isSendingToSap}
-                className="flex items-center gap-2 text-orange-600 border-orange-600 hover:bg-orange-50"
-              >
-                {isDebugging ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600"></div>
-                    Debugeando...
-                  </>
-                ) : (
-                  <>
-                    <Eye className="h-4 w-4" />
-                    Debug Auth
-                  </>
-                )}
-              </Button>
-              
-              <Button
-                variant="outline"
-                onClick={handleSendToSap}
-                disabled={isSendingToSap || !isValid}
-                className="flex items-center gap-2 text-blue-600 border-blue-600 hover:bg-blue-50"
-              >
-                {isSendingToSap ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                    Enviando...
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />
-                    Enviar a SAP
-                  </>
-                )}
-              </Button>
-            </div>
           </div>
         </div>
       </DialogContent>

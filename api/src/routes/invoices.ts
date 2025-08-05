@@ -36,4 +36,13 @@ router.post('/test-ftp-connection', jwtUtils, catchedAsync(invoicesControllers.t
 // Debug de autenticación FTP
 router.post('/debug-ftp-auth', jwtUtils, catchedAsync(invoicesControllers.debugFtpAuth));
 
+// Diagnóstico híbrido FTP/SFTP
+router.post('/diagnose-ftp-server', jwtUtils, catchedAsync(invoicesControllers.diagnoseFtpServer));
+
+// Marcar XML como enviado a SAP
+router.patch('/:id/mark-xml-sent-to-sap', jwtUtils, catchedAsync(invoicesControllers.markXmlAsSentToSap));
+
+// Marcar XML como enviado a SAP (versión simple con múltiples estrategias)
+router.patch('/:id/mark-xml-sent-to-sap-simple', jwtUtils, catchedAsync(invoicesControllers.markXmlAsSentToSapSimple));
+
 export default router;
