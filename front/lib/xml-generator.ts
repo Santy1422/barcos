@@ -233,7 +233,6 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
   }, 0)
 
   const xmlObject = {
-    _declaration: { _attributes: { version: "1.0", encoding: "utf-8" } },
     "LogisticARInvoices": {
       _attributes: {
         "xmlns": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00",
@@ -318,7 +317,6 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
   }, 0)
 
   const xmlObject = {
-    _declaration: { _attributes: { version: "1.0", encoding: "UTF-8" } },
     "LogisticARInvoices": {
       _attributes: {
         "xmlns": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00",
@@ -437,10 +435,6 @@ export function validateXMLForSAP(xmlString: string): { isValid: boolean; errors
   
   try {
     // Verificar que el XML es válido
-    if (!xmlString.includes('<?xml')) {
-      errors.push("El XML no tiene declaración válida")
-    }
-    
     if (!xmlString.includes('LogisticARInvoices')) {
       errors.push("Falta el elemento raíz LogisticARInvoices")
     }
@@ -633,4 +627,108 @@ export function generateTestXML(): string {
   }
   
   return generateInvoiceXML(testInvoice)
+}
+
+// Función para probar conexión SFTP
+export async function testSftpConnection() {
+  try {
+    const response = await fetch('/api/invoices/test-sftp-connection', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+
+    const result = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(result.message || 'Error al probar conexión SFTP')
+    }
+
+    return result
+  } catch (error: any) {
+    console.error('Error al probar conexión SFTP:', error)
+    throw error
+  }
+}
+
+// Función para probar conexión FTP tradicional
+export async function testFtpTraditional() {
+  try {
+    const response = await fetch('/api/invoices/test-ftp-traditional', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+
+    const result = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(result.message || 'Error al probar conexión FTP tradicional')
+    }
+
+    return result
+  } catch (error: any) {
+    console.error('Error al probar conexión FTP tradicional:', error)
+    throw error
+  }
+}
+
+// Función para enviar XML a SAP vía SFTP
+export async function sendXmlToSapSftp(invoiceId: string, xmlContent: string, fileName: string) {
+  try {
+    const response = await fetch(`/api/invoices/${invoiceId}/send-xml-to-sap-sftp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({
+        xmlContent,
+        fileName
+      })
+    })
+
+    const result = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(result.message || 'Error al enviar XML a SAP via SFTP')
+    }
+
+    return result
+  } catch (error: any) {
+    console.error('Error al enviar XML a SAP via SFTP:', error)
+    throw error
+  }
+}
+
+// Función para enviar XML a SAP vía FTP tradicional
+export async function sendXmlToSapFtp(invoiceId: string, xmlContent: string, fileName: string) {
+  try {
+    const response = await fetch(`/api/invoices/${invoiceId}/send-xml-to-sap-ftp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({
+        xmlContent,
+        fileName
+      })
+    })
+
+    const result = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(result.message || 'Error al enviar XML a SAP via FTP')
+    }
+
+    return result
+  } catch (error: any) {
+    console.error('Error al enviar XML a SAP via FTP:', error)
+    throw error
+  }
 }

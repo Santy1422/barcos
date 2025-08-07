@@ -21,7 +21,7 @@ import { FileText,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { PTYSSRecordsViewModal } from "./ptyss-records-view-modal"
-import { generatePTYSSInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSap, type PTYSSInvoiceForXml } from "@/lib/xml-generator"
+import { generatePTYSSInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSapFtp, type PTYSSInvoiceForXml } from "@/lib/xml-generator"
 import { useAppSelector } from "@/lib/hooks"
 import { selectAllIndividualRecords } from "@/lib/features/records/recordsSlice"
 import { saveAs } from "file-saver"
@@ -186,9 +186,9 @@ export function PTYSSFacturacionModal({
     
     try {
       const fileName = generateXmlFileName()
-      console.log("🚀 Enviando XML a SAP:", { invoiceId, fileName })
+      console.log("🚀 Enviando XML a SAP vía FTP:", { invoiceId, fileName })
       
-      const result = await sendXmlToSap(invoiceId, xmlContent, fileName)
+      const result = await sendXmlToSapFtp(invoiceId, xmlContent, fileName)
       
       console.log("✅ Respuesta de SAP:", result)
       setSapLogs(result.logs || [])
@@ -196,7 +196,7 @@ export function PTYSSFacturacionModal({
       if (result.success) {
         toast({
           title: "XML enviado exitosamente",
-          description: `Archivo ${fileName} enviado a SAP`,
+          description: `Archivo ${fileName} enviado a SAP vía FTP`,
         })
       } else {
         throw new Error(result.message || "Error al enviar XML")
@@ -275,7 +275,7 @@ export function PTYSSFacturacionModal({
         console.log("📤 Enviando a SAP antes de facturar para marcar estado...")
         try {
           const fileName = generateXmlFileName()
-          const result = await sendXmlToSap(invoice.id, xmlData.xml, fileName)
+          const result = await sendXmlToSapFtp(invoice.id, xmlData.xml, fileName)
           
           if (result.success) {
             // Marcar el xmlData como enviado a SAP

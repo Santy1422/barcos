@@ -1,13 +1,13 @@
-import { Client as FtpClient } from 'basic-ftp';
 import { Request, Response } from 'express';
+import * as ftp from 'basic-ftp';
 import { Readable } from 'stream';
-import { getFtpConfigWithDebug } from '../../config/ftpConfig';
+import { getSftpConfigWithDebug } from '../../config/sftpConfig';
 
 export const testFtpConnection = async (req: Request, res: Response) => {
   try {
-    console.log('\n🔧 === TEST DE CONEXIÓN FTP ===');
+    console.log('\n🔧 === TEST DE CONEXIÓN FTP TRADICIONAL ===');
     
-    const ftpConfig = getFtpConfigWithDebug();
+    const sftpConfig = getSftpConfigWithDebug();
     const logs: string[] = [];
     
     const addLog = (message: string) => {
@@ -15,173 +15,157 @@ export const testFtpConnection = async (req: Request, res: Response) => {
       console.log(message);
     };
 
-    addLog('Iniciando test de conexión FTP...');
-    addLog(`Host: ${ftpConfig.host}:21`);
-    addLog(`Usuario: ${ftpConfig.user}`);
-    addLog(`Directorio destino: ${ftpConfig.path}`);
+    addLog('Iniciando test de conexión FTP tradicional...');
+    addLog(`Host: ${sftpConfig.host}:21 (puerto FTP estándar)`);
+    addLog(`Usuario: ${sftpConfig.username}`);
+    addLog(`Directorio destino: ${sftpConfig.path}`);
+    addLog(`Protocolo: FTP tradicional sobre puerto 21`);
 
-    const client = new FtpClient();
-    client.ftp.verbose = true;
+    const client = new ftp.Client();
+    client.ftp.verbose = true; // Habilitar logs detallados
     
     let connectionSuccessful = false;
     let directoryAccessible = false;
     let canWriteToDirectory = false;
+    let testFileCreated = false;
 
     try {
-      // Test 1: Conexión básica
-      addLog('\n=== TEST 1: CONEXIÓN BÁSICA ===');
-      addLog('Intentando conectar al servidor FTP...');
-      
+      // Conectar al servidor FTP
+      addLog(`Conectando a ${sftpConfig.host}:21...`);
       await client.access({
-        host: ftpConfig.host,
-        user: ftpConfig.user,
-        password: ftpConfig.password,
-        secure: false
+        host: sftpConfig.host,
+        port: 21, // Puerto FTP estándar
+        user: sftpConfig.username,
+        password: sftpConfig.password,
+        secure: false // FTP no seguro
       });
       
-      connectionSuccessful = true;
       addLog('✅ Conexión FTP establecida exitosamente');
+      connectionSuccessful = true;
 
-      // Test 2: Listar directorio raíz
-      addLog('\n=== TEST 2: NAVEGACIÓN ===');
-      addLog('Listando directorio raíz...');
-      
+      // Verificar si el directorio de destino existe
       try {
-        const rootList = await client.list('/');
-        addLog(`✅ Directorio raíz listado exitosamente (${rootList.length} elementos)`);
-        
-        // Mostrar primeros elementos
-        const sampleItems = rootList.slice(0, 5);
-        sampleItems.forEach(item => {
-          addLog(`   - ${item.name} (${item.type})`);
-        });
-        if (rootList.length > 5) {
-          addLog(`   ... y ${rootList.length - 5} elementos más`);
-        }
-      } catch (listError: any) {
-        addLog(`⚠️  Error al listar directorio raíz: ${listError.message}`);
-      }
-
-      // Test 3: Acceso al directorio de destino
-      addLog('\n=== TEST 3: DIRECTORIO DE DESTINO ===');
-      addLog(`Verificando acceso a: ${ftpConfig.path}`);
-      
-      try {
-        await client.cd(ftpConfig.path);
-        addLog('✅ Directorio de destino accesible');
+        await client.cd(sftpConfig.path);
+        addLog('✅ Directorio de destino verificado');
         directoryAccessible = true;
+      } catch (cdError: any) {
+        addLog(`⚠️ Directorio de destino no existe: ${cdError.message}`);
+        addLog('Intentando crear directorio...');
         
         try {
-          const targetList = await client.list();
-          addLog(`✅ Directorio de destino listado exitosamente (${targetList.length} elementos)`);
-          
-          // Mostrar algunos archivos del directorio
-          const files = targetList.filter(item => item.type === 1); // tipo 1 = archivo
-          const dirs = targetList.filter(item => item.type === 2);  // tipo 2 = directorio
-          
-          addLog(`   - Archivos: ${files.length}`);
-          addLog(`   - Directorios: ${dirs.length}`);
-          
-          if (files.length > 0) {
-            addLog('   Archivos recientes:');
-            files.slice(0, 3).forEach(file => {
-              addLog(`     - ${file.name} (${file.size} bytes)`);
-            });
-          }
-          
-        } catch (targetListError: any) {
-          addLog(`⚠️  Error al listar contenido del directorio: ${targetListError.message}`);
-        }
-        
-      } catch (pathError: any) {
-        addLog(`❌ Error al acceder al directorio de destino: ${pathError.message}`);
-      }
-
-      // Test 4: Permisos de escritura (solo si el directorio es accesible)
-      if (directoryAccessible) {
-        addLog('\n=== TEST 4: PERMISOS DE ESCRITURA ===');
-        addLog('Probando permisos de escritura...');
-        
-        const testFileName = `test_write_${Date.now()}.txt`;
-        const testContent = `Test de escritura FTP - ${new Date().toISOString()}`;
-        
-        try {
-          // Intentar crear un archivo de prueba
-          const testStream = new Readable();
-          testStream.push(testContent);
-          testStream.push(null); // Indicar fin del stream
-          
-          await client.uploadFrom(testStream, testFileName);
-          addLog('✅ Archivo de prueba creado exitosamente');
-          
-          // Verificar que el archivo existe
-          const fileList = await client.list();
-          const testFile = fileList.find(file => file.name === testFileName);
-          
-          if (testFile) {
-            addLog('✅ Archivo de prueba verificado');
-            canWriteToDirectory = true;
-            
-            // Limpiar - eliminar archivo de prueba
-            try {
-              await client.remove(testFileName);
-              addLog('✅ Archivo de prueba eliminado (limpieza exitosa)');
-            } catch (deleteError: any) {
-              addLog(`⚠️  No se pudo eliminar archivo de prueba: ${deleteError.message}`);
+          await client.ensureDir(sftpConfig.path);
+          addLog('✅ Directorio de destino creado exitosamente');
+          directoryAccessible = true;
+        } catch (mkdirError: any) {
+          addLog(`❌ No se pudo crear el directorio: ${mkdirError.message}`);
+          client.close();
+          return res.json({
+            success: false,
+            message: 'No se pudo acceder al directorio de destino',
+            logs,
+            details: {
+              connectionSuccessful,
+              directoryAccessible: false,
+              canWriteToDirectory: false,
+              testFileCreated: false
             }
-          } else {
-            addLog('❌ El archivo de prueba no se encontró después de crearlo');
-          }
-        } catch (writeError: any) {
-          addLog(`❌ Error al probar escritura: ${writeError.message}`);
-          addLog('   Verificar permisos de escritura en el directorio');
+          });
         }
       }
 
-    } catch (error: any) {
-      addLog(`❌ Error de conexión: ${error.message}`);
-      if (error.code) addLog(`   Código de error: ${error.code}`);
-    } finally {
+      // Probar escritura de archivo
+      const testFileName = `test_${Date.now()}.txt`;
+      const testContent = 'Test file created by FTP connection test';
+      const testPath = `${sftpConfig.path}/${testFileName}`;
+      
+      addLog(`Probando escritura con archivo: ${testFileName}`);
+      addLog(`Ruta completa: ${testPath}`);
+
       try {
+        // Crear un buffer con el contenido de prueba
+        const buffer = Buffer.from(testContent, 'utf8');
+        
+        // Convertir buffer a stream legible
+        const readableStream = Readable.from(buffer);
+        
+        // Subir el archivo
+        await client.uploadFrom(readableStream, testFileName);
+        addLog('✅ Archivo de prueba creado exitosamente');
+        canWriteToDirectory = true;
+
+        // Verificar que el archivo se creó
+        try {
+          const fileList = await client.list();
+          const uploadedFile = fileList.find(file => file.name === testFileName);
+          if (uploadedFile) {
+            addLog(`✅ Archivo verificado - Tamaño: ${uploadedFile.size} bytes`);
+            testFileCreated = true;
+          } else {
+            addLog('⚠️ No se pudo verificar el archivo creado');
+          }
+        } catch (statError: any) {
+          addLog(`⚠️ No se pudo verificar el archivo creado: ${statError.message}`);
+        }
+
+        // Limpiar archivo de prueba
+        try {
+          await client.remove(testFileName);
+          addLog('✅ Archivo de prueba eliminado');
+        } catch (unlinkError: any) {
+          addLog(`⚠️ No se pudo eliminar archivo de prueba: ${unlinkError.message}`);
+        }
+
         client.close();
-        addLog('\n✅ Conexión FTP cerrada');
-      } catch (closeError: any) {
-        addLog(`⚠️  Error al cerrar conexión: ${closeError.message}`);
+        
+        return res.json({
+          success: true,
+          message: 'Conexión FTP exitosa - Todos los tests pasaron',
+          logs,
+          details: {
+            connectionSuccessful,
+            directoryAccessible,
+            canWriteToDirectory,
+            testFileCreated
+          }
+        });
+
+      } catch (writeError: any) {
+        addLog(`❌ Error al escribir archivo de prueba: ${writeError.message}`);
+        client.close();
+        return res.json({
+          success: false,
+          message: 'No se pudo escribir en el directorio de destino',
+          logs,
+          details: {
+            connectionSuccessful,
+            directoryAccessible,
+            canWriteToDirectory: false,
+            testFileCreated: false
+          }
+        });
       }
+
+    } catch (connectionError: any) {
+      addLog(`❌ Error de conexión FTP: ${connectionError.message}`);
+      addLog(`❌ Detalles del error: ${JSON.stringify(connectionError)}`);
+      client.close();
+      
+      return res.json({
+        success: false,
+        message: 'Error de conexión FTP',
+        logs,
+        details: {
+          connectionSuccessful: false,
+          directoryAccessible: false,
+          canWriteToDirectory: false,
+          testFileCreated: false
+        },
+        error: {
+          name: connectionError.name,
+          message: connectionError.message
+        }
+      });
     }
-
-    // Resumen de resultados
-    addLog('\n=== RESUMEN DE PRUEBAS ===');
-    addLog(`Conexión: ${connectionSuccessful ? '✅ EXITOSA' : '❌ FALLIDA'}`);
-    addLog(`Directorio destino: ${directoryAccessible ? '✅ ACCESIBLE' : '❌ NO ACCESIBLE'}`);
-    addLog(`Permisos de escritura: ${canWriteToDirectory ? '✅ PERMITIDOS' : '❌ NO PERMITIDOS'}`);
-
-    const overallSuccess = connectionSuccessful && directoryAccessible && canWriteToDirectory;
-    
-    if (overallSuccess) {
-      addLog('\n🎉 ¡TODAS LAS PRUEBAS EXITOSAS! El sistema está listo para enviar archivos.');
-    } else {
-      addLog('\n⚠️  Algunas pruebas fallaron. Verificar configuración antes de usar en producción.');
-    }
-
-    res.json({
-      success: overallSuccess,
-      message: overallSuccess 
-        ? 'Todas las pruebas FTP exitosas' 
-        : 'Algunas pruebas FTP fallaron',
-      logs,
-      results: {
-        connection: connectionSuccessful,
-        directoryAccess: directoryAccessible,
-        writePermissions: canWriteToDirectory
-      },
-      config: {
-        host: ftpConfig.host,
-        port: 21,
-        user: ftpConfig.user,
-        path: ftpConfig.path
-      }
-    });
 
   } catch (error: any) {
     console.error('❌ Error en testFtpConnection:', error);
@@ -189,6 +173,7 @@ export const testFtpConnection = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: error.message || "Error interno del servidor",
+      logs: [],
       error: {
         name: error.name,
         message: error.message

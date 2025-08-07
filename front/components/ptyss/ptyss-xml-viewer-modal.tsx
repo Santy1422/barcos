@@ -7,8 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Copy, Download, Send, CheckCircle, AlertTriangle, FileText, Info, ScrollText } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { saveAs } from "file-saver"
-import { generateXmlFileName, sendXmlToSap, markXmlAsSentToSapSimple } from "@/lib/xml-generator"
+import saveAs from "file-saver"
+import { generateXmlFileName, sendXmlToSapFtp, testSftpConnection, testFtpTraditional } from "@/lib/xml-generator"
 
 interface PTYSSXmlViewerModalProps {
   open: boolean
@@ -30,25 +30,47 @@ export function PTYSSXmlViewerModal({
   // Estado local para manejar inmediatamente el estado "enviado a SAP"
   const [localSentToSap, setLocalSentToSap] = useState<boolean | null>(null)
   const [localSentToSapAt, setLocalSentToSapAt] = useState<string | null>(null)
+  const [localSapFileName, setLocalSapFileName] = useState<string | null>(null)
+  // Estado para protocolo (FTP por defecto)
+  const [useSftp, setUseSftp] = useState(false)
+  const [isTestingSftp, setIsTestingSftp] = useState(false)
+  const [isTestingFtp, setIsTestingFtp] = useState(false)
 
   // Resetear estado local cuando cambie el invoice (ANTES del return condicional)
   useEffect(() => {
     if (invoice?.id) {
       setLocalSentToSap(null)
       setLocalSentToSapAt(null)
+      setLocalSapFileName(null)
       setSapLogs([])
       setShowSapLogs(false)
+      setUseSftp(false)
+      setIsTestingSftp(false)
+      setIsTestingFtp(false)
     }
   }, [invoice?.id])
 
   // Return condicional DESPUÉS de todos los hooks
   if (!invoice || !invoice.xmlData) return null
 
-  const { xml, isValid, generatedAt, sentToSap, sentToSapAt } = invoice.xmlData
+  const { xml, isValid, generatedAt } = invoice.xmlData
 
   // Usar el estado local si está disponible, sino usar los datos del invoice
-  const effectiveSentToSap = localSentToSap !== null ? localSentToSap : sentToSap
-  const effectiveSentToSapAt = localSentToSapAt || sentToSapAt
+  // Los datos de SAP ahora están en campos directos del invoice, no en xmlData
+  const effectiveSentToSap = localSentToSap !== null ? localSentToSap : invoice.sentToSap
+  const effectiveSentToSapAt = localSentToSapAt || invoice.sentToSapAt
+  
+  // Obtener el nombre del archivo que se usó para enviar a SAP
+  const sapFileName = localSapFileName || invoice.sapFileName
+
+  // Debug: Log para verificar el estado
+  console.log("🔍 PTYSSXmlViewerModal - Estado SAP:", {
+    localSentToSap,
+    invoiceSentToSap: invoice.sentToSap,
+    effectiveSentToSap,
+    sapFileName: invoice.sapFileName,
+    localSapFileName
+  })
 
   // Función para copiar XML al portapapeles
   const handleCopyXml = async () => {
@@ -70,13 +92,101 @@ export function PTYSSXmlViewerModal({
   // Función para descargar XML
   const handleDownloadXml = () => {
     const blob = new Blob([xml], { type: "application/xml;charset=utf-8" })
-    const filename = generateXmlFileName()
     
-    saveAs(blob, filename)
+    // Usar el nombre de SAP si existe, sino generar uno nuevo para la descarga
+    const downloadFileName = sapFileName || generateXmlFileName()
+    
+    saveAs(blob, downloadFileName)
     toast({ 
       title: "XML descargado", 
-      description: `El archivo XML ha sido descargado como ${filename}` 
+      description: `El archivo XML ha sido descargado como ${downloadFileName}` 
     })
+  }
+
+  // Función para probar conexión SFTP
+  const handleTestSftp = async () => {
+    setIsTestingSftp(true)
+    setSapLogs([])
+    setShowSapLogs(true)
+    
+    try {
+      console.log("🔧 Probando conexión SFTP...")
+      
+      const result = await testSftpConnection()
+      
+      console.log("✅ Resultado de test SFTP:", result)
+      setSapLogs(result.logs || [])
+      
+      if (result.success) {
+        toast({
+          title: "Conexión SFTP exitosa",
+          description: "La conexión SFTP está funcionando correctamente. Puedes usar SFTP para enviar XML.",
+        })
+        setUseSftp(true)
+      } else {
+        toast({
+          title: "Error en conexión SFTP",
+          description: result.message || "No se pudo establecer conexión SFTP",
+          variant: "destructive"
+        })
+      }
+      
+    } catch (error: any) {
+      console.error("❌ Error al probar SFTP:", error)
+      setSapLogs(prev => [...prev, {
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        message: `Error: ${error.message}`,
+        details: error
+      }])
+      
+      toast({
+        title: "Error al probar SFTP",
+        description: error.message || "Error al conectar con SFTP",
+        variant: "destructive"
+      })
+    } finally {
+      setIsTestingSftp(false)
+    }
+  }
+
+  // Función para probar conexión FTP tradicional
+  const handleTestFtp = async () => {
+    setIsTestingFtp(true)
+    setSapLogs([])
+    setShowSapLogs(true)
+    
+    try {
+      console.log("🔧 Probando conexión FTP tradicional...")
+      
+      const result = await testFtpTraditional()
+      
+      console.log("✅ Resultado de test FTP:", result)
+      setSapLogs(result.logs || [])
+      
+      if (result.success) {
+        toast({
+          title: "✅ Conexión FTP exitosa",
+          description: "El servidor FTP tradicional está funcionando correctamente.",
+        })
+        setUseSftp(false)
+      } else {
+        toast({
+          title: "❌ Error en conexión FTP",
+          description: result.message || "No se pudo establecer conexión FTP.",
+          variant: "destructive"
+        })
+      }
+    } catch (error: any) {
+      console.error("❌ Error al probar FTP:", error)
+      toast({
+        title: "❌ Error al probar FTP",
+        description: error.message || "Error inesperado al probar conexión FTP.",
+        variant: "destructive"
+      })
+    } finally {
+      setIsTestingFtp(false)
+    }
   }
 
   // Función para enviar a SAP
@@ -86,51 +196,45 @@ export function PTYSSXmlViewerModal({
     setShowSapLogs(true)
     
     try {
-      const fileName = generateXmlFileName()
-      console.log("🚀 Enviando XML a SAP:", { invoiceId: invoice.id, fileName })
+      // Generar nombre de archivo solo si no existe uno previo
+      const fileNameToSend = sapFileName || generateXmlFileName()
       
-      const result = await sendXmlToSap(invoice.id, xml, fileName)
+      console.log("🚀 Enviando XML a SAP vía FTP:", { 
+        invoiceId: invoice.id, 
+        fileName: fileNameToSend
+      })
+      
+      // Usar FTP tradicional (método que funciona)
+      const result = await sendXmlToSapFtp(invoice.id, xml, fileNameToSend)
       
       console.log("✅ Respuesta de SAP:", result)
       setSapLogs(result.logs || [])
       
       if (result.success) {
-        // Marcar como enviado a SAP usando endpoint específico (versión robusta)
-        try {
-          console.log("🔍 Marcando XML como enviado a SAP (versión robusta)...")
-          const markResult = await markXmlAsSentToSapSimple(invoice.id)
-          console.log("✅ Estado actualizado exitosamente:", markResult)
-          
-          // Actualizar estado local inmediatamente para UI responsive
-          setLocalSentToSap(true)
-          setLocalSentToSapAt(markResult.sentToSapAt)
-          
-          // Notificar al componente padre para que actualice su estado
-          if (onXmlSentToSap) {
-            console.log("🔄 Notificando al componente padre...")
-            onXmlSentToSap()
-          }
-          
-          toast({
-            title: "XML enviado exitosamente",
-            description: `Archivo ${fileName} enviado a SAP (${markResult.strategy || 'estrategia no especificada'})`,
-          })
-          
-          // NO cerrar el modal automáticamente para que el usuario vea el cambio
-          console.log("✅ Estado local actualizado - UI debería mostrar 'Enviado a SAP'")
-        } catch (updateError: any) {
-          console.error("❌ Error al actualizar estado de envío:", updateError)
-          console.error("❌ Detalles del error:", {
-            errorMessage: updateError.message,
-            invoiceId: invoice.id,
-            xmlDataOriginal: invoice.xmlData
-          })
-          toast({
-            title: "XML enviado pero error al actualizar estado",
-            description: "El XML se envió correctamente pero hubo un error al guardar el estado. Revisa los logs del servidor.",
-            variant: "destructive"
-          })
+        // Actualizar estado local inmediatamente para UI responsive
+        setLocalSentToSap(true)
+        setLocalSentToSapAt(new Date().toISOString())
+        setLocalSapFileName(fileNameToSend)
+        
+        console.log("🔄 Estado local actualizado:", {
+          localSentToSap: true,
+          localSentToSapAt: new Date().toISOString(),
+          localSapFileName: fileNameToSend
+        })
+        
+        // Notificar al componente padre para que actualice su estado
+        if (onXmlSentToSap) {
+          console.log("🔄 Notificando al componente padre...")
+          onXmlSentToSap()
         }
+        
+        toast({
+          title: "XML enviado exitosamente",
+          description: `Archivo ${fileNameToSend} enviado a SAP vía FTP correctamente.`,
+        })
+        
+        // NO cerrar el modal automáticamente para que el usuario vea el cambio
+        console.log("✅ Estado local actualizado - UI debería mostrar 'Enviado a SAP'")
       } else {
         throw new Error(result.message || "Error al enviar XML")
       }
@@ -153,8 +257,6 @@ export function PTYSSXmlViewerModal({
       setIsSendingToSap(false)
     }
   }
-
-
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('es-ES')
@@ -224,6 +326,12 @@ export function PTYSSXmlViewerModal({
                 <span className="font-medium text-green-800">Total:</span>
                 <span className="ml-2">${invoice.totalAmount.toFixed(2)}</span>
               </div>
+              {sapFileName && (
+                <div>
+                  <span className="font-medium text-green-800">Archivo XML:</span>
+                  <span className="ml-2 font-mono text-xs bg-white px-2 py-1 rounded border">{sapFileName}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -244,6 +352,8 @@ export function PTYSSXmlViewerModal({
               </AlertDescription>
             </Alert>
           )}
+
+
 
           {/* Contenido del XML */}
           <div className="space-y-3">
@@ -268,6 +378,54 @@ export function PTYSSXmlViewerModal({
                   <Download className="h-4 w-4" />
                   Descargar
                 </Button>
+                                        {/* Botones de test ocultos - descomentar si se necesitan para debugging
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleTestSftp}
+                          disabled={isTestingSftp}
+                          className={`flex items-center gap-2 ${
+                            useSftp
+                              ? 'text-purple-600 border-purple-600 bg-purple-50'
+                              : 'text-gray-600 border-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          {isTestingSftp ? (
+                            <>
+                              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-purple-600"></div>
+                              Probando...
+                            </>
+                          ) : (
+                            <>
+                              <Send className="h-3 w-3" />
+                              {useSftp ? 'SFTP ✓' : 'Probar SFTP'}
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleTestFtp}
+                          disabled={isTestingFtp}
+                          className={`flex items-center gap-2 ${
+                            !useSftp
+                              ? 'text-blue-600 border-blue-600 bg-blue-50'
+                              : 'text-gray-600 border-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          {isTestingFtp ? (
+                            <>
+                              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                              Probando...
+                            </>
+                          ) : (
+                            <>
+                              <Send className="h-3 w-3" />
+                              {!useSftp ? 'FTP ✓' : 'Probar FTP'}
+                            </>
+                          )}
+                        </Button>
+                        */}
                 <Button
                   variant="outline"
                   size="sm"

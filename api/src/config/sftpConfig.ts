@@ -15,33 +15,49 @@ export interface SftpConfig {
 
 // Configuración SFTP para SAP
 export const sapSftpConfig: SftpConfig = {
-  host: process.env.SAP_FTP_HOST || "ftp.msc.com",
-  username: process.env.SAP_FTP_USER || "SAP_PanamaTSG", 
-  password: process.env.SAP_FTP_PASSWORD || "6whLgP4RKRhnTFEfYPt0",
-  path: process.env.SAP_FTP_PATH || "/Test/Upload/SAP/001",
+  host: process.env.SAP_SFTP_HOST || process.env.SAP_FTP_HOST || "ftp.msc.com",
+  username: process.env.SAP_SFTP_USER || process.env.SAP_FTP_USER || "SAP_PanamaTSG", 
+  password: process.env.SAP_SFTP_PASSWORD || process.env.SAP_FTP_PASSWORD || "6whLgP4RKRhnTFEfYPt0",
+  path: process.env.SAP_SFTP_PATH || process.env.SAP_FTP_PATH || "/Test/Upload/SAP/001",
   port: process.env.SAP_SFTP_PORT ? parseInt(process.env.SAP_SFTP_PORT) : 22,
-  readyTimeout: 20000,
-  strictVendor: false
+  readyTimeout: process.env.SAP_SFTP_TIMEOUT ? parseInt(process.env.SAP_SFTP_TIMEOUT) : 20000,
+  strictVendor: process.env.SAP_SFTP_STRICT_VENDOR === 'true'
 };
 
 // Validar que las variables críticas estén configuradas
 export const validateSftpConfig = (): boolean => {
-  const requiredVars = ['SAP_FTP_HOST', 'SAP_FTP_USER', 'SAP_FTP_PASSWORD'];
-  const missingVars = requiredVars.filter(varName => !process.env[varName]);
+  // Priorizar variables SFTP específicas, luego fallback a FTP
+  const requiredVars = [
+    'SAP_SFTP_HOST', 'SAP_SFTP_USER', 'SAP_SFTP_PASSWORD', // SFTP específicas
+    'SAP_FTP_HOST', 'SAP_FTP_USER', 'SAP_FTP_PASSWORD'     // Fallback FTP
+  ];
   
-  if (missingVars.length > 0) {
-    console.warn('⚠️  Variables de entorno SFTP faltantes:', missingVars);
+  // Verificar si tenemos al menos un conjunto completo de credenciales
+  const hasSftpSpecific = process.env.SAP_SFTP_HOST && process.env.SAP_SFTP_USER && process.env.SAP_SFTP_PASSWORD;
+  const hasFtpFallback = process.env.SAP_FTP_HOST && process.env.SAP_FTP_USER && process.env.SAP_FTP_PASSWORD;
+  
+  if (!hasSftpSpecific && !hasFtpFallback) {
+    console.warn('⚠️  Variables de entorno SFTP/FTP faltantes');
     console.warn('⚠️  Usando valores por defecto (no recomendado para producción)');
     return false;
   }
   
-  console.log('✅ Configuración SFTP cargada desde variables de entorno');
+  if (hasSftpSpecific) {
+    console.log('✅ Configuración SFTP específica cargada desde variables de entorno');
+  } else {
+    console.log('✅ Configuración SFTP usando fallback FTP desde variables de entorno');
+  }
+  
   return true;
 };
 
 // Función para obtener configuración con logs de debug
 export const getSftpConfigWithDebug = () => {
   const isFromEnv = validateSftpConfig();
+  
+  // Determinar qué variables se están usando
+  const usingSftpSpecific = process.env.SAP_SFTP_HOST && process.env.SAP_SFTP_USER && process.env.SAP_SFTP_PASSWORD;
+  const usingFtpFallback = process.env.SAP_FTP_HOST && process.env.SAP_FTP_USER && process.env.SAP_FTP_PASSWORD;
   
   console.log('🔧 Configuración SFTP:', {
     host: sapSftpConfig.host,
@@ -52,7 +68,10 @@ export const getSftpConfigWithDebug = () => {
     passwordHex: Buffer.from(sapSftpConfig.password).toString('hex'),
     path: sapSftpConfig.path,
     port: sapSftpConfig.port,
-    fromEnv: isFromEnv
+    readyTimeout: sapSftpConfig.readyTimeout,
+    strictVendor: sapSftpConfig.strictVendor,
+    fromEnv: isFromEnv,
+    configSource: usingSftpSpecific ? 'SFTP_SPECIFIC' : usingFtpFallback ? 'FTP_FALLBACK' : 'DEFAULT'
   });
   
   return sapSftpConfig;

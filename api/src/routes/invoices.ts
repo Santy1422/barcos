@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import invoicesControllers from '../controllers/invoicesControllers/invoicesControllers';
 import { jwtUtils } from "../middlewares/jwtUtils";
+import { sendXmlToSapSftp } from '../controllers/invoicesControllers/sendXmlToSapSftp';
+import { sendXmlToSapFtp } from '../controllers/invoicesControllers/sendXmlToSapFtp';
+import { testSftpConnection } from '../controllers/invoicesControllers/testSftpConnection';
+import { testFtpConnection } from '../controllers/invoicesControllers/testFtpConnection';
 
 const { catchedAsync } = require('../utils');
 
@@ -38,6 +42,18 @@ router.post('/debug-ftp-auth', jwtUtils, catchedAsync(invoicesControllers.debugF
 
 // Diagnóstico híbrido FTP/SFTP
 router.post('/diagnose-ftp-server', jwtUtils, catchedAsync(invoicesControllers.diagnoseFtpServer));
+
+// Enviar XML a SAP por SFTP
+router.post('/:invoiceId/send-xml-to-sap-sftp', jwtUtils, catchedAsync(sendXmlToSapSftp));
+
+// Enviar XML a SAP por FTP tradicional
+router.post('/:invoiceId/send-xml-to-sap-ftp', jwtUtils, catchedAsync(sendXmlToSapFtp));
+
+// Test de conexión SFTP
+router.post('/test-sftp-connection', jwtUtils, catchedAsync(testSftpConnection));
+
+// Test de conexión FTP tradicional
+router.post('/test-ftp-traditional', jwtUtils, catchedAsync(testFtpConnection));
 
 // Marcar XML como enviado a SAP
 router.patch('/:id/mark-xml-sent-to-sap', jwtUtils, catchedAsync(invoicesControllers.markXmlAsSentToSap));

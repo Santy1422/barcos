@@ -69,6 +69,24 @@ const invoicesSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     required: false
   },
+  // Campos para SAP
+  sentToSap: {
+    type: Boolean,
+    default: false
+  },
+  sentToSapAt: {
+    type: Date,
+    required: false
+  },
+  sapFileName: {
+    type: String,
+    required: false
+  },
+  sapProtocol: {
+    type: String,
+    enum: ["FTP", "SFTP"],
+    required: false
+  },
   // Servicios adicionales para PTYSS
   additionalServices: [{
     serviceId: {
@@ -98,5 +116,7 @@ invoicesSchema.index({ status: 1 });
 invoicesSchema.index({ invoiceNumber: 1 });
 invoicesSchema.index({ clientRuc: 1 });
 invoicesSchema.index({ issueDate: 1 });
+invoicesSchema.index({ sentToSap: 1 });
+invoicesSchema.index({ sapFileName: 1 });
 
 export default invoicesSchema;

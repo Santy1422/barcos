@@ -173,8 +173,8 @@ export function PTYSSRecords() {
                   invoice.status === 'anulada' ? 'Anulada' : invoice.status,
         'Tipo': invoiceType === 'local' ? 'Local' : 'Trasiego',
         'XML Generado': invoice.xmlData ? 'Sí' : 'No',
-        'XML Enviado a SAP': invoice.xmlData?.sentToSap ? 'Sí' : 'No',
-        'Fecha Envío SAP': invoice.xmlData?.sentToSapAt ? new Date(invoice.xmlData.sentToSapAt).toLocaleDateString('es-ES') : 'N/A',
+                 'XML Enviado a SAP': invoice.sentToSap ? 'Sí' : 'No',
+         'Fecha Envío SAP': invoice.sentToSapAt ? new Date(invoice.sentToSapAt).toLocaleDateString('es-ES') : 'N/A',
         'Registros Asociados': invoice.relatedRecordIds?.length || 0
       }
     })
@@ -407,7 +407,10 @@ export function PTYSSRecords() {
               updates.xmlData = {
                 xml: xmlData.xml,
                 isValid: xmlData.isValid,
-                generatedAt: new Date().toISOString()
+                generatedAt: new Date().toISOString(),
+                // Incluir campos de envío a SAP si están presentes
+                ...(xmlData.sentToSap !== undefined && { sentToSap: xmlData.sentToSap }),
+                ...(xmlData.sentToSapAt && { sentToSapAt: xmlData.sentToSapAt })
               }
               console.log("✅ PTYSSRecords - xmlData agregado a updates:", updates.xmlData)
             } else {
@@ -495,7 +498,9 @@ export function PTYSSRecords() {
         invoice={xmlInvoice}
         onXmlSentToSap={() => {
           console.log("🔄 XML enviado a SAP - Recargando facturas...")
-          dispatch(fetchInvoicesAsync())
+          dispatch(fetchInvoicesAsync("ptyss")).then(() => {
+            console.log("✅ Facturas recargadas después del envío a SAP")
+          })
         }}
       />
       <Card>
@@ -790,24 +795,24 @@ export function PTYSSRecords() {
                           {invoice.status === "facturada" && (
                             <>
                               {invoice.xmlData ? (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className={`h-8 w-8 ${
-                                    invoice.xmlData.sentToSap 
-                                      ? 'text-green-600 hover:text-green-700 hover:bg-green-50' 
-                                      : 'text-orange-600 hover:text-orange-700 hover:bg-orange-50'
-                                  }`}
-                                  onClick={() => {
-                                    setXmlInvoice(invoice)
-                                    setIsXmlModalOpen(true)
-                                  }}
-                                  title={`Ver XML ${invoice.xmlData.isValid ? '(Válido)' : '(Con errores)'} - ${
-                                    invoice.xmlData.sentToSap ? 'Enviado a SAP' : 'Pendiente de envío a SAP'
-                                  }`}
-                                >
-                                  <Code className="h-4 w-4" />
-                                </Button>
+                                                                 <Button
+                                   variant="ghost"
+                                   size="sm"
+                                   className={`h-8 w-8 ${
+                                     invoice.sentToSap 
+                                       ? 'text-green-600 hover:text-green-700 hover:bg-green-50' 
+                                       : 'text-orange-600 hover:text-orange-700 hover:bg-orange-50'
+                                   }`}
+                                   onClick={() => {
+                                     setXmlInvoice(invoice)
+                                     setIsXmlModalOpen(true)
+                                   }}
+                                   title={`Ver XML ${invoice.xmlData.isValid ? '(Válido)' : '(Con errores)'} - ${
+                                     invoice.sentToSap ? 'Enviado a SAP' : 'Pendiente de envío a SAP'
+                                   }`}
+                                 >
+                                   <Code className="h-4 w-4" />
+                                 </Button>
                               ) : (
                                 <Button
                                   variant="ghost"
