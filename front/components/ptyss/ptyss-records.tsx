@@ -384,7 +384,7 @@ export function PTYSSRecords() {
           if (!open) setFacturarInvoice(null)
         }}
         invoice={facturarInvoice}
-        onFacturar={async (newInvoiceNumber: string, xmlData?: { xml: string, isValid: boolean }, invoiceDate?: string) => {
+        onFacturar={async (newInvoiceNumber: string, xmlData?: { xml: string; isValid: boolean; sentToSap?: boolean; sentToSapAt?: string }, invoiceDate?: string) => {
           if (!facturarInvoice) return
           
           const currentInvoice = facturarInvoice // Guardar referencia antes de cerrar modal

@@ -56,9 +56,20 @@ export function PTYSSFacturacionModal({
   const [sapLogs, setSapLogs] = useState<any[]>([])
   const [showSapLogs, setShowSapLogs] = useState(false)
   
-  // Obtener registros asociados para generar XML
-  const allRecords = useAppSelector(selectAllIndividualRecords)
-  const clients = useAppSelector((state) => state.clients.clients)
+     // Obtener registros asociados para generar XML
+   const allRecords = useAppSelector(selectAllIndividualRecords)
+   const clients = useAppSelector((state) => state.clients.clients)
+   const clientsLoading = useAppSelector((state) => state.clients.loading)
+   
+   // Debug: Verificar que los clientes se cargan correctamente
+   useEffect(() => {
+     console.log('🔍 PTYSSFacturacionModal - Clientes cargados:', clients.length)
+     console.log('🔍 PTYSSFacturacionModal - Cliente PTG existe:', clients.some((c: any) => c.companyName === "PTG"))
+     console.log('🔍 PTYSSFacturacionModal - Clientes cargando:', clientsLoading)
+     if (clients.length > 0) {
+       console.log('🔍 PTYSSFacturacionModal - Primeros 3 clientes:', clients.slice(0, 3).map((c: any) => c.companyName))
+     }
+   }, [clients, clientsLoading])
 
   // Generar número de factura por defecto
   const defaultInvoiceNumber = invoice?.invoiceNumber?.replace(/^PTY-PRE-/, "PTY-FAC-") || "PTY-FAC-000001"
@@ -111,18 +122,80 @@ export function PTYSSFacturacionModal({
 
       // Buscar el cliente para obtener el número SAP
       const firstRecord = relatedRecords[0]
-      const clientId = firstRecord.data?.clientId || invoice.clientId
-      console.log("🔍 generateXMLForInvoice - clientId:", clientId)
-      console.log("🔍 generateXMLForInvoice - clients disponibles:", clients.length)
-      const client = clients.find((c: any) => (c._id || c.id) === clientId)
-      console.log("🔍 generateXMLForInvoice - cliente encontrado:", client)
+      const data = firstRecord.data as Record<string, any>
+      const clientId = data?.clientId
+      const recordType = data?.recordType
+      const associate = data?.associate
       
-      let clientSapNumber = "0000000000" // Valor por defecto
-      if (client && client.sapCode) {
-        clientSapNumber = client.sapCode
-      } else if (invoice.clientRuc) {
-        clientSapNumber = invoice.clientRuc
+      console.log("🔍 generateXMLForInvoice - firstRecord completo:", firstRecord)
+      console.log("🔍 generateXMLForInvoice - data completo:", data)
+      console.log("🔍 generateXMLForInvoice - clientId:", clientId)
+      console.log("🔍 generateXMLForInvoice - recordType:", recordType)
+      console.log("🔍 generateXMLForInvoice - associate:", associate)
+      console.log("🔍 generateXMLForInvoice - clients disponibles:", clients.length)
+      console.log("🔍 generateXMLForInvoice - clients cargando:", clientsLoading)
+      
+      // Verificar que los clientes no estén cargando
+      if (clientsLoading) {
+        throw new Error("Los clientes están siendo cargados. Por favor, espere un momento y vuelva a intentar.")
       }
+      
+      let client = null
+      
+      // Determinar si es trasiego basado en múltiples indicadores
+      const isTrasiego = recordType === 'trasiego' || 
+                        (associate && associate === 'PTG') ||
+                        (data?.operationType && data.operationType.toLowerCase().includes('trasiego')) ||
+                        (data?.from && data.from.toLowerCase().includes('trasiego')) ||
+                        (data?.to && data.to.toLowerCase().includes('trasiego'))
+      
+      console.log('🔍 generateXMLForInvoice - isTrasiego:', isTrasiego)
+      console.log('🔍 generateXMLForInvoice - recordType === "trasiego":', recordType === 'trasiego')
+      console.log('🔍 generateXMLForInvoice - associate === "PTG":', associate === 'PTG')
+      
+      if (isTrasiego) {
+        console.log('🔍 generateXMLForInvoice - Buscando cliente PTG para trasiego')
+        console.log('🔍 generateXMLForInvoice - Clientes disponibles:', clients.map((c: any) => c.companyName))
+        
+        // Verificar que los clientes estén cargados y que PTG exista
+        if (clients.length === 0) {
+          throw new Error("Los clientes aún no han sido cargados. Por favor, espere un momento y vuelva a intentar.")
+        }
+        
+        const ptgExists = clients.some((c: any) => c.companyName === "PTG")
+        if (!ptgExists) {
+          throw new Error("El cliente PTG no está disponible en la lista de clientes. Por favor, verifique que el cliente PTG esté configurado en el sistema.")
+        }
+        
+        client = clients.find((c: any) => c.companyName === "PTG")
+        console.log('🔍 generateXMLForInvoice - Cliente PTG encontrado:', client?.companyName)
+        if (!client) {
+          console.log('❌ generateXMLForInvoice - NO SE ENCONTRÓ PTG en la lista de clientes')
+          console.log('🔍 generateXMLForInvoice - Todos los clientes:', clients)
+        }
+      } else {
+        // Para registros locales, buscar por ID
+        if (!clientId) {
+          throw new Error("El registro local no tiene un cliente asociado (clientId). Por favor, verifique la configuración del registro.")
+        }
+        
+        client = clients.find((c: any) => (c._id || c.id) === clientId)
+        console.log('🔍 generateXMLForInvoice - Cliente encontrado por ID:', client?.companyName || client?.fullName)
+      }
+      
+      console.log("🔍 generateXMLForInvoice - cliente final:", client)
+      
+      // Validar que el cliente tenga código SAP configurado
+      if (!client) {
+        const errorMessage = isTrasiego 
+          ? "No se encontró el cliente PTG en la lista de clientes. Por favor, verifique que el cliente PTG esté configurado en el sistema."
+          : `No se encontró el cliente con ID ${clientId} en la lista de clientes. Por favor, verifique que el cliente esté configurado en el sistema.`
+        throw new Error(errorMessage)
+      }
+      if (!client.sapCode) {
+        throw new Error(`El cliente ${client.companyName || client.fullName} no tiene código SAP configurado. Por favor, configure el código SAP del cliente antes de generar el XML.`)
+      }
+      let clientSapNumber = client.sapCode
       console.log("🔍 generateXMLForInvoice - clientSapNumber final:", clientSapNumber)
 
       // Preparar datos para XML
@@ -448,6 +521,21 @@ export function PTYSSFacturacionModal({
               </div>
             </div>
 
+            {/* Advertencia si los clientes están cargando */}
+            {clientsLoading && (
+              <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-yellow-900">Cargando clientes...</p>
+                    <p className="text-xs text-yellow-700 mt-1">
+                      Espere un momento mientras se cargan los datos de los clientes antes de facturar.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Acciones de facturación */}
             <div className="space-y-4">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
@@ -616,13 +704,18 @@ export function PTYSSFacturacionModal({
               </Button>
               <Button
                 onClick={handleFacturar}
-                disabled={isProcessing || !newInvoiceNumber.trim() || !invoiceDate}
+                disabled={isProcessing || !newInvoiceNumber.trim() || !invoiceDate || clientsLoading}
                 className="bg-green-600 hover:bg-green-700 text-white"
               >
                 {isProcessing ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                     Facturando...
+                  </>
+                ) : clientsLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Cargando clientes...
                   </>
                 ) : (
                   <>

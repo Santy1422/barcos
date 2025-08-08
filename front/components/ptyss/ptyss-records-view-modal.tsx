@@ -125,6 +125,25 @@ export function PTYSSRecordsViewModal({
                 const data = record.data as Record<string, any>;
                 const { date, time } = formatDateTime(record.createdAt);
                 const client = clients.find((c: any) => (c._id || c.id) === data?.clientId);
+                
+                // Detectar si el registro es de trasiego con múltiples indicadores
+                const isTrasiego =
+                  data?.recordType === "trasiego" ||
+                  data?.associate === "PTG" ||
+                  typeof data?.matchedPrice !== "undefined" ||
+                  typeof data?.matchedRouteName !== "undefined" ||
+                  !!data?.leg
+                
+                // Valores con fallback para soportar estructuras diferentes (local vs trasiego)
+                const displayClientName = client
+                  ? (client.type === "natural" ? client.fullName : client.companyName)
+                  : (isTrasiego ? (data?.associate || "PTG") : "N/A")
+                const displayOrder = data?.order || data?.containerConsecutive || "N/A"
+                const displayContainerSize = data?.containerSize || data?.size || "N/A"
+                const displayContainerType = data?.containerType || data?.type || "N/A"
+                const displayNavieraOrLine = data?.naviera || data?.line || data?.route || "N/A"
+                const displayDriver = data?.conductor || data?.driverName || "N/A"
+                const displayPlate = data?.matriculaCamion || data?.plate || "N/A"
                 return (
                   <div key={record._id || record.id} className="border border-gray-200 rounded-lg p-4 space-y-4">
                     <div className="flex items-center justify-between">
@@ -143,11 +162,9 @@ export function PTYSSRecordsViewModal({
                         <Label className="text-sm font-medium text-gray-600 flex items-center gap-1">
                           <User className="h-3 w-3" /> Cliente
                         </Label>
-                        <p className="text-sm">
-                          {client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"}
-                        </p>
+                        <p className="text-sm">{displayClientName}</p>
                         <p className="text-xs text-muted-foreground">
-                          Orden: {data.order || "N/A"}
+                          Orden: {displayOrder}
                         </p>
                       </div>
 
@@ -158,7 +175,7 @@ export function PTYSSRecordsViewModal({
                         </Label>
                         <p className="text-sm font-medium">{data.container || "N/A"}</p>
                         <p className="text-xs text-muted-foreground">
-                          {data.containerSize || "N/A"} {data.containerType || "N/A"}
+                          {displayContainerSize} {displayContainerType}
                         </p>
                       </div>
 
@@ -171,7 +188,7 @@ export function PTYSSRecordsViewModal({
                           {data.from || "N/A"} → {data.to || "N/A"}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          Naviera: {data.naviera || "N/A"}
+                          Naviera: {displayNavieraOrLine}
                         </p>
                       </div>
 
@@ -208,27 +225,46 @@ export function PTYSSRecordsViewModal({
 
                     <Separator />
 
-                    {/* Servicios Adicionales */}
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-600">Servicios Adicionales</Label>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        <div className="flex items-center gap-1">
-                          <span className="font-medium">Estadia:</span> <span>{data.estadia || "N/A"}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="font-medium">Genset:</span> <span>{data.genset || "N/A"}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="font-medium">Retención:</span> <span>{data.retencion || "N/A"}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="font-medium">Pesaje:</span> <span>{data.pesaje || "N/A"}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="font-medium">TI:</span> <span>{data.ti || "N/A"}</span>
+                    {/* Servicios / Detalles según tipo de registro */}
+                    {isTrasiego ? (
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-600">Detalles de Trasiego</Label>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                          <div className="flex items-center gap-1"><span className="font-medium">Asociado:</span> <span>{data.associate || "PTG"}</span></div>
+                          <div className="flex items-center gap-1"><span className="font-medium">Leg:</span> <span>{data.leg || "N/A"}</span></div>
+                          <div className="flex items-center gap-1"><span className="font-medium">Move Type:</span> <span>{data.moveType || "N/A"}</span></div>
+                          <div className="flex items-center gap-1"><span className="font-medium">Línea:</span> <span>{data.line || "N/A"}</span></div>
+                          <div className="flex items-center gap-1"><span className="font-medium">Ruta PTYSS:</span> <span>{data.matchedRouteName || data.route || "N/A"}</span></div>
+                          <div className="flex items-center gap-1"><span className="font-medium">POL:</span> <span>{data.pol || data.from || "N/A"}</span></div>
+                          <div className="flex items-center gap-1"><span className="font-medium">POD:</span> <span>{data.pod || data.to || "N/A"}</span></div>
+                          <div className="flex items-center gap-1"><span className="font-medium">Vsl/Voy:</span> <span>{data.fromVslVoy || data.rtFromVslVoy || "N/A"}</span></div>
+                          {typeof data.matchedPrice !== "undefined" && (
+                            <div className="flex items-center gap-1"><span className="font-medium">Precio Ruta:</span> <span>${(data.matchedPrice || 0).toFixed(2)}</span></div>
+                          )}
                         </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-600">Servicios Adicionales</Label>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          <div className="flex items-center gap-1">
+                            <span className="font-medium">Estadia:</span> <span>{data.estadia || "N/A"}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="font-medium">Genset:</span> <span>{data.genset || "N/A"}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="font-medium">Retención:</span> <span>{data.retencion || "N/A"}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="font-medium">Pesaje:</span> <span>{data.pesaje || "N/A"}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="font-medium">TI:</span> <span>{data.ti || "N/A"}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Información de Transporte */}
                     <div className="space-y-2">
@@ -237,10 +273,10 @@ export function PTYSSRecordsViewModal({
                       </Label>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                         <div className="flex items-center gap-1">
-                          <span className="font-medium">Conductor:</span> <span>{data.conductor || "N/A"}</span>
+                          <span className="font-medium">Conductor:</span> <span>{displayDriver}</span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="font-medium">Matrícula:</span> <span>{data.matriculaCamion || "N/A"}</span>
+                          <span className="font-medium">Matrícula:</span> <span>{displayPlate}</span>
                         </div>
                         <div className="flex items-center gap-1">
                           <span className="font-medium">Chasis/Placa:</span> <span>{data.numeroChasisPlaca || "N/A"}</span>

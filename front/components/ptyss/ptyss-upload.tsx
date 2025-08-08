@@ -816,17 +816,17 @@ export function PTYSSUpload() {
   // Función para convertir datos de trucking a PTYSS
   const convertTruckingToPTYSS = (truckingData: TruckingExcelData[]): PTYSSRecordData[] => {
     return truckingData.map(record => {
-      // Buscar el cliente por nombre para obtener su _id
-      const client = findClientByName(record.associate || '')
-      const clientId = client?._id || client?.id || ''
+      // Para registros de trasiego, siempre usar PTG como cliente
+      const ptgClient = clients.find((c: any) => c.companyName === "PTG")
+      const clientId = ptgClient?._id || ptgClient?.id || ''
       
-      console.log(`Convirtiendo registro para cliente: ${record.associate}`)
-      console.log(`Cliente encontrado:`, client)
-      console.log(`ClientId asignado: ${clientId}`)
+      console.log(`Convirtiendo registro de trasiego para cliente: ${record.associate}`)
+      console.log(`Cliente PTG encontrado:`, ptgClient)
+      console.log(`ClientId PTG asignado: ${clientId}`)
       
       return {
-        clientId: clientId,
-        associate: record.associate || '', // Guardar el nombre del cliente para búsqueda posterior
+        clientId: clientId, // Siempre PTG para trasiego
+        associate: record.associate || '', // Guardar el nombre del cliente original para referencia
         order: record.containerConsecutive || '',
         container: record.container || '',
         naviera: record.route || '',
