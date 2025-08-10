@@ -11,6 +11,8 @@ import ptyssLocalRoutesReducer from './features/ptyssLocalRoutes/ptyssLocalRoute
 import localServicesReducer from './features/localServices/localServicesSlice'
 import navieraReducer from './features/naviera/navieraSlice'
 import servicesReducer from './features/services/servicesSlice'
+import agencyServicesReducer from './features/agencyServices/agencyServicesSlice'
+import agencyCatalogsReducer from './features/agencyServices/agencyCatalogsSlice'
 import { loadState, saveState } from './storage'
 
 export const makeStore = () => {
@@ -28,9 +30,11 @@ export const makeStore = () => {
       truckingRoutes: truckingRoutesReducer,
       ptyssRoutes: ptyssRoutesReducer,
       ptyssLocalRoutes: ptyssLocalRoutesReducer,
-  localServices: localServicesReducer,
+      localServices: localServicesReducer,
       naviera: navieraReducer,
       services: servicesReducer,
+      agencyServices: agencyServicesReducer,
+      agencyCatalogs: agencyCatalogsReducer,
     },
     preloadedState: persistedState
   })

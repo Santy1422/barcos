@@ -15,6 +15,10 @@ import navieras from './navieras';
 import services from './services';
 import health from './health';
 import seed from './seed';
+import agencyRoutes from './agencyRoutes';
+import agencyCatalogsRoutes from './agencyCatalogsRoutes';
+import agencyFileRoutes from './agencyFileRoutes';
+import agencySapRoutes from './agencySapRoutes';
 
 router.use('/api/user', user);
 router.use('/api/clients', clients);
@@ -31,5 +35,11 @@ router.use('/api/navieras', navieras);
 router.use('/api/services', services);
 router.use('/api/health', health);
 router.use('/api/seed', seed);
+
+// Agency routes
+router.use('/api/agency/services', agencyRoutes);
+router.use('/api/agency/catalogs', agencyCatalogsRoutes);
+router.use('/api/agency/files', agencyFileRoutes);
+router.use('/api/agency/sap', agencySapRoutes);
 
 export default router;
