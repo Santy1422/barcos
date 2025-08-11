@@ -437,10 +437,3 @@ export const getSapXmlHistory = catchedAsync(async (req: Request, res: Response)
   });
 });
 
-export {
-  generateSapXml,
-  downloadSapXml, 
-  getServicesReadyForInvoice,
-  getSapXmlHistory,
-  validateXmlStructure
-};

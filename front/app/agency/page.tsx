@@ -6,7 +6,7 @@ import { useAgencyCatalogs } from '@/lib/features/agencyServices/useAgencyCatalo
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Car, Clock, CheckCircle, Users, MapPin, Ship, Plus, DollarSign, ArrowRight } from 'lucide-react';
+import { Car, Clock, CheckCircle, Users, MapPin, Ship, Plus, DollarSign, ArrowRight, Building, Flag, Code } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';

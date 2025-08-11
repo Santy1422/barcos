@@ -13,7 +13,8 @@ const VALID_CATALOG_TYPES: CatalogType[] = [
   'vessel',
   'transport_company',
   'driver',
-  'taulia_code'
+  'taulia_code',
+  'route_pricing'
 ];
 
 // Validate metadata based on catalog type
@@ -51,6 +52,24 @@ const validateMetadata = (type: CatalogType, metadata: any): { valid: boolean; e
       }
       if (metadata.company && typeof metadata.company !== 'string') {
         return { valid: false, error: 'company must be a string' };
+      }
+      break;
+    
+    case 'route_pricing':
+      if (metadata.basePrice !== undefined && typeof metadata.basePrice !== 'number') {
+        return { valid: false, error: 'basePrice must be a number' };
+      }
+      if (metadata.pricePerPerson !== undefined && typeof metadata.pricePerPerson !== 'number') {
+        return { valid: false, error: 'pricePerPerson must be a number' };
+      }
+      if (metadata.waitingTimePrice !== undefined && typeof metadata.waitingTimePrice !== 'number') {
+        return { valid: false, error: 'waitingTimePrice must be a number' };
+      }
+      if (metadata.fromLocation && typeof metadata.fromLocation !== 'string') {
+        return { valid: false, error: 'fromLocation must be a string' };
+      }
+      if (metadata.toLocation && typeof metadata.toLocation !== 'string') {
+        return { valid: false, error: 'toLocation must be a string' };
       }
       break;
   }
@@ -123,7 +142,8 @@ export const getAllCatalogs = async (req: Request, res: Response) => {
       vessel: [],
       transport_company: [],
       driver: [],
-      taulia_code: []
+      taulia_code: [],
+      route_pricing: []
     };
 
     catalogs.forEach(catalog => {
@@ -141,6 +161,7 @@ export const getAllCatalogs = async (req: Request, res: Response) => {
       transport_company: grouped.transport_company.length,
       driver: grouped.driver.length,
       taulia_code: grouped.taulia_code.length,
+      route_pricing: grouped.route_pricing.length,
       total: catalogs.length
     };
 

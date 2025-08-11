@@ -197,9 +197,9 @@ const catalogValidation = [
     .withMessage(`Type must be one of: ${VALID_CATALOG_TYPES.join(', ')}`),
   body('name').notEmpty().trim().isLength({ min: 1, max: 200 })
     .withMessage('Name is required and must be between 1-200 characters'),
-  body('code').optional().trim().isLength({ max: 50 })
+  body('code').optional().isString().trim().isLength({ max: 50 })
     .withMessage('Code must be maximum 50 characters'),
-  body('description').optional().trim().isLength({ max: 500 })
+  body('description').optional().isString().trim().isLength({ max: 500 })
     .withMessage('Description must be maximum 500 characters'),
   body('metadata').optional().isObject()
     .withMessage('Metadata must be an object'),
@@ -207,11 +207,11 @@ const catalogValidation = [
 ];
 
 const updateValidation = [
-  body('name').optional().trim().isLength({ min: 1, max: 200 })
+  body('name').optional().isString().trim().isLength({ min: 1, max: 200 })
     .withMessage('Name must be between 1-200 characters'),
-  body('code').optional().trim().isLength({ max: 50 })
+  body('code').optional().isString().trim().isLength({ max: 50 })
     .withMessage('Code must be maximum 50 characters'),
-  body('description').optional().trim().isLength({ max: 500 })
+  body('description').optional().isString().trim().isLength({ max: 500 })
     .withMessage('Description must be maximum 500 characters'),
   body('metadata').optional().isObject()
     .withMessage('Metadata must be an object'),
@@ -223,7 +223,7 @@ const updateValidation = [
 const queryValidation = [
   query('active').optional().isBoolean()
     .withMessage('active must be boolean'),
-  query('search').optional().trim().isLength({ min: 1, max: 100 })
+  query('search').optional().isString().trim().isLength({ min: 1, max: 100 })
     .withMessage('search must be between 1-100 characters'),
   query('includeMetadata').optional().isBoolean()
     .withMessage('includeMetadata must be boolean'),
@@ -231,7 +231,7 @@ const queryValidation = [
 ];
 
 const searchValidation = [
-  query('q').notEmpty().trim().isLength({ min: 1, max: 100 })
+  query('q').notEmpty().isString().trim().isLength({ min: 1, max: 100 })
     .withMessage('Search query (q) is required and must be between 1-100 characters'),
   query('types').optional().custom((value) => {
     if (typeof value === 'string') {
@@ -368,7 +368,7 @@ router.post('/pricing/calculate',
       .withMessage('pickupLocation is required'),
     body('dropoffLocation').notEmpty().trim()
       .withMessage('dropoffLocation is required'),
-    body('serviceCode').optional().trim()
+    body('serviceCode').optional().isString().trim()
       .withMessage('serviceCode must be string'),
     body('waitingTime').optional().isFloat({ min: 0, max: 24 })
       .withMessage('waitingTime must be between 0-24 hours'),
@@ -407,9 +407,9 @@ router.post('/pricing/routes',
       .withMessage('pricePerPerson must be non-negative'),
     body('waitingTimePrice').optional().isFloat({ min: 0 })
       .withMessage('waitingTimePrice must be non-negative'),
-    body('tauliaCode').optional().trim()
+    body('tauliaCode').optional().isString().trim()
       .withMessage('tauliaCode must be string'),
-    body('description').optional().trim().isLength({ max: 500 })
+    body('description').optional().isString().trim().isLength({ max: 500 })
       .withMessage('description must be maximum 500 characters'),
     handleValidationErrors
   ],
@@ -428,9 +428,9 @@ router.put('/pricing/routes/:id',
       .withMessage('pricePerPerson must be non-negative'),
     body('waitingTimePrice').optional().isFloat({ min: 0 })
       .withMessage('waitingTimePrice must be non-negative'),
-    body('tauliaCode').optional().trim()
+    body('tauliaCode').optional().isString().trim()
       .withMessage('tauliaCode must be string'),
-    body('description').optional().trim().isLength({ max: 500 })
+    body('description').optional().isString().trim().isLength({ max: 500 })
       .withMessage('description must be maximum 500 characters'),
     body('isActive').optional().isBoolean()
       .withMessage('isActive must be boolean'),

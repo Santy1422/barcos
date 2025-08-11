@@ -338,7 +338,7 @@ export const fetchAgencyServices = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data.data as ServicesResponse;
+      return data;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -470,7 +470,7 @@ export const fetchServiceById = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data.data as AgencyService;
+      return data;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -503,7 +503,7 @@ export const fetchAgencyStatistics = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data.data as AgencyStatistics;
+      return data;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -902,11 +902,11 @@ const agencyServicesSlice = createSlice({
       })
       .addCase(fetchAgencyServices.fulfilled, (state, action) => {
         state.loading = false;
-        state.services = action.payload.services;
-        state.totalPages = action.payload.totalPages;
-        state.currentPage = action.payload.currentPage;
-        state.totalServices = action.payload.totalServices;
-        state.filters = action.payload.filters;
+        state.services = action.payload.payload.data.services;
+        state.totalPages = action.payload.payload.data.totalPages;
+        state.currentPage = action.payload.payload.data.currentPage;
+        state.totalServices = action.payload.payload.data.totalServices;
+        state.filters = action.payload.payload.data.filters;
       })
       .addCase(fetchAgencyServices.rejected, (state, action) => {
         state.loading = false;
@@ -990,7 +990,7 @@ const agencyServicesSlice = createSlice({
       })
       .addCase(fetchServiceById.fulfilled, (state, action) => {
         state.loading = false;
-        state.currentService = action.payload;
+        state.currentService = action.payload.payload.data;
       })
       .addCase(fetchServiceById.rejected, (state, action) => {
         state.loading = false;
@@ -1004,7 +1004,7 @@ const agencyServicesSlice = createSlice({
       })
       .addCase(fetchAgencyStatistics.fulfilled, (state, action) => {
         state.statisticsLoading = false;
-        state.statistics = action.payload;
+        state.statistics = action.payload.payload.data;
       })
       .addCase(fetchAgencyStatistics.rejected, (state, action) => {
         state.statisticsLoading = false;
@@ -1045,7 +1045,7 @@ const agencyServicesSlice = createSlice({
       })
       .addCase(fetchServicesReadyForInvoice.fulfilled, (state, action) => {
         state.sapIntegration.sapLoading = false;
-        state.sapIntegration.readyForInvoice = action.payload.data.services;
+        state.sapIntegration.readyForInvoice = action.payload.payload.data.services;
         state.sapIntegration.sapError = null;
       })
       .addCase(fetchServicesReadyForInvoice.rejected, (state, action) => {
@@ -1063,10 +1063,10 @@ const agencyServicesSlice = createSlice({
       .addCase(generateSapXml.fulfilled, (state, action) => {
         state.sapIntegration.sapLoading = false;
         state.sapIntegration.xmlGenerated = true;
-        state.sapIntegration.xmlContent = action.payload.data.xmlContent;
-        state.sapIntegration.fileName = action.payload.data.fileName;
-        state.sapIntegration.totalAmount = parseFloat(action.payload.data.totalAmount);
-        state.sapIntegration.lastInvoiceNumber = action.payload.data.invoiceNumber;
+        state.sapIntegration.xmlContent = action.payload.payload.data.xmlContent;
+        state.sapIntegration.fileName = action.payload.payload.data.fileName;
+        state.sapIntegration.totalAmount = parseFloat(action.payload.payload.data.totalAmount);
+        state.sapIntegration.lastInvoiceNumber = action.payload.payload.data.invoiceNumber;
         state.sapIntegration.sapError = null;
         
         // Actualizar servicios de completed a prefacturado

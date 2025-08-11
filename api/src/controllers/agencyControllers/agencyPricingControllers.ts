@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import AgencyCatalog from '../../database/schemas/agencyCatalogSchema';
-import { catchedAsync } from '../../utils/catchedAsync';
+import { catchedAsync } from '../../utils';
 
 // Calcular precio automático para un servicio
 export const calculateServicePrice = catchedAsync(async (req: Request, res: Response) => {
