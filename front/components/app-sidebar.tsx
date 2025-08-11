@@ -39,6 +39,10 @@ import {
   User,
   Plus,
   History,
+  Car,
+  BookOpen,
+  FileText,
+  Package,
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -101,6 +105,21 @@ export function AppSidebar() {
         { title: "Facturas", href: "/ptyss/records", icon: ListOrdered },
         { title: "Historial", href: "/ptyss/historial", icon: History },
         { title: "Configuración", href: "/ptyss/config", icon: Settings2 },
+      ],
+    },
+    {
+      title: "Agency",
+      href: "/agency",
+      icon: Car,
+      children: [
+        { title: "Crear Servicios", href: "/agency/services", icon: Plus },
+        { title: "Registros", href: "/agency/records", icon: ListOrdered },
+        { title: "SAP Invoice", href: "/agency/sap-invoice", icon: FileText },
+        { title: "Facturas", href: "/agency/invoice", icon: FilePlus2 },
+        { title: "Historial", href: "/agency/historial", icon: History },
+        { title: "Reportes", href: "/agency/reports", icon: BarChart3 },
+        { title: "Catálogos", href: "/agency/catalogs", icon: BookOpen },
+        { title: "Configuración", href: "/agency/config", icon: Settings2 },
       ],
     },
     {

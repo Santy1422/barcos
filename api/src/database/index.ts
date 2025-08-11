@@ -11,6 +11,8 @@ import excelFilesSchema from './schemas/excelFilesSchema';
 import { Naviera } from './schemas/navieraSchema';
 import { Service } from './schemas/servicesSchema';
 import { LocalService } from './schemas/localServiceSchema';
+import AgencyService from './schemas/agencyServiceSchema';
+import AgencyCatalog from './schemas/agencyCatalogSchema';
 
 mongoose.set('strictQuery', false);
 
@@ -39,6 +41,8 @@ export const excelFiles = mongoose.model('excelFiles', excelFilesSchema);
 export const navieras = Naviera;
 export const services = Service;
 export const localServices = LocalService;
+export const agencyServices = AgencyService;
+export const agencyCatalogs = AgencyCatalog;
 
 // Manejo de eventos de conexión
 mongoose.connection.on('connected', () => {
@@ -71,7 +75,9 @@ export const getModels = () => {
     excelFiles,
     navieras,
     services,
-    localServices
+    localServices,
+    agencyServices,
+    agencyCatalogs
   };
 };
 
@@ -86,4 +92,6 @@ export type Models = {
   navieras: typeof navieras;
   services: typeof services;
   localServices: typeof localServices;
+  agencyServices: typeof agencyServices;
+  agencyCatalogs: typeof agencyCatalogs;
 };
