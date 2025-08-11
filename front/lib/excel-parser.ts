@@ -297,13 +297,8 @@ export const parseTruckingExcel = async (file: File): Promise<TruckingExcelData[
             Object.entries(columnIndexes).forEach(([field, columnIndex]) => {
               if (columnIndex !== undefined && columnIndex < row.length) {
                 const cellValue = row[columnIndex];
-                
-                // Para PTYSS, usar PTG en lugar del valor del Excel para el campo associate
-                if (field === 'associate') {
-                  (record as any)[field] = 'PTG';
-                } else {
-                  (record as any)[field] = cellValue ? String(cellValue).trim() : '';
-                }
+                // Mantener el valor original del Excel para 'associate' en Trucking
+                (record as any)[field] = cellValue ? String(cellValue).trim() : '';
               }
             });
             
