@@ -129,7 +129,7 @@ export const logoutAsync = createAsyncThunk(
 export const verifyToken = createAsyncThunk(
   'auth/verifyToken',
   async (_, { rejectWithValue }) => {
-    try {
+    try { 
       const token = localStorage.getItem('token')
       if (!token) {
         throw new Error('No token found')
