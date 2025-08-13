@@ -259,9 +259,8 @@ export function TruckingUpload() {
         console.log("Datos después del matching:", matchedData)
         console.log("")
         
-        // Procesar clientes faltantes antes de mostrar
-        const processed = await processMissingClients(matchedData)
-        setPreviewData(processed)
+        // En PTG el cliente es fijo, no procesamos clientes faltantes
+        setPreviewData(matchedData)
         
         // Contar registros con match
         const matchedCount = matchedData.filter(record => record.isMatched).length
@@ -301,35 +300,7 @@ export function TruckingUpload() {
       return
     }
 
-    // Verificar clientes completos
-    if (!areAllClientsComplete()) {
-      toast({
-        title: "Clientes incompletos",
-        description: "Hay clientes con datos incompletos. Completa todos los datos antes de guardar.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    // Verificación defensiva adicional basada en previewData actual
-    const matchedRecords = previewData.filter(r => r.isMatched)
-    const incompleteFromPreview = matchedRecords
-      .map(rec => rec.line?.trim())
-      .filter(Boolean)
-      .map(name => ({
-        name: name as string,
-        client: findClientByName(name as string)
-      }))
-      .filter(({ client }) => !client || !checkClientCompleteness(client).isComplete)
-
-    if (incompleteFromPreview.length > 0) {
-      toast({
-        title: "Clientes incompletos",
-        description: `Faltan datos en ${incompleteFromPreview.length} cliente(s). Completa SAP y datos requeridos antes de guardar.`,
-        variant: "destructive",
-      })
-      return
-    }
+    // En PTG el cliente es fijo (PTY SHIP SUPPLIERS, S.A.), omitimos validaciones de clientes incompletos
 
     setIsLoading(true)
 
@@ -358,15 +329,25 @@ export function TruckingUpload() {
       // For now, we need to create the Excel file first, then use its ObjectId
       // This requires a backend API endpoint like POST /api/excel-files
       
+      // Helper para comparar nombres ignorando puntuación/acentos/espacios
+      const normalizeName = (s: string) =>
+        (s || '')
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '') // quitar acentos
+          .replace(/[^a-z0-9]+/g, '') // quitar puntuación/espacios
+          .trim()
+
       const recordsData = previewData
         .filter((r) => r.isMatched)
         .map((record, index) => {
-          const clientName = record.line?.trim() || ""
-          const client = clientName ? clients.find((c: any) => {
-            if (c.type === 'juridico') return c.companyName?.toLowerCase() === clientName.toLowerCase()
-            if (c.type === 'natural') return c.fullName?.toLowerCase() === clientName.toLowerCase()
-            return false
-          }) : null
+          // Cliente fijo para PTG: PTY SHIP SUPPLIERS S.A (sin coma); comparar normalizado
+          const fixedClientName = 'PTY SHIP SUPPLIERS S.A'
+          const fixedKey = normalizeName(fixedClientName)
+          const client = clients.find((c: any) => {
+            const name = c.type === 'juridico' ? (c.companyName || '') : (c.fullName || '')
+            return normalizeName(name) === fixedKey
+          }) || null
           const enriched = {
             ...record,
             // Guardar referencias del cliente real para facturación
@@ -403,6 +384,16 @@ export function TruckingUpload() {
       // Limpiar el estado
       setPreviewData([])
       setSelectedFile(null)
+      // Refrescar listas del módulo para reflejar estados/completados en Prefactura
+      try {
+        // Evitar importar aquí fetchers del slice para no aumentar dependencias del upload
+        // La pantalla de prefactura ya los llama al montar, pero refrescamos por UX
+        const { fetchPendingRecordsByModule, fetchRecordsByModule } = await import("@/lib/features/records/recordsSlice")
+        //@ts-ignore
+        dispatch(fetchPendingRecordsByModule("trucking"))
+        //@ts-ignore
+        dispatch(fetchRecordsByModule("trucking"))
+      } catch {}
       
     } catch (error) {
       console.error("Error al guardar:", error)

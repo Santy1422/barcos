@@ -11,6 +11,7 @@ import {
   type PersistedInvoiceRecord,
   fetchRecordsByModule,
   selectRecordsByModule,
+    deleteRecordAsync,
 } from "@/lib/features/records/recordsSlice"
 import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSlice"
 import { fetchServices, selectAllServices, selectServicesLoading } from "@/lib/features/services/servicesSlice"
@@ -25,7 +26,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { Database, Search, X, Edit } from "lucide-react"
+import { Database, Search, X, Edit, Eye as EyeIcon, Trash2 as TrashIcon } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -69,6 +70,8 @@ export function TruckingPrefactura() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [isDateModalOpen, setIsDateModalOpen] = useState(false)
+  const [isRecordModalOpen, setIsRecordModalOpen] = useState(false)
+  const [selectedRecordForView, setSelectedRecordForView] = useState<IndividualExcelRecord | null>(null)
 
   const getTodayDates = () => {
     const today = new Date()
@@ -131,17 +134,32 @@ export function TruckingPrefactura() {
     { prefacturaNumber: `TRK-PRE-${Date.now().toString().slice(-5)}`, notes: "" }
   )
 
-  // Agrupar por cliente (columna 'line' en data)
-  // Filtrar SOLO trasiego y por búsqueda
+  // Filtrar SOLO trasiego y por búsqueda, tomando todos los registros del módulo que no estén prefacturados/facturados
+  const allTruckingRecords = useAppSelector(state => selectRecordsByModule(state as any, 'trucking')) as any[]
   const trasiegoRecords = useMemo(() => {
     const isTrasiego = (rec: any) => !!(rec?.data?.leg || rec?.data?.matchedPrice || rec?.data?.line)
+    const isNotClosed = (rec: any) => !['prefacturado','facturado'].includes((rec?.status || '').toLowerCase())
     const matches = (rec: any) => {
       if (!search.trim()) return true
       const hay = (v?: string) => (v || "").toString().toLowerCase().includes(search.toLowerCase())
-      return hay(rec?.data?.container) || hay(rec?.data?.line) || hay(rec?.data?.containerConsecutive) || hay(rec?.data?.order)
+      const clientName = (() => {
+        const d = rec?.data || {}
+        const byId = d.clientId || rec?.clientId
+        if (byId) {
+          const c = clients.find((x: any) => (x._id || x.id) === byId)
+          if (c) return c.type === 'natural' ? c.fullName : c.companyName
+        }
+        const bySap = d.clientSapCode || rec?.clientSapCode
+        if (bySap) {
+          const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
+          if (c) return c.type === 'natural' ? c.fullName : c.companyName
+        }
+        return 'PTY SHIP SUPPLIERS, S.A.'
+      })()
+      return hay(rec?.data?.container) || hay(clientName) || hay(rec?.data?.containerConsecutive) || hay(rec?.data?.order)
     }
-    return (pendingTruckingRecords as any[]).filter(isTrasiego).filter(matches)
-  }, [pendingTruckingRecords, search])
+    return (allTruckingRecords as any[]).filter(isTrasiego).filter(isNotClosed).filter(matches)
+  }, [allTruckingRecords, search])
 
   // Aplicar filtros de estado y fecha
   const visibleRecords = useMemo(() => {
@@ -162,20 +180,37 @@ export function TruckingPrefactura() {
   const groupedByClient = useMemo(() => {
     const groups = new Map<string, IndividualExcelRecord[]>()
     visibleRecords.forEach((rec: any) => {
-      const name = rec?.data?.line?.trim?.() || "SIN CLIENTE"
+      const d = rec?.data || {}
+      let name = 'PTY SHIP SUPPLIERS, S.A.'
+      const byId = d.clientId || rec?.clientId
+      if (byId) {
+        const c = clients.find((x: any) => (x._id || x.id) === byId)
+        if (c) name = c.type === 'natural' ? c.fullName : c.companyName
+      } else {
+        const bySap = d.clientSapCode || rec?.clientSapCode
+        if (bySap) {
+          const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
+          if (c) name = c.type === 'natural' ? c.fullName : c.companyName
+        }
+      }
       if (!groups.has(name)) groups.set(name, [])
       groups.get(name)!.push(rec)
     })
     return groups
   }, [visibleRecords])
 
-  const getClient = (name: string) => clients.find((c: any) =>
-    c.type === 'juridico' ? c.companyName?.toLowerCase() === name.toLowerCase() : c.fullName?.toLowerCase() === name.toLowerCase()
-  )
+  const normalizeName = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '').trim()
+  const getClient = (name: string) => {
+    const target = normalizeName(name)
+    return clients.find((c: any) => {
+      const n = c.type === 'juridico' ? (c.companyName || '') : (c.fullName || '')
+      return normalizeName(n) === target
+    })
+  }
 
   const selectedRecords = useMemo(
-    () => pendingTruckingRecords.filter((r: any) => selectedRecordIds.includes(r._id || r.id)),
-    [pendingTruckingRecords, selectedRecordIds]
+    () => allTruckingRecords.filter((r: any) => selectedRecordIds.includes(r._id || r.id)),
+    [allTruckingRecords, selectedRecordIds]
   )
 
   // Generar PDF automáticamente cuando se pase al paso 2
@@ -238,20 +273,46 @@ export function TruckingPrefactura() {
 
   const getSelectedClientName = (): string | null => {
     if (selectedRecords.length === 0) return null
-    return selectedRecords[0]?.data?.line || null
+    const first: any = selectedRecords[0]
+    const d = first?.data || {}
+    const byId = d.clientId || first?.clientId
+    if (byId) {
+      const c = clients.find((x: any) => (x._id || x.id) === byId)
+      return c ? (c.type === 'natural' ? c.fullName : c.companyName) : 'PTY SHIP SUPPLIERS, S.A.'
+    }
+    const bySap = d.clientSapCode || first?.clientSapCode
+    if (bySap) {
+      const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
+      return c ? (c.type === 'natural' ? c.fullName : c.companyName) : 'PTY SHIP SUPPLIERS, S.A.'
+    }
+    return 'PTY SHIP SUPPLIERS, S.A.'
   }
 
   const areAllSelectedSameClient = (): boolean => {
     if (selectedRecords.length === 0) return true
-    const first = selectedRecords[0]?.data?.line || ''
-    return selectedRecords.every((r: any) => (r?.data?.line || '') === first)
+    const firstName = getSelectedClientName() || ''
+    return selectedRecords.every((r: any) => {
+      const d = (r as any).data || {}
+      const byId = d.clientId || (r as any).clientId
+      if (byId) {
+        const c = clients.find((x: any) => (x._id || x.id) === byId)
+        const n = c ? (c.type === 'natural' ? c.fullName : c.companyName) : 'PTY SHIP SUPPLIERS, S.A.'
+        return n === firstName
+      }
+      const bySap = d.clientSapCode || (r as any).clientSapCode
+      if (bySap) {
+        const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
+        const n = c ? (c.type === 'natural' ? c.fullName : c.companyName) : 'PTY SHIP SUPPLIERS, S.A.'
+        return n === firstName
+      }
+      return 'PTY SHIP SUPPLIERS, S.A.' === firstName
+    })
   }
 
   // KPI summary (solo trasiego): mostrar total, trasiego y prefacturados
   const totalDb = trasiegoRecords.length
   const trasiegoCount = trasiegoRecords.length
-  const pendingCount = trasiegoRecords.filter((r: any) => (r.status || '').toLowerCase() === 'pendiente').length
-  const allTruckingRecords = useAppSelector(state => selectRecordsByModule(state as any, 'trucking')) as any[]
+  const pendingCount = trasiegoRecords.filter((r: any) => !((r?.data?.matchedPrice || 0) > 0 || r?.data?.isMatched === true)).length
   const prefacturadosCount = allTruckingRecords.filter((r: any) => (r.status || '').toLowerCase() === 'prefacturado').length
 
   const handleNextStep = () => {
@@ -272,6 +333,25 @@ export function TruckingPrefactura() {
     if (step === 'services') setStep('select')
   }
 
+  const handleViewRecord = (record: IndividualExcelRecord) => {
+    setSelectedRecordForView(record)
+    setIsRecordModalOpen(true)
+  }
+
+  const handleDeleteRecord = async (record: IndividualExcelRecord) => {
+    const recordId = (record as any)._id || (record as any).id
+    if (!recordId) return
+    try {
+      await dispatch(deleteRecordAsync(recordId)).unwrap()
+      setSelectedRecordIds(prev => prev.filter(id => id !== recordId))
+      toast({ title: "Registro eliminado", description: "El registro ha sido eliminado exitosamente" })
+      dispatch(fetchPendingRecordsByModule("trucking"))
+      dispatch(fetchRecordsByModule("trucking"))
+    } catch (error: any) {
+      toast({ title: "Error al eliminar registro", description: error?.message || "No se pudo eliminar el registro", variant: "destructive" })
+    }
+  }
+
   // PDF Prefactura estilo PTYSS (solo trasiego)
   const generatePrefacturaPdf = () => {
     if (selectedRecords.length === 0) {
@@ -279,19 +359,21 @@ export function TruckingPrefactura() {
       return
     }
     const first = selectedRecords[0]
-    const clientName = first?.data?.line || "Cliente"
+    const clientName = getSelectedClientName() || "Cliente"
     const client = getClient(clientName)
+    // Emisor: PTG desde clientes en DB
+    const issuer = getClient('PTG')
 
     const doc = new jsPDF()
 
-    // Colores / encabezado similar a PTYSS
+    // Colores / encabezado
     const lightBlue = [59, 130, 246]
     doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
     doc.rect(15, 15, 30, 15, 'F')
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(12)
     doc.setFont(undefined, 'bold')
-    doc.text('TRUCKING', 30, 25, { align: 'center' })
+    // Eliminado texto "TRUCKING" para PDF PTG
 
     // Número de prefactura y fecha
     doc.setTextColor(0, 0, 0)
@@ -310,18 +392,23 @@ export function TruckingPrefactura() {
     doc.setFontSize(8)
     doc.text('DAY MO YR', 195, 40, { align: 'right' })
 
-    // Información empresa
+    // Información empresa (PTG)
     doc.setFontSize(9)
     doc.setFont(undefined, 'bold')
-    doc.text('PTY SHIP SUPPLIERS, S.A.', 15, 50)
+    const issuerName = issuer ? ((issuer as any).type === 'natural' ? (issuer as any).fullName : (issuer as any).companyName) : 'PTG'
+    doc.text(issuerName || 'PTG', 15, 50)
     doc.setFontSize(8)
     doc.setFont(undefined, 'normal')
-    doc.text('RUC: 155600922-2-2015 D.V. 69', 15, 54)
-    doc.text('PANAMA PACIFICO, INTERNATIONAL BUSINESS PARK', 15, 58)
-    doc.text('BUILDING 3855, FLOOR 2', 15, 62)
-    doc.text('PANAMA, REPUBLICA DE PANAMA', 15, 66)
-    doc.text('T. (507) 838-9806', 15, 70)
-    doc.text('C. (507) 6349-1326', 15, 74)
+    const issuerRuc = issuer ? ((issuer as any).type === 'natural' ? (issuer as any).documentNumber : (issuer as any).ruc) : ''
+    const issuerAddress = issuer ? (
+      typeof (issuer as any).address === 'string' 
+        ? (issuer as any).address 
+        : `${(issuer as any).address?.district || ''}${(issuer as any).address?.province ? ', ' + (issuer as any).address?.province : ''}`
+    ) : ''
+    const issuerPhone = (issuer as any)?.phone || ''
+    if (issuerRuc) doc.text(`RUC: ${issuerRuc}`, 15, 54)
+    if (issuerAddress) doc.text(issuerAddress, 15, 58)
+    if (issuerPhone) doc.text(`TEL: ${issuerPhone}`, 15, 62)
 
     // Cliente
     doc.setFontSize(9)
@@ -440,7 +527,7 @@ export function TruckingPrefactura() {
     y += 14
     doc.setFont(undefined, 'normal')
     doc.setFontSize(9)
-    doc.text('Make check payments payable to: PTY SHIP SUPPLIERS, S.A.', 15, y)
+    doc.text(`Make check payments payable to: ${issuerName || 'PTG'}`, 15, y)
     y += 4
     doc.text('Money transfer to: Banco General - Checking Account', 15, y)
     y += 4
@@ -494,10 +581,10 @@ export function TruckingPrefactura() {
   // Descargar PDF
   const handleDownloadPDF = () => {
     try {
-      const pdfBlob = generatePrefacturaPdf()
-      const first = selectedRecords[0]
-      const clientName = first?.data?.line || "Cliente"
-      const client = getClient(clientName)
+    const pdfBlob = generatePrefacturaPdf()
+    const first = selectedRecords[0]
+    const clientName = getSelectedClientName() || "Cliente"
+    const client = getClient(clientName)
       const clientDisplay = client
         ? ((client as any).type === 'natural' ? (client as any).fullName : (client as any).companyName)
         : clientName
@@ -551,9 +638,9 @@ export function TruckingPrefactura() {
       return
     }
     try {
-      // Cliente del primer registro (por nombre en columna line)
+      // Cliente del primer registro (derivado por clientId/clientSapCode; 'line' es naviera)
       const first = selectedRecords[0]
-      const clientName = first?.data?.line || "Cliente"
+      const clientName = getSelectedClientName() || 'Cliente'
       const client = getClient(clientName)
       if (!client) {
         toast({ title: "Error", description: "No se encontró el cliente de los registros seleccionados", variant: "destructive" })
@@ -665,23 +752,12 @@ export function TruckingPrefactura() {
 
       {/* Búsqueda y Filtros (estilo PTYSS) - solo Paso 1 */}
       {step === 'select' && (
-      <div className="mb-6 mt-4 space-y-4">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Buscar por contenedor, cliente o orden..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
-          />
-        </div>
-        <div className="grid grid-cols-1 md-grid-cols-3 md:grid-cols-3 gap-4">
-          {/* Filtros de tipo y estado removidos (todos son trasiego) */}
-          {/* Fecha */}
-          <div className="space-y-2">
+      <div className="mb-6 mt-4">
+        <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
+          {/* Filtro de fecha */}
+          <div className="w-full lg:w-auto">
             <Label className="text-sm font-semibold text-slate-700">Filtrar por fecha:</Label>
-            <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex flex-col sm:flex-row gap-3 mt-2 lg:mt-1">
               <div className="flex gap-1">
                 <Button variant={dateFilter==='createdAt'?'default':'outline'} size="sm" onClick={()=>{setDateFilter('createdAt'); setIsUsingPeriodFilter(false); setActivePeriodFilter('none'); setSelectedRecordIds([])}} className="text-xs h-8 px-3">Creación</Button>
                 <Button variant={dateFilter==='moveDate'?'default':'outline'} size="sm" onClick={()=>{setDateFilter('moveDate'); setIsUsingPeriodFilter(false); setActivePeriodFilter('none'); setSelectedRecordIds([])}} className="text-xs h-8 px-3">Movimiento</Button>
@@ -1006,9 +1082,6 @@ export function TruckingPrefactura() {
 
       {step === 'select' && (
         <Card>
-          <CardHeader>
-          <CardTitle>Paso 1: Selección de Registros (Trucking - Solo Trasiego)</CardTitle>
-          </CardHeader>
           <CardContent>
             <div className="mb-3 flex items-center gap-3">
               <div className="text-sm text-muted-foreground">Total en base de datos (cargados): <span className="font-medium">{trasiegoRecords.length}</span></div>
@@ -1037,6 +1110,8 @@ export function TruckingPrefactura() {
                     <TableHead>Ruta</TableHead>
                     <TableHead>Operación</TableHead>
                     <TableHead>Monto</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1066,17 +1141,38 @@ export function TruckingPrefactura() {
                               </Badge>
                             </TableCell>
                             <TableCell>${((rec as any).data?.matchedPrice || (rec as any).totalValue || 0).toFixed(2)}</TableCell>
+                            <TableCell>
+                              {(() => {
+                                const isMatched = (((rec as any).data?.matchedPrice || 0) > 0) || ((rec as any).data?.isMatched === true)
+                                const isCompleted = isMatched || (((rec as any).status || '').toLowerCase() === 'completado')
+                                return (
+                                  <Badge variant={isCompleted ? 'default' : 'secondary'}>
+                                    {isCompleted ? 'Completado' : 'Pendiente'}
+                                  </Badge>
+                                )
+                              })()}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-600 hover:text-slate-800 hover:bg-slate-100" onClick={() => handleViewRecord(rec)} title="Ver">
+                                  <EyeIcon className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDeleteRecord(rec as any)} title="Eliminar">
+                                  <TrashIcon className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
                           </TableRow>
                         ))}
                         <TableRow>
                           <TableCell></TableCell>
-                          <TableCell colSpan={7} className="text-right font-medium">Subtotal {clientName}</TableCell>
+                          <TableCell colSpan={9} className="text-right font-medium">Subtotal {clientName}</TableCell>
                           <TableCell className="font-medium">
                             ${records.reduce((sum: number, r: any) => sum + (r.data?.matchedPrice || r.totalValue || 0), 0).toFixed(2)}
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell colSpan={9}><Separator /></TableCell>
+                          <TableCell colSpan={11}><Separator /></TableCell>
                         </TableRow>
                       </>
                     ))
@@ -1133,6 +1229,109 @@ export function TruckingPrefactura() {
             >
               {`Crear Prefactura (${selectedRecords.length} registro${selectedRecords.length !== 1 ? 's' : ''})`}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Detalles del Registro */}
+      <Dialog open={isRecordModalOpen} onOpenChange={setIsRecordModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Database className="h-5 w-5" /> Detalles del Registro
+            </DialogTitle>
+          </DialogHeader>
+          {selectedRecordForView && (() => {
+            const rec: any = selectedRecordForView as any
+            const d = rec.data || {}
+            const createdAt = rec.createdAt ? new Date(rec.createdAt).toLocaleString('es-ES') : '—'
+            const moveDate = d.moveDate ? new Date(d.moveDate).toLocaleDateString('es-ES') : (d.moveDate || '—')
+            return (
+              <div className="space-y-6">
+                {/* Datos principales */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <span className="text-sm text-slate-600">Contenedor</span>
+                    <div className="font-medium">{d.container || 'N/A'}</div>
+                    <div className="text-xs text-slate-500">{(d.size ? `${d.size}'` : '')} {d.type || ''}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-slate-600">Cliente</span>
+                    <div className="font-medium">{d.line || 'N/A'}</div>
+                    <div className="text-xs text-slate-500">SAP: {rec.clientSapCode || d.clientSapCode || '—'}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-slate-600">Consecutivo / Orden</span>
+                    <div className="font-medium">{d.containerConsecutive || d.order || 'N/A'}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-slate-600">Desde</span>
+                    <div className="font-medium">{d.from || 'N/A'}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-slate-600">Hacia</span>
+                    <div className="font-medium">{d.to || 'N/A'}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-slate-600">Ruta</span>
+                    <div className="font-medium">{d.leg || `${d.from || ''}${d.to ? ' → ' + d.to : ''}` || 'N/A'}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-slate-600">Operación</span>
+                    <div className="font-medium">{(d.moveType || 'IMPORT').toString().toUpperCase()}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-slate-600">Chofer</span>
+                    <div className="font-medium">{d.driverName || '—'}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-slate-600">Placa</span>
+                    <div className="font-medium">{d.plate || '—'}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-slate-600">Fecha de Movimiento</span>
+                    <div className="font-medium">{moveDate}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-slate-600">Monto</span>
+                    <div className="font-medium">${((d.matchedPrice || rec.totalValue || 0)).toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-slate-600">Estado</span>
+                    <div className="font-medium">{(rec.status || (((d.matchedPrice || 0) > 0 || d.isMatched) ? 'completado' : 'pendiente')).toString()}</div>
+                  </div>
+                </div>
+
+                {/* Datos técnicos */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-3 rounded-md border">
+                  <div>
+                    <span className="text-xs text-slate-600">ID</span>
+                    <div className="text-sm font-mono">{rec._id || rec.id || '—'}</div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-600">Excel ID</span>
+                    <div className="text-sm font-mono">{rec.excelId || '—'}</div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-600">Creación</span>
+                    <div className="text-sm">{createdAt}</div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-600">Prefactura</span>
+                    <div className="text-sm font-mono">{rec.invoiceId || '—'}</div>
+                  </div>
+                </div>
+
+                {/* Datos crudos */}
+                <details className="bg-white border rounded-md">
+                  <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-slate-700">Ver datos crudos</summary>
+                  <pre className="p-3 text-xs overflow-auto max-h-80">{JSON.stringify(rec, null, 2)}</pre>
+                </details>
+              </div>
+            )
+          })()}
+          <div className="flex justify-end pt-4">
+            <Button variant="outline" onClick={() => setIsRecordModalOpen(false)}>Cerrar</Button>
           </div>
         </DialogContent>
       </Dialog>

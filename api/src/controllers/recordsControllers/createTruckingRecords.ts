@@ -84,11 +84,15 @@ export default async (req, res) => {
         const module = data.sapCode === 'PTYSS001' ? 'ptyss' : 'trucking';
         const type = module === 'ptyss' ? 'maritime' : 'transport';
         
+        // Determinar el estado para trucking: si hizo match, marcar como completado
+        const isMatched = Boolean((data && (data.isMatched === true)) || (data && Number(data.matchedPrice) > 0) || Number(totalValue) > 0)
+        const computedStatus = module === 'trucking' && isMatched ? 'completado' : 'pendiente'
+
         const record = await records.create({
           excelId: validExcelId,
           module: module,
           type: type,
-          status: "pendiente",
+          status: computedStatus,
           totalValue: totalValue || 0,
           data, // Datos originales completos
           sapCode, // Campo específico para consultas

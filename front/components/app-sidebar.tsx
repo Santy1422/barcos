@@ -90,8 +90,7 @@ export function AppSidebar() {
       children: [
         { title: "Subir Excel", href: "/trucking/upload", icon: UploadCloud },
         { title: "Crear Prefactura", href: "/trucking/prefactura", icon: FilePlus2 },
-        { title: "Crear Factura", href: "/trucking/invoice", icon: FilePlus2 },
-        { title: "Registros", href: "/trucking/records", icon: ListOrdered },
+        { title: "Facturas", href: "/trucking/records", icon: ListOrdered },
         { title: "Configuración", href: "/trucking/config", icon: Settings2 },
       ],
     },

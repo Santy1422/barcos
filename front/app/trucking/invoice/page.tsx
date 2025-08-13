@@ -1,5 +1,6 @@
-import TruckingInvoice from "@/components/trucking/trucking-invoice"
+import { redirect } from "next/navigation"
 
-export default function TruckingInvoicePage() {
-  return <TruckingInvoice />
+export default function TruckingInvoiceLegacyRedirect() {
+  redirect("/trucking/records")
+  return null
 }
