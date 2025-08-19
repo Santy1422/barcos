@@ -50,7 +50,7 @@ function formatTimeForXML(dateString: string): string {
 }
 
 // Función para generar nombre de archivo XML según estructura SAP
-export function generateXmlFileName(): string {
+export function generateXmlFileName(companyCode: string = '9325'): string {
   const now = new Date()
   const year = now.getFullYear().toString().slice(-2) // últimos 2 dígitos del año
   const month = (now.getMonth() + 1).toString().padStart(2, '0')
@@ -58,9 +58,8 @@ export function generateXmlFileName(): string {
   const hours = now.getHours().toString().padStart(2, '0')
   const minutes = now.getMinutes().toString().padStart(2, '0')
   const seconds = now.getSeconds().toString().padStart(2, '0')
-  
-  // Estructura: 9325_XL_yymmdd_hhmmss.XML
-  return `9325_XL_${year}${month}${day}_${hours}${minutes}${seconds}.XML`
+  // Estructura: <companyCode>_XL_yymmdd_hhmmss.XML
+  return `${companyCode}_XL_${year}${month}${day}_${hours}${minutes}${seconds}.XML`
 }
 
 // Función para enviar XML a SAP vía FTP
@@ -245,7 +244,7 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
         // Protocol Section
         "Protocol": {
           "SourceSystem": "DEP",
-          "TechnicalContact": "almeida.kant@ptyrmgmt.com / renee.taylor@ptyrmgmt.com"
+          "TechnicalContact": "almeida.kant@ptyrmgmt.com;renee.taylor@ptyrmgmt.com"
         },
         // Header Section
         "Header": {
@@ -388,15 +387,14 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
             // Determinar categoría del contenedor
             const ctrCategory = containerType === "FL" ? "N" : containerType.substring(0, 1)
             
-            // Determinar el código de servicio basado en el cliente
-            const serviceCode = invoice.clientName === "PTG" ? "TRK002" : "TRK001"
-            
+            // Determinar el código de servicio basado en el tipo de registro
+            const recordType = record.data.recordType || ''
+            const sapCode = record.data.sapCode || ''
+            // Fallback: si el cliente es PTG, o sapCode es TRK002, forzar trasiego
+            const isTrasiego = recordType === 'trasiego' || sapCode === 'TRK002' || invoice.clientName === 'PTG'
+            const serviceCode = isTrasiego ? 'TRK002' : 'TRK001'
             return {
               "IncomeRebateCode": "I",
-              "CompanyCode": "9326",
-              "BaseUnitMeasure": "EA",
-              "Qty": "1",
-              "ProfitCenter": "1000",
               "Service": serviceCode,
               "Activity": "TRK",
               "Pillar": "TRSP",
@@ -405,13 +403,10 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
               "ClientType": "MEDLOG",
               "BusinessType": businessTypeXmlValue,
               "FullEmpty": "FULL",
-              "CtrISOcode": isoCode,
               "CtrType": containerType,
               "CtrSize": containerSize,
               "CtrCategory": ctrCategory,
-              "SubContracting": "YES",
-              "AmntTransacCur": (record.totalValue || 0).toFixed(2),
-              "AmntCpyCur": (record.totalValue || 0).toFixed(2)
+              "SubContracting": "YES"
             }
           })
         }

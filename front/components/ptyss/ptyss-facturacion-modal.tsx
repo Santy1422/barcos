@@ -209,7 +209,9 @@ export function PTYSSFacturacionModal({
         total: invoice.totalAmount,
         records: relatedRecords.map((record: any) => ({
           id: record._id || record.id,
-          data: record.data,
+          data: {
+            ...record.data
+          },
           totalValue: record.totalValue || 0
         }))
       }
@@ -258,7 +260,7 @@ export function PTYSSFacturacionModal({
     setShowSapLogs(true)
     
     try {
-      const fileName = generateXmlFileName()
+      const fileName = generateXmlFileName('9326')
       console.log("🚀 Enviando XML a SAP vía FTP:", { invoiceId, fileName })
       
       const result = await sendXmlToSapFtp(invoiceId, xmlContent, fileName)
@@ -347,7 +349,7 @@ export function PTYSSFacturacionModal({
       if (actions.sendToSAP && xmlData && xmlData.xml && invoice?.id) {
         console.log("📤 Enviando a SAP antes de facturar para marcar estado...")
         try {
-          const fileName = generateXmlFileName()
+          const fileName = generateXmlFileName('9326')
           const result = await sendXmlToSapFtp(invoice.id, xmlData.xml, fileName)
           
           if (result.success) {

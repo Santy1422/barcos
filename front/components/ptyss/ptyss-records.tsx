@@ -139,7 +139,7 @@ export function PTYSSRecords() {
   const handleDownloadXml = (invoice: any) => {
     if (invoice.xmlData && invoice.xmlData.xml) {
       const blob = new Blob([invoice.xmlData.xml], { type: "application/xml;charset=utf-8" })
-      const filename = generateXmlFileName()
+      const filename = generateXmlFileName('9326')
       
       saveAs(blob, filename)
       toast({ 

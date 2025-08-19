@@ -94,7 +94,7 @@ export function PTYSSXmlViewerModal({
     const blob = new Blob([xml], { type: "application/xml;charset=utf-8" })
     
     // Usar el nombre de SAP si existe, sino generar uno nuevo para la descarga
-    const downloadFileName = sapFileName || generateXmlFileName()
+    const downloadFileName = sapFileName || generateXmlFileName('9326')
     
     saveAs(blob, downloadFileName)
     toast({ 
@@ -197,7 +197,7 @@ export function PTYSSXmlViewerModal({
     
     try {
       // Generar nombre de archivo solo si no existe uno previo
-      const fileNameToSend = sapFileName || generateXmlFileName()
+      const fileNameToSend = sapFileName || generateXmlFileName('9326')
       
       console.log("🚀 Enviando XML a SAP vía FTP:", { 
         invoiceId: invoice.id, 

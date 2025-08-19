@@ -1628,6 +1628,7 @@ export function PTYSSPrefactura() {
         invoiceNumber: prefacturaData.prefacturaNumber,
         clientName: clientName,
         clientRuc: clientRuc,
+        clientSapNumber: client.sapCode || '',
         issueDate: new Date().toISOString().split("T")[0],
         dueDate: new Date().toISOString().split("T")[0],
         currency: "USD",
