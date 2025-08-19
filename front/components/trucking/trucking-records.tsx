@@ -223,20 +223,20 @@ export function TruckingRecords() {
   const handleEdit = (invoice: any) => { setEditInvoice(invoice); setEditModalOpen(true) }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6 ">
       <div className="flex items-center gap-3">
-        <div className="h-10 w-10 rounded-lg bg-blue-600 flex items-center justify-center"><Truck className="h-6 w-6 text-white" /></div>
+        <div className="h-10 w-10 rounded-lg bg-blue-600 flex items-center justify-center">
+          <Truck className="h-6 w-6 text-white" />
+        </div>
         <div>
           <h1 className="text-2xl font-bold">Facturas - PTG</h1>
-          <p className="text-muted-foreground">Prefacturas creadas en Trucking (PTG)</p>
+          <p className="text-muted-foreground">Prefacturas y Facturas de Trasiego</p>
         </div>
       </div>
 
         <Card>
-          <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Eye className="h-5 w-5" /> Listado de Prefacturas</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+         
+        <CardContent className="space-y-4 mt-6">
           <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

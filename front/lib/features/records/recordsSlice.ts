@@ -1090,6 +1090,7 @@ export interface PersistedInvoiceRecord {
   invoiceNumber: string
   clientName: string
   clientRuc: string
+  clientSapNumber: string
   issueDate: string
   dueDate: string
   currency: string

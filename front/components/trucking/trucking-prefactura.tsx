@@ -370,10 +370,13 @@ export function TruckingPrefactura() {
     const lightBlue = [59, 130, 246]
     doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
     doc.rect(15, 15, 30, 15, 'F')
+    // Texto 'PTG' grande, centrado y con padding visual
     doc.setTextColor(255, 255, 255)
-    doc.setFontSize(12)
+    doc.setFontSize(14)
     doc.setFont(undefined, 'bold')
-    // Eliminado texto "TRUCKING" para PDF PTG
+    // Centramos vertical y horizontalmente dentro del rectángulo (15,15,30,15)
+    // Centro X = 15 + 30/2 = 30, Centro Y = 15 + 15/2 = 22.5
+    doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
 
     // Número de prefactura y fecha
     doc.setTextColor(0, 0, 0)
@@ -480,33 +483,6 @@ export function TruckingPrefactura() {
 
     // Asegurar color de texto negro para secciones posteriores a la tabla
     doc.setTextColor(0, 0, 0)
-
-    // Detalles del contenedor (estilo PTYSS)
-    doc.setFontSize(9)
-    doc.setFont(undefined, 'bold')
-    doc.text('Detalles de Contenedores:', 15, y)
-    y += 5
-    doc.setFont(undefined, 'normal')
-    const firstRecord = selectedRecords[0] as any
-    const cont = firstRecord?.data?.container || 'N/A'
-    const from = firstRecord?.data?.from || (firstRecord?.data?.pol || '') || 'N/A'
-    const to = firstRecord?.data?.to || (firstRecord?.data?.pod || '') || 'N/A'
-    const vessel = firstRecord?.data?.vessel || ''
-    doc.text('Contenedor 1:', 15, y)
-    y += 4
-    doc.text(`CTN: ${cont}`, 25, y)
-    y += 4
-    doc.text(`DESDE: ${from}`, 25, y)
-    y += 4
-    doc.text(`HACIA: ${to}`, 25, y)
-    y += 4
-    if (vessel) {
-      doc.text(`EMBARQUE: ${vessel}`, 25, y)
-      y += 6
-    } else {
-      doc.text('EMBARQUE: N/A', 25, y)
-      y += 6
-    }
 
     // TOTAL alineado a la derecha
     doc.setFont(undefined, 'bold')
@@ -646,6 +622,7 @@ export function TruckingPrefactura() {
         toast({ title: "Error", description: "No se encontró el cliente de los registros seleccionados", variant: "destructive" })
         return
       }
+      console.log("client", client)
       const displayName = client.type === 'natural' ? client.fullName : client.companyName
       const displayRuc = client.type === 'natural' ? client.documentNumber : client.ruc
       const address = client.type === 'natural'
@@ -658,6 +635,7 @@ export function TruckingPrefactura() {
         invoiceNumber: prefacturaData.prefacturaNumber,
         clientName: displayName || clientName,
         clientRuc: displayRuc || '',
+        clientSapNumber: client.sapCode || '',
         issueDate: new Date().toISOString().split('T')[0],
         dueDate: new Date().toISOString().split('T')[0],
         currency: 'USD',
@@ -677,6 +655,7 @@ export function TruckingPrefactura() {
       }
 
       const response = await dispatch(createInvoiceAsync(newPrefactura))
+      console.log("response", response)
       if (createInvoiceAsync.fulfilled.match(response)) {
         const createdId = response.payload.id
         await dispatch(updateMultipleRecordsStatusAsync({
@@ -701,6 +680,16 @@ export function TruckingPrefactura() {
     }
   }
 
+  // Estados de paginación para la tabla de registros (Paso 1)
+  const [currentPage, setCurrentPage] = useState(1)
+  const recordsPerPage = 10 // Cambiado de 15 a 10
+  const totalPages = Math.ceil(trasiegoRecords.length / recordsPerPage)
+  const paginatedRecords = useMemo(() => {
+    const start = (currentPage - 1) * recordsPerPage
+    const end = start + recordsPerPage
+    return trasiegoRecords.slice(start, end)
+  }, [trasiegoRecords, currentPage, recordsPerPage])
+
   return (
     <div className="space-y-6">
       {/* Encabezado estilo PTYSS - solo Paso 1 */}
@@ -724,38 +713,11 @@ export function TruckingPrefactura() {
         </div>
       )}
 
-      {/* Información del total de registros (estilo PTYSS) - solo Paso 1 */}
-      {step === 'select' && (
-        <div className="mb-4 mt-4 bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-4 rounded-lg shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-slate-600 rounded-lg">
-              <Database className="h-5 w-5 text-white" />
-            </div>
-            <div className="flex-1">
-              <span className="text-sm font-semibold text-slate-900">
-                Total de registros en la base de datos: {totalDb}
-              </span>
-            </div>
-            <div className="flex gap-4 text-xs">
-              <div className="bg-white/60 px-3 py-1 rounded-md">
-                <span className="font-medium text-slate-600">Trasiego:</span>
-                <span className="ml-1 font-bold text-slate-900">{trasiegoCount}</span>
-              </div>
-              <div className="bg-white/60 px-3 py-1 rounded-md">
-                <span className="font-medium text-slate-600">Prefacturados:</span>
-                <span className="ml-1 font-bold text-slate-900">{prefacturadosCount}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Búsqueda y Filtros (estilo PTYSS) - solo Paso 1 */}
       {step === 'select' && (
-      <div className="mb-6 mt-4">
-        <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
+      <div className="mb-6 mt-4 flex flex-col lg:flex-row gap-4 items-start lg:items-center w-full">
           {/* Filtro de fecha */}
-          <div className="w-full lg:w-auto">
+          <div className="w-full lg:w-auto flex-1">
             <Label className="text-sm font-semibold text-slate-700">Filtrar por fecha:</Label>
             <div className="flex flex-col sm:flex-row gap-3 mt-2 lg:mt-1">
               <div className="flex gap-1">
@@ -790,8 +752,30 @@ export function TruckingPrefactura() {
               )}
             </div>
           </div>
+          {/* Resumen de registros */}
+          <div className="flex-1 flex justify-end w-full">
+            <div className="flex items-center gap-3 bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-4 rounded-lg shadow-sm w-fit">
+              <div className="p-2 bg-slate-600 rounded-lg">
+                <Database className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <span className="text-sm font-semibold text-slate-900">
+                  Total de registros en la base de datos: {totalDb}
+                </span>
+              </div>
+              <div className="flex gap-4 text-xs">
+                <div className="bg-white/60 px-3 py-1 rounded-md">
+                  <span className="font-medium text-slate-600">Trasiego:</span>
+                  <span className="ml-1 font-bold text-slate-900">{trasiegoCount}</span>
+                </div>
+                <div className="bg-white/60 px-3 py-1 rounded-md">
+                  <span className="font-medium text-slate-600">Prefacturados:</span>
+                  <span className="ml-1 font-bold text-slate-900">{prefacturadosCount}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
       )}
       {step === 'services' && (
         <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-xl">
@@ -1083,7 +1067,7 @@ export function TruckingPrefactura() {
       {step === 'select' && (
         <Card>
           <CardContent>
-            <div className="mb-3 flex items-center gap-3">
+            <div className="mb-3 flex items-center gap-3 pt-4">
               <div className="text-sm text-muted-foreground">Total en base de datos (cargados): <span className="font-medium">{trasiegoRecords.length}</span></div>
               <div className="ml-auto w-full max-w-md">
                 <Input placeholder="Buscar por contenedor, cliente o orden..." value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -1121,8 +1105,28 @@ export function TruckingPrefactura() {
                     </TableRow>
                   ) : (
                     Array.from(groupedByClient.entries()).map(([clientName, records]) => (
-                      <>
-                        {records.map((rec, idx) => (
+                      paginatedRecords
+                        .filter(rec => {
+                          // Agrupar por cliente solo los de la página actual
+                          const name = (() => {
+                            const d = rec?.data || {}
+                            let n = 'PTY SHIP SUPPLIERS, S.A.'
+                            const byId = d.clientId || rec?.clientId
+                            if (byId) {
+                              const c = clients.find((x: any) => (x._id || x.id) === byId)
+                              if (c) n = c.type === 'natural' ? c.fullName : c.companyName
+                            } else {
+                              const bySap = d.clientSapCode || rec?.clientSapCode
+                              if (bySap) {
+                                const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
+                                if (c) n = c.type === 'natural' ? c.fullName : c.companyName
+                              }
+                            }
+                            return n
+                          })()
+                          return name === clientName
+                        })
+                        .map((rec, idx) => (
                           <TableRow key={(rec as any)._id || rec.id}>
                             <TableCell>
                               <Checkbox checked={isSelected((rec as any)._id || rec.id)} onCheckedChange={(c: boolean) => toggleRecord((rec as any)._id || rec.id, !!c)} />
@@ -1163,29 +1167,29 @@ export function TruckingPrefactura() {
                               </div>
                             </TableCell>
                           </TableRow>
-                        ))}
-                        <TableRow>
-                          <TableCell></TableCell>
-                          <TableCell colSpan={9} className="text-right font-medium">Subtotal {clientName}</TableCell>
-                          <TableCell className="font-medium">
-                            ${records.reduce((sum: number, r: any) => sum + (r.data?.matchedPrice || r.totalValue || 0), 0).toFixed(2)}
-                          </TableCell>
-                        </TableRow>
-                        <TableRow>
-                          <TableCell colSpan={11}><Separator /></TableCell>
-                        </TableRow>
-                      </>
+                        ))
+                      // ... existing code ...
                     ))
                   )}
                 </TableBody>
               </Table>
             </div>
-            <div className="flex items-center justify-between mt-4">
+            <div className="flex items-center justify-between mt-6">
               <div className="text-sm">
                 Seleccionados: {selectedRecords.length} de {trasiegoRecords.length} | Total: <span className="font-semibold">${totalSelected.toFixed(2)}</span>
               </div>
-              <div className="flex gap-2">
-                <Button onClick={handleNextStep} disabled={selectedRecords.length === 0}>Siguiente</Button>
+              <div className="flex gap-2 items-center">
+                <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                  Anterior
+                </Button>
+                <span className="text-xs mx-2">Página {currentPage} de {totalPages}</span>
+                <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                  Siguiente
+                </Button>
+              </div>
+              <div className="flex gap-2 items-center">
+                {/* Controles de paginación */}
+                <Button onClick={handleNextStep} disabled={selectedRecords.length === 0}>Seguir al Paso 2</Button>
               </div>
             </div>
           </CardContent>

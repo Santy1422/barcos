@@ -62,6 +62,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
         invoiceNumber: newInvoiceNumber,
         client: invoice.clientRuc,
         clientName: invoice.clientName,
+        clientSapNumber: invoice.clientSapNumber,
         date: invoiceDate,
         dueDate: invoiceDate,
         currency: 'USD',

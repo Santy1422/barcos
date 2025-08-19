@@ -417,7 +417,7 @@ export function TruckingUpload() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5" />
-            Subir Excel de Trucking
+            Subir excel Trasiego
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -511,7 +511,7 @@ export function TruckingUpload() {
                     <TableHead>Precio</TableHead>
 
                     <TableHead>Estado</TableHead>
-                    <TableHead>Acciones</TableHead>
+                    {/* <TableHead>Acciones</TableHead> */}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -579,11 +579,11 @@ export function TruckingUpload() {
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell>
+                      {/* <TableCell>
                         {!clientStatus || !clientStatus.isComplete ? (
                           <Button variant="outline" size="sm" onClick={() => handleClientClick(clientName || '')}>Completar datos</Button>
                         ) : null}
-                      </TableCell>
+                      </TableCell> */}
                     </TableRow>
                   )})}
                 </TableBody>

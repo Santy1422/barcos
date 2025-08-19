@@ -59,8 +59,8 @@ export function generateXmlFileName(): string {
   const minutes = now.getMinutes().toString().padStart(2, '0')
   const seconds = now.getSeconds().toString().padStart(2, '0')
   
-  // Estructura: 9326_XL_yymmdd_hhmmss.XML
-  return `9326_XL_${year}${month}${day}_${hours}${minutes}${seconds}.XML`
+  // Estructura: 9325_XL_yymmdd_hhmmss.XML
+  return `9325_XL_${year}${month}${day}_${hours}${minutes}${seconds}.XML`
 }
 
 // Función para enviar XML a SAP vía FTP
@@ -224,6 +224,9 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
   if (!invoice.invoiceNumber || !invoice.client || !invoice.date) {
     throw new Error("Datos requeridos faltantes para generar XML")
   }
+  if (!invoice.clientSapNumber) {
+    throw new Error("El número SAP del cliente (clientSapNumber) es obligatorio para generar el XML.")
+  }
 
   // Calcular el monto total de las rutas (AmntTransactCur)
   const routeAmountTotal = invoice.records.reduce((sum, record) => {
@@ -260,7 +263,7 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
         },
         // CustomerOpenItem Section
         "CustomerOpenItem": {
-          "CustomerNbr": invoice.client,
+          "CustomerNbr": invoice.clientSapNumber || invoice.clientSapCode || invoice.clientSap || invoice.client,
           "AmntTransactCur": routeAmountTotal.toFixed(3)
         },
         // OtherItems Section
@@ -269,31 +272,21 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
             // Determinar el valor de BusinessType para el XML (I o E)
             const businessTypeXmlValue = record.businessType === "IMPORT" ? "I" : "E"
             
+            // Eliminar campos innecesarios y cambiar Service a TRK002
             return {
               "IncomeRebateCode": TRUCKING_DEFAULTS.incomeRebateCode,
-              "AmntTransacCur": (record.totalPrice || 0).toFixed(3),
-              "TaxCode": (record as any).taxCode || "O7",
-              "TaxAmntDocCur": ((record as any).taxAmntDocCur || 0),
-              "TaxAmntCpyCur": ((record as any).taxAmntCpyCur || 0),
-              "ProfitCenter": (record as any).profitCenter || "1000",
               "InternalOrder": record.internalOrder || "",
-              "Bundle": record.bundle || "0000",
-              "Service": "TRK001",
+              "Service": "TRK002",
               "Activity": "TRK",
               "Pillar": TRUCKING_DEFAULTS.pillar,
               "BUCountry": TRUCKING_DEFAULTS.buCountry,
               "ServiceCountry": TRUCKING_DEFAULTS.serviceCountry,
-              "RepairTyp": TRUCKING_DEFAULTS.repairTyp,
               "ClientType": TRUCKING_DEFAULTS.clientType,
               "BusinessType": businessTypeXmlValue,
               "FullEmpty": record.fullEmptyStatus || "FULL",
-              "CtrISOcode": record.containerIsoCode || "D",
               "CtrType": record.containerType || "DV",
               "CtrSize": record.containerSize || "40",
               "CtrCategory": record.ctrCategory || "D",
-              "SalesOrder": record.salesOrder || "",
-              "Route": record.route || "STANDARD",
-              "Commodity": record.commodity || "10",
               "SubContracting": record.subcontracting || "N"
             }
           })

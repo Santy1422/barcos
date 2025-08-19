@@ -25,15 +25,25 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
   const allRecords = useAppSelector(selectAllIndividualRecords);
   const clients = useAppSelector(selectAllClients);
 
+  // Copiar exactamente el regex de normalizeName de trucking-prefactura.tsx
+  const normalizeName = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '').trim();
+  const getClient = (name: string) => {
+    const target = normalizeName(name);
+    return clients.find((c: any) => {
+      const n = c.type === 'juridico' ? (c.companyName || '') : (c.fullName || '');
+      return normalizeName(n) === target;
+    });
+  };
+
   const generateTruckingPrefacturaPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string) => {
     const doc = new jsPDF();
     const lightBlue = [59, 130, 246];
-    doc.setFillColor(...lightBlue);
+    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2]);
     doc.rect(15, 15, 30, 15, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(12);
     doc.setFont(undefined, 'bold');
-    doc.text('TRUCKING', 30, 25, { align: 'center' });
+    doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' });
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(14);
     doc.setFont(undefined, 'bold');
@@ -48,17 +58,25 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     doc.text(`${day} ${month} ${year}`, 195, 35, { align: 'right' });
     doc.setFontSize(8);
     doc.text('DAY MO YR', 195, 40, { align: 'right' });
+    // --- EMISOR PTG ---
+    const issuer = getClient('PTG');
     doc.setFontSize(9);
     doc.setFont(undefined, 'bold');
-    doc.text('PTY SHIP SUPPLIERS, S.A.', 15, 50);
+    const issuerName = issuer ? (issuer.type === 'natural' ? issuer.fullName : issuer.companyName) : 'PTG';
+    doc.text(issuerName || 'PTG', 15, 50);
     doc.setFontSize(8);
     doc.setFont(undefined, 'normal');
-    doc.text('RUC: 155600922-2-2015 D.V. 69', 15, 54);
-    doc.text('PANAMA PACIFICO, INTERNATIONAL BUSINESS PARK', 15, 58);
-    doc.text('BUILDING 3855, FLOOR 2', 15, 62);
-    doc.text('PANAMA, REPUBLICA DE PANAMA', 15, 66);
-    doc.text('T. (507) 838-9806', 15, 70);
-    doc.text('C. (507) 6349-1326', 15, 74);
+    const issuerRuc = issuer ? (issuer.type === 'natural' ? issuer.documentNumber : issuer.ruc) : '';
+    const issuerAddress = issuer ? (
+      typeof issuer.address === 'string'
+        ? issuer.address
+        : `${issuer.address?.district || ''}${issuer.address?.province ? ', ' + issuer.address?.province : ''}`
+    ) : '';
+    const issuerPhone = issuer?.phone || '';
+    if (issuerRuc) doc.text(`RUC: ${issuerRuc}`, 15, 54);
+    if (issuerAddress) doc.text(issuerAddress, 15, 58);
+    if (issuerPhone) doc.text(`T. ${issuerPhone}`, 15, 62);
+    // ... el resto de los datos del emisor pueden agregarse aquí si existen ...
     doc.setFontSize(9);
     doc.setFont(undefined, 'bold');
     doc.text('CUSTOMER:', 15, 82);
@@ -81,7 +99,7 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     const startY = 115;
     const tableWidth = 180;
     const tableX = 15;
-    doc.setFillColor(...lightBlue);
+    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2]);
     doc.rect(tableX, startY, tableWidth, 8, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(10);
@@ -123,7 +141,7 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     y += 10;
     const pageHeight = doc.internal.pageSize.getHeight();
     if (y + 40 > pageHeight) { doc.addPage(); y = 20; }
-    doc.setFillColor(...lightBlue);
+    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2]);
     doc.rect(15, y, 180, 5, 'F');
     doc.setTextColor(255,255,255);
     doc.setFontSize(9);

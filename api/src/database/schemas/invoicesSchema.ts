@@ -19,6 +19,10 @@ const invoicesSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  clientSapNumber: {
+    type: String,
+    required: true
+  },
   issueDate: {
     type: Date,
     required: true
