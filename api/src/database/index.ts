@@ -13,6 +13,7 @@ import { Service } from './schemas/servicesSchema';
 import { LocalService } from './schemas/localServiceSchema';
 import AgencyService from './schemas/agencyServiceSchema';
 import AgencyCatalog from './schemas/agencyCatalogSchema';
+import recordsAutoridadesSchema from './schemas/recordsAutoridadesSchema';
 
 mongoose.set('strictQuery', false);
 
@@ -43,6 +44,7 @@ export const services = Service;
 export const localServices = LocalService;
 export const agencyServices = AgencyService;
 export const agencyCatalogs = AgencyCatalog;
+export const recordsAutoridades = mongoose.model('recordsAutoridades', recordsAutoridadesSchema);
 
 // Manejo de eventos de conexión
 mongoose.connection.on('connected', () => {
@@ -77,7 +79,8 @@ export const getModels = () => {
     services,
     localServices,
     agencyServices,
-    agencyCatalogs
+    agencyCatalogs,
+    recordsAutoridades
   };
 };
 
@@ -94,4 +97,5 @@ export type Models = {
   localServices: typeof localServices;
   agencyServices: typeof agencyServices;
   agencyCatalogs: typeof agencyCatalogs;
+  recordsAutoridades: typeof recordsAutoridades;
 };

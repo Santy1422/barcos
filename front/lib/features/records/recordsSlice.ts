@@ -298,7 +298,7 @@ export const createInvoiceAsync = createAsyncThunk(
 
 export const fetchInvoicesAsync = createAsyncThunk(
   'records/fetchInvoices',
-  async (module?: string, { rejectWithValue }) => {
+  async (module: string | undefined, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem('token')
       if (!token) {
@@ -361,7 +361,7 @@ export const updateRecordStatus = createAsyncThunk(
       
       const data = await response.json()
       return data.record
-    } catch (error) {
+    } catch (error: any) {
       return rejectWithValue(error.message)
     }
   }
@@ -390,9 +390,7 @@ export const fetchRecordsBySapCode = createAsyncThunk(
       
       const data = await response.json()
       return data.payload || { records: [], pagination: {}, summary: {} }
-    } catch (error) {
-                                       //@ts-ignore
-
+    } catch (error: any) {
       return rejectWithValue(error.message)
     }
   }
@@ -420,9 +418,7 @@ export const updateRecordAsync = createAsyncThunk(
       console.log("🔍 updateRecordAsync - Respuesta del backend:", data)
       console.log("🔍 updateRecordAsync - data.data:", data.data)
       return data.data // Devolver directamente el registro actualizado
-    } catch (error) {
-                                       //@ts-ignore
-
+    } catch (error: any) {
       return rejectWithValue(error.message)
     }
   }
@@ -605,6 +601,98 @@ export const updateMultipleRecordsStatusAsync = createAsyncThunk(
   }
 )
 
+// Thunks para Gastos Autoridades
+export const createAutoridadesRecords = createAsyncThunk(
+  'records/createAutoridadesRecords',
+  async (recordsData: any[], { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+      
+      const response = await fetch(createApiUrl('/api/records/autoridades/bulk'), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ recordsData })
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('createAutoridadesRecords - Error del servidor:', errorData)
+        throw new Error(errorData.error || `Error al crear registros de autoridades (${response.status})`)
+      }
+      
+      const data = await response.json()
+      console.log('createAutoridadesRecords - Respuesta exitosa del servidor:', data)
+      return data.records || []
+    } catch (error: any) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
+export const fetchAutoridadesRecords = createAsyncThunk(
+  'records/fetchAutoridadesRecords',
+  async (_, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+      
+      const response = await fetch(createApiUrl('/api/records/autoridades'), {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `Error al obtener registros de autoridades (${response.status})`)
+      }
+      
+      const data = await response.json()
+      return data || []
+    } catch (error: any) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
+export const deleteAutoridadesRecord = createAsyncThunk(
+  'records/deleteAutoridadesRecord',
+  async (recordId: string, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+      
+      const response = await fetch(createApiUrl(`/api/records/autoridades/${recordId}`), {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `Error al eliminar registro de autoridades (${response.status})`)
+      }
+      
+      return recordId
+    } catch (error: any) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
 interface RecordsState {
   individualRecords: ExcelRecord[]
   invoices: InvoiceRecord[]
@@ -628,6 +716,7 @@ interface RecordsState {
   pendingRecordsByModule: {
     [module: string]: ExcelRecord[]
   }
+  autoridadesRecords: any[]
 }
 
 const initialState: RecordsState = {
@@ -641,6 +730,7 @@ const initialState: RecordsState = {
   sapCodePagination: null,
   sapCodeSummary: null,
   pendingRecordsByModule: {},
+  autoridadesRecords: [],
 }
 
 const recordsSlice = createSlice({
@@ -755,7 +845,7 @@ const recordsSlice = createSlice({
         console.log("🔍 fetchRecordsByModule.fulfilled - Registros antes:", state.individualRecords.length)
         
         // Agregar los registros al estado individualRecords, evitando duplicados
-        action.payload.forEach((newRecord: ExcelRecord) => {
+        action.payload.forEach((newRecord: any) => {
           const existingIndex = state.individualRecords.findIndex(r => (r._id || r.id) === (newRecord._id || newRecord.id))
           if (existingIndex >= 0) {
             state.individualRecords[existingIndex] = newRecord
@@ -942,7 +1032,7 @@ const recordsSlice = createSlice({
         console.log("🔍 fetchAllRecordsByModule.fulfilled - Registros antes:", state.individualRecords.length)
         
         // Agregar los registros al estado individualRecords, evitando duplicados
-        action.payload.forEach((newRecord: ExcelRecord) => {
+        action.payload.forEach((newRecord: any) => {
           const existingIndex = state.individualRecords.findIndex(r => (r._id || r.id) === (newRecord._id || newRecord.id))
           if (existingIndex >= 0) {
             state.individualRecords[existingIndex] = newRecord
@@ -1024,6 +1114,46 @@ const recordsSlice = createSlice({
         state.creatingRecords = false
         state.error = action.payload as string
       })
+
+      // Gastos Autoridades
+      .addCase(createAutoridadesRecords.pending, (state) => {
+        state.creatingRecords = true
+        state.error = null
+      })
+      .addCase(createAutoridadesRecords.fulfilled, (state, action) => {
+        state.creatingRecords = false
+        state.autoridadesRecords.push(...action.payload)
+      })
+      .addCase(createAutoridadesRecords.rejected, (state, action) => {
+        state.creatingRecords = false
+        state.error = action.payload as string
+      })
+
+      .addCase(fetchAutoridadesRecords.pending, (state) => {
+        state.fetchingRecords = true
+        state.error = null
+      })
+      .addCase(fetchAutoridadesRecords.fulfilled, (state, action) => {
+        state.fetchingRecords = false
+        state.autoridadesRecords = action.payload
+      })
+      .addCase(fetchAutoridadesRecords.rejected, (state, action) => {
+        state.fetchingRecords = false
+        state.error = action.payload as string
+      })
+
+      .addCase(deleteAutoridadesRecord.pending, (state) => {
+        state.creatingRecords = true
+        state.error = null
+      })
+      .addCase(deleteAutoridadesRecord.fulfilled, (state, action) => {
+        state.creatingRecords = false
+        state.autoridadesRecords = state.autoridadesRecords.filter(r => r._id !== action.payload)
+      })
+      .addCase(deleteAutoridadesRecord.rejected, (state, action) => {
+        state.creatingRecords = false
+        state.error = action.payload as string
+      })
   },
 })
 
@@ -1052,6 +1182,7 @@ export const selectCreatingRecords = (state: RootState) => state.records.creatin
 export const selectSapCodeRecords = (state: RootState) => state.records.sapCodeRecords
 export const selectSapCodePagination = (state: RootState) => state.records.sapCodePagination
 export const selectSapCodeSummary = (state: RootState) => state.records.sapCodeSummary
+export const selectAutoridadesRecords = (state: RootState) => state.records.autoridadesRecords
 
 export const selectRecordsByModule = createSelector(
   [
@@ -1059,7 +1190,7 @@ export const selectRecordsByModule = createSelector(
     (state: RootState, moduleName: ExcelRecord["module"]) => moduleName
   ],
   (individualRecords, moduleName) =>
-    individualRecords.filter((record) => record.module === moduleName)
+    individualRecords.filter((record: any) => record.module === moduleName)
 )
 
 export const selectPendingRecordsByModule = createSelector(
@@ -1068,7 +1199,7 @@ export const selectPendingRecordsByModule = createSelector(
     (state: RootState, moduleName: ExcelRecord["module"]) => moduleName
   ],
   (individualRecords, moduleName) =>
-    individualRecords.filter((record) => record.module === moduleName && record.status === "pendiente")
+    individualRecords.filter((record: any) => record.module === moduleName && record.status === "pendiente")
 )
 
 export const selectPendingRecordsByModuleFromDB = createSelector(
@@ -1080,17 +1211,17 @@ export const selectPendingRecordsByModuleFromDB = createSelector(
 export const selectInvoicesByModule = createSelector(
   [(state: RootState) => state.records.invoices, (state: RootState, moduleName: InvoiceRecord["module"]) => moduleName],
   (invoices, moduleName) => 
-    invoices.filter((invoice) => invoice.module === moduleName)
+    invoices.filter((invoice: any) => invoice.module === moduleName)
 )
 
 export default recordsSlice.reducer
 export interface PersistedInvoiceRecord {
   id: string
-  module: string
+  module: "trucking" | "ptyss"
   invoiceNumber: string
   clientName: string
   clientRuc: string
-  clientSapNumber: string
+  clientSapNumber?: string
   issueDate: string
   dueDate: string
   currency: string

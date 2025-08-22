@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import recordsControllers from '../controllers/recordsControllers/recordsControllers';
 import { jwtUtils } from "../middlewares/jwtUtils";
+import { createAutoridadesRecord } from '../controllers/recordsControllers/createAutoridadesRecord';
+import { getAllAutoridadesRecords } from '../controllers/recordsControllers/getAllAutoridadesRecords';
+import { deleteAutoridadesRecord } from '../controllers/recordsControllers/deleteAutoridadesRecord';
+import recordsAutoridadesControllers from '../controllers/recordsControllers/recordsAutoridadesControllers';
 
 const { catchedAsync } = require('../utils');
 
@@ -14,6 +18,12 @@ router.post('/trucking/bulk', jwtUtils, catchedAsync(recordsControllers.createTr
 
 // Crear múltiples registros de PTYSS desde entrada manual
 router.post('/ptyss/bulk', jwtUtils, catchedAsync(recordsControllers.createPTYSSRecords));
+
+// Gastos Autoridades
+router.post('/autoridades', jwtUtils, catchedAsync(recordsAutoridadesControllers.createAutoridadesRecord));
+router.post('/autoridades/bulk', jwtUtils, catchedAsync(recordsAutoridadesControllers.createAutoridadesRecords));
+router.get('/autoridades', jwtUtils, catchedAsync(recordsAutoridadesControllers.getAllAutoridadesRecords));
+router.delete('/autoridades/:id', jwtUtils, catchedAsync(recordsAutoridadesControllers.deleteAutoridadesRecord));
 
 // Obtener todos los registros
 router.get('/', jwtUtils, catchedAsync(recordsControllers.getAllRecords));
