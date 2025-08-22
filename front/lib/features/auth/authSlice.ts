@@ -131,7 +131,7 @@ export const verifyToken = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try { 
       const token = localStorage.getItem('token')
-      if (!token) {
+      if (!token) { 
         throw new Error('No token found')
       }
       
