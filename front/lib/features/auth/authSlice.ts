@@ -128,7 +128,7 @@ export const logoutAsync = createAsyncThunk(
 // Async thunk para verificar token al cargar la app
 export const verifyToken = createAsyncThunk(
   'auth/verifyToken',
-  async (_, { rejectWithValue }) => {
+  async (_, { rejectWithValue }) => { 
     try { 
       const token = localStorage.getItem('token')
       if (!token) { 
