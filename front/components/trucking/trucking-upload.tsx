@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 import { createTruckingRecords, selectCreatingRecords, selectRecordsError } from "@/lib/features/records/recordsSlice"
 import { addExcelFile } from "@/lib/features/excel/excelSlice"
@@ -99,7 +99,10 @@ export function TruckingUpload() {
     return (
       clients.find((client: any) => {
         if (!name) return false
-        if (client.type === "juridico") return client.companyName?.toLowerCase() === name.toLowerCase()
+        if (client.type === "juridico") {
+          // Para clientes jurídicos, buscar por nombre corto (name) en lugar de companyName
+          return client.name?.toLowerCase() === name.toLowerCase()
+        }
         if (client.type === "natural") return client.fullName?.toLowerCase() === name.toLowerCase()
         return false
       }) || null
@@ -110,6 +113,7 @@ export function TruckingUpload() {
     const missing: string[] = []
     if (client.type === "juridico") {
       if (!client.companyName?.trim()) missing.push("Nombre de empresa")
+      if (!client.name?.trim()) missing.push("Nombre corto")
       if (!client.ruc?.trim()) missing.push("RUC")
       if (!client.email?.trim()) missing.push("Email")
       if (!client.sapCode?.trim()) missing.push("Código SAP")
@@ -126,6 +130,11 @@ export function TruckingUpload() {
     if (updated) {
       const completeness = checkClientCompleteness(updated)
       setClientCompleteness(prev => new Map(prev).set(clientName, completeness))
+      console.log(`Cliente ${clientName} actualizado:`, completeness)
+    } else {
+      // Si el cliente no se encuentra, marcarlo como incompleto
+      setClientCompleteness(prev => new Map(prev).set(clientName, { isComplete: false, missingFields: ["Cliente no encontrado"] }))
+      console.log(`Cliente ${clientName} no encontrado, marcado como incompleto`)
     }
   }
 
@@ -135,31 +144,19 @@ export function TruckingUpload() {
     return true
   }
 
-  const createTemporaryClient = async (name: string): Promise<Client> => {
-    const temp: any = {
-      type: "juridico",
-      companyName: name,
-      ruc: "",
-      contactName: "",
-      email: "",
-      phone: "",
-      address: "",
-      sapCode: "",
-      isActive: true,
-    }
-    const result = await dispatch(createClientAsync(temp as any)).unwrap()
-    toast({ title: "Cliente temporal creado", description: `Se creó un cliente temporal para "${name}".` })
-    return result
-  }
-
   const handleClientClick = (clientName: string) => {
+    if (!clientName) return
+    
     const existing = findClientByName(clientName)
     if (existing) {
+      // Cliente existe, abrir modal de edición
       setEditingClient(existing)
-    } else if (clientName) {
+    } else {
+      // Cliente no existe, crear uno nuevo
       setEditingClient({
         type: "juridico",
-        companyName: clientName,
+        companyName: clientName, // Usar el nombre del Excel como companyName por defecto
+        name: clientName, // Usar el nombre del Excel como name (nombre corto)
         ruc: "",
         contactName: "",
         email: "",
@@ -191,6 +188,8 @@ export function TruckingUpload() {
   const processMissingClients = async (excelData: TruckingExcelData[]): Promise<TruckingExcelData[]> => {
     const grouped = new Map<string, TruckingExcelData[]>()
     const newCompleteness = new Map<string, { isComplete: boolean; missingFields: string[] }>()
+    
+    // Agrupar registros por cliente (columna 'line') solo si tienen match
     excelData.forEach((record) => {
       const clientName = record.line?.trim()
       if (clientName && record.isMatched) {
@@ -198,25 +197,37 @@ export function TruckingUpload() {
         grouped.get(clientName)!.push(record)
       }
     })
+    
     const missingList: Array<{ name: string; records: TruckingExcelData[] }> = []
+    
+    // Verificar cada cliente encontrado en el Excel
     for (const [name, recs] of grouped) {
       const existing = findClientByName(name)
       if (!existing) {
+        // Cliente no existe en la base de datos
         missingList.push({ name, records: recs })
         newCompleteness.set(name, { isComplete: false, missingFields: ["Todos los campos"] })
       } else {
+        // Cliente existe, verificar si está completo
         newCompleteness.set(name, checkClientCompleteness(existing))
       }
     }
+    
     setClientCompleteness(newCompleteness)
+    
+    // Si hay clientes faltantes, mostrar modal
     if (missingList.length > 0) {
       setMissingClients(missingList)
       setShowClientModal(true)
       setCurrentMissingIndex(0)
       setClientToEdit(missingList[0])
       const total = missingList.reduce((sum, c) => sum + c.records.length, 0)
-      toast({ title: "Clientes faltantes detectados", description: `Se encontraron ${missingList.length} clientes faltantes para ${total} registros con match.` })
+      toast({ 
+        title: "Clientes faltantes detectados", 
+        description: `Se encontraron ${missingList.length} clientes faltantes para ${total} registros con match.` 
+      })
     }
+    
     return excelData
   }
 
@@ -259,8 +270,9 @@ export function TruckingUpload() {
         console.log("Datos después del matching:", matchedData)
         console.log("")
         
-        // En PTG el cliente es fijo, no procesamos clientes faltantes
-        setPreviewData(matchedData)
+        // Procesar clientes faltantes usando la columna 'line' del Excel
+        const processedData = await processMissingClients(matchedData)
+        setPreviewData(processedData)
         
         // Contar registros con match
         const matchedCount = matchedData.filter(record => record.isMatched).length
@@ -300,7 +312,15 @@ export function TruckingUpload() {
       return
     }
 
-    // En PTG el cliente es fijo (PTY SHIP SUPPLIERS, S.A.), omitimos validaciones de clientes incompletos
+    // Verificar que todos los clientes estén completos antes de continuar
+    if (!areAllClientsComplete()) {
+      toast({
+        title: "Clientes incompletos",
+        description: "Debes completar todos los datos de clientes antes de guardar los registros",
+        variant: "destructive"
+      })
+      return
+    }
 
     setIsLoading(true)
 
@@ -341,18 +361,19 @@ export function TruckingUpload() {
       const recordsData = previewData
         .filter((r) => r.isMatched)
         .map((record, index) => {
-          // Cliente fijo para PTG: PTY SHIP SUPPLIERS S.A (sin coma); comparar normalizado
-          const fixedClientName = 'PTY SHIP SUPPLIERS S.A'
-          const fixedKey = normalizeName(fixedClientName)
-          const client = clients.find((c: any) => {
-            const name = c.type === 'juridico' ? (c.companyName || '') : (c.fullName || '')
-            return normalizeName(name) === fixedKey
-          }) || null
+          // Buscar el cliente usando la columna 'line' del Excel
+          const clientName = record.line?.trim()
+          const client = clientName ? findClientByName(clientName) : null
+          
+          if (!client) {
+            throw new Error(`Cliente no encontrado: ${clientName}`)
+          }
+          
           const enriched = {
             ...record,
             // Guardar referencias del cliente real para facturación
-            clientId: client?._id || client?.id || undefined,
-            clientSapCode: client?.sapCode || undefined,
+            clientId: client._id || client.id,
+            clientSapCode: client.sapCode,
           }
           return {
             data: enriched, // Datos completos + cliente asociado
@@ -375,10 +396,40 @@ export function TruckingUpload() {
       console.log("Result length:", result.length)
       console.log("Result type:", typeof result)
       console.log("Result is array:", Array.isArray(result))
+      console.log("Result.count:", result.count)
+      console.log("Result.duplicates:", result.duplicates)
+      console.log("Result.records:", result.records)
+      console.log("Result.totalProcessed:", result.totalProcessed)
+      console.log("Result completo (JSON):", JSON.stringify(result, null, 2))
+      
+      // Manejar respuesta con información de duplicados
+      let successMessage = ""
+      
+      // Obtener el conteo de registros creados de diferentes formas posibles
+      let recordsCreated = 0
+      if (typeof result.count === 'number') {
+        recordsCreated = result.count
+      } else if (Array.isArray(result.records)) {
+        recordsCreated = result.records.length
+      } else if (Array.isArray(result)) {
+        recordsCreated = result.length
+      }
+      
+      // Si no pudimos obtener el conteo, usar un mensaje genérico
+      if (recordsCreated === 0 && !result.duplicates) {
+        successMessage = "Registros procesados exitosamente. Verifica la consola para más detalles."
+      } else if (result.duplicates && result.duplicates.count > 0) {
+        successMessage = `${recordsCreated} registros nuevos guardados, ${result.duplicates.count} duplicados (containerConsecutive) omitidos.`
+        if (result.duplicates.containerConsecutives) {
+          console.log("ContainerConsecutives duplicados:", result.duplicates.containerConsecutives)
+        }
+      } else {
+        successMessage = `${recordsCreated} registros con match guardados correctamente en el sistema (${previewData.length - recordsData.length} sin match omitidos)`
+      }
       
       toast({
         title: "Éxito",
-        description: `${result.length} registros con match guardados correctamente en el sistema (${previewData.length - recordsData.length} sin match omitidos)`
+        description: successMessage
       })
       
       // Limpiar el estado
@@ -411,6 +462,22 @@ export function TruckingUpload() {
   const matchedCount = previewData.filter(record => record.isMatched).length
   const unmatchedCount = previewData.length - matchedCount
 
+  // Verificar duplicados dentro del Excel por containerConsecutive
+  const duplicateContainerConsecutives = useMemo(() => {
+    const containerConsecutives = previewData
+      .filter(record => record.isMatched)
+      .map(record => record.containerConsecutive)
+      .filter(Boolean)
+    
+    const duplicates = containerConsecutives.filter((item, index) => 
+      containerConsecutives.indexOf(item) !== index
+    )
+    
+    return [...new Set(duplicates)] // Eliminar duplicados de la lista de duplicados
+  }, [previewData])
+
+  const hasDuplicateContainerConsecutives = duplicateContainerConsecutives.length > 0
+
   return (
     <div className="space-y-6">
       <Card>
@@ -421,6 +488,16 @@ export function TruckingUpload() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="flex items-center gap-2 text-blue-800">
+              <AlertCircle className="h-4 w-4" />
+              <span className="text-sm font-medium">Información importante</span>
+            </div>
+            <p className="text-sm text-blue-700 mt-1">              
+              Si algún cliente no existe o tiene datos incompletos, se mostrará un modal para completar la información.
+            </p>
+          </div>
+          
           <div className="space-y-2">
             <Label htmlFor="excel-file">Seleccionar archivo Excel</Label>
             <Input
@@ -478,6 +555,11 @@ export function TruckingUpload() {
                   {unmatchedCount} sin coincidencia
                 </Badge>
               )}
+              {hasDuplicateContainerConsecutives && (
+                <Badge variant="outline" className="text-red-600 border-red-600">
+                  ⚠️ {duplicateContainerConsecutives.length} containerConsecutive duplicados
+                </Badge>
+              )}
               <span className="ml-auto font-medium">Total: ${totalAmount.toFixed(2)}</span>
               {clientCompleteness.size > 0 && (
                 <>
@@ -486,6 +568,9 @@ export function TruckingUpload() {
                   </Badge>
                   <Badge variant="outline" className="text-red-600 border-red-600">
                     {Array.from(clientCompleteness.values()).filter(c => !c.isComplete).length} clientes incompletos
+                  </Badge>
+                  <Badge variant="outline" className="text-blue-600 border-blue-600">
+                    {Array.from(clientCompleteness.keys()).length} clientes únicos
                   </Badge>
                 </>
               )}
@@ -498,10 +583,7 @@ export function TruckingUpload() {
                   <TableRow>
                     <TableHead>Container</TableHead>
                     <TableHead>Container Consecutive</TableHead>
-                    <TableHead>Driver Name</TableHead>
-                                      <TableHead>Sap Code</TableHead>
-
-                    <TableHead>Plate</TableHead>
+                    <TableHead>F/E</TableHead>
                     <TableHead>Size</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Move Date</TableHead>
@@ -509,7 +591,7 @@ export function TruckingUpload() {
                     <TableHead>Leg</TableHead>
                     <TableHead>Move Type</TableHead>
                     <TableHead>Precio</TableHead>
-
+                    <TableHead>Duplicado</TableHead>
                     <TableHead>Estado</TableHead>
                     {/* <TableHead>Acciones</TableHead> */}
                   </TableRow>
@@ -518,15 +600,12 @@ export function TruckingUpload() {
                   {previewData.map((record, index) => {
                     const clientName = record.line?.trim()
                     const clientStatus = clientName ? clientCompleteness.get(clientName) : null
-                    const isClickable = record.isMatched && clientStatus && !clientStatus.isComplete
+                    const isClickable = record.isMatched && clientName && (clientStatus ? !clientStatus.isComplete : true)
                     return (
                     <TableRow key={index}>
                       <TableCell className="font-mono text-sm">{record.container}</TableCell>
                       <TableCell>{record.containerConsecutive}</TableCell>
-                      <TableCell>{record.driverName}</TableCell>
-                                            <TableCell>{record?.sapCode}</TableCell>
-
-                      <TableCell>{record.plate}</TableCell>
+                      <TableCell>{record.fe}</TableCell>
                       <TableCell>{record.size}</TableCell>
                       <TableCell>{record.type}</TableCell>
                       <TableCell>{record.moveDate}</TableCell>
@@ -535,20 +614,28 @@ export function TruckingUpload() {
                           <span
                             className={isClickable ? "cursor-pointer text-blue-600 hover:text-blue-800 underline" : ""}
                             onClick={isClickable ? () => handleClientClick(clientName!) : undefined}
+                            title={isClickable ? "Haz clic para editar datos del cliente" : ""}
                           >
-                            {record.line}
+                            {record.line || "N/A"}
                           </span>
-                          {record.isMatched && clientStatus && (
+                          {record.isMatched && clientName && (
                             <div className="flex items-center">
-                              {clientStatus.isComplete ? (
-                                <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
-                                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                                  Completo
-                                </Badge>
+                              {clientStatus ? (
+                                clientStatus.isComplete ? (
+                                  <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
+                                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                                    Completo
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-red-600 border-red-600 text-xs cursor-pointer" onClick={() => handleClientClick(clientName)}>
+                                    <AlertCircle className="h-3 w-3 mr-1" />
+                                    Incompleto
+                                  </Badge>
+                                )
                               ) : (
-                                <Badge variant="outline" className="text-red-600 border-red-600 text-xs cursor-pointer" onClick={() => handleClientClick(clientName!)}>
+                                <Badge variant="outline" className="text-orange-600 border-orange-600 text-xs cursor-pointer" onClick={() => handleClientClick(clientName)}>
                                   <AlertCircle className="h-3 w-3 mr-1" />
-                                  Incompleto
+                                  No existe
                                 </Badge>
                               )}
                             </div>
@@ -567,6 +654,15 @@ export function TruckingUpload() {
                         )}
                       </TableCell>
                       <TableCell>
+                        {duplicateContainerConsecutives.includes(record.containerConsecutive) ? (
+                          <Badge variant="outline" className="text-red-600 border-red-600 text-xs">
+                            ⚠️ Duplicado
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         {record.isMatched ? (
                           <Badge variant="outline" className="text-green-600 border-green-600">
                             <CheckCircle className="h-3 w-3 mr-1" />
@@ -579,24 +675,55 @@ export function TruckingUpload() {
                           </Badge>
                         )}
                       </TableCell>
-                      {/* <TableCell>
-                        {!clientStatus || !clientStatus.isComplete ? (
-                          <Button variant="outline" size="sm" onClick={() => handleClientClick(clientName || '')}>Completar datos</Button>
-                        ) : null}
-                      </TableCell> */}
                     </TableRow>
                   )})}
                 </TableBody>
               </Table>
             </div>
             
-            <div className="mt-4 flex justify-end space-x-2">
-              {!areAllClientsComplete() && (
-                <div className="flex items-center space-x-2 text-sm text-red-600">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>Completa todos los datos de clientes antes de guardar</span>
-                </div>
-              )}
+            <div className="mt-4 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                {!areAllClientsComplete() && (
+                  <div className="flex items-center space-x-2 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>Completa todos los datos de clientes antes de guardar</span>
+                  </div>
+                )}
+                {hasDuplicateContainerConsecutives && (
+                  <div className="flex items-center space-x-2 text-sm text-orange-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>
+                      ⚠️ Se detectaron {duplicateContainerConsecutives.length} containerConsecutive duplicados en el Excel. 
+                      Los duplicados serán filtrados automáticamente al guardar.
+                    </span>
+                  </div>
+                )}
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    // Refrescar verificación de clientes
+                    const newCompleteness = new Map<string, { isComplete: boolean; missingFields: string[] }>()
+                    previewData.forEach((record) => {
+                      const clientName = record.line?.trim()
+                      if (clientName && record.isMatched) {
+                        const existing = findClientByName(clientName)
+                        if (existing) {
+                          newCompleteness.set(clientName, checkClientCompleteness(existing))
+                        } else {
+                          newCompleteness.set(clientName, { isComplete: false, missingFields: ["Cliente no existe"] })
+                        }
+                      }
+                    })
+                    setClientCompleteness(newCompleteness)
+                    toast({ title: "Verificación actualizada", description: "Se ha refrescado la verificación de clientes" })
+                  }}
+                  className="text-xs"
+                >
+                  🔄 Refrescar verificación
+                </Button>
+              </div>
+              
               <Button 
                 onClick={handleUpload}
                 disabled={isLoading || isCreatingRecords || !areAllClientsComplete()}
@@ -626,6 +753,10 @@ export function TruckingUpload() {
           const clientName = client.type === 'juridico' ? (client as any).companyName : (client as any).fullName
           updateClientCompleteness(clientName)
           setEditingClient(null)
+          
+          // Refrescar la lista de clientes
+          dispatch(fetchClients())
+          
           // Si veníamos del flujo de faltantes, avanzar al siguiente automáticamente
           if (missingClients.length > 0) {
             // buscar por nombre actual en missingClients
@@ -634,8 +765,17 @@ export function TruckingUpload() {
             if (missingClients.length > 1) {
               setClientToEdit(missingClients[nextIndex])
               setShowClientModal(true)
+            } else {
+              // Si era el último, cerrar el modal
+              setShowClientModal(false)
+              setMissingClients([])
             }
           }
+          
+          toast({ 
+            title: "Cliente actualizado", 
+            description: `Los datos del cliente "${clientName}" han sido actualizados correctamente.` 
+          })
         }}
       />
 
@@ -696,28 +836,11 @@ export function TruckingUpload() {
                   </Button>
                 </div>
                 <Button
-                  variant="outline"
-                  onClick={() => {
-                    createTemporaryClient(clientToEdit.name).then(() => {
-                      updateClientCompleteness(clientToEdit.name)
-                      // avanzar o cerrar
-                      if (missingClients.length > 1) {
-                        const currentIndex = missingClients.indexOf(clientToEdit)
-                        const nextIndex = (currentIndex + 1) % missingClients.length
-                        setClientToEdit(missingClients[nextIndex])
-                      } else {
-                        setShowClientModal(false)
-                      }
-                    })
-                  }}
-                >
-                  Crear Cliente Temporal
-                </Button>
-                <Button
                   onClick={() => {
                     setEditingClient({
                       type: "juridico",
-                      companyName: clientToEdit.name,
+                      companyName: clientToEdit.name, // Usar el nombre del Excel como companyName por defecto
+                      name: clientToEdit.name, // Usar el nombre del Excel como name (nombre corto)
                       ruc: "",
                       contactName: "",
                       email: "",

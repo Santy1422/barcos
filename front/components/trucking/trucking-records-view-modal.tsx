@@ -135,6 +135,7 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
                         <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> Contenedor</Label>
                         <p className="text-sm font-medium">{data.container || "N/A"}</p>
                         <p className="text-xs text-muted-foreground">{displayContainerSize} {displayContainerType}</p>
+                        <p className="text-xs text-muted-foreground">F/E: {data.fe || "N/A"}</p>
                       </div>
 
                       <div className="space-y-2">

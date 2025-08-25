@@ -58,6 +58,7 @@ interface ClientFormData {
   documentNumber: string
   // Campos para cliente jurídico
   companyName: string
+  name: string
   ruc: string
   contactName: string
   // Campos comunes
@@ -73,6 +74,7 @@ const initialFormData: ClientFormData = {
   documentType: "cedula",
   documentNumber: "",
   companyName: "",
+  name: "",
   ruc: "",
   contactName: "",
   email: "",
@@ -109,6 +111,7 @@ export function ClientModal({
         documentType: editingClient.type === "natural" ? editingClient.documentType : "cedula",
         documentNumber: editingClient.type === "natural" ? editingClient.documentNumber : "",
         companyName: editingClient.type === "juridico" ? editingClient.companyName : "",
+        name: editingClient.type === "juridico" ? editingClient.name : "",
         ruc: editingClient.type === "juridico" ? editingClient.ruc : "",
         contactName: editingClient.type === "juridico" ? editingClient.contactName || "" : "",
         email: editingClient.email || "",
@@ -176,6 +179,7 @@ export function ClientModal({
             id: editingClient?.id || generateId(),
             type: "juridico",
             companyName: formData.companyName,
+            name: formData.name,
             ruc: formData.ruc,
             contactName: formData.contactName || undefined,
             email: formData.email,
@@ -303,6 +307,16 @@ export function ClientModal({
                     />
                   </div>
                   
+                  <div>
+                    <Label htmlFor="name">Nombre Corto</Label>
+                    <Input
+                      id="name"
+                      value={formData.name}
+                      onChange={(e) => setFormData({...formData, name: e.target.value})}
+                      placeholder="Nombre corto para referencias"
+                    />
+                  </div>
+
                   <div>
                     <Label htmlFor="ruc">RUC *</Label>
                     <Input
@@ -450,6 +464,7 @@ export function ClientsManagement() {
         } else {
           return (
             client.companyName.toLowerCase().includes(search) ||
+            (client as JuridicalClient).name?.toLowerCase().includes(search) ||
             client.ruc.toLowerCase().includes(search) ||
             client.sapCode?.toLowerCase().includes(search) ||
             client.email.toLowerCase().includes(search) ||
@@ -789,6 +804,11 @@ export function ClientsManagement() {
                       
                       <TableCell className="font-medium">
                         {client.type === "natural" ? client.fullName : client.companyName}
+                        {client.type === "juridico" && (client as JuridicalClient).name && (
+                          <div className="text-sm text-muted-foreground">
+                            Nombre corto: {(client as JuridicalClient).name}
+                          </div>
+                        )}
                         {client.type === "juridico" && client.contactName && (
                           <div className="text-sm text-muted-foreground">
                             Contacto: {client.contactName}
@@ -849,6 +869,7 @@ export function ClientsManagement() {
                                  documentType: client.type === "natural" ? client.documentType : "cedula",
                                  documentNumber: client.type === "natural" ? client.documentNumber : "",
                                  companyName: client.type === "juridico" ? client.companyName : "",
+                                 name: client.type === "juridico" ? client.name : "",
                                  ruc: client.type === "juridico" ? client.ruc : "",
                                  contactName: client.type === "juridico" ? client.contactName || "" : "",
                                  email: client.email || "",

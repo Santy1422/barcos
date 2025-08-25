@@ -49,11 +49,17 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
 
   const generateXMLForInvoice = () => {
     try {
+      console.log("=== DEBUG: generateXMLForInvoice ===")
+      console.log("Invoice:", invoice)
+      console.log("All records:", allRecords)
+      
       if (!invoice) throw new Error("No hay datos de factura disponibles")
       if (!newInvoiceNumber.trim()) throw new Error("Debe ingresar el número de factura")
       if (!invoiceDate) throw new Error("Debe seleccionar la fecha de factura")
       const relatedRecords = allRecords.filter((record: any) => invoice.relatedRecordIds?.includes(record._id || record.id))
       if (relatedRecords.length === 0) throw new Error("No se encontraron registros asociados a la factura")
+      
+      console.log("Related records:", relatedRecords)
 
       // Construir payload Trucking para generateInvoiceXML
       const xmlPayload = {
@@ -69,9 +75,29 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
         total: invoice.totalAmount,
         records: relatedRecords.map((r: any) => {
           const d = r.data || {}
+          console.log(`Record ${r._id || r.id}:`, r)
+          console.log(`Record data:`, d)
+          console.log(`Campo fe:`, d.fe)
+          
           const unitPrice = Number(d.matchedPrice || r.totalValue || 0)
           const desc = d.description || `Servicio de transporte - Container: ${d.container || d.contenedor || ''}`
-          return {
+          
+          // Determinar el estado Full/Empty basado en el campo fe
+          let fullEmptyStatus = 'FULL' // Valor por defecto
+          if (d.fe) {
+            const feValue = d.fe.toString().toUpperCase().trim()
+            console.log(`FE value: "${feValue}"`)
+            if (feValue === 'F') {
+              fullEmptyStatus = 'FULL'
+            } else if (feValue === 'E') {
+              fullEmptyStatus = 'EMPTY'
+            }
+            console.log(`FullEmpty status: "${fullEmptyStatus}"`)
+          } else {
+            console.log(`No hay campo fe, usando valor por defecto`)
+          }
+          
+          const recordForXml = {
             id: r._id || r.id,
             description: desc,
             quantity: 1,
@@ -85,14 +111,20 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
             containerSize: d.size || d.containerSize || '',
             containerType: d.type || d.containerType || '',
             containerIsoCode: d.containerIsoCode || '42G1',
-            fullEmptyStatus: d.fullEmptyStatus || 'FULL',
+            fullEmptyStatus: fullEmptyStatus,
             route: d.leg || `${d.from || ''} / ${d.to || ''}`,
             commodity: 'TRUCK',
           }
+          
+          console.log(`Record for XML:`, recordForXml)
+          return recordForXml
         })
       } as any
 
+      console.log("Final XML payload:", xmlPayload)
       const xml = generateInvoiceXML(xmlPayload)
+      console.log("XML generado exitosamente")
+      
       const validation = validateXMLForSAP(xml)
       setGeneratedXml(xml)
       setXmlValidation(validation)
@@ -100,6 +132,10 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
       else toast({ title: "XML con advertencias", description: `Se encontraron ${validation.errors.length} advertencias.`, variant: "destructive" })
       return { xml, isValid: validation.isValid }
     } catch (error: any) {
+      console.error("=== ERROR en generateXMLForInvoice ===")
+      console.error("Error completo:", error)
+      console.error("Mensaje de error:", error.message)
+      console.error("Stack trace:", error.stack)
       toast({ title: "Error al generar XML", description: error.message || "No se pudo generar el XML", variant: "destructive" })
       return null
     }
@@ -130,16 +166,35 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
     if (!invoiceDate) { toast({ title: "Error", description: "Debe seleccionar la fecha de factura", variant: "destructive" }); return }
     setIsProcessing(true)
     try {
+      console.log("=== DEBUG: handleFacturar iniciado ===")
+      
+      // Generar XML primero
       let xmlData = generateXMLForInvoice()
-      if (!xmlData) xmlData = { xml: "", isValid: false }
+      if (!xmlData) {
+        toast({ title: "Error", description: "No se pudo generar el XML", variant: "destructive" })
+        return
+      }
+      
+      console.log("=== DEBUG: XML generado, llamando a onFacturar ===")
+      console.log("XmlData a pasar:", xmlData)
+      
+      // Enviar a SAP si está marcado
       if (actions.sendToSAP && xmlData.xml && invoice?.id) {
         try {
           await handleSendToSap(invoice.id, xmlData.xml)
-        } catch {}
+        } catch (error) {
+          console.error("Error enviando a SAP:", error)
+          // Continuar con la facturación aunque falle el envío a SAP
+        }
       }
+      
+      // Llamar al callback con el XML generado
       await onFacturar(newInvoiceNumber, xmlData, invoiceDate)
+      
       toast({ title: "Facturación completada", description: `La prefactura ha sido facturada como ${newInvoiceNumber}.` })
     } catch (error: any) {
+      console.error("=== ERROR en handleFacturar ===")
+      console.error("Error completo:", error)
       toast({ title: "Error en la facturación", description: error.message || "No se pudo completar la facturación", variant: "destructive" })
     } finally {
       setIsProcessing(false)

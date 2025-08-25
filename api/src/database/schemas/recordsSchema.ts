@@ -76,5 +76,7 @@ excelRecordSchema.index({ createdBy: 1 });
 excelRecordSchema.index({ createdAt: -1 });
 excelRecordSchema.index({ sapCode: 1 });
 excelRecordSchema.index({ containerConsecutive: 1 });
+// Índice único compuesto para evitar duplicados de containerConsecutive en el mismo módulo
+excelRecordSchema.index({ module: 1, containerConsecutive: 1 }, { unique: true, sparse: true });
 
 export default excelRecordSchema;

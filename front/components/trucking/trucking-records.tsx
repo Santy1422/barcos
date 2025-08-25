@@ -56,6 +56,7 @@ export function TruckingRecords() {
   const [editInvoice, setEditInvoice] = useState<any | null>(null)
   const [facturarModalOpen, setFacturarModalOpen] = useState(false)
   const [facturarInvoice, setFacturarInvoice] = useState<any | null>(null)
+  const [isDateModalOpen, setIsDateModalOpen] = useState(false)
 
   // Datos
   const invoices = useAppSelector((state) => selectInvoicesByModule(state, "trucking"))
@@ -67,6 +68,29 @@ export function TruckingRecords() {
     dispatch(fetchInvoicesAsync("trucking"))
     dispatch(fetchAllRecordsByModule("trucking"))
   }, [dispatch])
+
+  // Debug: verificar que los registros tengan el campo fe
+  useEffect(() => {
+    if (allRecords.length > 0) {
+      console.log("=== DEBUG: Registros cargados ===")
+      console.log("Total de registros:", allRecords.length)
+      const recordsWithFe = allRecords.filter((r: any) => r.data?.fe)
+      console.log("Registros con campo fe:", recordsWithFe.length)
+      if (recordsWithFe.length > 0) {
+        console.log("Ejemplo de registro con fe:", recordsWithFe[0])
+        console.log("Valor del campo fe:", recordsWithFe[0].data.fe)
+        console.log("Tipo del campo fe:", typeof recordsWithFe[0].data.fe)
+        console.log("FE toString():", recordsWithFe[0].data.fe.toString())
+        console.log("FE toUpperCase():", recordsWithFe[0].data.fe.toString().toUpperCase())
+        console.log("FE trim():", recordsWithFe[0].data.fe.toString().toUpperCase().trim())
+      }
+      const recordsWithoutFe = allRecords.filter((r: any) => !r.data?.fe)
+      console.log("Registros sin campo fe:", recordsWithoutFe.length)
+      if (recordsWithoutFe.length > 0) {
+        console.log("Ejemplo de registro sin fe:", recordsWithoutFe[0])
+      }
+    }
+  }, [allRecords])
 
   const getContainersForInvoice = (invoice: any) => {
     if (!invoice.relatedRecordIds || invoice.relatedRecordIds.length === 0) return "N/A"
@@ -115,7 +139,9 @@ export function TruckingRecords() {
       case "today": { const d = getTodayDates(); setStartDate(d.start); setEndDate(d.end); break }
       case "week": { const d = getCurrentWeekDates(); setStartDate(d.start); setEndDate(d.end); break }
       case "month": { const d = getCurrentMonthDates(); setStartDate(d.start); setEndDate(d.end); break }
-      case "advanced": setActivePeriodFilter("advanced"); break
+      case "advanced": 
+        setIsDateModalOpen(true)
+        break
     }
   }
   const getActivePeriodText = () => {
@@ -125,6 +151,20 @@ export function TruckingRecords() {
     if (startDate === week.start && endDate === week.end) return "Semana en curso"
     if (startDate === month.start && endDate === month.end) return "Mes en curso"
     return "Período personalizado"
+  }
+
+  const handleApplyDateFilter = (start: string, end: string) => {
+    setStartDate(start)
+    setEndDate(end)
+    setIsDateModalOpen(false)
+  }
+
+  const handleCancelDateFilter = () => {
+    setIsDateModalOpen(false)
+    setIsUsingPeriodFilter(false)
+    setActivePeriodFilter("none")
+    setStartDate("")
+    setEndDate("")
   }
 
   const filteredInvoices = useMemo(() => {
@@ -159,13 +199,44 @@ export function TruckingRecords() {
   const handleViewRecords = (invoice: any) => { setViewRecordsInvoice(invoice); setRecordsModalOpen(true) }
 
   const buildXmlPayload = (invoice: any) => {
+    console.log("=== DEBUG: buildXmlPayload ===")
+    console.log("Invoice:", invoice)
+    console.log("All records:", allRecords)
+    
     const recordsForXml = invoice.relatedRecordIds.map((recordId: string) => {
       const r = allRecords.find((x: any) => (x._id || x.id) === recordId)
+      console.log(`Record ${recordId}:`, r)
+      
       if (!r) return null
       const d = r.data || {}
+      console.log(`Record data:`, d)
+      console.log(`Campo fe:`, d.fe)
+      
       const unitPrice = Number(d.matchedPrice || r.totalValue || 0)
       const desc = d.description || `Container ${d.container || d.contenedor || ''} ${d.size || d.containerSize || ''} ${d.type || d.containerType || ''} ${d.leg || `${d.from || ''} / ${d.to || ''}`}`
-      return {
+      
+      // Determinar el estado Full/Empty basado en el campo fe
+      let fullEmptyStatus = ''
+      let feValue = ''
+      if (d.fe) {
+        feValue = d.fe.toString().toUpperCase().trim()
+        console.log(`FE value: "${feValue}"`)
+        if (feValue === 'F') {
+          fullEmptyStatus = 'FULL'
+        } else if (feValue === 'E') {
+          fullEmptyStatus = 'EMPTY'
+        }
+        console.log(`FullEmpty status: "${fullEmptyStatus}"`)
+      } else {
+        console.log(`No hay campo fe, usando valor por defecto`)
+        fullEmptyStatus = 'FULL' // Valor por defecto
+      }
+      
+      console.log(`Campo fe original: "${d.fe}"`)
+      console.log(`Campo fe procesado: "${feValue}"`)
+      console.log(`FullEmpty status final: "${fullEmptyStatus}"`)
+      
+      const recordForXml = {
         id: r._id || r.id,
         description: desc,
         quantity: 1,
@@ -178,37 +249,76 @@ export function TruckingRecords() {
         containerSize: d.size || d.containerSize || '',
         containerType: d.type || d.containerType || '',
         containerIsoCode: d.containerIsoCode || '',
-        fullEmptyStatus: d.fullEmptyStatus || '',
+        fullEmptyStatus: fullEmptyStatus,
+        // Campos adicionales requeridos por el XML
+        businessType: d.moveType || 'IMPORT',
+        internalOrder: d.internalOrder || '',
+        ctrCategory: d.ctrCategory || 'D',
+        subcontracting: d.subcontracting || 'N'
       }
+      
+      console.log(`Record for XML:`, recordForXml)
+      return recordForXml
     }).filter(Boolean)
 
-    return {
-          id: invoice.id,
-          module: invoice.module,
-          invoiceNumber: invoice.invoiceNumber,
-          client: invoice.clientRuc,
-          clientName: invoice.clientName,
-          date: invoice.issueDate,
-          dueDate: invoice.dueDate,
-          currency: invoice.currency,
-          total: invoice.totalAmount,
-          records: recordsForXml,
-      status: invoice.status,
+    // Corregir el problema con la fecha
+    let invoiceDate = new Date().toISOString() // Fecha por defecto
+    
+    if (invoice.issueDate) {
+      const parsedDate = new Date(invoice.issueDate)
+      if (!isNaN(parsedDate.getTime())) {
+        invoiceDate = parsedDate.toISOString()
+      }
+    } else if (invoice.createdAt) {
+      const parsedDate = new Date(invoice.createdAt)
+      if (!isNaN(parsedDate.getTime())) {
+        invoiceDate = parsedDate.toISOString()
+      }
     }
+    
+    console.log("Fecha procesada:", invoiceDate)
+    console.log("Fecha original issueDate:", invoice.issueDate)
+    console.log("Fecha original createdAt:", invoice.createdAt)
+
+    const payload = {
+          id: invoice.id || invoice._id || '', // Campo requerido por generateInvoiceXML
+          module: "trucking" as const, // Debe ser exactamente "trucking"
+          invoiceNumber: invoice.invoiceNumber || '', // Campo requerido por generateInvoiceXML
+          client: invoice.clientRuc || invoice.client || '', // Campo requerido por generateInvoiceXML
+          clientName: invoice.clientName,
+          clientSapNumber: invoice.clientSapNumber || '', // Campo requerido por generateInvoiceXML
+          date: invoiceDate, // Usar la fecha procesada
+          dueDate: invoice.dueDate,
+          currency: invoice.currency || 'USD', // Valor por defecto
+          total: invoice.totalAmount || 0, // Valor por defecto
+          records: recordsForXml,
+          status: 'finalized' as const, // Status requerido por InvoiceForXmlPayload
+    }
+    
+    console.log("Final XML payload:", payload)
+    return payload
   }
 
   const handleGenerateXml = (invoice: any) => { setXmlInvoice(invoice); setXmlModalOpen(true) }
 
   const handleDownloadXml = () => {
-    if (!xmlContent) return
-    const blob = new Blob([xmlContent], { type: 'application/xml;charset=utf-8' })
+    if (!xmlInvoice?.xmlData?.xml) return
+    const blob = new Blob([xmlInvoice.xmlData.xml], { type: 'application/xml;charset=utf-8' })
     saveAs(blob, `factura_trucking.xml`)
   }
 
   const handleFacturar = async (invoice: any) => {
     try {
+      console.log("=== DEBUG: Generando XML ===")
+      console.log("Invoice completa:", invoice)
+      
+      const xmlPayload = buildXmlPayload(invoice)
+      console.log("XML Payload generado:", xmlPayload)
+      
       // Generar XML y actualizar factura a 'facturada'
-      const xml = generateInvoiceXML(buildXmlPayload(invoice) as any)
+      const xml = generateInvoiceXML(xmlPayload as any)
+      console.log("XML generado exitosamente")
+      
       await dispatch(updateInvoiceAsync({ id: invoice.id, updates: { status: 'facturada', xmlData: xml } })).unwrap()
       // Marcar registros como facturados en backend
       await dispatch(updateMultipleRecordsStatusAsync({ recordIds: invoice.relatedRecordIds, status: 'facturado', invoiceId: invoice.id })).unwrap()
@@ -216,6 +326,10 @@ export function TruckingRecords() {
       dispatch(fetchInvoicesAsync('trucking'))
       dispatch(fetchAllRecordsByModule('trucking'))
     } catch (e: any) {
+      console.error("=== ERROR en handleFacturar ===")
+      console.error("Error completo:", e)
+      console.error("Mensaje de error:", e.message)
+      console.error("Stack trace:", e.stack)
       toast({ title: 'Error', description: e.message || 'No se pudo facturar', variant: 'destructive' })
     }
   }
@@ -262,7 +376,15 @@ export function TruckingRecords() {
             <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
               <Badge variant="default" className="bg-blue-600 text-white text-xs">{getActivePeriodText()}</Badge>
               <span className="text-sm text-blue-700">{startDate} - {endDate}</span>
-              <Button variant="ghost" size="sm" onClick={()=>{ setIsUsingPeriodFilter(false); setActivePeriodFilter('none'); setStartDate(''); setEndDate('') }} className="h-6 w-6 p-0 ml-auto"><X className="h-3 w-3" /></Button>
+              <Button variant="ghost" size="sm" onClick={()=>{ setIsUsingPeriodFilter(false); setActivePeriodFilter("none"); setStartDate(""); setEndDate("") }} className="h-6 w-6 p-0 ml-auto"><X className="h-3 w-3" /></Button>
+            </div>
+          )}
+
+          {isUsingPeriodFilter && activePeriodFilter === 'advanced' && startDate && endDate && (
+            <div className="flex items-center gap-2 p-2 bg-purple-50 border border-purple-200 rounded-md">
+              <Badge variant="default" className="bg-purple-600 text-white text-xs">Filtro Avanzado</Badge>
+              <span className="text-sm text-purple-700">{startDate} - {endDate}</span>
+              <Button variant="ghost" size="sm" onClick={()=>{ setIsUsingPeriodFilter(false); setActivePeriodFilter("none"); setStartDate(""); setEndDate("") }} className="h-6 w-6 p-0 ml-auto"><X className="h-3 w-3" /></Button>
             </div>
           )}
 
@@ -316,7 +438,7 @@ export function TruckingRecords() {
                               <Button variant="outline" size="sm" title="Facturar" onClick={()=>{ setFacturarInvoice(inv); setFacturarModalOpen(true) }} className="h-8 px-2 text-green-700 border-green-600 hover:bg-green-50">Facturar</Button>
                             </>
                           )}
-                          <Button variant="ghost" size="sm" title="Eliminar" onClick={()=>handleDeleteInvoice(inv)} className="h-8 w-8 text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4"/></Button>
+                          <Button variant="ghost" size="sm" title="Eliminar" onClick={()=>handleDeleteInvoice(inv)} className="h-8 w-8 text-red-600 hover:text-red-50"><Trash2 className="h-4 w-4"/></Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -346,19 +468,140 @@ export function TruckingRecords() {
       <TruckingPrefacturaEditModal open={editModalOpen} onOpenChange={setEditModalOpen} invoice={editInvoice} onClose={()=>setEditModalOpen(false)} onEditSuccess={()=>dispatch(fetchInvoicesAsync('trucking'))} />
       <TruckingFacturacionModal open={facturarModalOpen} onOpenChange={setFacturarModalOpen} invoice={facturarInvoice} onFacturar={async (invoiceNumber, xmlData, invoiceDate)=>{
         try {
-          await dispatch(updateInvoiceAsync({ id: facturarInvoice.id, updates: { status: 'facturada', invoiceNumber, xmlData: xmlData ? { xml: xmlData.xml, isValid: xmlData.isValid, generatedAt: new Date().toISOString() } : undefined } })).unwrap()
-          await dispatch(updateMultipleRecordsStatusAsync({ recordIds: facturarInvoice.relatedRecordIds, status: 'facturado', invoiceId: facturarInvoice.id })).unwrap()
+          console.log("=== DEBUG: onFacturar callback ===")
+          console.log("Invoice:", facturarInvoice)
+          console.log("InvoiceNumber:", invoiceNumber)
+          console.log("XmlData:", xmlData)
+          console.log("InvoiceDate:", invoiceDate)
+          
+          // Actualizar la factura con el nuevo número y XML
+          await dispatch(updateInvoiceAsync({ 
+            id: facturarInvoice.id, 
+            updates: { 
+              status: 'facturada', 
+              invoiceNumber, 
+              xmlData: xmlData ? xmlData.xml : undefined,
+              issueDate: invoiceDate
+            } 
+          })).unwrap()
+          
+          // Marcar registros como facturados
+          await dispatch(updateMultipleRecordsStatusAsync({ 
+            recordIds: facturarInvoice.relatedRecordIds, 
+            status: 'facturado', 
+            invoiceId: facturarInvoice.id 
+          })).unwrap()
+          
           setFacturarModalOpen(false)
           dispatch(fetchInvoicesAsync('trucking'))
           dispatch(fetchAllRecordsByModule('trucking'))
+          
+          toast({ 
+            title: 'Facturación completada', 
+            description: `La prefactura ha sido facturada como ${invoiceNumber}` 
+          })
         } catch (e:any) {
-          toast({ title: 'Error', description: e.message || 'No se pudo facturar', variant: 'destructive' })
+          console.error("Error en onFacturar:", e)
+          toast({ 
+            title: 'Error', 
+            description: e.message || 'No se pudo facturar', 
+            variant: 'destructive' 
+          })
         }
       }} />
+
+      {/* Modal de Selección de Fechas Avanzadas */}
+      <Dialog open={isDateModalOpen} onOpenChange={setIsDateModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Seleccionar Rango de Fechas
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Fecha desde:</Label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Fecha hasta:</Label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+            </div>
+            
+            {/* Botones de período rápido dentro del modal */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-600">Períodos rápidos:</Label>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const todayDates = getTodayDates()
+                    setStartDate(todayDates.start)
+                    setEndDate(todayDates.end)
+                  }}
+                  className="text-xs"
+                >
+                  Hoy
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const weekDates = getCurrentWeekDates()
+                    setStartDate(weekDates.start)
+                    setEndDate(weekDates.end)
+                  }}
+                  className="text-xs"
+                >
+                  Semana
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const monthDates = getCurrentMonthDates()
+                    setStartDate(monthDates.start)
+                    setEndDate(monthDates.end)
+                  }}
+                  className="text-xs"
+                >
+                  Mes
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={handleCancelDateFilter}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => handleApplyDateFilter(startDate, endDate)}
+              disabled={!startDate || !endDate}
+            >
+              Aplicar Filtro
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* El modal de edición se maneja con TruckingPrefacturaEditModal */}
     </div>
   )
 }
-
-

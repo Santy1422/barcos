@@ -31,6 +31,7 @@ export interface TruckingExcelData {
   routeRtSummary: string;
   type1Type2: string;
   line: string; // Campo Line para subcliente en PTYSS
+  fe: string; // Campo F/E del Excel
   // Campos agregados para el matching
   matchedPrice?: number;
   matchedRouteId?: string;
@@ -245,7 +246,9 @@ export const parseTruckingExcel = async (file: File): Promise<TruckingExcelData[
             'route': 'route',
             'route rt summary': 'routeRtSummary',
             'type 1 / type 2': 'type1Type2',
-            'line': 'line'
+            'line': 'line',
+            'f/e': 'fe',
+            'fe': 'fe'
           };
           
           // Crear mapeo de índices

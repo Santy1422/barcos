@@ -38,7 +38,11 @@ export function TruckingXmlViewerModal({ open, onOpenChange, invoice, onXmlSentT
 
   if (!invoice || !invoice.xmlData) return null
 
-  const { xml, isValid, generatedAt } = invoice.xmlData
+  // xmlData puede ser un string (desde la base de datos) o un objeto (desde la generación)
+  const xml = typeof invoice.xmlData === 'string' ? invoice.xmlData : invoice.xmlData.xml
+  const isValid = typeof invoice.xmlData === 'string' ? true : (invoice.xmlData.isValid ?? true)
+  const generatedAt = typeof invoice.xmlData === 'string' ? invoice.createdAt : (invoice.xmlData.generatedAt ?? invoice.createdAt)
+  
   const effectiveSentToSap = localSentToSap !== null ? localSentToSap : invoice.sentToSap
   const effectiveSentToSapAt = localSentToSapAt || invoice.sentToSapAt
   const sapFileName = localSapFileName || invoice.sapFileName
@@ -85,7 +89,16 @@ export function TruckingXmlViewerModal({ open, onOpenChange, invoice, onXmlSentT
     }
   }
 
-  const formatDate = (dateString: string) => new Date(dateString).toLocaleString('es-ES')
+  const formatDate = (dateString: string | Date) => {
+    if (!dateString) return 'N/A'
+    try {
+      const date = new Date(dateString)
+      if (isNaN(date.getTime())) return 'N/A'
+      return date.toLocaleString('es-ES')
+    } catch {
+      return 'N/A'
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

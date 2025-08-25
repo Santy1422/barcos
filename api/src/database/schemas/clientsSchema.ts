@@ -30,6 +30,11 @@ const clientsSchema = new mongoose.Schema({
     type: String,
     required: function() { return this.type === 'juridico'; }
   },
+  name: {
+    type: String,
+    required: false,
+    trim: true
+  },
   ruc: {
     type: String,
     required: function() { return this.type === 'juridico'; }
@@ -84,6 +89,7 @@ clientsSchema.index({ isActive: 1 });
 clientsSchema.index({ ruc: 1 }, { sparse: true });
 clientsSchema.index({ documentNumber: 1 }, { sparse: true });
 clientsSchema.index({ sapCode: 1 }, { sparse: true });
+clientsSchema.index({ name: 1 }, { sparse: true });
 clientsSchema.index({ createdBy: 1 });
 clientsSchema.index({ createdAt: -1 });
 

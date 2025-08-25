@@ -29,6 +29,7 @@ export interface JuridicalClient {
   _id?: string
   type: "juridico"
   companyName: string
+  name?: string
   ruc: string
   email: string
   phone?: string

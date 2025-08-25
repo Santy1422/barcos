@@ -43,6 +43,7 @@ export interface InvoiceForXmlPayload {
   sapDocumentNumber?: string
   client: string // RUC/Cedula for CustomerNbr
   clientName?: string
+  clientSapNumber?: string // Número SAP del cliente para el XML
   date: string
   sapDate?: string
   currency: string

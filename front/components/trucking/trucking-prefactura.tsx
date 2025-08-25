@@ -26,7 +26,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { Database, Search, X, Edit, Eye as EyeIcon, Trash2 as TrashIcon } from "lucide-react"
+import { Database, Search, X, Edit, Eye as EyeIcon, Trash2 as TrashIcon, Calendar } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -112,7 +112,11 @@ export function TruckingPrefactura() {
       case 'today': { const d = getTodayDates(); setStartDate(d.start); setEndDate(d.end); break }
       case 'week': { const d = getCurrentWeekDates(); setStartDate(d.start); setEndDate(d.end); break }
       case 'month': { const d = getCurrentMonthDates(); setStartDate(d.start); setEndDate(d.end); break }
-      case 'advanced': setIsDateModalOpen(true); break
+      case 'advanced': 
+        console.log('Abriendo modal de filtro avanzado...')
+        setIsDateModalOpen(true)
+        console.log('isDateModalOpen establecido en:', true)
+        break
     }
   }
   const handleApplyDateFilter = (start: string, end: string) => {
@@ -695,668 +699,767 @@ export function TruckingPrefactura() {
   const [activeTab, setActiveTab] = useState<'trasiego' | 'autoridades'>('trasiego');
 
   return (
-    <Tabs
-      value={activeTab}
-      onValueChange={(v) => setActiveTab(v as 'trasiego' | 'autoridades')}
-      className="w-full"
-    >
-      <TabsList className="mb-6">
-        <TabsTrigger value="trasiego">Prefactura Trasiego</TabsTrigger>
-        <TabsTrigger value="autoridades">Gastos Autoridades</TabsTrigger>
-      </TabsList>
-      <TabsContent value="trasiego">
-        {/* Encabezado estilo PTYSS - solo Paso 1 */}
-        {step === 'select' && (
-          <div className="bg-slate-800 text-white rounded-md p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-md bg-slate-700 flex items-center justify-center">🏷️</div>
-              <div>
-                <div className="text-lg font-semibold">Paso 1: Selección de Registros</div>
+    <div>
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as 'trasiego' | 'autoridades')}
+        className="w-full"
+      >
+        <TabsList className="mb-6">
+          <TabsTrigger value="trasiego">Prefactura Trasiego</TabsTrigger>
+          <TabsTrigger value="autoridades">Gastos Autoridades</TabsTrigger>
+        </TabsList>
+        <TabsContent value="trasiego">
+          {/* Encabezado estilo PTYSS - solo Paso 1 */}
+          {step === 'select' && (
+            <div className="bg-slate-800 text-white rounded-md p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-md bg-slate-700 flex items-center justify-center">🏷️</div>
                 <div>
-                  <Badge variant="secondary" className="text-slate-900 bg-white/90">{totalDb} disponibles</Badge>
+                  <div className="text-lg font-semibold">Paso 1: Selección de Registros</div>
+                  <div>
+                    <Badge variant="secondary" className="text-slate-900 bg-white/90">{totalDb} disponibles</Badge>
+                  </div>
                 </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-sm opacity-90">{selectedRecordIds.length} de {trasiegoRecords.length} seleccionados</div>
+                <Button variant="outline" disabled={selectedRecordIds.length === 0} onClick={clearSelection} className="bg-white/10 hover:bg-white/20 border-white/30 text-white">
+                  Limpiar Selección
+                </Button>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="text-sm opacity-90">{selectedRecordIds.length} de {trasiegoRecords.length} seleccionados</div>
-              <Button variant="outline" disabled={selectedRecordIds.length === 0} onClick={clearSelection} className="bg-white/10 hover:bg-white/20 border-white/30 text-white">
-                Limpiar Selección
-              </Button>
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* Búsqueda y Filtros (estilo PTYSS) - solo Paso 1 */}
-        {step === 'select' && (
-        <div className="mb-6 mt-4 flex flex-col lg:flex-row gap-4 items-start lg:items-center w-full">
-            {/* Filtro de fecha */}
-            <div className="w-full lg:w-auto flex-1">
-              <Label className="text-sm font-semibold text-slate-700">Filtrar por fecha:</Label>
-              <div className="flex flex-col sm:flex-row gap-3 mt-2 lg:mt-1">
-                <div className="flex gap-1">
-                  <Button variant={dateFilter==='createdAt'?'default':'outline'} size="sm" onClick={()=>{setDateFilter('createdAt'); setIsUsingPeriodFilter(false); setActivePeriodFilter('none'); setSelectedRecordIds([])}} className="text-xs h-8 px-3">Creación</Button>
-                  <Button variant={dateFilter==='moveDate'?'default':'outline'} size="sm" onClick={()=>{setDateFilter('moveDate'); setIsUsingPeriodFilter(false); setActivePeriodFilter('none'); setSelectedRecordIds([])}} className="text-xs h-8 px-3">Movimiento</Button>
-                </div>
-                <div className="hidden sm:block w-px h-6 bg-gray-300 mx-2 self-center"></div>
-                <div className="flex gap-1 flex-wrap">
-                  <Button variant={activePeriodFilter==='today'?'default':'outline'} size="sm" onClick={()=>handleFilterByPeriod('today')} className="text-xs h-8 px-2">Hoy</Button>
-                  <Button variant={activePeriodFilter==='week'?'default':'outline'} size="sm" onClick={()=>handleFilterByPeriod('week')} className="text-xs h-8 px-2">Semana</Button>
-                  <Button variant={activePeriodFilter==='month'?'default':'outline'} size="sm" onClick={()=>handleFilterByPeriod('month')} className="text-xs h-8 px-2">Mes</Button>
-                  <Button variant={activePeriodFilter==='advanced'?'default':'outline'} size="sm" onClick={()=>handleFilterByPeriod('advanced')} className="text-xs h-8 px-2">Avanzado</Button>
-                </div>
-              </div>
-              <div className="mt-2">
-                {isUsingPeriodFilter && activePeriodFilter!=='advanced' && (
-                  <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
-                    <Badge variant="default" className="bg-blue-600 text-white text-xs">{getActivePeriodText()}</Badge>
-                    <span className="text-sm text-blue-700">{startDate} - {endDate}</span>
-                    <Button variant="ghost" size="sm" onClick={()=>{setIsUsingPeriodFilter(false); setActivePeriodFilter('none'); setStartDate(''); setEndDate('')}} className="h-6 w-6 p-0 ml-auto"><X className="h-3 w-3"/></Button>
+          {/* Búsqueda y Filtros (estilo PTYSS) - solo Paso 1 */}
+          {step === 'select' && (
+          <div className="mb-6 mt-4 flex flex-col lg:flex-row gap-4 items-start lg:items-center w-full">
+              {/* Filtro de fecha */}
+              <div className="w-full lg:w-auto flex-1">
+                <Label className="text-sm font-semibold text-slate-700">Filtrar por fecha:</Label>
+                <div className="flex flex-col sm:flex-row gap-3 mt-2 lg:mt-1">
+                  <div className="flex gap-1">
+                    <Button variant={dateFilter==='createdAt'?'default':'outline'} size="sm" onClick={()=>{setDateFilter('createdAt'); setIsUsingPeriodFilter(false); setActivePeriodFilter('none'); setSelectedRecordIds([])}} className="text-xs h-8 px-3">Creación</Button>
+                    <Button variant={dateFilter==='moveDate'?'default':'outline'} size="sm" onClick={()=>{setDateFilter('moveDate'); setIsUsingPeriodFilter(false); setActivePeriodFilter('none'); setSelectedRecordIds([])}} className="text-xs h-8 px-3">Movimiento</Button>
                   </div>
-                )}
-                {activePeriodFilter==='advanced' && startDate && endDate && (
-                  <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
-                    <Badge variant="default" className="bg-blue-600 text-white text-xs">Filtro Avanzado</Badge>
-                    <span className="text-sm text-blue-700">{startDate} - {endDate}</span>
-                    <div className="flex gap-1 ml-auto">
-                      <Button variant="ghost" size="sm" onClick={()=>setIsDateModalOpen(true)} className="h-6 w-6 p-0"><Edit className="h-3 w-3"/></Button>
-                      <Button variant="ghost" size="sm" onClick={()=>{setIsUsingPeriodFilter(false); setActivePeriodFilter('none'); setStartDate(''); setEndDate('')}} className="h-6 w-6 p-0"><X className="h-3 w-3"/></Button>
+                  <div className="hidden sm:block w-px h-6 bg-gray-300 mx-2 self-center"></div>
+                  <div className="flex gap-1 flex-wrap">
+                    <Button variant={activePeriodFilter==='today'?'default':'outline'} size="sm" onClick={()=>handleFilterByPeriod('today')} className="text-xs h-8 px-2">Hoy</Button>
+                    <Button variant={activePeriodFilter==='week'?'default':'outline'} size="sm" onClick={()=>handleFilterByPeriod('week')} className="text-xs h-8 px-2">Semana</Button>
+                    <Button variant={activePeriodFilter==='month'?'default':'outline'} size="sm" onClick={()=>handleFilterByPeriod('month')} className="text-xs h-8 px-2">Mes</Button>
+                    <Button variant={activePeriodFilter==='advanced'?'default':'outline'} size="sm" onClick={()=>handleFilterByPeriod('advanced')} className="text-xs h-8 px-2">Avanzado</Button>
+                  </div>
+                </div>
+                <div className="mt-2">
+                  {isUsingPeriodFilter && activePeriodFilter!=='advanced' && (
+                    <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                      <Badge variant="default" className="bg-blue-600 text-white text-xs">{getActivePeriodText()}</Badge>
+                      <span className="text-sm text-blue-700">{startDate} - {endDate}</span>
+                      <Button variant="ghost" size="sm" onClick={()=>{setIsUsingPeriodFilter(false); setActivePeriodFilter('none'); setStartDate(''); setEndDate('')}} className="h-6 w-6 p-0 ml-auto"><X className="h-3 w-3"/></Button>
                     </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            {/* Resumen de registros */}
-            <div className="flex-1 flex justify-end w-full">
-              <div className="flex items-center gap-3 bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-4 rounded-lg shadow-sm w-fit">
-                <div className="p-2 bg-slate-600 rounded-lg">
-                  <Database className="h-5 w-5 text-white" />
-                </div>
-                <div className="flex-1">
-                  <span className="text-sm font-semibold text-slate-900">
-                    Total de registros en la base de datos: {totalDb}
-                  </span>
-                </div>
-                <div className="flex gap-4 text-xs">
-                  <div className="bg-white/60 px-3 py-1 rounded-md">
-                    <span className="font-medium text-slate-600">Trasiego:</span>
-                    <span className="ml-1 font-bold text-slate-900">{trasiegoCount}</span>
-                  </div>
-                  <div className="bg-white/60 px-3 py-1 rounded-md">
-                    <span className="font-medium text-slate-600">Prefacturados:</span>
-                    <span className="ml-1 font-bold text-slate-900">{prefacturadosCount}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        {step === 'services' && (
-          <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-xl">
-            <CardHeader className="bg-gradient-to-r from-slate-700 to-slate-800 text-white rounded-t-lg">
-              <CardTitle className="flex items-center gap-3">
-                <div className="p-2 bg-white/20 rounded-lg">
-                  <FileText className="h-6 w-6" />
-                </div>
-                <div className="text-xl font-bold">Paso 2: Configuración de Prefactura</div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Resumen de registros seleccionados */}
-              <div className="bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-3 rounded-lg shadow-sm mt-2">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="p-1.5 bg-slate-600 rounded-md text-white">✓</div>
-                  <h3 className="font-semibold text-slate-900 text-base">Resumen de Registros Seleccionados</h3>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                  <div className="bg-white/60 p-2 rounded-md">
-                    <span className="text-slate-600 font-medium text-xs">Cantidad:</span>
-                    <div className="text-sm font-semibold text-slate-900">{selectedRecords.length} registro{selectedRecords.length !== 1 ? 's' : ''}</div>
-                  </div>
-                  <div className="bg-white/60 p-2 rounded-md">
-                    <span className="text-slate-600 font-medium text-xs">Total:</span>
-                    <div className="text-sm font-semibold text-slate-900">${totalSelected.toFixed(2)}</div>
-                  </div>
-                  <div className="bg-white/60 p-2 rounded-md">
-                    <span className="text-slate-600 font-medium text-xs">Cliente:</span>
-                    <div className="text-sm font-semibold text-slate-900">{(() => {
-                      const first = selectedRecords[0];
-                      if (!first) return 'N/A'
-                      const name = first?.data?.line || 'Cliente'
-                      const c = getClient(name)
-                      return c ? ((c as any).type === 'natural' ? (c as any).fullName : (c as any).companyName) : name
-                    })()}</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Configuración de la prefactura */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* Columna izquierda: Configuración y Servicios */}
-                <div className="lg:col-span-1 space-y-4">
-                  {/* Configuración básica */}
-                  <div className="bg-gradient-to-br from-slate-50 to-blue-50 p-3 rounded-lg border border-slate-300">
-                    <h3 className="text-lg font-bold text-slate-900 border-b border-slate-300 pb-2 mb-2">Configuración de Prefactura</h3>
-                    
-                    <div className="space-y-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="prefactura-number" className="text-sm font-semibold text-slate-700">Número de Prefactura *</Label>
-                        <Input
-                          id="prefactura-number"
-                          value={prefacturaData.prefacturaNumber}
-                          onChange={(e) => {
-                            setPrefacturaData({...prefacturaData, prefacturaNumber: e.target.value})
-                            // Regenerar PDF cuando cambie el número
-                            if (e.target.value && selectedRecords.length > 0) {
-                              setTimeout(() => handleGenerateRealtimePDF(), 100)
-                            }
-                          }}
-                          placeholder="TRK-PRE-000001"
-                          className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
-                        />
+                  )}
+                  {activePeriodFilter==='advanced' && startDate && endDate && (
+                    <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                      <Badge variant="default" className="bg-blue-600 text-white text-xs">Filtro Avanzado</Badge>
+                      <span className="text-sm text-blue-700">{startDate} - {endDate}</span>
+                      <div className="flex gap-1 ml-auto">
+                        <Button variant="ghost" size="sm" onClick={()=>setIsDateModalOpen(true)} className="h-6 w-6 p-0"><Edit className="h-3 w-3"/></Button>
+                        <Button variant="ghost" size="sm" onClick={()=>{setIsUsingPeriodFilter(false); setActivePeriodFilter('none'); setStartDate(''); setEndDate('')}} className="h-6 w-6 p-0"><X className="h-3 w-3"/></Button>
                       </div>
-                      
-                      <div className="space-y-2">
-                        <Label htmlFor="notes" className="text-sm font-semibold text-slate-700">Notas (Opcional)</Label>
-                        <Textarea
-                          id="notes"
-                          value={prefacturaData.notes}
-                          onChange={(e) => {
-                            setPrefacturaData({...prefacturaData, notes: e.target.value})
-                            // Regenerar PDF cuando cambien las notas
-                            if (selectedRecords.length > 0) {
-                              setTimeout(() => handleGenerateRealtimePDF(), 100)
-                            }
-                          }}
-                          placeholder="Notas adicionales para la prefactura..."
-                          rows={4}
-                          className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Servicios Adicionales */}
-                  <div className="bg-gradient-to-br from-slate-50 to-blue-50 p-3 rounded-lg border border-slate-300">
-                    <h3 className="text-lg font-bold text-slate-900 border-b border-slate-300 pb-2 mb-2">Servicios Adicionales</h3>
-                    
-                    {/* Selección de servicios */}
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="space-y-3">
-                          <Label className="text-sm font-semibold text-slate-700">Servicio</Label>
-                          <Select onValueChange={(value) => {
-                            const service = services.find((s: any) => s._id === value)
-                            if (service) {
-                              setAdditionalServiceId(value)
-                            }
-                          }} value={additionalServiceId}>
-                            <SelectTrigger className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500 h-12 text-base">
-                              <SelectValue placeholder="Seleccionar servicio..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {services.filter((s: any) => s.module === 'trucking' && s.isActive).length === 0 ? (
-                                <div className="p-2 text-sm text-muted-foreground">
-                                  No hay servicios disponibles
-                                </div>
-                              ) : (
-                                services
-                                  .filter((s: any) => s.module === 'trucking' && s.isActive)
-                                  .filter(service => !selectedAdditionalServices.some(s => s.id === service._id))
-                                  .map((service) => (
-                                    <SelectItem key={service._id} value={service._id}>
-                                      {service.name} - {service.description}
-                                    </SelectItem>
-                                  ))
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        
-                        <div className="space-y-3">
-                          <Label className="text-sm font-semibold text-slate-700">Importe</Label>
-                          <Input
-                            type="text"
-                            value={additionalServiceAmount === 0 ? "" : additionalServiceAmount.toString()}
-                            onChange={(e) => {
-                              const value = e.target.value
-                              if (value === "" || value === "0") {
-                                setAdditionalServiceAmount(0)
-                              } else {
-                                const numValue = parseFloat(value)
-                                if (!isNaN(numValue) && numValue >= 0) {
-                                  setAdditionalServiceAmount(numValue)
-                                }
-                              }
-                            }}
-                            placeholder="0.00"
-                            className="w-full h-12 text-base bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          />
-                        </div>
-                        
-                        <div className="space-y-3">
-                          <Label className="text-sm font-semibold text-slate-700">&nbsp;</Label>
-                          <Button 
-                            onClick={addService}
-                            disabled={!additionalServiceId || additionalServiceAmount <= 0}
-                            className="w-full h-12 text-base bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white font-semibold shadow-md"
-                          >
-                            <Plus className="h-4 w-4 mr-2" />
-                            Agregar
-                          </Button>
-                        </div>
-                      </div>
-                      
-                      {services.filter((s: any) => s.module === 'trucking' && s.isActive).length === 0 && (
-                        <div className="text-sm text-muted-foreground">
-                          No hay servicios adicionales configurados para Trucking. Ve a Configuración → Servicios PTG para agregar servicios.
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Lista de servicios seleccionados */}
-                    {selectedAdditionalServices.length > 0 && (
-                      <div className="space-y-4 mt-4">
-                        <Label className="text-sm font-semibold text-slate-700">Servicios Seleccionados</Label>
-                        {selectedAdditionalServices.map((service) => (
-                          <div key={service.id} className="flex items-center gap-4 p-4 bg-white/70 border border-slate-200 rounded-lg shadow-sm">
-                            <div className="flex-1">
-                              <div className="font-semibold text-sm text-slate-900">{service.name}</div>
-                              <div className="text-xs text-slate-600">Importe personalizado</div>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              <span className="text-lg font-bold text-slate-900 bg-slate-100 px-3 py-1 rounded-full">${service.amount.toFixed(2)}</span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeService(service.id)}
-                                className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Columna derecha: Vista previa del PDF */}
-                <div className="lg:col-span-2 bg-gradient-to-br from-slate-50 to-blue-50 p-3 rounded-lg border border-slate-300">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-lg font-bold text-slate-900">Vista Previa del PDF</h3>
-                    {pdfPreviewUrl && (
-                      <Button 
-                        onClick={handlePreviewPDF} 
-                        variant="outline"
-                        size="sm"
-                        className="border-slate-300 text-slate-700 hover:bg-slate-50"
-                      >
-                        <Eye className="mr-2 h-4 w-4" />
-                        Ver en Pantalla Completa
-                      </Button>
-                    )}
-                  </div>
-                  
-                  {!pdfPreviewUrl ? (
-                    <div className="flex items-center justify-center h-[750px] border-2 border-dashed border-slate-300 rounded-lg">
-                      <div className="text-center text-slate-500">
-                        <FileText className="h-12 w-12 mx-auto mb-4" />
-                        <p className="text-sm">Ingresa el número de prefactura para ver la vista previa</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="w-full h-[750px] border border-slate-300 rounded-lg overflow-hidden">
-                      <iframe
-                        src={pdfPreviewUrl}
-                        className="w-full h-full"
-                        title="Vista previa de la prefactura"
-                      />
                     </div>
                   )}
                 </div>
               </div>
-
-              {/* Detalles de la Prefactura */}
-              <div className="bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-3 rounded-lg shadow-sm">
-                <div className="flex items-center gap-3 mb-2">
+              {/* Resumen de registros */}
+              <div className="flex-1 flex justify-end w-full">
+                <div className="flex items-center gap-3 bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-4 rounded-lg shadow-sm w-fit">
                   <div className="p-2 bg-slate-600 rounded-lg">
-                    <DollarSign className="h-5 w-5 text-white" />
+                    <Database className="h-5 w-5 text-white" />
                   </div>
-                  <h4 className="font-bold text-slate-900 text-lg">Detalles de la Prefactura</h4>
-                </div>
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
-                    <span className="font-semibold text-slate-800">Subtotal Registros:</span>
-                    <span className="font-bold text-lg text-slate-900">${selectedRecords.reduce((sum: number, r: any) => sum + (r.data?.matchedPrice || r.totalValue || 0), 0).toFixed(2)}</span>
+                  <div className="flex-1">
+                    <span className="text-sm font-semibold text-slate-900">
+                      Total de registros mostrados: {totalDb}
+                    </span>
                   </div>
-                  <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
-                    <span className="font-semibold text-slate-800">Servicios Adicionales:</span>
-                    <span className="font-bold text-lg text-slate-900">${selectedAdditionalServices.reduce((sum, s) => sum + s.amount, 0).toFixed(2)}</span>
-                  </div>
-                  <div className="border-t-2 border-slate-300 pt-3 flex justify-between items-center bg-gradient-to-r from-slate-200 to-blue-200 p-4 rounded-lg">
-                    <span className="font-bold text-lg text-slate-900">Total:</span>
-                    <span className="font-bold text-2xl text-slate-900">${totalSelected.toFixed(2)}</span>
+                  <div className="flex gap-4 text-xs">
+                    <div className="bg-white/60 px-3 py-1 rounded-md">
+                      <span className="font-medium text-slate-600">Trasiego:</span>
+                      <span className="ml-1 font-bold text-slate-900">{trasiegoCount}</span>
+                    </div>
+                    {/*<div className="bg-white/60 px-3 py-1 rounded-md">
+                      <span className="font-medium text-slate-600">Prefacturados:</span>
+                      <span className="ml-1 font-bold text-slate-900">{prefacturadosCount}</span>
+                    </div>*/}
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+          {step === 'services' && (
+            <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-xl">
+              <CardHeader className="bg-gradient-to-r from-slate-700 to-slate-800 text-white rounded-t-lg">
+                <CardTitle className="flex items-center gap-3">
+                  <div className="p-2 bg-white/20 rounded-lg">
+                    <FileText className="h-6 w-6" />
+                  </div>
+                  <div className="text-xl font-bold">Paso 2: Configuración de Prefactura</div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Resumen de registros seleccionados */}
+                <div className="bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-3 rounded-lg shadow-sm mt-2">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="p-1.5 bg-slate-600 rounded-md text-white">✓</div>
+                    <h3 className="font-semibold text-slate-900 text-base">Resumen de Registros Seleccionados</h3>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                    <div className="bg-white/60 p-2 rounded-md">
+                      <span className="text-slate-600 font-medium text-xs">Cantidad:</span>
+                      <div className="text-sm font-semibold text-slate-900">{selectedRecords.length} registro{selectedRecords.length !== 1 ? 's' : ''}</div>
+                    </div>
+                    <div className="bg-white/60 p-2 rounded-md">
+                      <span className="text-slate-600 font-medium text-xs">Total:</span>
+                      <div className="text-sm font-semibold text-slate-900">${totalSelected.toFixed(2)}</div>
+                    </div>
+                    <div className="bg-white/60 p-2 rounded-md">
+                      <span className="text-slate-600 font-medium text-xs">Cliente:</span>
+                      <div className="text-sm font-semibold text-slate-900">{(() => {
+                        const first = selectedRecords[0];
+                        if (!first) return 'N/A'
+                        const name = first?.data?.line || 'Cliente'
+                        const c = getClient(name)
+                        return c ? ((c as any).type === 'natural' ? (c as any).fullName : (c as any).companyName) : name
+                      })()}</div>
+                    </div>
+                  </div>
+                </div>
 
-              {/* Botones de navegación */}
-              <div className="flex justify-between pt-4">
-                <Button 
-                  variant="outline"
-                  onClick={handlePrevStep}
-                  className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold px-6 py-3"
-                >
-                  <ArrowLeft className="mr-2 h-5 w-5" />
-                  Volver al Paso 1
-                </Button>
-                
-                <div className="flex gap-3">
+                {/* Configuración de la prefactura */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  {/* Columna izquierda: Configuración y Servicios */}
+                  <div className="lg:col-span-1 space-y-4">
+                    {/* Configuración básica */}
+                    <div className="bg-gradient-to-br from-slate-50 to-blue-50 p-3 rounded-lg border border-slate-300">
+                      <h3 className="text-lg font-bold text-slate-900 border-b border-slate-300 pb-2 mb-2">Configuración de Prefactura</h3>
+                      
+                      <div className="space-y-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="prefactura-number" className="text-sm font-semibold text-slate-700">Número de Prefactura *</Label>
+                          <Input
+                            id="prefactura-number"
+                            value={prefacturaData.prefacturaNumber}
+                            onChange={(e) => {
+                              setPrefacturaData({...prefacturaData, prefacturaNumber: e.target.value})
+                              // Regenerar PDF cuando cambie el número
+                              if (e.target.value && selectedRecords.length > 0) {
+                                setTimeout(() => handleGenerateRealtimePDF(), 100)
+                              }
+                            }}
+                            placeholder="TRK-PRE-000001"
+                            className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
+                          />
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="notes" className="text-sm font-semibold text-slate-700">Notas (Opcional)</Label>
+                          <Textarea
+                            id="notes"
+                            value={prefacturaData.notes}
+                            onChange={(e) => {
+                              setPrefacturaData({...prefacturaData, notes: e.target.value})
+                              // Regenerar PDF cuando cambien las notas
+                              if (selectedRecords.length > 0) {
+                                setTimeout(() => handleGenerateRealtimePDF(), 100)
+                              }
+                            }}
+                            placeholder="Notas adicionales para la prefactura..."
+                            rows={4}
+                            className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Servicios Adicionales */}
+                    <div className="bg-gradient-to-br from-slate-50 to-blue-50 p-3 rounded-lg border border-slate-300">
+                      <h3 className="text-lg font-bold text-slate-900 border-b border-slate-300 pb-2 mb-2">Servicios Adicionales</h3>
+                      
+                      {/* Selección de servicios */}
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="space-y-3">
+                            <Label className="text-sm font-semibold text-slate-700">Servicio</Label>
+                            <Select onValueChange={(value) => {
+                              const service = services.find((s: any) => s._id === value)
+                              if (service) {
+                                setAdditionalServiceId(value)
+                              }
+                            }} value={additionalServiceId}>
+                              <SelectTrigger className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500 h-12 text-base">
+                                <SelectValue placeholder="Seleccionar servicio..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {services.filter((s: any) => s.module === 'trucking' && s.isActive).length === 0 ? (
+                                  <div className="p-2 text-sm text-muted-foreground">
+                                    No hay servicios disponibles
+                                  </div>
+                                ) : (
+                                  services
+                                    .filter((s: any) => s.module === 'trucking' && s.isActive)
+                                    .filter(service => !selectedAdditionalServices.some(s => s.id === service._id))
+                                    .map((service) => (
+                                      <SelectItem key={service._id} value={service._id}>
+                                        {service.name} - {service.description}
+                                      </SelectItem>
+                                    ))
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          
+                          <div className="space-y-3">
+                            <Label className="text-sm font-semibold text-slate-700">Importe</Label>
+                            <Input
+                              type="text"
+                              value={additionalServiceAmount === 0 ? "" : additionalServiceAmount.toString()}
+                              onChange={(e) => {
+                                const value = e.target.value
+                                if (value === "" || value === "0") {
+                                  setAdditionalServiceAmount(0)
+                                } else {
+                                  const numValue = parseFloat(value)
+                                  if (!isNaN(numValue) && numValue >= 0) {
+                                    setAdditionalServiceAmount(numValue)
+                                  }
+                                }
+                              }}
+                              placeholder="0.00"
+                              className="w-full h-12 text-base bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                          </div>
+                          
+                          <div className="space-y-3">
+                            <Label className="text-sm font-semibold text-slate-700">&nbsp;</Label>
+                            <Button 
+                              onClick={addService}
+                              disabled={!additionalServiceId || additionalServiceAmount <= 0}
+                              className="w-full h-12 text-base bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white font-semibold shadow-md"
+                            >
+                              <Plus className="h-4 w-4 mr-2" />
+                              Agregar
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        {services.filter((s: any) => s.module === 'trucking' && s.isActive).length === 0 && (
+                          <div className="text-sm text-muted-foreground">
+                            No hay servicios adicionales configurados para Trucking. Ve a Configuración → Servicios PTG para agregar servicios.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Lista de servicios seleccionados */}
+                      {selectedAdditionalServices.length > 0 && (
+                        <div className="space-y-4 mt-4">
+                          <Label className="text-sm font-semibold text-slate-700">Servicios Seleccionados</Label>
+                          {selectedAdditionalServices.map((service) => (
+                            <div key={service.id} className="flex items-center gap-4 p-4 bg-white/70 border border-slate-200 rounded-lg shadow-sm">
+                              <div className="flex-1">
+                                <div className="font-semibold text-sm text-slate-900">{service.name}</div>
+                                <div className="text-xs text-slate-600">Importe personalizado</div>
+                              </div>
+                              <div className="flex items-center gap-4">
+                                <span className="text-lg font-bold text-slate-900 bg-slate-100 px-3 py-1 rounded-full">${service.amount.toFixed(2)}</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeService(service.id)}
+                                  className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Columna derecha: Vista previa del PDF */}
+                  <div className="lg:col-span-2 bg-gradient-to-br from-slate-50 to-blue-50 p-3 rounded-lg border border-slate-300">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-lg font-bold text-slate-900">Vista Previa del PDF</h3>
+                      {pdfPreviewUrl && (
+                        <Button 
+                          onClick={handlePreviewPDF} 
+                          variant="outline"
+                          size="sm"
+                          className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                        >
+                          <Eye className="mr-2 h-4 w-4" />
+                          Ver en Pantalla Completa
+                        </Button>
+                      )}
+                    </div>
+                    
+                    {!pdfPreviewUrl ? (
+                      <div className="flex items-center justify-center h-[750px] border-2 border-dashed border-slate-300 rounded-lg">
+                        <div className="text-center text-slate-500">
+                          <FileText className="h-12 w-12 mx-auto mb-4" />
+                          <p className="text-sm">Ingresa el número de prefactura para ver la vista previa</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-full h-[750px] border border-slate-300 rounded-lg overflow-hidden">
+                        <iframe
+                          src={pdfPreviewUrl}
+                          className="w-full h-full"
+                          title="Vista previa de la prefactura"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Detalles de la Prefactura */}
+                <div className="bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-3 rounded-lg shadow-sm">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 bg-slate-600 rounded-lg">
+                      <DollarSign className="h-5 w-5 text-white" />
+                    </div>
+                    <h4 className="font-bold text-slate-900 text-lg">Detalles de la Prefactura</h4>
+                  </div>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
+                      <span className="font-semibold text-slate-800">Subtotal Registros:</span>
+                      <span className="font-bold text-lg text-slate-900">${selectedRecords.reduce((sum: number, r: any) => sum + (r.data?.matchedPrice || r.totalValue || 0), 0).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
+                      <span className="font-semibold text-slate-800">Servicios Adicionales:</span>
+                      <span className="font-bold text-lg text-slate-900">${selectedAdditionalServices.reduce((sum, s) => sum + s.amount, 0).toFixed(2)}</span>
+                    </div>
+                    <div className="border-t-2 border-slate-300 pt-3 flex justify-between items-center bg-gradient-to-r from-slate-200 to-blue-200 p-4 rounded-lg">
+                      <span className="font-bold text-lg text-slate-900">Total:</span>
+                      <span className="font-bold text-2xl text-slate-900">${totalSelected.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Botones de navegación */}
+                <div className="flex justify-between pt-4">
                   <Button 
-                    onClick={handleDownloadPDF} 
                     variant="outline"
+                    onClick={handlePrevStep}
                     className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold px-6 py-3"
-                    disabled={!pdfPreviewUrl}
                   >
-                    <Download className="mr-2 h-5 w-5" />
-                    Descargar PDF
+                    <ArrowLeft className="mr-2 h-5 w-5" />
+                    Volver al Paso 1
                   </Button>
                   
-                  <Button 
-                    onClick={handleCreatePrefactura}
-                    className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-semibold px-8 py-3 shadow-lg transform transition-all duration-200 hover:scale-105"
-                    disabled={!prefacturaData.prefacturaNumber || selectedRecords.length === 0}
-                  >
-                    <FileText className="mr-2 h-5 w-5" />
-                    Crear Prefactura
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {step === 'select' && (
-          <Card>
-            <CardContent>
-              <div className="mb-3 flex items-center gap-3 pt-4">
-                <div className="text-sm text-muted-foreground">Total en base de datos (cargados): <span className="font-medium">{trasiegoRecords.length}</span></div>
-                <div className="ml-auto w-full max-w-md">
-                  <Input placeholder="Buscar por contenedor, cliente o orden..." value={search} onChange={(e) => setSearch(e.target.value)} />
-                </div>
-              </div>
-              <div className="rounded-md border overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>
-                        <Checkbox
-                          checked={selectedRecordIds.length > 0 && selectedRecordIds.length === pendingTruckingRecords.length}
-                          onCheckedChange={(c: boolean) => {
-                            if (c) setSelectedRecordIds(pendingTruckingRecords.map((r: any) => r._id || r.id))
-                            else setSelectedRecordIds([])
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead>Contenedor</TableHead>
-                      <TableHead>Fecha Movimiento</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead>Cliente</TableHead>
-                      <TableHead>Orden</TableHead>
-                      <TableHead>Ruta</TableHead>
-                      <TableHead>Operación</TableHead>
-                      <TableHead>Monto</TableHead>
-                      <TableHead>Estado</TableHead>
-                      <TableHead>Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {trasiegoRecords.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={9} className="text-center text-muted-foreground py-8">No hay registros</TableCell>
-                      </TableRow>
-                    ) : (
-                      Array.from(groupedByClient.entries()).map(([clientName, records]) => (
-                        paginatedRecords
-                          .filter(rec => {
-                            // Agrupar por cliente solo los de la página actual
-                            const name = (() => {
-                              const d = rec?.data || {}
-                              let n = 'PTY SHIP SUPPLIERS, S.A.'
-                              const byId = d.clientId || rec?.clientId
-                              if (byId) {
-                                const c = clients.find((x: any) => (x._id || x.id) === byId)
-                                if (c) n = c.type === 'natural' ? c.fullName : c.companyName
-                              } else {
-                                const bySap = d.clientSapCode || rec?.clientSapCode
-                                if (bySap) {
-                                  const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
-                                  if (c) n = c.type === 'natural' ? c.fullName : c.companyName
-                                }
-                              }
-                              return n
-                            })()
-                            return name === clientName
-                          })
-                          .map((rec, idx) => (
-                            <TableRow key={(rec as any)._id || rec.id}>
-                              <TableCell>
-                                <Checkbox checked={isSelected((rec as any)._id || rec.id)} onCheckedChange={(c: boolean) => toggleRecord((rec as any)._id || rec.id, !!c)} />
-                              </TableCell>
-                              <TableCell className="font-mono text-sm">{(rec as any).data?.container || ''}</TableCell>
-                              <TableCell>{(rec as any).data?.moveDate || '-'}</TableCell>
-                              <TableCell>
-                                <Badge variant="secondary">Trasiego</Badge>
-                              </TableCell>
-                              <TableCell>{clientName}</TableCell>
-                              <TableCell>{(rec as any).data?.containerConsecutive || (rec as any).data?.order || ''}</TableCell>
-                              <TableCell>{(rec as any).data?.leg || `${(rec as any).data?.from || ''} → ${(rec as any).data?.to || ''}`}</TableCell>
-                              <TableCell>
-                                <Badge variant={((rec as any).data?.moveType || '').toLowerCase() === 'import' ? 'default' : 'outline'}>
-                                  {((rec as any).data?.moveType || 'IMPORT').toUpperCase()}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>${((rec as any).data?.matchedPrice || (rec as any).totalValue || 0).toFixed(2)}</TableCell>
-                              <TableCell>
-                                {(() => {
-                                  const isMatched = (((rec as any).data?.matchedPrice || 0) > 0) || ((rec as any).data?.isMatched === true)
-                                  const isCompleted = isMatched || (((rec as any).status || '').toLowerCase() === 'completado')
-                                  return (
-                                    <Badge variant={isCompleted ? 'default' : 'secondary'}>
-                                      {isCompleted ? 'Completado' : 'Pendiente'}
-                                    </Badge>
-                                  )
-                                })()}
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-600 hover:text-slate-800 hover:bg-slate-100" onClick={() => handleViewRecord(rec)} title="Ver">
-                                    <EyeIcon className="h-4 w-4" />
-                                  </Button>
-                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDeleteRecord(rec as any)} title="Eliminar">
-                                    <TrashIcon className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-                <div className="flex items-center justify-between mt-6">
-                  <div className="text-sm">
-                    Seleccionados: {selectedRecords.length} de {trasiegoRecords.length} | Total: <span className="font-semibold">${totalSelected.toFixed(2)}</span>
-                  </div>
-                  <div className="flex gap-2 items-center">
-                    <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
-                      Anterior
+                  <div className="flex gap-3">
+                    <Button 
+                      onClick={handleDownloadPDF} 
+                      variant="outline"
+                      className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold px-6 py-3"
+                      disabled={!pdfPreviewUrl}
+                    >
+                      <Download className="mr-2 h-5 w-5" />
+                      Descargar PDF
                     </Button>
-                    <span className="text-xs mx-2">Página {currentPage} de {totalPages}</span>
-                    <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
-                      Siguiente
+                    
+                    <Button 
+                      onClick={handleCreatePrefactura}
+                      className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-semibold px-8 py-3 shadow-lg transform transition-all duration-200 hover:scale-105"
+                      disabled={!prefacturaData.prefacturaNumber || selectedRecords.length === 0}
+                    >
+                      <FileText className="mr-2 h-5 w-5" />
+                      Crear Prefactura
                     </Button>
-                  </div>
-                  <div className="flex gap-2 items-center">
-                    {/* Controles de paginación */}
-                    <Button onClick={handleNextStep} disabled={selectedRecords.length === 0}>Seguir al Paso 2</Button>
                   </div>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          
-
-
-
-           {/* Modal de vista previa del PDF */}
-           <Dialog open={showPdfPreview} onOpenChange={handleClosePdfPreview}>
-             <DialogContent className="max-w-6xl max-h-[90vh]">
-               <DialogHeader>
-                 <DialogTitle className="flex items-center gap-2">
-                   <Eye className="h-5 w-5" />
-                   {`Previsualización de Prefactura - ${prefacturaData.prefacturaNumber || 'TRK-PRE'}`}
-                 </DialogTitle>
-               </DialogHeader>
-               <div className="flex-1 min-h-[70vh]">
-                 {modalPdfUrl && (
-                   <iframe
-                     src={modalPdfUrl}
-                     className="w-full h-full min-h-[70vh] border rounded-lg"
-                     title="Vista previa de prefactura"
-                   />
-                 )}
-               </div>
-               <div className="flex justify-end gap-2 pt-4">
-                <Button variant="outline" onClick={handleClosePdfPreview}>
-                  Cerrar
-                </Button>
-                <Button variant="outline" onClick={handleDownloadPDF}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Descargar Previsualización
-                </Button>
-                <Button 
-                  onClick={handleCreatePrefactura}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                  disabled={!prefacturaData.prefacturaNumber || selectedRecords.length === 0}
-                >
-                  {`Crear Prefactura (${selectedRecords.length} registro${selectedRecords.length !== 1 ? 's' : ''})`}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          {/* Modal de Detalles del Registro */}
-          <Dialog open={isRecordModalOpen} onOpenChange={setIsRecordModalOpen}>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <Database className="h-5 w-5" /> Detalles del Registro
-                </DialogTitle>
-              </DialogHeader>
-              {selectedRecordForView && (() => {
-                const rec: any = selectedRecordForView as any
-                const d = rec.data || {}
-                const createdAt = rec.createdAt ? new Date(rec.createdAt).toLocaleString('es-ES') : '—'
-                const moveDate = d.moveDate ? new Date(d.moveDate).toLocaleDateString('es-ES') : (d.moveDate || '—')
-                return (
-                  <div className="space-y-6">
-                    {/* Datos principales */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <span className="text-sm text-slate-600">Contenedor</span>
-                        <div className="font-medium">{d.container || 'N/A'}</div>
-                        <div className="text-xs text-slate-500">{(d.size ? `${d.size}'` : '')} {d.type || ''}</div>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-600">Cliente</span>
-                        <div className="font-medium">{d.line || 'N/A'}</div>
-                        <div className="text-xs text-slate-500">SAP: {rec.clientSapCode || d.clientSapCode || '—'}</div>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-600">Consecutivo / Orden</span>
-                        <div className="font-medium">{d.containerConsecutive || d.order || 'N/A'}</div>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-600">Desde</span>
-                        <div className="font-medium">{d.from || 'N/A'}</div>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-600">Hacia</span>
-                        <div className="font-medium">{d.to || 'N/A'}</div>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-600">Ruta</span>
-                        <div className="font-medium">{d.leg || `${d.from || ''}${d.to ? ' → ' + d.to : ''}` || 'N/A'}</div>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-600">Operación</span>
-                        <div className="font-medium">{(d.moveType || 'IMPORT').toString().toUpperCase()}</div>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-600">Chofer</span>
-                        <div className="font-medium">{d.driverName || '—'}</div>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-600">Placa</span>
-                        <div className="font-medium">{d.plate || '—'}</div>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-600">Fecha de Movimiento</span>
-                        <div className="font-medium">{moveDate}</div>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-600">Monto</span>
-                        <div className="font-medium">${((d.matchedPrice || rec.totalValue || 0)).toFixed(2)}</div>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-600">Estado</span>
-                        <div className="font-medium">{(rec.status || (((d.matchedPrice || 0) > 0 || d.isMatched) ? 'completado' : 'pendiente')).toString()}</div>
-                      </div>
-                    </div>
-
-                    {/* Datos técnicos */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-3 rounded-md border">
-                      <div>
-                        <span className="text-xs text-slate-600">ID</span>
-                        <div className="text-sm font-mono">{rec._id || rec.id || '—'}</div>
-                      </div>
-                      <div>
-                        <span className="text-xs text-slate-600">Excel ID</span>
-                        <div className="text-sm font-mono">{rec.excelId || '—'}</div>
-                      </div>
-                      <div>
-                        <span className="text-xs text-slate-600">Creación</span>
-                        <div className="text-sm">{createdAt}</div>
-                      </div>
-                      <div>
-                        <span className="text-xs text-slate-600">Prefactura</span>
-                        <div className="text-sm font-mono">{rec.invoiceId || '—'}</div>
-                      </div>
-                    </div>
-
-                    {/* Datos crudos */}
-                    <details className="bg-white border rounded-md">
-                      <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-slate-700">Ver datos crudos</summary>
-                      <pre className="p-3 text-xs overflow-auto max-h-80">{JSON.stringify(rec, null, 2)}</pre>
-                    </details>
+          {step === 'select' && (
+            <Card>
+              <CardContent>
+                <div className="mb-3 flex items-center gap-3 pt-4">
+                  <div className="text-sm text-muted-foreground">Total en base de datos (cargados): <span className="font-medium">{trasiegoRecords.length}</span></div>
+                  <div className="ml-auto w-full max-w-md">
+                    <Input placeholder="Buscar por contenedor, cliente o orden..." value={search} onChange={(e) => setSearch(e.target.value)} />
                   </div>
-                )
-              })()}
-              <div className="flex justify-end pt-4">
-                <Button variant="outline" onClick={() => setIsRecordModalOpen(false)}>Cerrar</Button>
+                </div>
+                <div className="rounded-md border overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>
+                          <Checkbox
+                            checked={selectedRecordIds.length > 0 && selectedRecordIds.length === pendingTruckingRecords.length}
+                            onCheckedChange={(c: boolean) => {
+                              if (c) setSelectedRecordIds(pendingTruckingRecords.map((r: any) => r._id || r.id))
+                              else setSelectedRecordIds([])
+                            }}
+                          />
+                        </TableHead>
+                        <TableHead>Contenedor</TableHead>
+                        <TableHead>Fecha Movimiento</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead>F/E</TableHead>
+                        <TableHead>Cliente</TableHead>
+                        <TableHead>Orden</TableHead>
+                        <TableHead>Ruta</TableHead>
+                        <TableHead>Operación</TableHead>
+                        <TableHead>Monto</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead>Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {trasiegoRecords.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={10} className="text-center text-muted-foreground py-8">No hay registros</TableCell>
+                        </TableRow>
+                      ) : (
+                        Array.from(groupedByClient.entries()).map(([clientName, records]) => (
+                          paginatedRecords
+                            .filter(rec => {
+                              // Agrupar por cliente solo los de la página actual
+                              const name = (() => {
+                                const d = rec?.data || {}
+                                let n = 'PTY SHIP SUPPLIERS, S.A.'
+                                const byId = d.clientId || rec?.clientId
+                                if (byId) {
+                                  const c = clients.find((x: any) => (x._id || x.id) === byId)
+                                  if (c) n = c.type === 'natural' ? c.fullName : c.companyName
+                                } else {
+                                  const bySap = d.clientSapCode || rec?.clientSapCode
+                                  if (bySap) {
+                                    const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
+                                    if (c) n = c.type === 'natural' ? c.fullName : c.companyName
+                                  }
+                                }
+                                return n
+                              })()
+                              return name === clientName
+                            })
+                            .map((rec, idx) => (
+                              <TableRow key={(rec as any)._id || rec.id}>
+                                <TableCell>
+                                  <Checkbox checked={isSelected((rec as any)._id || rec.id)} onCheckedChange={(c: boolean) => toggleRecord((rec as any)._id || rec.id, !!c)} />
+                                </TableCell>
+                                <TableCell className="font-mono text-sm">{(rec as any).data?.container || ''}</TableCell>
+                                <TableCell>{(rec as any).data?.moveDate || '-'}</TableCell>
+                                <TableCell>
+                                  <Badge variant="secondary">Trasiego</Badge>
+                                </TableCell>
+                                <TableCell>{(rec as any).data?.fe || '-'}</TableCell>
+                                <TableCell>{clientName}</TableCell>
+                                <TableCell>{(rec as any).data?.containerConsecutive || (rec as any).data?.order || ''}</TableCell>
+                                <TableCell>{(rec as any).data?.leg || `${(rec as any).data?.from || ''} → ${(rec as any).data?.to || ''}`}</TableCell>
+                                <TableCell>
+                                  <Badge variant={((rec as any).data?.moveType || '').toLowerCase() === 'import' ? 'default' : 'outline'}>
+                                    {((rec as any).data?.moveType || 'IMPORT').toUpperCase()}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>${((rec as any).data?.matchedPrice || (rec as any).totalValue || 0).toFixed(2)}</TableCell>
+                                <TableCell>
+                                  {(() => {
+                                    const isMatched = (((rec as any).data?.matchedPrice || 0) > 0) || ((rec as any).data?.isMatched === true)
+                                    const isCompleted = isMatched || (((rec as any).status || '').toLowerCase() === 'completado')
+                                    return (
+                                      <Badge variant={isCompleted ? 'default' : 'secondary'}>
+                                        {isCompleted ? 'Completado' : 'Pendiente'}
+                                      </Badge>
+                                    )
+                                  })()}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-600 hover:text-slate-800 hover:bg-slate-100" onClick={() => handleViewRecord(rec)} title="Ver">
+                                      <EyeIcon className="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDeleteRecord(rec as any)} title="Eliminar">
+                                      <TrashIcon className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <div className="flex items-center justify-between mt-6">
+                    <div className="text-sm">
+                      Seleccionados: {selectedRecords.length} de {trasiegoRecords.length} | Total: <span className="font-semibold">${totalSelected.toFixed(2)}</span>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                        Anterior
+                      </Button>
+                      <span className="text-xs mx-2">Página {currentPage} de {totalPages}</span>
+                      <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                        Siguiente
+                      </Button>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      {/* Controles de paginación */}
+                      <Button onClick={handleNextStep} disabled={selectedRecords.length === 0}>Seguir al Paso 2</Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            
+
+
+
+             {/* Modal de vista previa del PDF */}
+             <Dialog open={showPdfPreview} onOpenChange={handleClosePdfPreview}>
+               <DialogContent className="max-w-6xl max-h-[90vh]">
+                 <DialogHeader>
+                   <DialogTitle className="flex items-center gap-2">
+                     <Eye className="h-5 w-5" />
+                     {`Previsualización de Prefactura - ${prefacturaData.prefacturaNumber || 'TRK-PRE'}`}
+                   </DialogTitle>
+                 </DialogHeader>
+                 <div className="flex-1 min-h-[70vh]">
+                   {modalPdfUrl && (
+                     <iframe
+                       src={modalPdfUrl}
+                       className="w-full h-full min-h-[70vh] border rounded-lg"
+                       title="Vista previa de prefactura"
+                     />
+                   )}
+                 </div>
+                 <div className="flex justify-end gap-2 pt-4">
+                  <Button variant="outline" onClick={handleClosePdfPreview}>
+                    Cerrar
+                  </Button>
+                  <Button variant="outline" onClick={handleDownloadPDF}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Descargar Previsualización
+                  </Button>
+                  <Button 
+                    onClick={handleCreatePrefactura}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    disabled={!prefacturaData.prefacturaNumber || selectedRecords.length === 0}
+                  >
+                    {`Crear Prefactura (${selectedRecords.length} registro${selectedRecords.length !== 1 ? 's' : ''})`}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* Modal de Detalles del Registro */}
+            <Dialog open={isRecordModalOpen} onOpenChange={setIsRecordModalOpen}>
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Database className="h-5 w-5" /> Detalles del Registro
+                  </DialogTitle>
+                </DialogHeader>
+                {selectedRecordForView && (() => {
+                  const rec: any = selectedRecordForView as any
+                  const d = rec.data || {}
+                  const createdAt = rec.createdAt ? new Date(rec.createdAt).toLocaleString('es-ES') : '—'
+                  const moveDate = d.moveDate ? new Date(d.moveDate).toLocaleDateString('es-ES') : (d.moveDate || '—')
+                  return (
+                    <div className="space-y-6">
+                      {/* Datos principales */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <span className="text-sm text-slate-600">Contenedor</span>
+                          <div className="font-medium">{d.container || 'N/A'}</div>
+                          <div className="text-xs text-slate-500">{(d.size ? `${d.size}'` : '')} {d.type || ''}</div>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600">Cliente</span>
+                          <div className="font-medium">{d.line || 'N/A'}</div>
+                          <div className="text-xs text-slate-500">SAP: {rec.clientSapCode || d.clientSapCode || '—'}</div>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600">Consecutivo / Orden</span>
+                          <div className="font-medium">{d.containerConsecutive || d.order || 'N/A'}</div>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600">Desde</span>
+                          <div className="font-medium">{d.from || 'N/A'}</div>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600">Hacia</span>
+                          <div className="font-medium">{d.to || 'N/A'}</div>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600">Ruta</span>
+                          <div className="font-medium">{d.leg || `${d.from || ''}${d.to ? ' → ' + d.to : ''}` || 'N/A'}</div>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600">F/E</span>
+                          <div className="font-medium">{d.fe || '—'}</div>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600">Operación</span>
+                          <div className="font-medium">{(d.moveType || 'IMPORT').toString().toUpperCase()}</div>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600">Chofer</span>
+                          <div className="font-medium">{d.driverName || '—'}</div>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600">Placa</span>
+                          <div className="font-medium">{d.plate || '—'}</div>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600">Fecha de Movimiento</span>
+                          <div className="font-medium">{moveDate}</div>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600">Monto</span>
+                          <div className="font-medium">${((d.matchedPrice || rec.totalValue || 0)).toFixed(2)}</div>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-600">Estado</span>
+                          <div className="font-medium">{(rec.status || (((d.matchedPrice || 0) > 0 || d.isMatched) ? 'completado' : 'pendiente')).toString()}</div>
+                        </div>
+                      </div>
+
+                      {/* Datos técnicos */}
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-3 rounded-md border">
+                        <div>
+                          <span className="text-xs text-slate-600">ID</span>
+                          <div className="text-sm font-mono">{rec._id || rec.id || '—'}</div>
+                        </div>
+                        <div>
+                          <span className="text-xs text-slate-600">Excel ID</span>
+                          <div className="text-sm font-mono">{rec.excelId || '—'}</div>
+                        </div>
+                        <div>
+                          <span className="text-xs text-slate-600">Creación</span>
+                          <div className="text-sm">{createdAt}</div>
+                        </div>
+                        <div>
+                          <span className="text-xs text-slate-600">Prefactura</span>
+                          <div className="text-sm font-mono">{rec.invoiceId || '—'}</div>
+                        </div>
+                      </div>
+
+                      {/* Datos crudos */}
+                      <details className="bg-white border rounded-md">
+                        <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-slate-700">Ver datos crudos</summary>
+                        <pre className="p-3 text-xs overflow-auto max-h-80">{JSON.stringify(rec, null, 2)}</pre>
+                      </details>
+                    </div>
+                  )
+                })()}
+                <div className="flex justify-end pt-4">
+                  <Button variant="outline" onClick={() => setIsRecordModalOpen(false)}>Cerrar</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </TabsContent>
+          <TabsContent value="autoridades">
+            <TruckingGastosAutoridadesPage />
+          </TabsContent>
+        </Tabs>
+
+        {/* Modal de Selección de Fechas */}
+        <Dialog open={isDateModalOpen} onOpenChange={setIsDateModalOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Seleccionar Rango de Fechas
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Fecha desde:</Label>
+                  <Input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Fecha hasta:</Label>
+                  <Input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="h-10"
+                  />
+                </div>
               </div>
-            </DialogContent>
-          </Dialog>
-        </TabsContent>
-        <TabsContent value="autoridades">
-          <TruckingGastosAutoridadesPage />
-        </TabsContent>
-      </Tabs>
-  )
-}
+              
+              {/* Botones de período rápido dentro del modal */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-600">Períodos rápidos:</Label>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const todayDates = getTodayDates()
+                      setStartDate(todayDates.start)
+                      setEndDate(todayDates.end)
+                    }}
+                    className="text-xs"
+                  >
+                    Hoy
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const weekDates = getCurrentWeekDates()
+                      setStartDate(weekDates.start)
+                      setEndDate(weekDates.end)
+                    }}
+                    className="text-xs"
+                  >
+                    Semana
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const monthDates = getCurrentMonthDates()
+                      setStartDate(monthDates.start)
+                      setEndDate(monthDates.end)
+                    }}
+                    className="text-xs"
+                  >
+                    Mes
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={handleCancelDateFilter}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => handleApplyDateFilter(startDate, endDate)}
+                disabled={!startDate || !endDate}
+              >
+                Aplicar Filtro
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    )
+  }
 
 
