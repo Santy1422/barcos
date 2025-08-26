@@ -1,5 +1,11 @@
 import { Router } from 'express';
 import configControllers from '../controllers/configControllers/configControllers';
+import { 
+  createContainerType, 
+  getAllContainerTypes, 
+  updateContainerType, 
+  deleteContainerType 
+} from '../controllers/configControllers/containerTypesControllers';
 import { jwtUtils } from "../middlewares/jwtUtils";
 import { requireAdminOrOperations } from '../middlewares/authorization';
 
@@ -29,5 +35,11 @@ router.get('/service-sap-codes', jwtUtils, requireAdminOrOperations, catchedAsyn
 router.post('/service-sap-codes', jwtUtils, requireAdminOrOperations, catchedAsync(configControllers.createServiceSapCode));
 router.put('/service-sap-codes/:id', jwtUtils, requireAdminOrOperations, catchedAsync(configControllers.updateServiceSapCode));
 router.delete('/service-sap-codes/:id', jwtUtils, requireAdminOrOperations, catchedAsync(configControllers.deleteServiceSapCode));
+
+// Container Types
+router.get('/container-types', jwtUtils, requireAdminOrOperations, catchedAsync(getAllContainerTypes));
+router.post('/container-types', jwtUtils, requireAdminOrOperations, catchedAsync(createContainerType));
+router.put('/container-types/:id', jwtUtils, requireAdminOrOperations, catchedAsync(updateContainerType));
+router.delete('/container-types/:id', jwtUtils, requireAdminOrOperations, catchedAsync(deleteContainerType));
 
 export default router;

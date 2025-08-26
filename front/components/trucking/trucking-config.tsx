@@ -37,6 +37,20 @@ import {
 } from "@/lib/features/truckingRoutes/truckingRoutesSlice"
 
 import { ServicesManagement } from "@/components/services-management"
+import {
+  fetchContainerTypes,
+  createContainerType,
+  updateContainerType,
+  deleteContainerType,
+  selectAllContainerTypes,
+  selectContainerTypesLoading,
+  selectContainerTypesError,
+  selectContainerTypesCreating,
+  selectContainerTypesUpdating,
+  selectContainerTypesDeleting,
+  type ContainerType,
+  type ContainerTypeInput,
+} from "@/lib/features/containerTypes/containerTypesSlice"
 
 export function TruckingConfig() {
   const dispatch = useAppDispatch()
@@ -52,7 +66,15 @@ export function TruckingConfig() {
   const routesLoading = useAppSelector(selectTruckingRoutesLoading)
   const routesError = useAppSelector(selectTruckingRoutesError)
 
-  const [activeTab, setActiveTab] = useState<"navieras" | "routes" | "services">("navieras")
+  // Container Types
+  const containerTypes = useAppSelector(selectAllContainerTypes)
+  const containerTypesLoading = useAppSelector(selectContainerTypesLoading)
+  const containerTypesError = useAppSelector(selectContainerTypesError)
+  const containerTypesCreating = useAppSelector(selectContainerTypesCreating)
+  const containerTypesUpdating = useAppSelector(selectContainerTypesUpdating)
+  const containerTypesDeleting = useAppSelector(selectContainerTypesDeleting)
+
+  const [activeTab, setActiveTab] = useState<"navieras" | "routes" | "services" | "containers">("navieras")
 
   // Form: Naviera
   const [showAddNavieraForm, setShowAddNavieraForm] = useState(false)
@@ -67,15 +89,32 @@ export function TruckingConfig() {
     name: "",
     origin: "",
     destination: "",
-    containerType: "normal",
+    containerType: "dry",
     routeType: "single",
     price: 0,
+  })
+
+  // Form: Container Type
+  const [showAddContainerTypeForm, setShowAddContainerTypeForm] = useState(false)
+  const [containerTypeToDelete, setContainerTypeToDelete] = useState<ContainerType | null>(null)
+  const [editingContainerType, setEditingContainerType] = useState<ContainerType | null>(null)
+  const [newContainerType, setNewContainerType] = useState<ContainerTypeInput>({
+    code: "",
+    name: "",
+    category: "DRY",
+    description: "",
+    isActive: true,
+  })
+  const [containerTypeFilters, setContainerTypeFilters] = useState({
+    category: "all" as "all" | "A" | "B" | "DRY" | "N" | "REEFE" | "T",
+    isActive: "all" as "all" | "true" | "false"
   })
 
   // Load data
   useEffect(() => {
     dispatch(fetchNavieras())
     dispatch(fetchTruckingRoutes())
+    dispatch(fetchContainerTypes())
   }, [dispatch])
 
   // Errors
@@ -90,6 +129,12 @@ export function TruckingConfig() {
       toast({ title: "Error", description: routesError, variant: "destructive" })
     }
   }, [routesError, toast])
+
+  useEffect(() => {
+    if (containerTypesError) {
+      toast({ title: "Error", description: containerTypesError, variant: "destructive" })
+    }
+  }, [containerTypesError, toast])
 
   // Navieras handlers
   const handleAddNaviera = async () => {
@@ -136,7 +181,7 @@ export function TruckingConfig() {
     const name = `${newRoute.origin}/${newRoute.destination}`
     try {
       await dispatch(createTruckingRoute({ ...newRoute, name })).unwrap()
-      setNewRoute({ name: "", origin: "", destination: "", containerType: "normal", routeType: "single", price: 0 })
+      setNewRoute({ name: "", origin: "", destination: "", containerType: "dry", routeType: "single", price: 0 })
       setShowAddRouteForm(false)
       toast({ title: "Ruta agregada", description: "La nueva ruta ha sido configurada correctamente" })
     } catch (error: any) {
@@ -160,7 +205,7 @@ export function TruckingConfig() {
     }
     try {
       await dispatch(updateTruckingRoute({ id: editingRoute._id, routeData })).unwrap()
-      setNewRoute({ name: "", origin: "", destination: "", containerType: "normal", routeType: "single", price: 0 })
+      setNewRoute({ name: "", origin: "", destination: "", containerType: "dry", routeType: "single", price: 0 })
       setEditingRoute(null)
       toast({ title: "Ruta actualizada", description: "La ruta ha sido actualizada correctamente" })
     } catch (error: any) {
@@ -192,7 +237,82 @@ export function TruckingConfig() {
 
   const handleCancelEditRoute = () => {
     setEditingRoute(null)
-    setNewRoute({ name: "", origin: "", destination: "", containerType: "normal", routeType: "single", price: 0 })
+    setNewRoute({ name: "", origin: "", destination: "", containerType: "dry", routeType: "single", price: 0 })
+  }
+
+  // Container Types handlers
+  const handleAddContainerType = async () => {
+    if (!newContainerType.code || !newContainerType.name || !newContainerType.category) {
+      toast({ title: "Error", description: "Completa todos los campos obligatorios", variant: "destructive" })
+      return
+    }
+    try {
+      await dispatch(createContainerType(newContainerType)).unwrap()
+      setNewContainerType({ code: "", name: "", category: "DRY", description: "", isActive: true })
+      setShowAddContainerTypeForm(false)
+      toast({ title: "Tipo de contenedor agregado", description: "El nuevo tipo de contenedor ha sido configurado correctamente" })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Error al crear el tipo de contenedor", variant: "destructive" })
+    }
+  }
+
+  const handleEditContainerType = async () => {
+    if (!editingContainerType) return
+    if (!newContainerType.code || !newContainerType.name || !newContainerType.category) {
+      toast({ title: "Error", description: "Completa todos los campos obligatorios", variant: "destructive" })
+      return
+    }
+    try {
+      await dispatch(updateContainerType({ id: editingContainerType._id, containerTypeData: newContainerType })).unwrap()
+      setNewContainerType({ code: "", name: "", category: "DRY", description: "", isActive: true })
+      setEditingContainerType(null)
+      toast({ title: "Tipo de contenedor actualizado", description: "El tipo de contenedor ha sido actualizado correctamente" })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Error al actualizar el tipo de contenedor", variant: "destructive" })
+    }
+  }
+
+  const handleDeleteContainerType = async (containerTypeId: string) => {
+    try {
+      await dispatch(deleteContainerType(containerTypeId)).unwrap()
+      toast({ title: "Tipo de contenedor eliminado", description: "El tipo de contenedor ha sido eliminado del sistema" })
+      setContainerTypeToDelete(null)
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Error al eliminar el tipo de contenedor", variant: "destructive" })
+    }
+  }
+
+  const handleEditContainerTypeClick = (containerType: ContainerType) => {
+    setEditingContainerType(containerType)
+    setNewContainerType({
+      code: containerType.code,
+      name: containerType.name,
+      category: containerType.category,
+      description: containerType.description || "",
+      isActive: containerType.isActive,
+    })
+  }
+
+  const handleCancelEditContainerType = () => {
+    setEditingContainerType(null)
+    setNewContainerType({ code: "", name: "", category: "DRY", description: "", isActive: true })
+  }
+
+  const handleToggleContainerTypeStatus = async (containerType: ContainerType) => {
+    try {
+      await dispatch(updateContainerType({ 
+        id: containerType._id, 
+        containerTypeData: { ...containerType, isActive: !containerType.isActive } 
+      })).unwrap()
+      toast({ title: "Estado actualizado", description: `El tipo de contenedor ${containerType.name} ha sido ${!containerType.isActive ? "activado" : "desactivado"}` })
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Error al actualizar el estado del tipo de contenedor", variant: "destructive" })
+    }
+  }
+
+  const handleContainerTypeFiltersChange = (filters: typeof containerTypeFilters) => {
+    setContainerTypeFilters(filters)
+    dispatch(fetchContainerTypes(filters))
   }
 
   return (
@@ -229,6 +349,14 @@ export function TruckingConfig() {
             >
               <Wrench className="h-4 w-4 mr-2" />
               Servicios PTG
+            </Button>
+            <Button
+              variant={activeTab === "containers" ? "default" : "outline"}
+              className={activeTab === "containers" ? "bg-blue-600 hover:bg-blue-700" : ""}
+              onClick={() => setActiveTab("containers")}
+            >
+              <Ship className="h-4 w-4 mr-2" />
+              Tipos de Contenedores
             </Button>
           </div>
         </CardContent>
@@ -376,13 +504,13 @@ export function TruckingConfig() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="route-container-type">Tipo de Contenedor *</Label>
-                      <Select value={newRoute.containerType} onValueChange={(value) => setNewRoute({ ...newRoute, containerType: value as "normal" | "refrigerated" })}>
+                      <Select value={newRoute.containerType} onValueChange={(value) => setNewRoute({ ...newRoute, containerType: value as "dry" | "reefer" })}>
                         <SelectTrigger>
                           <SelectValue placeholder="Seleccionar tipo" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="normal">Normal</SelectItem>
-                          <SelectItem value="refrigerated">Refrigerado</SelectItem>
+                          <SelectItem value="dry">Dry</SelectItem>
+                          <SelectItem value="reefer">Reefer</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -452,7 +580,7 @@ export function TruckingConfig() {
                         <TableCell>{route.origin}</TableCell>
                         <TableCell>{route.destination}</TableCell>
                         <TableCell>
-                          <Badge variant="outline">{route.containerType === "refrigerated" ? "Refrigerado" : "Normal"}</Badge>
+                          <Badge variant="outline">{route.containerType === "reefer" ? "Reefer" : "Dry"}</Badge>
                         </TableCell>
                         <TableCell>
                           <Badge variant={route.routeType === "RT" ? "default" : "secondary"}>{route.routeType === "RT" ? "Round Trip" : "Single"}</Badge>
@@ -480,6 +608,197 @@ export function TruckingConfig() {
 
       {activeTab === "services" && (
         <ServicesManagement module="trucking" title="Gestión de Servicios PTG" />
+      )}
+
+      {activeTab === "containers" && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Gestión de Tipos de Contenedores</CardTitle>
+              <Button onClick={() => setShowAddContainerTypeForm(!showAddContainerTypeForm)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Agregar Tipo de Contenedor
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Filtros */}
+            <div className="flex flex-wrap gap-4 p-4 bg-gray-50 rounded-lg">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Categoría:</Label>
+                <Select 
+                  value={containerTypeFilters.category} 
+                  onValueChange={(value) => handleContainerTypeFiltersChange({ ...containerTypeFilters, category: value as any })}
+                >
+                  <SelectTrigger className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas las categorías</SelectItem>
+                    <SelectItem value="A">All (A)</SelectItem>
+                    <SelectItem value="B">BulkC (B)</SelectItem>
+                    <SelectItem value="DRY">Dry (DRY)</SelectItem>
+                    <SelectItem value="N">Non Containerized (N)</SelectItem>
+                    <SelectItem value="REEFE">Reefer (REEFE)</SelectItem>
+                    <SelectItem value="T">TankD (T)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Estado:</Label>
+                <Select 
+                  value={containerTypeFilters.isActive} 
+                  onValueChange={(value) => handleContainerTypeFiltersChange({ ...containerTypeFilters, isActive: value as any })}
+                >
+                  <SelectTrigger className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los estados</SelectItem>
+                    <SelectItem value="true">Activos</SelectItem>
+                    <SelectItem value="false">Inactivos</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Formulario de agregar/editar */}
+            {(showAddContainerTypeForm || editingContainerType) && (
+              <Card className="border-dashed">
+                <CardHeader>
+                  <CardTitle className="text-lg">{editingContainerType ? "Editar Tipo de Contenedor" : "Nuevo Tipo de Contenedor"}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="container-type-code">Código *</Label>
+                      <Input
+                        id="container-type-code"
+                        value={newContainerType.code}
+                        onChange={(e) => setNewContainerType({ ...newContainerType, code: e.target.value.toUpperCase() })}
+                        placeholder="BB, BH, BV, DV, FL, etc."
+                        maxLength={2}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="container-type-name">Nombre *</Label>
+                      <Input
+                        id="container-type-name"
+                        value={newContainerType.name}
+                        onChange={(e) => setNewContainerType({ ...newContainerType, name: e.target.value })}
+                        placeholder="Swap Body High, Bulk van, Dry van, etc."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="container-type-category">Categoría *</Label>
+                      <Select 
+                        value={newContainerType.category} 
+                        onValueChange={(value) => setNewContainerType({ ...newContainerType, category: value as any })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="A">All (A)</SelectItem>
+                          <SelectItem value="B">BulkC (B)</SelectItem>
+                          <SelectItem value="DRY">Dry (DRY)</SelectItem>
+                          <SelectItem value="N">Non Containerized (N)</SelectItem>
+                          <SelectItem value="REEFE">Reefer (REEFE)</SelectItem>
+                          <SelectItem value="T">TankD (T)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="container-type-description">Descripción</Label>
+                      <Input
+                        id="container-type-description"
+                        value={newContainerType.description}
+                        onChange={(e) => setNewContainerType({ ...newContainerType, description: e.target.value })}
+                        placeholder="Descripción opcional del tipo de contenedor"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button onClick={editingContainerType ? handleEditContainerType : handleAddContainerType} disabled={containerTypesCreating || containerTypesUpdating}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      {containerTypesCreating || containerTypesUpdating ? "Guardando..." : editingContainerType ? "Actualizar Tipo de Contenedor" : "Agregar Tipo de Contenedor"}
+                    </Button>
+                    <Button variant="outline" onClick={editingContainerType ? handleCancelEditContainerType : () => setShowAddContainerTypeForm(false)}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Tabla de tipos de contenedores */}
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Código</TableHead>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Categoría</TableHead>
+                    <TableHead>Descripción</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {containerTypesLoading && containerTypes.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-8">
+                        <div className="flex items-center justify-center space-x-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                          <span>Cargando tipos de contenedores...</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : containerTypes.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                        No hay tipos de contenedores registrados
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    containerTypes.map((containerType) => (
+                      <TableRow key={containerType._id}>
+                        <TableCell className="font-mono font-medium">
+                          <Badge variant="outline">{containerType.code}</Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">{containerType.name}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{containerType.category}</Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {containerType.description || "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={containerType.isActive ? "default" : "secondary"}>
+                            {containerType.isActive ? "Activo" : "Inactivo"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => handleToggleContainerTypeStatus(containerType)} disabled={containerTypesUpdating}>
+                              {containerType.isActive ? "Desactivar" : "Activar"}
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => handleEditContainerTypeClick(containerType)}>
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setContainerTypeToDelete(containerType)}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Dialogs */}
@@ -520,6 +839,27 @@ export function TruckingConfig() {
             <div className="flex justify-end space-x-2">
               <Button variant="outline" onClick={() => setRouteToDelete(null)}>Cancelar</Button>
               <Button variant="destructive" onClick={() => routeToDelete && handleDeleteRoute(routeToDelete._id)} disabled={routesLoading}>Eliminar</Button>
+            </div>
+          </CardContent>
+        </DialogCard>
+      </DialogLike>
+
+      {/* Delete Container Type */}
+      <DialogLike open={!!containerTypeToDelete} onOpenChange={() => setContainerTypeToDelete(null)}>
+        <DialogCard>
+          <CardHeader>
+            <CardTitle>Confirmar eliminación</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="py-2">
+              <p>¿Estás seguro de que quieres eliminar el tipo de contenedor?</p>
+              {containerTypeToDelete && (
+                <p className="font-medium mt-2">{containerTypeToDelete.name} ({containerTypeToDelete.code})</p>
+              )}
+            </div>
+            <div className="flex justify-end space-x-2">
+              <Button variant="outline" onClick={() => setContainerTypeToDelete(null)}>Cancelar</Button>
+              <Button variant="destructive" onClick={() => containerTypeToDelete && handleDeleteContainerType(containerTypeToDelete._id)} disabled={containerTypesDeleting}>Eliminar</Button>
             </div>
           </CardContent>
         </DialogCard>

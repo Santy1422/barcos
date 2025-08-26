@@ -26,11 +26,10 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { Database, Search, X, Edit, Eye as EyeIcon, Trash2 as TrashIcon, Calendar } from "lucide-react"
+import { Database, Search, X, Edit, Eye as EyeIcon, Trash2 as TrashIcon, Calendar, Eye, Download, FileText, DollarSign, ArrowLeft, Plus, Trash2, Loader2 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
-import { Eye, Download, FileText, DollarSign, ArrowLeft, Plus, Trash2 } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { TruckingGastosAutoridadesPage } from "./trucking-gastos-autoridades-page";
 
@@ -164,7 +163,34 @@ export function TruckingPrefactura() {
       })()
       return hay(rec?.data?.container) || hay(clientName) || hay(rec?.data?.containerConsecutive) || hay(rec?.data?.order)
     }
-    return (allTruckingRecords as any[]).filter(isTrasiego).filter(isNotClosed).filter(matches)
+    const filtered = (allTruckingRecords as any[]).filter(isTrasiego).filter(isNotClosed).filter(matches)
+    
+    // Debug: verificar campo fe en registros filtrados
+    if (filtered.length > 0) {
+      console.log("=== DEBUG PREFACTURA: Registros trasiego filtrados ===")
+      console.log("Total registros trasiego:", filtered.length)
+      const withFe = filtered.filter(r => r?.data?.fe)
+      console.log("Registros con campo fe:", withFe.length)
+      if (withFe.length > 0) {
+        console.log("Ejemplo con fe:", {
+          id: withFe[0]._id,
+          fe: withFe[0].data.fe,
+          container: withFe[0].data.container,
+          data: withFe[0].data
+        })
+      }
+      const withoutFe = filtered.filter(r => !r?.data?.fe)
+      if (withoutFe.length > 0) {
+        console.log("Ejemplo sin fe:", {
+          id: withoutFe[0]._id,
+          container: withoutFe[0].data?.container,
+          keys: Object.keys(withoutFe[0].data || {}),
+          data: withoutFe[0].data
+        })
+      }
+    }
+    
+    return filtered
   }, [allTruckingRecords, search])
 
   // Aplicar filtros de estado y fecha
@@ -240,6 +266,9 @@ export function TruckingPrefactura() {
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null)
   const [modalPdfUrl, setModalPdfUrl] = useState<string | null>(null)
   const [showPdfPreview, setShowPdfPreview] = useState(false)
+  
+  // Estado para el loading de crear prefactura
+  const [isCreatingPrefactura, setIsCreatingPrefactura] = useState(false)
 
   // Regenerar PDF cuando cambien los servicios adicionales (colocado después de declarar selectedAdditionalServices)
   useEffect(() => {
@@ -454,16 +483,52 @@ export function TruckingPrefactura() {
     doc.text('PRICE', 140, startY + 5)
     doc.text('TOTAL', 170, startY + 5)
 
-    // Filas de items (trasiego)
-    const bodyRows = selectedRecords.map((r: any) => {
-      const qty = 1
-      const container = r.data?.container || ''
+    // Agrupar registros por características similares (trasiego)
+    const groupedRecords = new Map<string, { records: any[], price: number, count: number }>()
+    
+    console.log("=== DEBUG: Agrupando registros para PDF ===")
+    console.log("Total registros seleccionados:", selectedRecords.length)
+    
+    selectedRecords.forEach((r: any) => {
+      const moveType = (r.data?.moveType || 'SINGLE').toString().toUpperCase() // SINGLE/RT
+      const routeType = (r.data?.route || 'PACIFIC').toString().toUpperCase() // PACIFIC/ATLANTIC
+      const leg = r.data?.leg || `${r.data?.from || ''} / ${r.data?.to || ''}`
+      const fe = r.data?.fe ? (r.data.fe.toString().toUpperCase().trim() === 'F' ? 'FULL' : 'EMPTY') : 'FULL'
       const size = r.data?.size || r.data?.containerSize || ''
       const type = r.data?.type || r.data?.containerType || ''
-      const leg = r.data?.leg || `${r.data?.from || ''} / ${r.data?.to || ''}`
       const price = (r.data?.matchedPrice || r.totalValue || 0)
-      const desc = `Container: ${container}  ${size} ${type}  Route: ${leg}`
-      return [1, desc, price.toFixed(2), price.toFixed(2)]
+      
+      // Crear clave única para agrupar
+      const groupKey = `${moveType}|${routeType}|${leg}|${fe}|${size}|${type}|${price}`
+      
+      if (!groupedRecords.has(groupKey)) {
+        groupedRecords.set(groupKey, {
+          records: [],
+          price: price,
+          count: 0
+        })
+      }
+      
+      const group = groupedRecords.get(groupKey)!
+      group.records.push(r)
+      group.count += 1
+    })
+
+    console.log("Grupos creados:", groupedRecords.size)
+    Array.from(groupedRecords.entries()).forEach(([key, group], index) => {
+      const [moveType, routeType, leg, fe, size, type, priceStr] = key.split('|')
+      console.log(`Grupo ${index + 1}: ${moveType} ${routeType} - ${leg}/${fe}/${size}/${type} - Cantidad: ${group.count} - Precio: $${group.price}`)
+    })
+
+    // Crear filas agrupadas para el PDF
+    const bodyRows = Array.from(groupedRecords.entries()).map(([groupKey, group]) => {
+      const [moveType, routeType, leg, fe, size, type, priceStr] = groupKey.split('|')
+      const totalPrice = group.price * group.count
+      
+      // Descripción agrupada según el formato solicitado: MOVE_TYPE ROUTE_TYPE - LEG/FE/SIZE/TYPE
+      const desc = `${moveType} ${routeType} - ${leg}/${fe}/${size}/${type}`
+      
+      return [group.count, desc, group.price.toFixed(2), totalPrice.toFixed(2)]
     })
 
     // Agregar servicios adicionales como filas de la tabla (estilo PTYSS)
@@ -619,6 +684,9 @@ export function TruckingPrefactura() {
       toast({ title: "Error", description: "Completa el número de prefactura", variant: "destructive" })
       return
     }
+    
+    setIsCreatingPrefactura(true)
+    
     try {
       // Cliente del primer registro (derivado por clientId/clientSapCode; 'line' es naviera)
       const first = selectedRecords[0]
@@ -683,6 +751,8 @@ export function TruckingPrefactura() {
       }
     } catch (e: any) {
       toast({ title: "Error", description: e.message || "No se pudo marcar como prefacturado", variant: "destructive" })
+    } finally {
+      setIsCreatingPrefactura(false)
     }
   }
 
@@ -1071,10 +1141,19 @@ export function TruckingPrefactura() {
                     <Button 
                       onClick={handleCreatePrefactura}
                       className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-semibold px-8 py-3 shadow-lg transform transition-all duration-200 hover:scale-105"
-                      disabled={!prefacturaData.prefacturaNumber || selectedRecords.length === 0}
+                      disabled={!prefacturaData.prefacturaNumber || selectedRecords.length === 0 || isCreatingPrefactura}
                     >
-                      <FileText className="mr-2 h-5 w-5" />
-                      Crear Prefactura
+                      {isCreatingPrefactura ? (
+                        <>
+                          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                          Creando Prefactura...
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="mr-2 h-5 w-5" />
+                          Crear Prefactura
+                        </>
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -1097,9 +1176,9 @@ export function TruckingPrefactura() {
                       <TableRow>
                         <TableHead>
                           <Checkbox
-                            checked={selectedRecordIds.length > 0 && selectedRecordIds.length === pendingTruckingRecords.length}
+                            checked={selectedRecordIds.length > 0 && selectedRecordIds.length === trasiegoRecords.length}
                             onCheckedChange={(c: boolean) => {
-                              if (c) setSelectedRecordIds(pendingTruckingRecords.map((r: any) => r._id || r.id))
+                              if (c) setSelectedRecordIds(trasiegoRecords.map((r: any) => r._id || r.id))
                               else setSelectedRecordIds([])
                             }}
                           />
@@ -1120,7 +1199,7 @@ export function TruckingPrefactura() {
                     <TableBody>
                       {trasiegoRecords.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={10} className="text-center text-muted-foreground py-8">No hay registros</TableCell>
+                          <TableCell colSpan={12} className="text-center text-muted-foreground py-8">No hay registros</TableCell>
                         </TableRow>
                       ) : (
                         Array.from(groupedByClient.entries()).map(([clientName, records]) => (
@@ -1248,9 +1327,16 @@ export function TruckingPrefactura() {
                   <Button 
                     onClick={handleCreatePrefactura}
                     className="bg-blue-600 hover:bg-blue-700 text-white"
-                    disabled={!prefacturaData.prefacturaNumber || selectedRecords.length === 0}
+                    disabled={!prefacturaData.prefacturaNumber || selectedRecords.length === 0 || isCreatingPrefactura}
                   >
-                    {`Crear Prefactura (${selectedRecords.length} registro${selectedRecords.length !== 1 ? 's' : ''})`}
+                    {isCreatingPrefactura ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creando...
+                      </>
+                    ) : (
+                      `Crear Prefactura (${selectedRecords.length} registro${selectedRecords.length !== 1 ? 's' : ''})`
+                    )}
                   </Button>
                 </div>
               </DialogContent>

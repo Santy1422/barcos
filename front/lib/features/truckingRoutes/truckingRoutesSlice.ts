@@ -6,7 +6,7 @@ export interface TruckingRoute {
   name: string
   origin: string
   destination: string
-  containerType: "normal" | "refrigerated"
+  containerType: "dry" | "reefer"
   routeType: "single" | "RT"
   price: number
   createdAt: string
@@ -18,7 +18,7 @@ export interface TruckingRouteInput {
   name: string
   origin: string
   destination: string
-  containerType: "normal" | "refrigerated"
+  containerType: "dry" | "reefer"
   routeType: "single" | "RT"
   price: number
 }

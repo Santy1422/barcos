@@ -15,7 +15,7 @@ const truckingRouteSchema = new mongoose.Schema({
   },
   containerType: {
     type: String,
-    enum: ['normal', 'refrigerated'],
+    enum: ['dry', 'reefer'],
     required: true
   },
   routeType: {

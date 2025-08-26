@@ -14,6 +14,7 @@ import { LocalService } from './schemas/localServiceSchema';
 import AgencyService from './schemas/agencyServiceSchema';
 import AgencyCatalog from './schemas/agencyCatalogSchema';
 import recordsAutoridadesSchema from './schemas/recordsAutoridadesSchema';
+import { ContainerType } from './schemas/containerTypesSchema';
 
 mongoose.set('strictQuery', false);
 
@@ -45,6 +46,7 @@ export const localServices = LocalService;
 export const agencyServices = AgencyService;
 export const agencyCatalogs = AgencyCatalog;
 export const recordsAutoridades = mongoose.model('recordsAutoridades', recordsAutoridadesSchema);
+export const containerTypes = ContainerType;
 
 // Manejo de eventos de conexión
 mongoose.connection.on('connected', () => {
@@ -80,7 +82,8 @@ export const getModels = () => {
     localServices,
     agencyServices,
     agencyCatalogs,
-    recordsAutoridades
+    recordsAutoridades,
+    containerTypes
   };
 };
 
@@ -98,4 +101,5 @@ export type Models = {
   agencyServices: typeof agencyServices;
   agencyCatalogs: typeof agencyCatalogs;
   recordsAutoridades: typeof recordsAutoridades;
+  containerTypes: typeof containerTypes;
 };

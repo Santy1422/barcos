@@ -23,6 +23,12 @@ import {
 import { ClientModal } from "@/components/clients-management"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
+import { 
+  selectAllContainerTypes,
+  fetchContainerTypes,
+  selectContainerTypesLoading,
+  selectContainerTypesError
+} from "@/lib/features/containerTypes/containerTypesSlice"
 
 export function TruckingUpload() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -42,6 +48,11 @@ export function TruckingUpload() {
   const routesLoading = useAppSelector(selectTruckingRoutesLoading)
   const routesError = useAppSelector(selectTruckingRoutesError)
 
+  // Container Types state
+  const containerTypes = useAppSelector(selectAllContainerTypes)
+  const containerTypesLoading = useAppSelector(selectContainerTypesLoading)
+  const containerTypesError = useAppSelector(selectContainerTypesError)
+
   // Clients state
   const clients = useAppSelector(selectAllClients)
   const clientsLoading = useAppSelector((state) => state.clients.loading)
@@ -57,6 +68,11 @@ export function TruckingUpload() {
   // Cargar rutas al montar el componente
   useEffect(() => {
     dispatch(fetchTruckingRoutes())
+  }, [dispatch])
+
+  // Cargar container types al montar el componente
+  useEffect(() => {
+    dispatch(fetchContainerTypes())
   }, [dispatch])
 
   // Load clients
@@ -83,6 +99,22 @@ export function TruckingUpload() {
     }
     console.log("")
   }, [routes, routesLoading, routesError])
+
+  // Debug: Monitorear cuando los container types se cargan
+  useEffect(() => {
+    console.log("=== CONTAINER TYPES CARGADOS ===")
+    console.log("Container types disponibles:", containerTypes)
+    console.log("Número de container types:", containerTypes.length)
+    console.log("Cargando container types:", containerTypesLoading)
+    console.log("Error en container types:", containerTypesError)
+    if (containerTypes.length > 0) {
+      console.log("Ejemplos de container types:")
+      containerTypes.slice(0, 5).forEach((ct: any, index: number) => {
+        console.log(`  ${index + 1}: ${ct.code} - ${ct.name} (${ct.category})`)
+      })
+    }
+    console.log("")
+  }, [containerTypes, containerTypesLoading, containerTypesError])
 
   // Mostrar error si existe
   useEffect(() => {
@@ -238,11 +270,11 @@ export function TruckingUpload() {
       setIsLoading(true)
       
       try {
-        // Verificar que las rutas estén cargadas
-        if (routesLoading) {
+        // Verificar que las rutas y container types estén cargados
+        if (routesLoading || containerTypesLoading) {
           toast({
-            title: "Cargando rutas",
-            description: "Espera un momento mientras se cargan las rutas configuradas...",
+            title: "Cargando configuración",
+            description: "Espera un momento mientras se cargan las rutas y tipos de contenedores...",
           })
           return
         }
@@ -255,6 +287,15 @@ export function TruckingUpload() {
           })
           return
         }
+        
+        if (containerTypes.length === 0) {
+          toast({
+            title: "No hay tipos de contenedores configurados",
+            description: "Debes configurar tipos de contenedores en la sección de configuración antes de subir archivos.",
+            variant: "destructive",
+          })
+          return
+        }
 
         // Parsear el archivo Excel real
         const realData = await parseTruckingExcel(file)
@@ -262,10 +303,11 @@ export function TruckingUpload() {
         console.log("=== DEBUGGING MATCHING ===")
         console.log("Datos del Excel:", realData)
         console.log("Rutas disponibles:", routes)
+        console.log("Container types disponibles:", containerTypes)
         console.log("")
         
-        // Aplicar matching con las rutas configuradas
-        const matchedData = matchTruckingDataWithRoutes(realData, routes)
+        // Aplicar matching con las rutas configuradas y container types del backend
+        const matchedData = matchTruckingDataWithRoutes(realData, routes, containerTypes)
         
         console.log("Datos después del matching:", matchedData)
         console.log("")
@@ -280,9 +322,18 @@ export function TruckingUpload() {
         
         console.log(`Registros con match: ${matchedCount}/${matchedData.length}`)
         
+        // Contar tipos de contenedores detectados
+        const dryCount = matchedData.filter(r => r.detectedContainerType === 'dry').length;
+        const reeferCount = matchedData.filter(r => r.detectedContainerType === 'reefer').length;
+        
+        let description = `Se han leído ${realData.length} registros. ${matchedCount} con precio asignado, ${unmatchedCount} sin coincidencia.`;
+        if (dryCount > 0 || reeferCount > 0) {
+          description += ` Tipos detectados: ${dryCount > 0 ? `${dryCount} DRY` : ''}${dryCount > 0 && reeferCount > 0 ? ', ' : ''}${reeferCount > 0 ? `${reeferCount} REEFER` : ''}`;
+        }
+        
         toast({
           title: "✅ Archivo Excel procesado",
-          description: `Se han leído ${realData.length} registros. ${matchedCount} con precio asignado, ${unmatchedCount} sin coincidencia.`,
+          description: description,
         })
       } catch (error) {
         console.error('Error al procesar archivo:', error)
@@ -424,7 +475,14 @@ export function TruckingUpload() {
           console.log("ContainerConsecutives duplicados:", result.duplicates.containerConsecutives)
         }
       } else {
-        successMessage = `${recordsCreated} registros con match guardados correctamente en el sistema (${previewData.length - recordsData.length} sin match omitidos)`
+        // Contar tipos de contenedores guardados
+        const dryCount = recordsData.filter(r => r.data?.detectedContainerType === 'dry').length;
+        const reeferCount = recordsData.filter(r => r.data?.detectedContainerType === 'reefer').length;
+        
+        successMessage = `${recordsCreated} registros con match guardados correctamente en el sistema (${previewData.length - recordsData.length} sin match omitidos)`;
+        if (dryCount > 0 || reeferCount > 0) {
+          successMessage += ` Tipos: ${dryCount > 0 ? `${dryCount} DRY` : ''}${dryCount > 0 && reeferCount > 0 ? ', ' : ''}${reeferCount > 0 ? `${reeferCount} REEFER` : ''}`;
+        }
       }
       
       toast({
@@ -488,15 +546,7 @@ export function TruckingUpload() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <div className="flex items-center gap-2 text-blue-800">
-              <AlertCircle className="h-4 w-4" />
-              <span className="text-sm font-medium">Información importante</span>
-            </div>
-            <p className="text-sm text-blue-700 mt-1">              
-              Si algún cliente no existe o tiene datos incompletos, se mostrará un modal para completar la información.
-            </p>
-          </div>
+         
           
           <div className="space-y-2">
             <Label htmlFor="excel-file">Seleccionar archivo Excel</Label>
@@ -505,29 +555,36 @@ export function TruckingUpload() {
               type="file"
               accept=".xlsx,.xls"
               onChange={handleFileChange}
-              disabled={isLoading || isProcessing || routesLoading}
+              disabled={isLoading || isProcessing || routesLoading || containerTypesLoading}
             />
           </div>
           
-          {/* Estado de carga de rutas */}
-          {routesLoading && (
+          {/* Estado de carga de rutas y container types */}
+          {(routesLoading || containerTypesLoading) && (
             <div className="flex items-center gap-2 text-sm text-blue-600">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Cargando rutas configuradas...
+              Cargando configuración...
             </div>
           )}
           
-          {!routesLoading && routes.length === 0 && (
+          {!routesLoading && !containerTypesLoading && routes.length === 0 && (
             <div className="flex items-center gap-2 text-sm text-orange-600">
               <AlertCircle className="h-4 w-4" />
               No hay rutas configuradas. Ve a Configuración para crear rutas.
             </div>
           )}
+
+          {!routesLoading && !containerTypesLoading && containerTypes.length === 0 && (
+            <div className="flex items-center gap-2 text-sm text-orange-600">
+              <AlertCircle className="h-4 w-4" />
+              No hay tipos de contenedores configurados. Ve a Configuración para configurar tipos de contenedores.
+            </div>
+          )}
           
-          {!routesLoading && routes.length > 0 && (
+          {!routesLoading && !containerTypesLoading && routes.length > 0 && containerTypes.length > 0 && (
             <div className="flex items-center gap-2 text-sm text-green-600">
               <CheckCircle className="h-4 w-4" />
-              {routes.length} ruta{routes.length !== 1 ? 's' : ''} configurada{routes.length !== 1 ? 's' : ''} lista{routes.length !== 1 ? 's' : ''}
+              {routes.length} ruta{routes.length !== 1 ? 's' : ''} y {containerTypes.length} tipo{containerTypes.length !== 1 ? 's' : ''} de contenedor{containerTypes.length !== 1 ? 'es' : ''} configurado{routes.length !== 1 ? 's' : ''} listo{routes.length !== 1 ? 's' : ''}
             </div>
           )}
           
@@ -544,32 +601,51 @@ export function TruckingUpload() {
       {previewData.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Vista Previa de Datos</CardTitle>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span>{previewData.length} registros encontrados</span>
-              <Badge variant="outline" className="text-green-600 border-green-600">
+            <CardTitle className="text-2xl font-bold  mb-4">Vista Previa de Datos</CardTitle>
+            <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap mt-2">
+              <span className="font-medium">{previewData.length} registros encontrados</span>
+              <Badge variant="outline" className="text-green-600 border-green-600 px-3 py-1">
                 {matchedCount} con precio
               </Badge>
               {unmatchedCount > 0 && (
-                <Badge variant="outline" className="text-orange-600 border-orange-600">
+                <Badge variant="outline" className="text-orange-600 border-orange-600 px-3 py-1">
                   {unmatchedCount} sin coincidencia
                 </Badge>
               )}
               {hasDuplicateContainerConsecutives && (
-                <Badge variant="outline" className="text-red-600 border-red-600">
+                <Badge variant="outline" className="text-red-600 border-red-600 px-3 py-1">
                   ⚠️ {duplicateContainerConsecutives.length} containerConsecutive duplicados
                 </Badge>
               )}
-              <span className="ml-auto font-medium">Total: ${totalAmount.toFixed(2)}</span>
+              {/* Mostrar conteo de tipos de contenedores detectados */}
+              {(() => {
+                const dryCount = previewData.filter(r => r.detectedContainerType === 'dry').length;
+                const reeferCount = previewData.filter(r => r.detectedContainerType === 'reefer').length;
+                return (
+                  <>
+                    {dryCount > 0 && (
+                      <Badge variant="outline" className="text-blue-600 border-blue-600 px-3 py-1">
+                        🚛 {dryCount} DRY
+                      </Badge>
+                    )}
+                    {reeferCount > 0 && (
+                      <Badge variant="outline" className="text-green-600 border-green-600 px-3 py-1">
+                        ❄️ {reeferCount} REEFER
+                      </Badge>
+                    )}
+                  </>
+                );
+              })()}
+
               {clientCompleteness.size > 0 && (
                 <>
-                  <Badge variant="outline" className="text-green-600 border-green-600">
+                  <Badge variant="outline" className="text-green-600 border-green-600 px-3 py-1">
                     {Array.from(clientCompleteness.values()).filter(c => c.isComplete).length} clientes completos
                   </Badge>
-                  <Badge variant="outline" className="text-red-600 border-red-600">
+                  <Badge variant="outline" className="text-red-600 border-red-600 px-3 py-1">
                     {Array.from(clientCompleteness.values()).filter(c => !c.isComplete).length} clientes incompletos
                   </Badge>
-                  <Badge variant="outline" className="text-blue-600 border-blue-600">
+                  <Badge variant="outline" className="text-blue-600 border-blue-600 px-3 py-1">
                     {Array.from(clientCompleteness.keys()).length} clientes únicos
                   </Badge>
                 </>
@@ -586,12 +662,12 @@ export function TruckingUpload() {
                     <TableHead>F/E</TableHead>
                     <TableHead>Size</TableHead>
                     <TableHead>Type</TableHead>
+                    <TableHead>Tipo Detectado</TableHead>
                     <TableHead>Move Date</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Leg</TableHead>
                     <TableHead>Move Type</TableHead>
                     <TableHead>Precio</TableHead>
-                    <TableHead>Duplicado</TableHead>
                     <TableHead>Estado</TableHead>
                     {/* <TableHead>Acciones</TableHead> */}
                   </TableRow>
@@ -608,6 +684,15 @@ export function TruckingUpload() {
                       <TableCell>{record.fe}</TableCell>
                       <TableCell>{record.size}</TableCell>
                       <TableCell>{record.type}</TableCell>
+                      <TableCell>
+                        {record.detectedContainerType ? (
+                          <Badge variant={record.detectedContainerType === 'reefer' ? 'default' : 'secondary'}>
+                            {record.detectedContainerType === 'reefer' ? 'REEFER' : 'DRY'}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell>{record.moveDate}</TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-2">
@@ -649,15 +734,6 @@ export function TruckingUpload() {
                           <span className="font-medium text-green-600">
                             ${record.matchedPrice?.toFixed(2)}
                           </span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {duplicateContainerConsecutives.includes(record.containerConsecutive) ? (
-                          <Badge variant="outline" className="text-red-600 border-red-600 text-xs">
-                            ⚠️ Duplicado
-                          </Badge>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}

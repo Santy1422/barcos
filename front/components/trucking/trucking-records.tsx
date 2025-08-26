@@ -232,6 +232,19 @@ export function TruckingRecords() {
         fullEmptyStatus = 'FULL' // Valor por defecto
       }
       
+      // Determinar CtrCategory basado en el tipo de contenedor detectado
+      let ctrCategory = 'D' // Valor por defecto para DRY
+      if (d.detectedContainerType) {
+        if (d.detectedContainerType === 'reefer') {
+          ctrCategory = 'R'
+        } else if (d.detectedContainerType === 'dry') {
+          ctrCategory = 'D'
+        }
+        console.log(`Detected container type: "${d.detectedContainerType}" -> CtrCategory: "${ctrCategory}"`)
+      } else {
+        console.log(`No hay detectedContainerType, usando valor por defecto CtrCategory: "${ctrCategory}"`)
+      }
+      
       console.log(`Campo fe original: "${d.fe}"`)
       console.log(`Campo fe procesado: "${feValue}"`)
       console.log(`FullEmpty status final: "${fullEmptyStatus}"`)
@@ -253,7 +266,7 @@ export function TruckingRecords() {
         // Campos adicionales requeridos por el XML
         businessType: d.moveType || 'IMPORT',
         internalOrder: d.internalOrder || '',
-        ctrCategory: d.ctrCategory || 'D',
+        ctrCategory: ctrCategory,
         subcontracting: d.subcontracting || 'N'
       }
       

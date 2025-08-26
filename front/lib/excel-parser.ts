@@ -38,18 +38,58 @@ export interface TruckingExcelData {
   matchedRouteName?: string;
   isMatched?: boolean;
   sapCode?:string;
+  detectedContainerType?: "dry" | "reefer"; // Tipo de contenedor detectado por el matching
   // Campos extraídos del leg para PTYSS
   from?: string;
   to?: string;
 }
 
+// Función para determinar si un tipo de contenedor es Reefer o Dry basándose en la categoría real del backend
+export const determineContainerTypeMatch = (
+  containerType: string, 
+  routeContainerType: "dry" | "reefer",
+  containerTypesFromBackend: Array<{ code: string; category: string }>
+): boolean => {
+  const normalizedType = containerType.toUpperCase();
+  
+  // Buscar el tipo de contenedor en la base de datos
+  const foundContainerType = containerTypesFromBackend.find(ct => 
+    ct.code.toUpperCase() === normalizedType
+  );
+  
+  if (!foundContainerType) {
+    console.warn(`Tipo de contenedor no encontrado en la base de datos: ${normalizedType}`);
+    return false;
+  }
+  
+  console.log(`  Tipo encontrado en BD: ${foundContainerType.code} - Categoría: ${foundContainerType.category}`);
+  
+  // Mapear la categoría del backend a dry/reefer
+  const isReefer = foundContainerType.category === 'REEFE';
+  const isDry = foundContainerType.category === 'DRY';
+  
+  // Si la ruta es REEFER, el contenedor debe ser reefer
+  if (routeContainerType === 'reefer') {
+    return isReefer;
+  }
+  
+  // Si la ruta es DRY, el contenedor debe ser dry
+  if (routeContainerType === 'dry') {
+    return isDry;
+  }
+  
+  return false;
+};
+
 // Función para hacer matching con las rutas configuradas
 export const matchTruckingDataWithRoutes = (
   excelData: TruckingExcelData[], 
-  routes: Array<{_id: string, name: string, containerType: "normal" | "refrigerated", routeType: "single" | "RT", price: number}>
+  routes: Array<{_id: string, name: string, containerType: "dry" | "reefer", routeType: "single" | "RT", price: number}>,
+  containerTypesFromBackend: Array<{ code: string; category: string }>
 ): TruckingExcelData[] => {
   console.log("=== INICIANDO MATCHING ===")
   console.log("Rutas disponibles:", routes)
+  console.log("Tipos de contenedores del backend:", containerTypesFromBackend)
   console.log("")
   
   return excelData.map((record, index) => {
@@ -79,16 +119,15 @@ export const matchTruckingDataWithRoutes = (
         (normalizedMoveType === 'rt' && route.routeType === 'RT') ||
         (normalizedMoveType === 'rt' && route.routeType === 'RT');
       
-      // Matching por type (containerType de la ruta) - HR = refrigerated, HC = normal
+      // Matching por type (containerType de la ruta) - usando categoría real del backend
       const normalizedType = record.type?.trim().toUpperCase() || '';
-      const containerTypeMatch = 
-        (normalizedType === 'HR' && route.containerType === 'refrigerated') ||
-        (normalizedType === 'HC' && route.containerType === 'normal');
+      const containerTypeMatch = determineContainerTypeMatch(normalizedType, route.containerType, containerTypesFromBackend);
       
       console.log(`  Comparando con ruta "${route.name}":`)
       console.log(`    Leg normalizado: "${normalizedLeg}" vs "${normalizedRouteName}" = ${legMatch}`)
       console.log(`    MoveType normalizado: "${normalizedMoveType}" vs "${route.routeType}" = ${moveTypeMatch}`)
       console.log(`    Type normalizado: "${normalizedType}" vs "${route.containerType}" = ${containerTypeMatch}`)
+      console.log(`    Tipo de contenedor: ${normalizedType} → ${route.containerType === 'reefer' ? 'REEFER' : 'DRY'}`)
       console.log(`    Match total: ${legMatch && moveTypeMatch && containerTypeMatch}`)
       
       return legMatch && moveTypeMatch && containerTypeMatch;
@@ -102,7 +141,8 @@ export const matchTruckingDataWithRoutes = (
         matchedRouteId: matchedRoute._id || '',
         matchedRouteName: matchedRoute.name || '',
         isMatched: true,
-             sapCode: 'TRK002'
+        sapCode: 'TRK002',
+        detectedContainerType: matchedRoute.containerType
       };
     } else {
       console.log(`  ❌ NO SE ENCONTRÓ MATCH`)
@@ -418,7 +458,8 @@ export const matchPTYSSDataWithRoutes = (
         matchedPrice: matchedRoute.price,
         matchedRouteId: matchedRoute._id,
         matchedRouteName: matchedRoute.name,
-        isMatched: true
+        isMatched: true,
+        detectedContainerType: matchedRoute.containerType
       }
     } else {
       console.log(`  ❌ No se encontró match`)
