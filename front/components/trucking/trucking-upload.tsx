@@ -23,14 +23,17 @@ import {
 import { ClientModal } from "@/components/clients-management"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { 
   selectAllContainerTypes,
   fetchContainerTypes,
   selectContainerTypesLoading,
   selectContainerTypesError
 } from "@/lib/features/containerTypes/containerTypesSlice"
+import { TruckingGastosAutoridadesUpload } from "./trucking-gastos-autoridades-upload"
 
 export function TruckingUpload() {
+  const [activeTab, setActiveTab] = useState<'trasiego' | 'autoridades'>('trasiego')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewData, setPreviewData] = useState<TruckingExcelData[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
@@ -538,6 +541,16 @@ export function TruckingUpload() {
 
   return (
     <div className="space-y-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as 'trasiego' | 'autoridades')}
+        className="w-full"
+      >
+        <TabsList className="mb-6">
+          <TabsTrigger value="trasiego">Subir Excel Trasiego</TabsTrigger>
+          <TabsTrigger value="autoridades">Gastos Autoridades</TabsTrigger>
+        </TabsList>
+        <TabsContent value="trasiego" className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -936,6 +949,11 @@ export function TruckingUpload() {
           </DialogContent>
         </Dialog>
       )}
+        </TabsContent>
+        <TabsContent value="autoridades">
+          <TruckingGastosAutoridadesUpload />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

@@ -30,8 +30,7 @@ import { Database, Search, X, Edit, Eye as EyeIcon, Trash2 as TrashIcon, Calenda
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { TruckingGastosAutoridadesPage } from "./trucking-gastos-autoridades-page";
+
 
 export function TruckingPrefactura() {
   const dispatch = useAppDispatch()
@@ -766,20 +765,8 @@ export function TruckingPrefactura() {
     return trasiegoRecords.slice(start, end)
   }, [trasiegoRecords, currentPage, recordsPerPage])
 
-  const [activeTab, setActiveTab] = useState<'trasiego' | 'autoridades'>('trasiego');
-
   return (
-    <div>
-      <Tabs
-        value={activeTab}
-        onValueChange={(v) => setActiveTab(v as 'trasiego' | 'autoridades')}
-        className="w-full"
-      >
-        <TabsList className="mb-6">
-          <TabsTrigger value="trasiego">Prefactura Trasiego</TabsTrigger>
-          <TabsTrigger value="autoridades">Gastos Autoridades</TabsTrigger>
-        </TabsList>
-        <TabsContent value="trasiego">
+    <div className="space-y-6">
           {/* Encabezado estilo PTYSS - solo Paso 1 */}
           {step === 'select' && (
             <div className="bg-slate-800 text-white rounded-md p-4 flex items-center justify-between">
@@ -1448,11 +1435,7 @@ export function TruckingPrefactura() {
                 </div>
               </DialogContent>
             </Dialog>
-          </TabsContent>
-          <TabsContent value="autoridades">
-            <TruckingGastosAutoridadesPage />
-          </TabsContent>
-        </Tabs>
+
 
         {/* Modal de Selección de Fechas */}
         <Dialog open={isDateModalOpen} onOpenChange={setIsDateModalOpen}>
@@ -1544,8 +1527,8 @@ export function TruckingPrefactura() {
             </div>
           </DialogContent>
         </Dialog>
-      </div>
-    )
-  }
+    </div>
+  )
+}
 
 
