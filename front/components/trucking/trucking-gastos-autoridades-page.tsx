@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
-import { FileText, Download, ArrowLeft, Eye, Loader2, Trash2, Calendar, X, Edit, Search } from "lucide-react";
+import { FileText, Download, ArrowLeft, Eye, Loader2, Trash2, Calendar, X, Edit, Search, RefreshCw } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { 
@@ -19,8 +19,12 @@ import {
   deleteAutoridadesRecord, 
   selectAutoridadesRecords,
   selectRecordsLoading,
-  selectRecordsError 
+  selectRecordsError,
+  createInvoiceAsync,
+  updateMultipleAutoridadesStatusAsync,
+  type PersistedInvoiceRecord
 } from "@/lib/features/records/recordsSlice";
+import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSlice";
 
 export function TruckingGastosAutoridadesPage() {
   const { toast } = useToast();
@@ -60,18 +64,39 @@ export function TruckingGastosAutoridadesPage() {
   const [showPdfPreview, setShowPdfPreview] = useState(false)
   const [modalPdfUrl, setModalPdfUrl] = useState<string | null>(null)
   
+  // Estado para crear prefactura
+  const [isCreatingPrefactura, setIsCreatingPrefactura] = useState(false)
+  
   // Redux state
   const records = useAppSelector(selectAutoridadesRecords);
   const loading = useAppSelector(selectRecordsLoading);
   const error = useAppSelector(selectRecordsError);
+  const clients = useAppSelector(selectAllClients);
 
   useEffect(() => {
     dispatch(fetchAutoridadesRecords());
+    dispatch(fetchClients());
+  }, [dispatch]);
+
+  // Recargar cuando la ventana recupera el foco (útil al volver de trucking-records)
+  useEffect(() => {
+    const handleFocus = () => {
+      dispatch(fetchAutoridadesRecords());
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, [dispatch]);
 
   // Filtrar registros por fecha, autoridad y búsqueda antes de agrupar
   const filteredRecords = useMemo(() => {
     let filtered = [...records]
+    
+    // Filtro principal: solo mostrar registros que NO estén prefacturados ni facturados
+    filtered = filtered.filter((record: any) => {
+      const status = (record.status || '').toLowerCase()
+      return status !== 'prefacturado' && status !== 'facturado'
+    })
     
     // Filtro por búsqueda
     if (search.trim()) {
@@ -142,6 +167,29 @@ export function TruckingGastosAutoridadesPage() {
     return selected
   }, [selectedBLNumbers, groupedByBL])
 
+  // Calcular total seleccionado (replicando lógica del PDF)
+  const totalSelected = useMemo(() => {
+    let total = 0
+    selectedBLNumbers.forEach(blNumber => {
+      const groupRecords = groupedByBL.get(blNumber) || []
+      
+      // NOTF: se cobra una vez por BL Number (del registro con el número de order más bajo)
+      const notfRecord = groupRecords
+        .filter(r => r.order && !isNaN(parseFloat(r.order)))
+        .sort((a, b) => parseFloat(a.order) - parseFloat(b.order))[0]
+      const notfValue = notfRecord?.notf ? parseFloat(notfRecord.notf) || 0 : 0
+      
+      // SEAL: se cobra por cada contenedor que tenga valor en seal
+      const sealTotal = groupRecords.reduce((sum, r) => {
+        const sealValue = r.seal ? parseFloat(r.seal) || 0 : 0
+        return sum + sealValue
+      }, 0)
+      
+      total += notfValue + sealTotal
+    })
+    return total
+  }, [selectedBLNumbers, groupedByBL])
+
   // Funciones de selección
   const toggleBLSelection = (blNumber: string, checked: boolean) => {
     if (checked) {
@@ -170,6 +218,17 @@ export function TruckingGastosAutoridadesPage() {
   }
 
   const isExpanded = (blNumber: string) => expandedBLNumbers.includes(blNumber)
+
+  // Funciones para manejo de clientes (similar a trucking-prefactura)
+  const normalizeName = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '').trim()
+  
+  const getClient = (name: string) => {
+    const target = normalizeName(name)
+    return clients.find((c: any) => {
+      const n = c.type === 'juridico' ? (c.companyName || '') : (c.fullName || '')
+      return normalizeName(n) === target
+    })
+  }
 
   // Funciones de filtros de fecha (replicadas de trucking-prefactura)
   const getTodayDates = () => {
@@ -458,6 +517,85 @@ export function TruckingGastosAutoridadesPage() {
     }
   }, [documentData, step, selectedRecords.length])
 
+  // Crear prefactura auth (similar a trucking-prefactura)
+  const handleCreatePrefactura = async () => {
+    if (selectedRecords.length === 0) {
+      toast({ title: "Error", description: "Debes seleccionar al menos un BL para crear la prefactura", variant: "destructive" })
+      return
+    }
+    if (!documentData.number) {
+      toast({ title: "Error", description: "Completa el número de prefactura", variant: "destructive" })
+      return
+    }
+    
+    setIsCreatingPrefactura(true)
+    
+    try {
+      // Usar PTG como cliente emisor (similar a trucking-prefactura)
+      const issuer = getClient('PTG')
+      if (!issuer) {
+        toast({ title: "Error", description: "No se encontró el cliente PTG", variant: "destructive" })
+        return
+      }
+      
+      const displayName = issuer.type === 'natural' ? issuer.fullName : issuer.companyName
+      const displayRuc = issuer.type === 'natural' ? issuer.documentNumber : issuer.ruc
+      const address = issuer.type === 'natural'
+        ? (typeof issuer.address === 'string' ? issuer.address : `${issuer.address?.district || ''}, ${issuer.address?.province || ''}`)
+        : (typeof (issuer as any).fiscalAddress === 'string' ? (issuer as any).fiscalAddress : `${(issuer as any).fiscalAddress?.district || ''}, ${(issuer as any).fiscalAddress?.province || ''}`)
+
+      const newPrefactura: PersistedInvoiceRecord = {
+        id: `AUTH-PRE-${Date.now().toString().slice(-6)}`,
+        module: 'trucking',
+        invoiceNumber: documentData.number,
+        clientName: displayName || 'PTG',
+        clientRuc: displayRuc || '',
+        clientSapNumber: issuer.sapCode || '',
+        issueDate: new Date().toISOString().split('T')[0],
+        dueDate: new Date().toISOString().split('T')[0],
+        currency: 'USD',
+        subtotal: totalSelected,
+        taxAmount: 0,
+        totalAmount: totalSelected,
+        status: 'prefactura',
+        xmlData: '',
+        relatedRecordIds: selectedRecords.map((r: any) => r._id || r.id),
+        notes: documentData.notes,
+        details: {
+          clientAddress: address,
+          clientPhone: issuer.phone || '',
+          documentType: 'gastos-autoridades',
+          selectedBLNumbers: selectedBLNumbers,
+        },
+        createdAt: new Date().toISOString(),
+      }
+
+      const response = await dispatch(createInvoiceAsync(newPrefactura))
+      if (createInvoiceAsync.fulfilled.match(response)) {
+        const createdId = response.payload.id
+        await dispatch(updateMultipleAutoridadesStatusAsync({
+          recordIds: selectedRecords.map((r: any) => r._id || r.id),
+          status: 'prefacturado',
+          invoiceId: createdId,
+        })).unwrap()
+
+        // Refrescar y resetear
+        dispatch(fetchAutoridadesRecords())
+        setSelectedBLNumbers([])
+        setDocumentData({ number: `AUTH-${Date.now().toString().slice(-5)}`, notes: '' })
+        setStep('select')
+
+        toast({ title: 'Prefactura Auth creada', description: `Prefactura ${newPrefactura.invoiceNumber} creada con ${selectedBLNumbers.length} BL Numbers.` })
+      } else {
+        toast({ title: 'Error', description: 'No se pudo crear la prefactura', variant: 'destructive' })
+      }
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message || "No se pudo crear la prefactura", variant: "destructive" })
+    } finally {
+      setIsCreatingPrefactura(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Paso 1: Selección de registros agrupados por BL Number */}
@@ -476,6 +614,18 @@ export function TruckingGastosAutoridadesPage() {
             </div>
             <div className="flex items-center gap-3">
               <div className="text-sm opacity-90">{selectedBLNumbers.length} BL seleccionados, {selectedRecords.length} registros</div>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  dispatch(fetchAutoridadesRecords())
+                  toast({ title: "Refrescando datos", description: "Actualizando registros de autoridades..." })
+                }} 
+                className="bg-white/10 hover:bg-white/20 border-white/30 text-white"
+                disabled={loading}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refrescar
+              </Button>
               <Button variant="outline" disabled={selectedBLNumbers.length === 0} onClick={clearSelection} className="bg-white/10 hover:bg-white/20 border-white/30 text-white">
                 Limpiar Selección
               </Button>
@@ -703,7 +853,7 @@ export function TruckingGastosAutoridadesPage() {
             
             <div className="flex justify-between items-center p-4">
               <div className="text-sm text-muted-foreground">
-                Seleccionados: {selectedBLNumbers.length} de {totalBLNumbers.length} BL Numbers | Total: <span className="font-semibold">${selectedRecords.reduce((sum: number, r: any) => sum + (r.totalValue || 0), 0).toFixed(2)}</span>
+                Seleccionados: {selectedBLNumbers.length} de {totalBLNumbers.length} BL Numbers | Total: <span className="font-semibold">${totalSelected.toFixed(2)}</span>
               </div>
               <div className="flex gap-2 items-center">
                 <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
@@ -756,8 +906,8 @@ export function TruckingGastosAutoridadesPage() {
                   <div className="text-sm font-semibold text-slate-900">{selectedRecords.length}</div>
                 </div>
                 <div className="bg-white/60 p-2 rounded-md">
-                  <span className="text-slate-600 font-medium text-xs">Total Contenedores:</span>
-                  <div className="text-sm font-semibold text-slate-900">{selectedRecords.length}</div>
+                  <span className="text-slate-600 font-medium text-xs">Total:</span>
+                  <div className="text-sm font-semibold text-slate-900">${totalSelected.toFixed(2)}</div>
                 </div>
               </div>
             </div>
@@ -857,6 +1007,24 @@ export function TruckingGastosAutoridadesPage() {
                   <Download className="mr-2 h-5 w-5" />
                   Descargar PDF
                 </Button>
+                
+                <Button 
+                  onClick={handleCreatePrefactura}
+                  className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-semibold px-8 py-3 shadow-lg transform transition-all duration-200 hover:scale-105"
+                  disabled={!documentData.number || selectedRecords.length === 0 || isCreatingPrefactura}
+                >
+                  {isCreatingPrefactura ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      Creando Prefactura Auth...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="mr-2 h-5 w-5" />
+                      Crear Prefactura Auth
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
           </CardContent>
@@ -888,6 +1056,20 @@ export function TruckingGastosAutoridadesPage() {
             <Button variant="outline" onClick={handleDownloadPDF}>
               <Download className="h-4 w-4 mr-2" />
               Descargar PDF
+            </Button>
+            <Button 
+              onClick={handleCreatePrefactura}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={!documentData.number || selectedRecords.length === 0 || isCreatingPrefactura}
+            >
+              {isCreatingPrefactura ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creando...
+                </>
+              ) : (
+                `Crear Prefactura Auth (${selectedBLNumbers.length} BL${selectedBLNumbers.length !== 1 ? 's' : ''})`
+              )}
             </Button>
           </div>
         </DialogContent>

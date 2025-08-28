@@ -25,6 +25,7 @@ import {
   deleteInvoiceAsync,
   updateInvoiceAsync,
   updateMultipleRecordsStatusAsync,
+  fetchAutoridadesRecords,
 } from "@/lib/features/records/recordsSlice"
 import { generateInvoiceXML } from "@/lib/xml-generator"
 import { TruckingRecordsViewModal } from "./trucking-records-view-modal"
@@ -40,6 +41,7 @@ export function TruckingRecords() {
   // Filtros y búsqueda
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | "prefactura" | "facturada">("all")
+  const [typeFilter, setTypeFilter] = useState<"all" | "normal" | "auth">("all")
   const [activePeriodFilter, setActivePeriodFilter] = useState<"none" | "today" | "week" | "month" | "advanced">("none")
   const [isUsingPeriodFilter, setIsUsingPeriodFilter] = useState(false)
   const [startDate, setStartDate] = useState("")
@@ -173,6 +175,14 @@ export function TruckingRecords() {
       const containers = getContainersForInvoice(inv)
       const matchesSearch = (inv.invoiceNumber || '').toLowerCase().includes(q) || (inv.clientName || '').toLowerCase().includes(q) || containers.toLowerCase().includes(q)
       const matchesStatus = statusFilter === 'all' || inv.status === statusFilter
+      
+      // Filtro por tipo (Normal vs AUTH)
+      let matchesType = true
+      if (typeFilter !== 'all') {
+        const isAuth = (inv.invoiceNumber || '').toString().toUpperCase().startsWith('AUTH-')
+        matchesType = typeFilter === 'auth' ? isAuth : !isAuth
+      }
+      
       let matchesDate = true
       if (isUsingPeriodFilter && startDate && endDate) {
         const d = new Date(inv.issueDate || inv.createdAt)
@@ -180,17 +190,26 @@ export function TruckingRecords() {
         const e = new Date(endDate); e.setHours(23,59,59,999)
         matchesDate = d >= s && d <= e
       }
-      return matchesSearch && matchesStatus && matchesDate
+      return matchesSearch && matchesStatus && matchesType && matchesDate
     })
-  }, [invoices, allRecords, search, statusFilter, isUsingPeriodFilter, startDate, endDate])
+  }, [invoices, allRecords, search, statusFilter, typeFilter, isUsingPeriodFilter, startDate, endDate])
 
   // Acciones
   const handleDeleteInvoice = async (invoice: any) => {
     try {
       await dispatch(deleteInvoiceAsync(invoice.id)).unwrap()
       toast({ title: "Factura eliminada", description: `Se eliminó ${invoice.invoiceNumber}` })
+      
+      // Recargar facturas
       dispatch(fetchInvoicesAsync("trucking"))
-      dispatch(fetchAllRecordsByModule("trucking"))
+      
+      // Si es una prefactura auth (gastos de autoridades), recargar registros de autoridades
+      if (invoice.invoiceNumber && invoice.invoiceNumber.startsWith('AUTH-')) {
+        dispatch(fetchAutoridadesRecords())
+      } else {
+        // Para facturas normales, recargar registros normales
+        dispatch(fetchAllRecordsByModule("trucking"))
+      }
     } catch (e: any) {
       toast({ title: "Error", description: e.message || 'No se pudo eliminar', variant: 'destructive' })
     }
@@ -377,6 +396,14 @@ export function TruckingRecords() {
                 <SelectItem value="facturada">Facturada</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={typeFilter} onValueChange={(v)=>setTypeFilter(v as any)}>
+              <SelectTrigger className="w-[180px]"><SelectValue placeholder="Tipo" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los tipos</SelectItem>
+                <SelectItem value="normal">Trasiego</SelectItem>
+                <SelectItem value="auth">Gastos Autoridades</SelectItem>
+              </SelectContent>
+            </Select>
             <div className="flex gap-1 flex-wrap">
               <Button variant={activePeriodFilter==='today'?'default':'outline'} size="sm" onClick={()=>handleFilterByPeriod('today')} className="h-8">Hoy</Button>
               <Button variant={activePeriodFilter==='week'?'default':'outline'} size="sm" onClick={()=>handleFilterByPeriod('week')} className="h-8">Semana</Button>
@@ -393,6 +420,16 @@ export function TruckingRecords() {
             </div>
           )}
 
+          {typeFilter !== 'all' && (
+            <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-md">
+              <Badge variant="default" className="bg-green-600 text-white text-xs">
+                {typeFilter === 'auth' ? 'Gastos Autoridades' : 'Trasiego'}
+              </Badge>
+              <span className="text-sm text-green-700">Mostrando solo facturas de {typeFilter === 'auth' ? 'gastos de autoridades' : 'trasiego'}</span>
+              <Button variant="ghost" size="sm" onClick={()=>setTypeFilter('all')} className="h-6 w-6 p-0 ml-auto"><X className="h-3 w-3" /></Button>
+            </div>
+          )}
+
           {isUsingPeriodFilter && activePeriodFilter === 'advanced' && startDate && endDate && (
             <div className="flex items-center gap-2 p-2 bg-purple-50 border border-purple-200 rounded-md">
               <Badge variant="default" className="bg-purple-600 text-white text-xs">Filtro Avanzado</Badge>
@@ -406,6 +443,7 @@ export function TruckingRecords() {
                   <TableHeader>
                     <TableRow>
                   <TableHead>Número</TableHead>
+                  <TableHead>Tipo</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead>Contenedor</TableHead>
                   <TableHead>Fecha</TableHead>
@@ -416,15 +454,22 @@ export function TruckingRecords() {
                   </TableHeader>
                   <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={7} className="py-8 text-center"><div className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Cargando…</div></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="py-8 text-center"><div className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Cargando…</div></TableCell></TableRow>
                 ) : error ? (
-                  <TableRow><TableCell colSpan={7} className="py-8 text-center text-red-600">{error}</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="py-8 text-center text-red-600">{error}</TableCell></TableRow>
                 ) : filteredInvoices.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">No hay prefacturas</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">No hay prefacturas</TableCell></TableRow>
                 ) : (
-                  filteredInvoices.map((inv: any) => (
+                  filteredInvoices.map((inv: any) => {
+                    const isAuth = (inv.invoiceNumber || '').toString().toUpperCase().startsWith('AUTH-')
+                    return (
                     <TableRow key={inv.id}>
                       <TableCell className="font-mono text-sm">{inv.invoiceNumber}</TableCell>
+                      <TableCell>
+                        <Badge variant={isAuth ? "default" : "secondary"} className={isAuth ? "bg-orange-600 text-white" : ""}>
+                          {isAuth ? "Gastos Auth" : "Trasiego"}
+                        </Badge>
+                      </TableCell>
                       <TableCell><div className="flex items-center gap-2"><User className="h-4 w-4 text-muted-foreground" />{inv.clientName}</div></TableCell>
                       <TableCell><div className="flex items-center gap-2"><Truck className="h-4 w-4 text-muted-foreground" />{getContainersForInvoice(inv)}</div></TableCell>
                       <TableCell><div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-muted-foreground" />{new Date(inv.issueDate).toLocaleDateString('es-ES')}</div></TableCell>
@@ -455,7 +500,8 @@ export function TruckingRecords() {
                               </div>
                             </TableCell>
                           </TableRow>
-                  ))
+                    )
+                  })
                 )}
                   </TableBody>
                 </Table>

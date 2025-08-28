@@ -693,6 +693,53 @@ export const deleteAutoridadesRecord = createAsyncThunk(
   }
 )
 
+// Nueva acción async para actualizar múltiples registros de autoridades
+export const updateMultipleAutoridadesStatusAsync = createAsyncThunk(
+  'records/updateMultipleAutoridadesStatus',
+  async ({ recordIds, status, invoiceId }: { recordIds: string[]; status: string; invoiceId: string }, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+
+      console.log(`🔍 updateMultipleAutoridadesStatusAsync - Actualizando ${recordIds.length} registros de autoridades a estado: ${status}`)
+      
+      // Actualizar cada registro individualmente usando la API de autoridades
+      const updatePromises = recordIds.map(async (recordId) => {
+        console.log(`🔍 Actualizando registro de autoridades ${recordId} a estado ${status}`)
+        
+        const response = await fetch(createApiUrl(`/api/records/autoridades/${recordId}`), {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            status: status,
+            invoiceId: invoiceId
+          })
+        })
+        
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(`Error actualizando registro de autoridades ${recordId}: ${errorData.message || response.statusText}`)
+        }
+        
+        return await response.json()
+      })
+      
+      const results = await Promise.all(updatePromises)
+      console.log(`✅ updateMultipleAutoridadesStatusAsync - ${results.length} registros de autoridades actualizados exitosamente`)
+      
+      return { recordIds, status, invoiceId, results }
+    } catch (error: any) {
+      console.error('❌ Error en updateMultipleAutoridadesStatusAsync:', error)
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
 interface RecordsState {
   individualRecords: ExcelRecord[]
   invoices: InvoiceRecord[]
@@ -1153,6 +1200,25 @@ const recordsSlice = createSlice({
       .addCase(deleteAutoridadesRecord.rejected, (state, action) => {
         state.creatingRecords = false
         state.error = action.payload as string
+      })
+      
+      // Update multiple autoridades records status
+      .addCase(updateMultipleAutoridadesStatusAsync.fulfilled, (state, action) => {
+        const { recordIds, status, invoiceId } = action.payload
+        // Actualizar los registros de autoridades en el estado local
+        recordIds.forEach((recordId) => {
+          const record = state.autoridadesRecords.find((r) => (r._id || r.id) === recordId)
+          if (record) {
+            record.status = status as any
+            record.invoiceId = invoiceId
+          }
+        })
+        
+        console.log(`🔍 updateMultipleAutoridadesStatusAsync.fulfilled - ${recordIds.length} registros de autoridades actualizados a ${status}`)
+      })
+      .addCase(updateMultipleAutoridadesStatusAsync.rejected, (state, action) => {
+        state.error = action.payload as string
+        console.error('❌ updateMultipleAutoridadesStatusAsync.rejected:', action.payload)
       })
   },
 })

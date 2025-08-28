@@ -19,7 +19,12 @@ import {
   Container
 } from "lucide-react";
 import { useAppSelector, useAppDispatch } from "@/lib/hooks";
-import { selectAllIndividualRecords, fetchAllRecordsByModule } from "@/lib/features/records/recordsSlice";
+import { 
+  selectAllIndividualRecords, 
+  fetchAllRecordsByModule, 
+  selectAutoridadesRecords,
+  fetchAutoridadesRecords 
+} from "@/lib/features/records/recordsSlice";
 import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSlice";
 
 interface TruckingRecordsViewModalProps {
@@ -31,18 +36,30 @@ interface TruckingRecordsViewModalProps {
 export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: TruckingRecordsViewModalProps) {
   const dispatch = useAppDispatch();
   const allRecords = useAppSelector(selectAllIndividualRecords);
+  const autoridadesRecords = useAppSelector(selectAutoridadesRecords);
   const clients = useAppSelector(selectAllClients);
+
+  // Determinar si es una factura AUTH
+  const isAuthInvoice = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-');
 
   useEffect(() => {
     if (open) {
-      dispatch(fetchAllRecordsByModule("trucking"));
+      if (isAuthInvoice) {
+        dispatch(fetchAutoridadesRecords());
+      } else {
+        dispatch(fetchAllRecordsByModule("trucking"));
+      }
       dispatch(fetchClients());
     }
-  }, [open, dispatch]);
+  }, [open, dispatch, isAuthInvoice]);
 
   const getRelatedRecords = () => {
-    if (!invoice?.relatedRecordIds || allRecords.length === 0) return [];
-    return allRecords.filter((record: any) => invoice.relatedRecordIds.includes(record._id || record.id));
+    if (!invoice?.relatedRecordIds) return [];
+    
+    const sourceRecords = isAuthInvoice ? autoridadesRecords : allRecords;
+    if (sourceRecords.length === 0) return [];
+    
+    return sourceRecords.filter((record: any) => invoice.relatedRecordIds.includes(record._id || record.id));
   };
 
   const relatedRecords = getRelatedRecords();
@@ -62,7 +79,11 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5" /> Registros Asociados - {invoice.invoiceNumber}
+            <Database className="h-5 w-5" /> 
+            Registros Asociados - {invoice.invoiceNumber}
+            <Badge variant={isAuthInvoice ? "default" : "secondary"} className={isAuthInvoice ? "bg-orange-600 text-white" : ""}>
+              {isAuthInvoice ? "Gastos Auth" : "Trasiego"}
+            </Badge>
           </DialogTitle>
         </DialogHeader>
 
@@ -105,14 +126,15 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
               <div className="text-center py-8 text-muted-foreground">No se encontraron registros asociados</div>
             ) : (
               relatedRecords.map((record: any, index: number) => {
-                const data = record.data as Record<string, any>;
+                // Para registros de autoridades, los datos están directamente en el record, no en record.data
+                const data = isAuthInvoice ? record : (record.data as Record<string, any>);
                 const { date, time } = formatDateTime(record.createdAt);
                 const client = clients.find((c: any) => (c._id || c.id) === data?.clientId);
                 const displayClientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : (data?.associate || data?.line || invoice.clientName || "Cliente");
                 const displayOrder = data?.order || data?.containerConsecutive || "N/A";
                 const displayContainerSize = data?.containerSize || data?.size || "N/A";
                 const displayContainerType = data?.containerType || data?.type || "N/A";
-                const displayLine = data?.line || data?.route || "N/A";
+                const displayLine = data?.line || data?.route || data?.ruta || "N/A";
 
                 return (
                   <div key={record._id || record.id} className="border border-gray-200 rounded-lg p-4 space-y-4">
@@ -125,40 +147,85 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><User className="h-3 w-3" /> Cliente</Label>
-                        <p className="text-sm">{displayClientName}</p>
-                        <p className="text-xs text-muted-foreground">Orden: {displayOrder}</p>
-                      </div>
+                      {isAuthInvoice ? (
+                        // Vista para registros de autoridades
+                        <>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> BL Number</Label>
+                            <p className="text-sm font-medium">{data.blNumber || "N/A"}</p>
+                            <p className="text-xs text-muted-foreground">Orden: {data.order || "N/A"}</p>
+                          </div>
 
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> Contenedor</Label>
-                        <p className="text-sm font-medium">{data.container || "N/A"}</p>
-                        <p className="text-xs text-muted-foreground">{displayContainerSize} {displayContainerType}</p>
-                        <p className="text-xs text-muted-foreground">F/E: {data.fe || "N/A"}</p>
-                      </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Container className="h-3 w-3" /> Contenedor</Label>
+                            <p className="text-sm font-medium">{data.container || "N/A"}</p>
+                            <p className="text-xs text-muted-foreground">{data.size || "N/A"} {data.type || "N/A"}</p>
+                            <p className="text-xs text-muted-foreground">F/E: {data.fe || "N/A"}</p>
+                          </div>
 
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><MapPin className="h-3 w-3" /> Ruta</Label>
-                        <p className="text-sm">{data.from || "N/A"} → {data.to || "N/A"}</p>
-                        <p className="text-xs text-muted-foreground">Línea: {displayLine}</p>
-                      </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><MapPin className="h-3 w-3" /> Autoridad</Label>
+                            <p className="text-sm">{data.auth || "N/A"}</p>
+                            <p className="text-xs text-muted-foreground">Ruta: {data.ruta || "N/A"}</p>
+                          </div>
 
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Calendar className="h-3 w-3" /> Fecha Movimiento</Label>
-                        <p className="text-sm">{data.moveDate ? new Date(data.moveDate).toLocaleDateString('es-ES') : "N/A"}</p>
-                      </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> Invoice</Label>
+                            <p className="text-sm">{data.noInvoice || "N/A"}</p>
+                            <p className="text-xs text-muted-foreground">Fecha: {data.dateOfInvoice ? new Date(data.dateOfInvoice).toLocaleDateString('es-ES') : "N/A"}</p>
+                          </div>
 
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><DollarSign className="h-3 w-3" /> Valor Total</Label>
-                        <p className="text-sm font-bold text-green-600">${(record.totalValue || 0).toFixed(2)}</p>
-                      </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><DollarSign className="h-3 w-3" /> Costos</Label>
+                            <p className="text-xs text-muted-foreground">NOTF: ${(parseFloat(data.notf) || 0).toFixed(2)}</p>
+                            <p className="text-xs text-muted-foreground">Seal: ${(parseFloat(data.seal) || 0).toFixed(2)}</p>
+                          </div>
 
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Truck className="h-3 w-3" /> Transporte</Label>
-                        <p className="text-xs text-muted-foreground">Conductor: {data.conductor || data.driverName || 'N/A'}</p>
-                        <p className="text-xs text-muted-foreground">Matrícula: {data.matriculaCamion || data.plate || 'N/A'}</p>
-                      </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Truck className="h-3 w-3" /> Transporte</Label>
+                            <p className="text-xs text-muted-foreground">Transporte: {data.transport || "N/A"}</p>
+                            <p className="text-xs text-muted-foreground">Peso: {data.totalWeight ? `${data.totalWeight} kg` : "N/A"}</p>
+                          </div>
+                        </>
+                      ) : (
+                        // Vista para registros de trasiego (normal)
+                        <>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><User className="h-3 w-3" /> Cliente</Label>
+                            <p className="text-sm">{displayClientName}</p>
+                            <p className="text-xs text-muted-foreground">Orden: {displayOrder}</p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> Contenedor</Label>
+                            <p className="text-sm font-medium">{data.container || "N/A"}</p>
+                            <p className="text-xs text-muted-foreground">{displayContainerSize} {displayContainerType}</p>
+                            <p className="text-xs text-muted-foreground">F/E: {data.fe || "N/A"}</p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><MapPin className="h-3 w-3" /> Ruta</Label>
+                            <p className="text-sm">{data.from || "N/A"} → {data.to || "N/A"}</p>
+                            <p className="text-xs text-muted-foreground">Línea: {displayLine}</p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Calendar className="h-3 w-3" /> Fecha Movimiento</Label>
+                            <p className="text-sm">{data.moveDate ? new Date(data.moveDate).toLocaleDateString('es-ES') : "N/A"}</p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><DollarSign className="h-3 w-3" /> Valor Total</Label>
+                            <p className="text-sm font-bold text-green-600">${(record.totalValue || 0).toFixed(2)}</p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Truck className="h-3 w-3" /> Transporte</Label>
+                            <p className="text-xs text-muted-foreground">Conductor: {data.conductor || data.driverName || 'N/A'}</p>
+                            <p className="text-xs text-muted-foreground">Matrícula: {data.matriculaCamion || data.plate || 'N/A'}</p>
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     <Separator />
