@@ -16,7 +16,7 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 }
 
 // Multer configuration for PDF uploads
-const storage = multer.diskStorage({
+const storage = multer.diskStorage({ 
   destination: (req, file, cb) => {
     cb(null, UPLOAD_DIR);
   },

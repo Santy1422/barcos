@@ -137,9 +137,31 @@ export function TruckingGastosAutoridadesUpload() {
            const value = row[findColumnName(possibleNames)];
            if (value !== undefined && value !== null && value.toString().trim() !== '') {
              try {
+               const valueStr = value.toString().trim();
+               
+               // Si es una fecha en formato DD/MM/YYYY o DD/M/YYYY
+               if (typeof value === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(valueStr)) {
+                 const [day, month, year] = valueStr.split('/').map(num => parseInt(num, 10));
+                 const parsedDate = new Date(year, month - 1, day); // month es 0-based en JS
+                 return isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+               }
+               
+               // Si Excel ya convirtió la fecha a objeto Date
+               if (value instanceof Date) {
+                 return isNaN(value.getTime()) ? new Date() : value;
+               }
+               
+               // Si es un número (fecha serial de Excel)
+               if (typeof value === 'number' && value > 1000) {
+                 // Excel date serial: días desde 1900-01-01 (con corrección de leap year bug)
+                 const excelDate = new Date((value - 25569) * 86400 * 1000);
+                 return isNaN(excelDate.getTime()) ? new Date() : excelDate;
+               }
+               
+               // Intentar parsear como fecha normal
                const date = new Date(value);
                return isNaN(date.getTime()) ? new Date() : date;
-             } catch {
+             } catch (error) {
                return new Date();
              }
            }
