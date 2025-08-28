@@ -135,7 +135,7 @@ export const verifyToken = createAsyncThunk(
         throw new Error('No token found')
       }
       
-      const response = await fetch('/api/user/reloadUser', {
+      const response = await fetch('/api/user/reloadUser', { 
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
