@@ -10,8 +10,8 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { FileText, Code, AlertTriangle, CheckCircle, Calendar, DollarSign, User, Eye, Download } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { useAppSelector } from "@/lib/hooks"
-import { selectAllIndividualRecords } from "@/lib/features/records/recordsSlice"
+import { useAppSelector, useAppDispatch } from "@/lib/hooks"
+import { selectAllIndividualRecords, selectAutoridadesRecords, fetchAutoridadesRecords } from "@/lib/features/records/recordsSlice"
 import { generateInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSapFtp } from "@/lib/xml-generator"
 import { saveAs } from "file-saver"
 
@@ -24,6 +24,7 @@ interface TruckingFacturacionModalProps {
 
 export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFacturar }: TruckingFacturacionModalProps) {
   const { toast } = useToast()
+  const dispatch = useAppDispatch()
   const [isProcessing, setIsProcessing] = useState(false)
   const [newInvoiceNumber, setNewInvoiceNumber] = useState("")
   const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().split('T')[0])
@@ -35,6 +36,10 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
   const [showSapLogs, setShowSapLogs] = useState(false)
 
   const allRecords = useAppSelector(selectAllIndividualRecords)
+  const autoridadesRecords = useAppSelector(selectAutoridadesRecords)
+  
+  // Detectar si es una factura AUTH
+  const isAuthInvoice = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-')
 
   useEffect(() => {
     setGeneratedXml("")
@@ -43,21 +48,204 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
     setIsSendingToSap(false)
     setSapLogs([])
     setShowSapLogs(false)
+    
+    // Pre-rellenar el número de factura para prefacturas AUTH
+    if (invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-')) {
+      const invoiceNum = invoice.invoiceNumber.toString()
+      const suggestedNumber = invoiceNum.replace(/^AUTH-/, `AUTH-FAC-${Date.now().toString().slice(-6)}-`)
+      setNewInvoiceNumber(suggestedNumber)
+    }
     const today = new Date(); setInvoiceDate(today.toISOString().split('T')[0])
     setActions({ sendToSAP: false })
   }, [invoice?.id])
+
+  // Cargar registros de autoridades cuando se abre el modal
+  useEffect(() => {
+    if (open && isAuthInvoice) {
+      console.log("Cargando registros de autoridades para factura AUTH...")
+      dispatch(fetchAutoridadesRecords())
+    }
+  }, [open, isAuthInvoice, dispatch])
+
+  // Debug: monitorear cambios en registros de autoridades
+  useEffect(() => {
+    console.log("=== DEBUG: Autoridades records changed ===")
+    console.log("autoridadesRecords.length:", autoridadesRecords.length)
+    console.log("isAuthInvoice:", isAuthInvoice)
+    console.log("invoice.relatedRecordIds:", invoice?.relatedRecordIds)
+    if (autoridadesRecords.length > 0) {
+      console.log("Primeros 3 registros de autoridades:", autoridadesRecords.slice(0, 3))
+    }
+  }, [autoridadesRecords, isAuthInvoice, invoice?.relatedRecordIds])
+
+  // Función para generar XML específico para facturas AUTH
+  const generateAuthXML = (records: any[]) => {
+    console.log("=== DEBUG: generateAuthXML ===")
+    console.log("AUTH Records:", records)
+
+    // Agrupar registros por BL Number
+    const groupedByBL = new Map<string, any[]>()
+    records.forEach((record: any) => {
+      const blNumber = record.blNumber || 'Sin BL'
+      if (!groupedByBL.has(blNumber)) {
+        groupedByBL.set(blNumber, [])
+      }
+      groupedByBL.get(blNumber)!.push(record)
+    })
+
+    console.log("Grouped by BL:", groupedByBL)
+
+    const authRecords: any[] = []
+
+    // Para cada BL Number
+    groupedByBL.forEach((blRecords, blNumber) => {
+      console.log(`Processing BL: ${blNumber} with ${blRecords.length} records`)
+
+      // 1. Un otherItem por cada contenedor (con Service según AUTH type)
+      blRecords.forEach((record: any) => {
+        const authType = (record.auth || '').toString().toUpperCase().trim()
+        let serviceCode = ''
+        
+        if (authType === 'APA') {
+          serviceCode = 'TRK182'
+        } else if (authType === 'QUA') {
+          serviceCode = 'TRK175'
+        } else {
+          console.warn(`AUTH type no reconocido: ${authType}, usando TRK182 por defecto`)
+          serviceCode = 'TRK182'
+        }
+
+        const authRecord = {
+          id: record._id || record.id,
+          description: `${authType} - Container ${record.container} - BL ${blNumber}`,
+          quantity: 1,
+          unitPrice: parseFloat(record.seal) || 0, // SEAL va por contenedor
+          totalPrice: parseFloat(record.seal) || 0,
+          serviceCode: serviceCode,
+          unit: 'SERVICIO',
+          blNumber: blNumber,
+          containerNumber: record.container || '',
+          containerSize: '', // Se asigna solo para QUA
+          containerType: '', // Se asigna solo para QUA
+          containerIsoCode: '',
+          fullEmptyStatus: record.fe ? (record.fe.toString().toUpperCase().trim() === 'F' ? 'FULL' : 'EMPTY') : 'FULL',
+          businessType: 'IMPORT',
+          internalOrder: record.order || '',
+          ctrCategory: '', // Se asigna solo para QUA
+          subcontracting: 'N'
+        }
+
+        // Para QUA, agregar información de contenedor
+        if (authType === 'QUA') {
+          authRecord.containerSize = record.size || record.containerSize || ''
+          authRecord.containerType = record.type || record.containerType || ''
+          // Determinar CtrCategory basado en tipo detectado o por defecto 'D'
+          authRecord.ctrCategory = record.detectedContainerType === 'reefer' ? 'R' : 'D'
+        }
+
+        authRecords.push(authRecord)
+      })
+
+      // 2. Un otherItem adicional por BL Number con Service TRK009 (NOTF)
+      const notfRecord = blRecords
+        .filter(r => r.order && !isNaN(parseFloat(r.order)))
+        .sort((a, b) => parseFloat(a.order) - parseFloat(b.order))[0]
+      
+      const notfValue = notfRecord?.notf ? parseFloat(notfRecord.notf) || 0 : 0
+
+      if (notfValue > 0) {
+        const blAuthRecord = {
+          id: `${blNumber}-NOTF`,
+          description: `NOTF - BL ${blNumber}`,
+          quantity: 1,
+          unitPrice: notfValue,
+          totalPrice: notfValue,
+          serviceCode: 'TRK009',
+          unit: 'SERVICIO',
+          blNumber: blNumber,
+          containerNumber: '',
+          containerSize: '',
+          containerType: '',
+          containerIsoCode: '',
+          fullEmptyStatus: 'FULL',
+          businessType: 'IMPORT',
+          internalOrder: notfRecord?.order || '',
+          ctrCategory: '',
+          subcontracting: 'N'
+        }
+
+        authRecords.push(blAuthRecord)
+      }
+    })
+
+    console.log("Final AUTH records for XML:", authRecords)
+
+    // Construir payload para generateInvoiceXML
+    const xmlPayload = {
+      id: invoice.id,
+      module: 'trucking',
+      invoiceNumber: newInvoiceNumber,
+      client: invoice.clientRuc,
+      clientName: invoice.clientName,
+      clientSapNumber: invoice.clientSapNumber,
+      date: invoiceDate,
+      dueDate: invoiceDate,
+      currency: 'USD',
+      total: invoice.totalAmount,
+      records: authRecords,
+      status: 'finalized' as const,
+    }
+
+    console.log("AUTH XML payload:", xmlPayload)
+
+    // Generar y validar XML
+    const xml = generateInvoiceXML(xmlPayload as any)
+    const validation = validateXMLForSAP(xml)
+    
+    setGeneratedXml(xml)
+    setXmlValidation(validation)
+    
+    return { xml, isValid: validation.isValid }
+  }
 
   const generateXMLForInvoice = () => {
     try {
       console.log("=== DEBUG: generateXMLForInvoice ===")
       console.log("Invoice:", invoice)
+      console.log("Is AUTH Invoice:", isAuthInvoice)
       console.log("All records:", allRecords)
+      console.log("Autoridades records:", autoridadesRecords)
       
       if (!invoice) throw new Error("No hay datos de factura disponibles")
       if (!newInvoiceNumber.trim()) throw new Error("Debe ingresar el número de factura")
       if (!invoiceDate) throw new Error("Debe seleccionar la fecha de factura")
-      const relatedRecords = allRecords.filter((record: any) => invoice.relatedRecordIds?.includes(record._id || record.id))
-      if (relatedRecords.length === 0) throw new Error("No se encontraron registros asociados a la factura")
+      
+      // Usar los registros correctos según el tipo de factura
+      const recordsToSearch = isAuthInvoice ? autoridadesRecords : allRecords
+      console.log("Records to search in:", recordsToSearch)
+      console.log("recordsToSearch.length:", recordsToSearch.length)
+      
+      // Para facturas AUTH, verificar que se hayan cargado los registros de autoridades
+      if (isAuthInvoice && autoridadesRecords.length === 0) {
+        throw new Error("Los registros de autoridades no están cargados. Intenta cerrar y abrir el modal nuevamente.")
+      }
+      
+      const relatedRecords = recordsToSearch.filter((record: any) => invoice.relatedRecordIds?.includes(record._id || record.id))
+      console.log("Related records found:", relatedRecords)
+      console.log("Related records found count:", relatedRecords.length)
+      
+      if (relatedRecords.length === 0) {
+        const errorMsg = isAuthInvoice 
+          ? "No se encontraron registros de autoridades asociados a la factura. Verifica que los registros no hayan sido eliminados." 
+          : "No se encontraron registros asociados a la factura"
+        throw new Error(errorMsg)
+      }
+      
+      // Para facturas AUTH, generar XML con estructura específica
+      if (isAuthInvoice) {
+        console.log("Factura AUTH detectada - generando XML específico")
+        return generateAuthXML(relatedRecords)
+      }
       
       console.log("Related records:", relatedRecords)
 
@@ -164,18 +352,27 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
   const handleFacturar = async () => {
     if (!newInvoiceNumber.trim()) { toast({ title: "Error", description: "Debe ingresar un número de factura", variant: "destructive" }); return }
     if (!invoiceDate) { toast({ title: "Error", description: "Debe seleccionar la fecha de factura", variant: "destructive" }); return }
+    
+    // Validación específica para facturas AUTH
+    if (isAuthInvoice && !newInvoiceNumber.toUpperCase().startsWith('AUTH-')) {
+      toast({ 
+        title: "Error en número de factura", 
+        description: "Las facturas de Gastos de Autoridades deben mantener el prefijo 'AUTH-'", 
+        variant: "destructive" 
+      });
+      return;
+    }
     setIsProcessing(true)
     try {
       console.log("=== DEBUG: handleFacturar iniciado ===")
       
-      // Generar XML primero
+      // Generar XML para facturas de trasiego y AUTH
       let xmlData = generateXMLForInvoice()
       if (!xmlData) {
         toast({ title: "Error", description: "No se pudo generar el XML", variant: "destructive" })
         return
       }
-      
-      console.log("=== DEBUG: XML generado, llamando a onFacturar ===")
+      console.log("=== DEBUG: XML generado ===")
       console.log("XmlData a pasar:", xmlData)
       
       // Enviar a SAP si está marcado
@@ -188,7 +385,10 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
         }
       }
       
-      // Llamar al callback con el XML generado
+      console.log("=== DEBUG: Llamando a onFacturar ===")
+      console.log("XmlData a pasar:", xmlData)
+      
+      // Llamar al callback (con XML para trasiego, null para AUTH)
       await onFacturar(newInvoiceNumber, xmlData, invoiceDate)
       
       toast({ title: "Facturación completada", description: `La prefactura ha sido facturada como ${newInvoiceNumber}.` })
@@ -212,7 +412,19 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
 
   if (!invoice) return null
 
-  const defaultInvoiceNumber = invoice?.invoiceNumber?.replace(/^TRK-PRE-/, "TRK-FAC-") || "TRK-FAC-000001"
+  const defaultInvoiceNumber = (() => {
+    if (!invoice?.invoiceNumber) return "TRK-FAC-000001"
+    
+    const invoiceNum = invoice.invoiceNumber.toString()
+    
+    // Si es una prefactura AUTH, mantener el prefijo AUTH- pero cambiarlo por el número de factura
+    if (invoiceNum.toUpperCase().startsWith('AUTH-')) {
+      return invoiceNum.replace(/^AUTH-/, `AUTH-FAC-${Date.now().toString().slice(-6)}-`)
+    }
+    
+    // Para facturas normales de trasiego
+    return invoiceNum.replace(/^TRK-PRE-/, "TRK-FAC-")
+  })()
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -231,8 +443,41 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="invoice-number" className="text-sm font-semibold">Número de Factura *</Label>
-            <Input id="invoice-number" value={newInvoiceNumber} onChange={(e)=>setNewInvoiceNumber(e.target.value.toUpperCase())} placeholder={defaultInvoiceNumber} className="font-mono" />
+            <Label htmlFor="invoice-number" className="text-sm font-semibold">
+              Número de Factura *
+              {isAuthInvoice && (
+                <span className="ml-2 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded">
+                  Debe mantener el prefijo AUTH-
+                </span>
+              )}
+            </Label>
+            <Input 
+              id="invoice-number" 
+              value={newInvoiceNumber} 
+              onChange={(e) => {
+                const value = e.target.value.toUpperCase()
+                
+                // Si es una factura AUTH, prevenir que se borre el prefijo AUTH-
+                if (isAuthInvoice && !value.startsWith('AUTH-')) {
+                  // Si el usuario intenta borrar AUTH-, mantener al menos AUTH-
+                  if (value.length < 5) {
+                    setNewInvoiceNumber('AUTH-')
+                  } else {
+                    // Si tienen texto pero no empieza con AUTH-, agregarlo
+                    setNewInvoiceNumber('AUTH-' + value)
+                  }
+                } else {
+                  setNewInvoiceNumber(value)
+                }
+              }} 
+              placeholder={defaultInvoiceNumber} 
+              className={`font-mono ${isAuthInvoice ? 'border-orange-200 focus:border-orange-400' : ''}`}
+            />
+            {isAuthInvoice && (
+              <p className="text-xs text-muted-foreground">
+                💡 El prefijo "AUTH-" es obligatorio para facturas de Gastos de Autoridades
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="invoice-date" className="text-sm font-semibold">Fecha de Factura *</Label>
@@ -241,6 +486,19 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
 
           <div className="space-y-4">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2"><FileText className="h-4 w-4" /> Acciones Adicionales</h3>
+            {isAuthInvoice && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Code className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-medium text-blue-800">
+                    Factura AUTH - XML Específico
+                  </span>
+                </div>
+                <p className="text-sm text-blue-700 mt-1">
+                  Se generará XML específico para gastos de autoridades con servicios TRK182 (APA), TRK175 (QUA) y TRK009 (NOTF).
+                </p>
+              </div>
+            )}
             <div className="space-y-3">
               <div className="flex items-center space-x-3 p-3 border border-gray-200">
                 <Checkbox id="send-to-sap" checked={actions.sendToSAP} onCheckedChange={(checked) => setActions(prev => ({ ...prev, sendToSAP: checked as boolean }))} />

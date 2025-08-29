@@ -10,9 +10,19 @@ const { globalLimit } = require('./utils/rate-limiters');
 const server = express();
 //Lo configuramos con Middlewares generales:
 server.use(cors({ origin: '*' }));
-server.use(express.json()); // Parsea el body de las peticiones con Content-Type: application/json
-server.use(express.urlencoded({ extended: true })); // Parsea el body de las peticiones con Content-Type: application/x-www-form-urlencoded
- server.use(express.static('public'));
+// Configurar límites de tamaño para archivos grandes (Excel)
+server.use(express.json({ limit: '50mb' })); // Aumentar límite para JSON
+server.use(express.urlencoded({ extended: true, limit: '50mb' })); // Aumentar límite para URL-encoded
+
+// Middleware para manejar archivos grandes
+server.use((req, res, next) => {
+  // Aumentar timeout para archivos grandes
+  req.setTimeout(300000); // 5 minutos
+  res.setTimeout(300000); // 5 minutos
+  next();
+});
+
+server.use(express.static('public'));
 //Le agregamos las rutas:
 server.use(routes);
 

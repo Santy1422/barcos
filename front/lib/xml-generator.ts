@@ -271,11 +271,11 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
             // Determinar el valor de BusinessType para el XML (I o E)
             const businessTypeXmlValue = record.businessType === "IMPORT" ? "I" : "E"
             
-            // Eliminar campos innecesarios y cambiar Service a TRK002
-            return {
+            // Usar serviceCode del record o TRK002 por defecto
+            const otherItem: any = {
               "IncomeRebateCode": TRUCKING_DEFAULTS.incomeRebateCode,
               "InternalOrder": record.internalOrder || "",
-              "Service": "TRK002",
+              "Service": record.serviceCode || "TRK002",
               "Activity": "TRK",
               "Pillar": TRUCKING_DEFAULTS.pillar,
               "BUCountry": TRUCKING_DEFAULTS.buCountry,
@@ -283,11 +283,28 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
               "ClientType": TRUCKING_DEFAULTS.clientType,
               "BusinessType": businessTypeXmlValue,
               "FullEmpty": record.fullEmptyStatus || "FULL",
-              "CtrType": record.containerType || "DV",
-              "CtrSize": record.containerSize || "40",
-              "CtrCategory": record.ctrCategory || "D",
               "SubContracting": record.subcontracting || "N"
             }
+            
+            // Solo incluir CtrType, CtrSize, CtrCategory si tienen valores no vacíos
+            if (record.containerType && record.containerType.trim()) {
+              otherItem.CtrType = record.containerType
+            }
+            if (record.containerSize && record.containerSize.trim()) {
+              otherItem.CtrSize = record.containerSize
+            }
+            if (record.ctrCategory && record.ctrCategory.trim()) {
+              otherItem.CtrCategory = record.ctrCategory
+            }
+            
+            // Si no hay campos de contenedor especificados, usar valores por defecto para trasiego
+            if (!record.containerType && !record.containerSize && !record.ctrCategory) {
+              otherItem.CtrType = "DV"
+              otherItem.CtrSize = "40"
+              otherItem.CtrCategory = "D"
+            }
+            
+            return otherItem
           })
         }
       }

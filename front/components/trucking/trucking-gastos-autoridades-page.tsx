@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
-import { FileText, Download, ArrowLeft, Eye, Loader2, Trash2, Calendar, X, Edit, Search, RefreshCw } from "lucide-react";
+import { FileText, Download, ArrowLeft, Eye, Loader2, Trash2, Calendar, X, Edit, Search, RefreshCw, User } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { 
@@ -105,7 +105,8 @@ export function TruckingGastosAutoridadesPage() {
         const blNumber = (record.blNumber || '').toLowerCase().includes(searchTerm)
         const noInvoice = (record.noInvoice || '').toLowerCase().includes(searchTerm)
         const ruta = (record.ruta || '').toLowerCase().includes(searchTerm)
-        return blNumber || noInvoice || ruta
+        const customer = (record.customer || '').toLowerCase().includes(searchTerm)
+        return blNumber || noInvoice || ruta || customer
       })
     }
     
@@ -351,8 +352,58 @@ export function TruckingGastosAutoridadesPage() {
     doc.setFontSize(12)
     doc.text(`${day} ${month} ${year}`, 195, 35, { align: 'right' })
 
+    // Información empresa (PTG)
+    doc.setFontSize(9)
+    doc.setFont(undefined, 'bold')
+    const issuerName = 'PTG'
+    doc.text(issuerName, 15, 50)
+    doc.setFontSize(8)
+    doc.setFont(undefined, 'normal')
+    doc.text('RUC: 2207749-1-774410 DV 10', 15, 54)
+    doc.text('Howard, Panama Pacifico', 15, 58)
+    doc.text('TEL: (507) 838-7470', 15, 62)
+
+    // Cliente
+    doc.setFontSize(9)
+    doc.setFont(undefined, 'bold')
+    doc.text('CUSTOMER:', 15, 82)
+    doc.setFontSize(8)
+    doc.setFont(undefined, 'normal')
+    
+    // Obtener el primer cliente de los registros seleccionados
+    const firstRecord = selectedRecords[0]
+    const customerName = firstRecord?.customer || 'Cliente'
+    
+    // Intentar obtener cliente por clientId primero, luego por nombre como fallback
+    let customer = null
+    if (firstRecord?.clientId) {
+      // Buscar cliente por ID en la lista de clientes
+      customer = clients.find((c: any) => (c._id || c.id) === firstRecord.clientId)
+    }
+    
+    // Si no se encontró por ID, buscar por nombre
+    if (!customer) {
+      customer = getClient(customerName)
+    }
+    
+    const clientDisplay = customer
+      ? (customer.type === 'natural' ? customer.fullName : customer.companyName)
+      : customerName
+    const ruc = customer?.ruc || customer?.documentNumber || 'N/A'
+    const sap = customer?.sapCode || ''
+    const address = customer?.address
+      ? (typeof customer.address === 'string' ? customer.address : `${customer.address?.district || ''}, ${customer.address?.province || ''}`)
+      : 'N/A'
+    const phone = customer?.phone || 'N/A'
+    
+    doc.text(clientDisplay, 15, 86)
+    doc.text(`RUC: ${ruc}`, 15, 90)
+    if (sap) doc.text(`SAP: ${sap}`, 60, 90)
+    doc.text(`ADDRESS: ${address}`, 15, 94)
+    doc.text(`TELEPHONE: ${phone}`, 15, 98)
+
     // Encabezado de tabla
-    const startY = 60
+    const startY = 115
     const tableWidth = 180
     const tableX = 15
     doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
@@ -360,9 +411,10 @@ export function TruckingGastosAutoridadesPage() {
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(10)
     doc.setFont(undefined, 'bold')
-    doc.text('BL NUMBER', 20, startY + 5)
-    doc.text('CONTAINERS', 60, startY + 5)
-    doc.text('AUTH', 100, startY + 5)
+    doc.text('BL NUMBER', 15, startY + 5)
+    doc.text('CLIENT', 45, startY + 5)
+    doc.text('CONTAINERS', 75, startY + 5)
+    doc.text('AUTH', 105, startY + 5)
     doc.text('PRICE', 130, startY + 5)
     doc.text('TOTAL', 170, startY + 5)
 
@@ -398,6 +450,7 @@ export function TruckingGastosAutoridadesPage() {
       
       bodyRows.push([
         blNumber,
+        groupRecords[0]?.customer || 'N/A',
         containers,
         auth,
         priceDescription.join('\n') || '-',
@@ -412,11 +465,12 @@ export function TruckingGastosAutoridadesPage() {
       theme: 'grid',
       styles: { fontSize: 9, lineWidth: 0.2, lineColor: [180, 180, 180] },
       columnStyles: { 
-        0: { cellWidth: 40 }, 
-        1: { cellWidth: 50 }, 
-        2: { cellWidth: 25 }, 
-        3: { cellWidth: 45 }, 
-        4: { cellWidth: 20, halign: 'right' } 
+        0: { cellWidth: 30 }, // BL NUMBER
+        1: { cellWidth: 30 }, // CLIENT
+        2: { cellWidth: 40 }, // CONTAINERS
+        3: { cellWidth: 20 }, // AUTH
+        4: { cellWidth: 40 }, // PRICE
+        5: { cellWidth: 20, halign: 'right' } // TOTAL
       },
       margin: { left: tableX },
     })
@@ -442,7 +496,31 @@ export function TruckingGastosAutoridadesPage() {
       y += 5
       const notes = doc.splitTextToSize(documentData.notes, 180)
       doc.text(notes, 15, y)
+      y += 10
     }
+
+    // Términos y condiciones (banda azul + texto)
+    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+    doc.rect(15, y, tableWidth, 8, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(10)
+    doc.setFont(undefined, 'bold')
+    doc.text('TERMS AND CONDITIONS', 20, y + 5)
+    doc.setTextColor(0, 0, 0)
+    y += 14
+    doc.setFont(undefined, 'normal')
+    doc.setFontSize(9)
+    doc.text(`Make check payments payable to: ${issuerName}`, 15, y)
+    y += 4
+    doc.text('Money transfer to: Banco General - Checking Account', 15, y)
+    y += 4
+    doc.text('Account No. 03-72-01-124081-1', 15, y)
+    y += 8
+    doc.text('I Confirmed that I have received the original prefactura and documents.', 15, y)
+    y += 8
+    // Firmas
+    doc.text('Received by: ____________', 15, y)
+    doc.text('Date: ____________', 90, y)
 
     return doc.output('blob')
   }
@@ -743,7 +821,7 @@ export function TruckingGastosAutoridadesPage() {
                     <Input 
                       value={search} 
                       onChange={(e) => setSearch(e.target.value)} 
-                      placeholder="Buscar por BL Number, No. Invoice o Ruta..." 
+                      placeholder="Buscar por BL Number, No. Invoice, Ruta o Cliente..." 
                       className="pl-9" 
                     />
                   </div>
@@ -759,19 +837,20 @@ export function TruckingGastosAutoridadesPage() {
                     <TableRow>
                       <TableHead>
                         <Checkbox
-                          checked={paginatedBLNumbers.length > 0 && paginatedBLNumbers.every(bl => selectedBLNumbers.includes(bl))}
+                          checked={totalBLNumbers.length > 0 && totalBLNumbers.every(bl => selectedBLNumbers.includes(bl))}
                           onCheckedChange={(c: boolean) => {
                             if (c) {
-                              // Agregar todos los BL Numbers de la página actual
-                              setSelectedBLNumbers(prev => [...new Set([...prev, ...paginatedBLNumbers])])
+                              // Agregar todos los BL Numbers disponibles (no solo los de la página actual)
+                              setSelectedBLNumbers([...totalBLNumbers])
                             } else {
-                              // Remover todos los BL Numbers de la página actual
-                              setSelectedBLNumbers(prev => prev.filter(bl => !paginatedBLNumbers.includes(bl)))
+                              // Deseleccionar todos los BL Numbers
+                              setSelectedBLNumbers([])
                             }
                           }}
                         />
                       </TableHead>
                       <TableHead>BL Number</TableHead>
+                      <TableHead>Cliente</TableHead>
                       <TableHead>Contenedores</TableHead>
                       <TableHead>Auth</TableHead>
                       <TableHead>No. Invoice</TableHead>
@@ -791,6 +870,14 @@ export function TruckingGastosAutoridadesPage() {
                           />
                         </TableCell>
                         <TableCell className="font-mono text-sm">{blNumber}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm">
+                              {groupRecords[0]?.customer || 'N/A'}
+                            </span>
+                          </div>
+                        </TableCell>
                         <TableCell>
                           {isExpanded(blNumber) ? (
                             // Vista expandida: mostrar todos los contenedores

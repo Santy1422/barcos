@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -6,6 +6,12 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { createAutoridadesRecords, selectCreatingRecords } from "@/lib/features/records/recordsSlice";
+import { selectAllClients, fetchClients, createClientAsync, updateClientAsync, type Client } from "@/lib/features/clients/clientsSlice";
+import { ClientModal } from "@/components/clients-management";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ClientEditModal } from "./client-edit-modal";
+import { Badge } from "@/components/ui/badge";
+import { CheckCircle2, AlertCircle } from "lucide-react";
 import * as XLSX from "xlsx";
 
 const REQUIRED_COLUMNS = [
@@ -29,7 +35,8 @@ const REQUIRED_COLUMNS = [
   "# TRAMITE",
   "RUTA",
   "Date of Invoice",
-  "NO. INVOICE"
+  "NO. INVOICE",
+  "Customer"
 ];
 
 export function TruckingGastosAutoridadesUpload() {
@@ -40,6 +47,215 @@ export function TruckingGastosAutoridadesUpload() {
   const [fileName, setFileName] = useState<string>("");
   const loading = useAppSelector(selectCreatingRecords);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
+  
+  // Estados para manejo de clientes (similar a trucking-upload)
+  const [missingClients, setMissingClients] = useState<Array<{ name: string; records: any[] }>>([]);
+  const [showClientModal, setShowClientModal] = useState(false);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [clientToEdit, setClientToEdit] = useState<{ name: string; email: string; phone: string; address: string; sapCode: string; ruc: string } | null>(null);
+  const [currentMissingIndex, setCurrentMissingIndex] = useState<number>(0);
+  const [clientCompleteness, setClientCompleteness] = useState<Map<string, { isComplete: boolean; missingFields: string[] }>>(new Map());
+  const [hasPendingClients, setHasPendingClients] = useState(false);
+  
+  // Redux state para clientes
+  const clients = useAppSelector(selectAllClients);
+  const clientsLoading = useAppSelector((state) => state.clients.loading);
+
+  // Cargar clientes al montar el componente
+  useEffect(() => {
+    dispatch(fetchClients());
+  }, [dispatch]);
+
+  // Funciones para manejo de clientes (copiadas de trucking-upload)
+  const findClientByName = useCallback((name: string): Client | null => {
+    console.log("=== DEBUG: findClientByName ===");
+    console.log("buscando cliente con nombre:", name);
+    console.log("total clientes disponibles:", clients.length);
+    try {
+      const found = clients.find((client: any) => {
+        if (!name) return false
+        if (client.type === "juridico") {
+          // Para clientes jurídicos, buscar por nombre corto (name) en lugar de companyName
+          const match = client.name?.toLowerCase() === name.toLowerCase()
+          console.log(`Comparando "${client.name}" con "${name}": ${match}`);
+          return match
+        }
+        if (client.type === "natural") {
+          const match = client.fullName?.toLowerCase() === name.toLowerCase()
+          console.log(`Comparando "${client.fullName}" con "${name}": ${match}`);
+          return match
+        }
+        return false
+      }) || null
+      console.log("Cliente encontrado:", found);
+      return found
+    } catch (error) {
+      console.error("Error en findClientByName:", error);
+      return null
+    }
+  }, [clients])
+
+  const checkClientCompleteness = useCallback((client: any): { isComplete: boolean; missingFields: string[] } => {
+    console.log("=== DEBUG: checkClientCompleteness ===");
+    console.log("cliente a verificar:", client);
+    try {
+      const missing: string[] = []
+      if (client.type === "juridico") {
+        if (!client.companyName?.trim()) missing.push("Nombre de empresa")
+        if (!client.name?.trim()) missing.push("Nombre corto")
+        if (!client.ruc?.trim()) missing.push("RUC")
+        if (!client.email?.trim()) missing.push("Email")
+        if (!client.sapCode?.trim()) missing.push("Código SAP")
+      } else {
+        if (!client.fullName?.trim()) missing.push("Nombre completo")
+        if (!client.documentNumber?.trim()) missing.push("Número de documento")
+        if (!client.sapCode?.trim()) missing.push("Código SAP")
+      }
+      const result = { isComplete: missing.length === 0, missingFields: missing }
+      console.log("Resultado checkClientCompleteness:", result);
+      return result
+    } catch (error) {
+      console.error("Error en checkClientCompleteness:", error);
+      return { isComplete: false, missingFields: ["Error de validación"] }
+    }
+  }, [])
+
+  const updateClientCompleteness = useCallback((clientName: string) => {
+    console.log("=== DEBUG: updateClientCompleteness ===");
+    console.log("clientName:", clientName);
+    try {
+      const updated = findClientByName(clientName)
+      console.log("Cliente encontrado:", updated);
+      if (updated) {
+        const completeness = checkClientCompleteness(updated)
+        console.log("Completeness calculado:", completeness);
+        setClientCompleteness(prev => new Map(prev).set(clientName, completeness))
+        console.log(`Cliente ${clientName} actualizado:`, completeness)
+      } else {
+        // Si el cliente no se encuentra, marcarlo como incompleto
+        setClientCompleteness(prev => new Map(prev).set(clientName, { isComplete: false, missingFields: ["Cliente no encontrado"] }))
+        console.log(`Cliente ${clientName} no encontrado, marcado como incompleto`)
+      }
+    } catch (error) {
+      console.error("Error en updateClientCompleteness:", error);
+    }
+  }, [findClientByName, checkClientCompleteness])
+
+  const areAllClientsComplete = useCallback((): boolean => {
+    if (clientCompleteness.size === 0) return true
+    for (const [, completeness] of clientCompleteness) if (!completeness.isComplete) return false
+    return true
+  }, [clientCompleteness])
+
+  const handleClientClick = (clientName: string) => {
+    if (!clientName) return
+    
+    const existing = findClientByName(clientName)
+    if (existing) {
+      // Cliente existe, abrir modal de edición
+      setEditingClient(existing)
+      setClientToEdit({
+        name: existing.name || existing.companyName || clientName,
+        email: existing.email || "",
+        phone: existing.phone || "",
+        address: existing.address || "",
+        sapCode: existing.sapCode || "",
+        ruc: existing.ruc || ""
+      })
+    } else {
+      // Cliente no existe, crear uno nuevo
+      setEditingClient(null)
+      setClientToEdit({
+        name: clientName,
+        email: "",
+        phone: "",
+        address: "",
+        sapCode: "",
+        ruc: ""
+      })
+    }
+    setShowClientModal(true)
+  }
+
+  // Only fetch clients once on mount (avoid excessive refetching)
+  useEffect(() => {
+    dispatch(fetchClients())
+  }, [dispatch])
+
+  // Recompute completeness when clients list updates (debounced to avoid excessive updates)
+  useEffect(() => {
+    if (clients.length > 0 && clientCompleteness.size > 0) {
+      const timeoutId = setTimeout(() => {
+        const newMap = new Map<string, { isComplete: boolean; missingFields: string[] }>()
+        for (const [clientName] of clientCompleteness) {
+          const c = findClientByName(clientName)
+          if (c) newMap.set(clientName, checkClientCompleteness(c))
+        }
+        setClientCompleteness(newMap)
+      }, 300) // Debounce 300ms
+      
+      return () => clearTimeout(timeoutId)
+    }
+  }, [clients, clientCompleteness.size, findClientByName, checkClientCompleteness])
+
+  const processMissingClients = async (excelData: any[]): Promise<{ data: any[], hasMissingClients: boolean }> => {
+    const grouped = new Map<string, any[]>()
+    const newCompleteness = new Map<string, { isComplete: boolean; missingFields: string[] }>()
+    
+    // Agrupar registros por cliente (columna 'customer') solo si tienen customer válido
+    excelData.forEach((record) => {
+      const clientName = record.customer?.trim()
+      if (clientName && clientName !== 'N/A') {
+        if (!grouped.has(clientName)) grouped.set(clientName, [])
+        grouped.get(clientName)!.push(record)
+      }
+    })
+    
+    const missingList: Array<{ name: string; records: any[] }> = []
+    
+    // Verificar cada cliente encontrado en el Excel
+    for (const [name, recs] of grouped) {
+      const existing = findClientByName(name)
+      if (!existing) {
+        // Cliente no existe en la base de datos
+        missingList.push({ name, records: recs })
+        newCompleteness.set(name, { isComplete: false, missingFields: ["Todos los campos"] })
+      } else {
+        // Cliente existe, verificar si está completo
+        newCompleteness.set(name, checkClientCompleteness(existing))
+      }
+    }
+    
+    setClientCompleteness(newCompleteness)
+    
+    // Si hay clientes faltantes, mostrar modal y retornar indicador
+    if (missingList.length > 0) {
+      setMissingClients(missingList)
+      setShowClientModal(true)
+      setCurrentMissingIndex(0)
+      setHasPendingClients(true) // Marcar que hay clientes pendientes
+      // Configurar el primer cliente faltante para edición
+      const firstMissingClient = missingList[0]
+      setClientToEdit({
+        name: firstMissingClient.name,
+        email: "",
+        phone: "",
+        address: "",
+        sapCode: "",
+        ruc: ""
+      })
+      const total = missingList.reduce((sum, c) => sum + c.records.length, 0)
+      toast({ 
+        title: "Clientes faltantes detectados", 
+        description: `Se encontraron ${missingList.length} clientes faltantes para ${total} registros. Debes completar la información antes de continuar.` 
+      })
+      
+      return { data: excelData, hasMissingClients: true }
+    }
+    
+    setHasPendingClients(false) // No hay clientes pendientes
+    return { data: excelData, hasMissingClients: false }
+  }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -85,7 +301,8 @@ export function TruckingGastosAutoridadesUpload() {
        "# TRAMITE": ["# TRAMITE", "# TRAMITE", "# TRAMITE", "# TRAMITE"],
        "RUTA": ["RUTA", "Ruta", "ruta"],
        "Date of Invoice": ["Date of Invoice", "DATE OF INVOICE", "Date of invoice", "date of invoice"],
-       "NO. INVOICE": ["NO. INVOICE", "NO. INVOICE", "No. Invoice", "no. invoice"]
+       "NO. INVOICE": ["NO. INVOICE", "NO. INVOICE", "No. Invoice", "no. invoice"],
+       "Customer": ["Customer", "CUSTOMER", "customer", "Cliente", "CLIENTE", "cliente"]
      };
     
     const missing: string[] = [];
@@ -107,11 +324,48 @@ export function TruckingGastosAutoridadesUpload() {
       return;
     }
     
-    setExcelRows(json);
+    // Procesar clientes faltantes usando la columna 'customer' del Excel
+    const { data: processedData, hasMissingClients } = await processMissingClients(json);
+    setExcelRows(processedData);
+    
+    // Si hay clientes faltantes, no permitir continuar con la subida
+    if (hasMissingClients) {
+      return; // Pausar el proceso hasta que se completen los clientes
+    }
   };
 
-    const handleUpload = async () => {
+  const handleClientSaved = useCallback(() => {
+    // Refrescar la verificación de clientes después de guardar
+    console.log("=== DEBUG: handleClientSaved llamado ===");
+    console.log("clientToEdit:", clientToEdit);
+    if (clientToEdit) {
+      console.log("Actualizando completeness para:", clientToEdit.name);
+      updateClientCompleteness(clientToEdit.name);
+    }
+  }, [clientToEdit, updateClientCompleteness]);
+
+  const handleUpload = async () => {
     try {
+      // Verificar que no haya clientes pendientes antes de continuar
+      if (hasPendingClients) {
+        toast({
+          title: "Clientes pendientes",
+          description: "Debes completar todos los datos de clientes antes de guardar los registros",
+          variant: "destructive"
+        })
+        return
+      }
+      
+      // Verificar que todos los clientes estén completos antes de continuar
+      if (!areAllClientsComplete()) {
+        toast({
+          title: "Clientes incompletos",
+          description: "Debes completar todos los datos de clientes antes de guardar los registros",
+          variant: "destructive"
+        })
+        return
+      }
+
       // Función para encontrar el nombre exacto de la columna
       const findColumnName = (possibleNames: string[]) => {
         return possibleNames.find(name => columns.includes(name)) || possibleNames[0];
@@ -190,15 +444,42 @@ export function TruckingGastosAutoridadesUpload() {
            ruta: getFieldValue(["RUTA", "Ruta", "ruta"], "N/A"),
            dateOfInvoice: getDateValue(["Date of Invoice", "DATE OF INVOICE", "Date of invoice", "date of invoice"]),
            noInvoice: getFieldValue(["NO. INVOICE", "No. Invoice", "no. invoice"], "N/A"),
+           customer: getFieldValue(["Customer", "CUSTOMER", "customer", "Cliente", "CLIENTE", "cliente"], "N/A"),
          };
        });
        
        console.log("Datos mapeados para enviar:", recordsData);
        console.log("Primer registro de ejemplo:", recordsData[0]);
        
-                       // Validar que los campos críticos no estén vacíos
+       // Procesar clientes faltantes antes de enviar
+       const { data: processedData, hasMissingClients } = await processMissingClients(recordsData);
+       
+       // Si hay clientes faltantes, no permitir continuar
+       if (hasMissingClients) {
+         toast({
+           title: "Clientes faltantes",
+           description: "Debes completar todos los datos de clientes antes de continuar",
+           variant: "destructive"
+         });
+         return;
+       }
+       
+       // Enriquecer datos con clientId antes de enviar
+       const enrichedData = processedData.map(record => {
+         const clientName = record.customer?.trim()
+         const client = clientName && clientName !== 'N/A' ? findClientByName(clientName) : null
+         
+         return {
+           ...record,
+           clientId: client?._id || client?.id || null, // Agregar clientId para referencias
+         }
+       })
+       
+       console.log("Datos enriquecidos con clientId:", enrichedData.slice(0, 2))
+       
+       // Validar que los campos críticos no estén vacíos
         const criticalFields = ['order', 'container', 'blNumber'];
-        const recordsWithEmptyCriticalFields = recordsData.filter(record => 
+        const recordsWithEmptyCriticalFields = enrichedData.filter(record => 
           criticalFields.some(field => !record[field] || record[field] === 'N/A')
         );
         
@@ -261,7 +542,7 @@ export function TruckingGastosAutoridadesUpload() {
        });
        
               for (let i = 0; i < totalRecords; i += BATCH_SIZE) {
-          const batch = recordsData.slice(i, i + BATCH_SIZE);
+          const batch = enrichedData.slice(i, i + BATCH_SIZE);
           try {
             console.log(`Enviando lote ${Math.floor(i / BATCH_SIZE) + 1}:`, batch);
             console.log(`Tamaño del lote:`, JSON.stringify(batch).length, 'caracteres');
@@ -331,7 +612,8 @@ export function TruckingGastosAutoridadesUpload() {
   };
 
   return (
-    <Card>
+    <>
+      <Card>
              <CardHeader>
          <CardTitle>Subir Excel Gastos Autoridades</CardTitle>
          <div className="text-sm text-muted-foreground space-y-1">
@@ -343,6 +625,20 @@ export function TruckingGastosAutoridadesUpload() {
       <CardContent className="space-y-4">
         <Input type="file" accept=".xlsx,.xls" onChange={handleFileChange} />
         {fileName && <div className="text-sm text-muted-foreground">Archivo: {fileName}</div>}
+        
+        {hasPendingClients && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-yellow-600" />
+              <span className="text-sm text-yellow-800 font-medium">
+                Clientes faltantes detectados
+              </span>
+            </div>
+            <p className="text-sm text-yellow-700 mt-1">
+              Se encontraron clientes que no existen en la base de datos. Debes completar su información antes de poder subir los registros.
+            </p>
+          </div>
+        )}
                  {columns.length > 0 && (
            <div className="space-y-3">
              {/* Resumen de validación */}
@@ -365,12 +661,34 @@ export function TruckingGastosAutoridadesUpload() {
                  })()}
              </div>
              
+             {/* Resumen de clientes */}
+             {clientCompleteness.size > 0 && (
+               <div className="flex items-center gap-2 text-sm">
+                 <span className="font-medium">Clientes:</span>
+                 <Badge variant="outline" className="text-green-600 border-green-600 px-3 py-1">
+                   {Array.from(clientCompleteness.values()).filter(c => c.isComplete).length} completos
+                 </Badge>
+                 <Badge variant="outline" className="text-red-600 border-red-600 px-3 py-1">
+                   {Array.from(clientCompleteness.values()).filter(c => !c.isComplete).length} incompletos
+                 </Badge>
+                 <Badge variant="outline" className="text-blue-600 border-blue-600 px-3 py-1">
+                   {Array.from(clientCompleteness.keys()).length} únicos
+                 </Badge>
+                 {hasPendingClients && (
+                   <Badge variant="outline" className="text-yellow-600 border-yellow-600 px-3 py-1 bg-yellow-50">
+                     ⚠️ Pendientes de completar
+                   </Badge>
+                 )}
+               </div>
+             )}
+             
              {/* Tabla de datos */}
              <div className="overflow-auto border rounded-md max-h-96">
                <Table>
                  <TableHeader>
                    <TableRow>
                      {columns.map(col => <TableHead key={col}>{col}</TableHead>)}
+                     <TableHead>Estado Cliente</TableHead>
                    </TableRow>
                  </TableHeader>
                  <TableBody>
@@ -386,6 +704,36 @@ export function TruckingGastosAutoridadesUpload() {
                              {row[col]}
                            </TableCell>
                          ))}
+                         <TableCell>
+                           {(() => {
+                             const customerName = row[columns.find(col => col.toLowerCase().includes('customer')) || 'Customer'];
+                             if (!customerName || customerName === 'N/A') {
+                               return <span className="text-muted-foreground">Sin cliente</span>;
+                             }
+                             
+                             const clientStatus = clientCompleteness.get(customerName);
+                             if (!clientStatus) {
+                               return <span className="text-muted-foreground">No verificado</span>;
+                             }
+                             
+                             if (clientStatus.isComplete) {
+                               return (
+                                 <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
+                                   <CheckCircle2 className="h-3 w-3 mr-1" />
+                                   Completo
+                                 </Badge>
+                               );
+                             } else {
+                               return (
+                                 <Badge variant="outline" className="text-red-600 border-red-600 text-xs cursor-pointer" 
+                                        onClick={() => handleClientClick(customerName)}>
+                                   <AlertCircle className="h-3 w-3 mr-1" />
+                                   Incompleto
+                                 </Badge>
+                               );
+                             }
+                           })()}
+                         </TableCell>
                        </TableRow>
                      );
                    })}
@@ -396,8 +744,26 @@ export function TruckingGastosAutoridadesUpload() {
          )}
         {excelRows.length > 0 && (
           <div className="space-y-3">
-            <Button onClick={handleUpload} disabled={loading} className="mt-2">
-              {loading ? "Subiendo..." : "Subir registros"}
+            {hasPendingClients && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-yellow-600" />
+                  <span className="text-sm text-yellow-800 font-medium">
+                    Clientes pendientes de completar
+                  </span>
+                </div>
+                <p className="text-sm text-yellow-700 mt-1">
+                  Debes completar la información de todos los clientes antes de poder subir los registros.
+                </p>
+              </div>
+            )}
+            
+            <Button 
+              onClick={handleUpload} 
+              disabled={loading || hasPendingClients} 
+              className="mt-2"
+            >
+              {loading ? "Subiendo..." : hasPendingClients ? "Completar clientes primero" : "Subir registros"}
             </Button>
             
             {uploadProgress && (
@@ -421,6 +787,22 @@ export function TruckingGastosAutoridadesUpload() {
         )}
       </CardContent>
     </Card>
+
+    {/* Modal optimizado para crear/editar cliente */}
+    <ClientEditModal
+      open={showClientModal}
+      onOpenChange={setShowClientModal}
+      missingClients={missingClients}
+      currentMissingIndex={currentMissingIndex}
+      setCurrentMissingIndex={setCurrentMissingIndex}
+      editingClient={editingClient}
+      setEditingClient={setEditingClient}
+      clientToEdit={clientToEdit}
+      setClientToEdit={setClientToEdit}
+      onClientSaved={handleClientSaved}
+      setHasPendingClients={setHasPendingClients}
+    />
+  </>
   );
 }
 

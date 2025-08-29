@@ -25,6 +25,7 @@ import {
   deleteInvoiceAsync,
   updateInvoiceAsync,
   updateMultipleRecordsStatusAsync,
+  updateMultipleAutoridadesStatusAsync,
   fetchAutoridadesRecords,
 } from "@/lib/features/records/recordsSlice"
 import { generateInvoiceXML } from "@/lib/xml-generator"
@@ -544,16 +545,34 @@ export function TruckingRecords() {
             } 
           })).unwrap()
           
-          // Marcar registros como facturados
-          await dispatch(updateMultipleRecordsStatusAsync({ 
-            recordIds: facturarInvoice.relatedRecordIds, 
-            status: 'facturado', 
-            invoiceId: facturarInvoice.id 
-          })).unwrap()
+          // Marcar registros como facturados (usar función correcta según tipo de factura)
+          const isAuthInvoice = facturarInvoice.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-')
+          
+          if (isAuthInvoice) {
+            console.log("Actualizando registros de autoridades...")
+            await dispatch(updateMultipleAutoridadesStatusAsync({ 
+              recordIds: facturarInvoice.relatedRecordIds, 
+              status: 'facturado', 
+              invoiceId: facturarInvoice.id 
+            })).unwrap()
+          } else {
+            console.log("Actualizando registros de trasiego...")
+            await dispatch(updateMultipleRecordsStatusAsync({ 
+              recordIds: facturarInvoice.relatedRecordIds, 
+              status: 'facturado', 
+              invoiceId: facturarInvoice.id 
+            })).unwrap()
+          }
           
           setFacturarModalOpen(false)
           dispatch(fetchInvoicesAsync('trucking'))
-          dispatch(fetchAllRecordsByModule('trucking'))
+          
+          // Refrescar los registros correctos según el tipo de factura
+          if (isAuthInvoice) {
+            dispatch(fetchAutoridadesRecords())
+          } else {
+            dispatch(fetchAllRecordsByModule('trucking'))
+          }
           
           toast({ 
             title: 'Facturación completada', 

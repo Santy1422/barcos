@@ -90,13 +90,20 @@ export async function createAutoridadesRecords(req: AuthenticatedRequest, res: R
      }
      
           // Preparar datos para inserción masiva
-     const recordsToInsert = recordsToProcess.map(data => ({
-       ...data,
-       status: data.status || 'cargado',
-       createdBy: userId
-     }));
+     const recordsToInsert = recordsToProcess.map(data => {
+       // Extraer clientId si viene del frontend
+       const { clientId, ...restData } = data;
+       
+       return {
+         ...restData,
+         clientId: clientId || null, // Guardar clientId si existe
+         status: data.status || 'cargado',
+         createdBy: userId
+       };
+     });
      
      console.log('createAutoridadesRecords - Iniciando inserción masiva de', recordsToInsert.length, 'registros');
+     console.log('createAutoridadesRecords - Primer registro de ejemplo:', JSON.stringify(recordsToInsert[0], null, 2));
      
      // Inserción masiva usando insertMany (mucho más rápido)
      let createdRecords;
@@ -116,8 +123,12 @@ export async function createAutoridadesRecords(req: AuthenticatedRequest, res: R
        for (let i = 0; i < recordsToProcess.length; i++) {
          const data = recordsToProcess[i];
          try {
+           // Extraer clientId si viene del frontend
+           const { clientId, ...restData } = data;
+           
            const record = await recordsAutoridades.create({
-             ...data,
+             ...restData,
+             clientId: clientId || null, // Guardar clientId si existe
              status: data.status || 'cargado',
              createdBy: userId
            });

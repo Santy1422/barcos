@@ -42,16 +42,22 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
   // Determinar si es una factura AUTH
   const isAuthInvoice = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-');
 
-  useEffect(() => {
-    if (open) {
-      if (isAuthInvoice) {
-        dispatch(fetchAutoridadesRecords());
-      } else {
-        dispatch(fetchAllRecordsByModule("trucking"));
-      }
-      dispatch(fetchClients());
-    }
-  }, [open, dispatch, isAuthInvoice]);
+              useEffect(() => {
+              if (open) {
+                console.log("=== DEBUG: Modal abierto ===");
+                console.log("Invoice Number:", invoice?.invoiceNumber);
+                console.log("Is AUTH Invoice:", isAuthInvoice);
+                
+                if (isAuthInvoice) {
+                  console.log("Cargando registros de autoridades...");
+                  dispatch(fetchAutoridadesRecords());
+                } else {
+                  console.log("Cargando registros de trasiego...");
+                  dispatch(fetchAllRecordsByModule("trucking"));
+                }
+                dispatch(fetchClients());
+              }
+            }, [open, dispatch, isAuthInvoice, invoice?.invoiceNumber]);
 
   const getRelatedRecords = () => {
     if (!invoice?.relatedRecordIds) return [];
@@ -59,7 +65,30 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
     const sourceRecords = isAuthInvoice ? autoridadesRecords : allRecords;
     if (sourceRecords.length === 0) return [];
     
-    return sourceRecords.filter((record: any) => invoice.relatedRecordIds.includes(record._id || record.id));
+    console.log("=== DEBUG: getRelatedRecords ===");
+    console.log("Invoice:", invoice);
+    console.log("Invoice Number:", invoice.invoiceNumber);
+    console.log("Invoice Number Type:", typeof invoice.invoiceNumber);
+    console.log("Invoice Number startsWith AUTH-:", invoice.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-'));
+    console.log("Is AUTH Invoice:", isAuthInvoice);
+    console.log("Source records disponibles:", sourceRecords.length);
+    console.log("Related record IDs:", invoice.relatedRecordIds);
+    
+    // Debug: verificar si los IDs existen en los registros
+    const availableIds = sourceRecords.map(r => r._id || r.id);
+    console.log("IDs disponibles en registros:", availableIds.slice(0, 10)); // Solo mostrar los primeros 10
+    
+    const filtered = sourceRecords.filter((record: any) => invoice.relatedRecordIds.includes(record._id || record.id));
+    console.log("Registros filtrados encontrados:", filtered.length);
+    console.log("Registros filtrados:", filtered);
+    
+    // Debug: verificar qué IDs no se encontraron
+    const notFoundIds = invoice.relatedRecordIds.filter(id => !availableIds.includes(id));
+    if (notFoundIds.length > 0) {
+      console.log("IDs NO encontrados en registros:", notFoundIds);
+    }
+    
+    return filtered;
   };
 
   const relatedRecords = getRelatedRecords();

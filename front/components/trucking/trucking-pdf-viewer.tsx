@@ -229,7 +229,7 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
   };
 
   const generateAutoridadesPdf = (invoiceData: any, selectedRecords: any[], pdfTitle: string) => {
-    // Adaptar la función exacta de trucking-gastos-autoridades-page.tsx
+    // Usar EXACTAMENTE la misma función del paso 2 de trucking-gastos-autoridades-page.tsx
     if (selectedRecords.length === 0) return null
 
     const doc = new jsPDF()
@@ -259,9 +259,61 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     doc.text('DATE:', 195, 30, { align: 'right' })
     doc.setFontSize(12)
     doc.text(`${day} ${month} ${year}`, 195, 35, { align: 'right' })
+    doc.setFontSize(8)
+    doc.text('DAY MO YR', 195, 40, { align: 'right' })
+
+    // Información empresa (PTG)
+    doc.setFontSize(9)
+    doc.setFont(undefined, 'bold')
+    const issuerName = 'PTG'
+    doc.text(issuerName, 15, 50)
+    doc.setFontSize(8)
+    doc.setFont(undefined, 'normal')
+    doc.text('RUC: 2207749-1-774410 DV 10', 15, 54)
+    doc.text('Howard, Panama Pacifico', 15, 58)
+    doc.text('TEL: (507) 838-7470', 15, 62)
+
+    // Cliente
+    doc.setFontSize(9)
+    doc.setFont(undefined, 'bold')
+    doc.text('CUSTOMER:', 15, 82)
+    doc.setFontSize(8)
+    doc.setFont(undefined, 'normal')
+    
+    // Obtener el primer cliente de los registros seleccionados
+    const firstRecord = selectedRecords[0]
+    const customerName = firstRecord?.customer || 'Cliente'
+    
+    // Intentar obtener cliente por clientId primero, luego por nombre como fallback
+    let customer = null
+    if (firstRecord?.clientId) {
+      // Buscar cliente por ID en la lista de clientes
+      customer = clients.find((c: any) => (c._id || c.id) === firstRecord.clientId)
+    }
+    
+    // Si no se encontró por ID, buscar por nombre
+    if (!customer) {
+      customer = getClient(customerName)
+    }
+    
+    const clientDisplay = customer
+      ? (customer.type === 'natural' ? customer.fullName : customer.companyName)
+      : customerName
+    const ruc = customer?.ruc || customer?.documentNumber || 'N/A'
+    const sap = customer?.sapCode || ''
+    const address = customer?.address
+      ? (typeof customer.address === 'string' ? customer.address : `${customer.address?.district || ''}, ${customer.address?.province || ''}`)
+      : 'N/A'
+    const phone = customer?.phone || 'N/A'
+    
+    doc.text(clientDisplay, 15, 86)
+    doc.text(`RUC: ${ruc}`, 15, 90)
+    if (sap) doc.text(`SAP: ${sap}`, 60, 90)
+    doc.text(`ADDRESS: ${address}`, 15, 94)
+    doc.text(`TELEPHONE: ${phone}`, 15, 98)
 
     // Encabezado de tabla
-    const startY = 60
+    const startY = 115
     const tableWidth = 180
     const tableX = 15
     doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
@@ -269,9 +321,10 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(10)
     doc.setFont(undefined, 'bold')
-    doc.text('BL NUMBER', 20, startY + 5)
-    doc.text('CONTAINERS', 60, startY + 5)
-    doc.text('AUTH', 100, startY + 5)
+    doc.text('BL NUMBER', 15, startY + 5)
+    doc.text('CLIENT', 45, startY + 5)
+    doc.text('CONTAINERS', 75, startY + 5)
+    doc.text('AUTH', 105, startY + 5)
     doc.text('PRICE', 130, startY + 5)
     doc.text('TOTAL', 170, startY + 5)
 
@@ -289,10 +342,10 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     const bodyRows: any[] = []
     let grandTotal = 0
     
-    // Usar selectedBLNumbers si está disponible, sino usar las claves del groupedByBL
-    const selectedBLNumbers = invoiceData.details?.selectedBLNumbers || Array.from(groupedByBL.keys())
+    // Usar las claves del groupedByBL para mostrar todos los BL Numbers disponibles
+    const blNumbersToProcess = Array.from(groupedByBL.keys())
     
-    selectedBLNumbers.forEach((blNumber: string) => {
+    blNumbersToProcess.forEach((blNumber: string) => {
       const groupRecords = groupedByBL.get(blNumber) || []
       const containers = groupRecords.map(r => r.container).join(', ')
       const auth = groupRecords[0]?.auth || ''
@@ -320,6 +373,7 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
       
       bodyRows.push([
         blNumber,
+        groupRecords[0]?.customer || 'N/A',
         containers,
         auth,
         priceDescription.join('\n') || '-',
@@ -334,11 +388,12 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
       theme: 'grid',
       styles: { fontSize: 9, lineWidth: 0.2, lineColor: [180, 180, 180] },
       columnStyles: { 
-        0: { cellWidth: 40 }, 
-        1: { cellWidth: 50 }, 
-        2: { cellWidth: 25 }, 
-        3: { cellWidth: 45 }, 
-        4: { cellWidth: 20, halign: 'right' } 
+        0: { cellWidth: 30 }, // BL NUMBER
+        1: { cellWidth: 30 }, // CLIENT
+        2: { cellWidth: 40 }, // CONTAINERS
+        3: { cellWidth: 20 }, // AUTH
+        4: { cellWidth: 40 }, // PRICE
+        5: { cellWidth: 20, halign: 'right' } // TOTAL
       },
       margin: { left: tableX },
     })
@@ -364,13 +419,44 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
       y += 5
       const notes = doc.splitTextToSize(invoiceData.notes, 180)
       doc.text(notes, 15, y)
+      y += 10
     }
+
+    // Términos y condiciones (banda azul + texto)
+    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+    doc.rect(15, y, tableWidth, 8, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(10)
+    doc.setFont(undefined, 'bold')
+    doc.text('TERMS AND CONDITIONS', 20, y + 5)
+    doc.setTextColor(0, 0, 0)
+    y += 14
+    doc.setFont(undefined, 'normal')
+    doc.setFontSize(9)
+    doc.text(`Make check payments payable to: ${issuerName}`, 15, y)
+    y += 4
+    doc.text('Money transfer to: Banco General - Checking Account', 15, y)
+    y += 4
+    doc.text('Account No. 03-72-01-124081-1', 15, y)
+    y += 8
+    doc.text('I Confirmed that I have received the original prefactura and documents.', 15, y)
+    y += 8
+    // Firmas
+    doc.text('Received by: ____________', 15, y)
+    doc.text('Date: ____________', 90, y)
 
     return new Blob([doc.output('blob')], { type: 'application/pdf' });
   };
 
   useEffect(() => {
     if (open && invoice) {
+      console.log("=== DEBUG: Generando PDF ===");
+      console.log("Invoice:", invoice);
+      console.log("Is AUTH Invoice:", isAuthInvoice);
+      console.log("Autoridades records disponibles:", autoridadesRecords.length);
+      console.log("All records disponibles:", allRecords.length);
+      console.log("Related record IDs:", invoice.relatedRecordIds);
+      
       setIsGenerating(true);
       try {
         let relatedRecords: any[] = [];
@@ -381,6 +467,9 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
           relatedRecords = autoridadesRecords.filter((record: any) => 
             invoice.relatedRecordIds.includes(record._id || record.id)
           );
+          console.log("Registros de autoridades encontrados:", relatedRecords.length);
+          console.log("Registros encontrados:", relatedRecords);
+          
           const pdfTitle = invoice.status === "facturada" ? "GASTOS AUTORIDADES" : "GASTOS AUTORIDADES";
           pdf = generateAutoridadesPdf(invoice, relatedRecords, pdfTitle);
         } else {
@@ -388,8 +477,14 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
           relatedRecords = allRecords.filter((record: any) => 
             invoice.relatedRecordIds.includes(record._id || record.id)
           );
+          console.log("Registros de trasiego encontrados:", relatedRecords.length);
+          
           const pdfTitle = invoice.status === "facturada" ? "FACTURA" : "PREFACTURA";
           pdf = generateTruckingPrefacturaPDF(invoice, relatedRecords, pdfTitle);
+        }
+        
+        if (!pdf) {
+          throw new Error("No se pudo generar el PDF");
         }
         
         setPdfBlob(pdf);

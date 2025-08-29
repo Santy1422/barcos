@@ -120,6 +120,7 @@ export default async (req, res) => {
       console.log(`  - totalValue: ${totalValue}`);
       console.log(`  - data keys: ${Object.keys(data).join(', ')}`);
       console.log(`  - sapCode: ${data.sapCode || 'no encontrado'}`);
+      console.log(`  - clientId: ${data.clientId || 'no encontrado'}`);
       
       // Validar que cada registro tenga los datos necesarios
       if (!data || totalValue === undefined) {
@@ -130,9 +131,10 @@ export default async (req, res) => {
       try {
         console.log(`💾 Guardando registro ${i + 1} en MongoDB...`);
         
-        // Extraer sapCode y containerConsecutive de los datos si existen
+        // Extraer sapCode, containerConsecutive y clientId de los datos si existen
         const sapCode = data.sapCode || null;
         const containerConsecutive = data.containerConsecutive || null;
+        const clientId = data.clientId || null; // Extraer clientId del frontend
         
         // Determinar el módulo basado en el sapCode o en los datos
         const module = data.sapCode === 'PTYSS001' ? 'ptyss' : 'trucking';
@@ -151,6 +153,7 @@ export default async (req, res) => {
           data, // Datos originales completos
           sapCode, // Campo específico para consultas
           containerConsecutive, // Campo específico para consultas
+          clientId, // Campo específico para referencias del cliente
           createdBy: userId
         });
         
