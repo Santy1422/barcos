@@ -13,10 +13,16 @@ const createTruckingRoute = async (req: Request, res: Response) => {
       return response(res, 400, { message: 'Todos los campos son requeridos' });
     }
 
-    // Verificar si ya existe una ruta con el mismo nombre
-    const existingRoute = await TruckingRoute.findOne({ name });
+    // Verificar si ya existe una ruta con la misma combinación de nombre + tipo de contenedor + tipo de ruta
+    const existingRoute = await TruckingRoute.findOne({ 
+      name, 
+      containerType, 
+      routeType 
+    });
     if (existingRoute) {
-      return response(res, 400, { message: 'Ya existe una ruta con este nombre' });
+      return response(res, 400, { 
+        message: `Ya existe una ruta con el nombre "${name}", tipo de contenedor "${containerType}" y tipo de ruta "${routeType}"` 
+      });
     }
 
     const newRoute = new TruckingRoute({ name, origin, destination, containerType, routeType, price });

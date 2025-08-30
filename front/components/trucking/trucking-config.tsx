@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Settings2, Plus, Edit, Trash2, Ship, MapPin, Wrench } from "lucide-react"
+import { Settings2, Plus, Edit, Trash2, Ship, MapPin, Wrench, Search } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 
@@ -92,6 +92,14 @@ export function TruckingConfig() {
     containerType: "dry",
     routeType: "single",
     price: 0,
+  })
+
+  // Filtros y búsqueda para rutas
+  const [routeFilters, setRouteFilters] = useState({
+    search: "",
+    containerType: "all" as "all" | "dry" | "reefer",
+    routeType: "all" as "all" | "single" | "RT",
+    priceRange: "all" as "all" | "low" | "medium" | "high"
   })
 
   // Form: Container Type
@@ -315,6 +323,50 @@ export function TruckingConfig() {
     dispatch(fetchContainerTypes(filters))
   }
 
+  // Filtrar rutas basado en los filtros aplicados
+  const filteredRoutes = useMemo(() => {
+    return routes.filter(route => {
+      // Filtro de búsqueda (nombre, origen, destino)
+      if (routeFilters.search) {
+        const searchLower = routeFilters.search.toLowerCase()
+        const matchesSearch = 
+          route.name.toLowerCase().includes(searchLower) ||
+          route.origin.toLowerCase().includes(searchLower) ||
+          route.destination.toLowerCase().includes(searchLower)
+        if (!matchesSearch) return false
+      }
+
+      // Filtro de tipo de contenedor
+      if (routeFilters.containerType !== "all" && route.containerType !== routeFilters.containerType) {
+        return false
+      }
+
+      // Filtro de tipo de ruta
+      if (routeFilters.routeType !== "all" && route.routeType !== routeFilters.routeType) {
+        return false
+      }
+
+      // Filtro de rango de precio
+      if (routeFilters.priceRange !== "all") {
+        let matchesPrice = false
+        switch (routeFilters.priceRange) {
+          case "low":
+            matchesPrice = route.price <= 200
+            break
+          case "medium":
+            matchesPrice = route.price > 200 && route.price <= 500
+            break
+          case "high":
+            matchesPrice = route.price > 500
+            break
+        }
+        if (!matchesPrice) return false
+      }
+
+      return true
+    })
+  }, [routes, routeFilters])
+
   return (
     <div className="space-y-6">
       <Card>
@@ -483,6 +535,92 @@ export function TruckingConfig() {
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Filtros de búsqueda */}
+            <Card className="border-dashed bg-gray-50">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Search className="h-5 w-5" />
+                  Buscar y Filtrar Rutas
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Búsqueda por texto */}
+                  <div className="space-y-2">
+                    <Label htmlFor="route-search">Buscar</Label>
+                    <Input
+                      id="route-search"
+                      placeholder="Nombre, origen o destino..."
+                      value={routeFilters.search}
+                      onChange={(e) => setRouteFilters({ ...routeFilters, search: e.target.value })}
+                    />
+                  </div>
+                  
+                  {/* Filtro por tipo de contenedor */}
+                  <div className="space-y-2">
+                    <Label>Tipo de Contenedor</Label>
+                    <Select 
+                      value={routeFilters.containerType} 
+                      onValueChange={(value) => setRouteFilters({ ...routeFilters, containerType: value as any })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los tipos</SelectItem>
+                        <SelectItem value="dry">Dry</SelectItem>
+                        <SelectItem value="reefer">Reefer</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {/* Filtro por tipo de ruta */}
+                  <div className="space-y-2">
+                    <Label>Tipo de Ruta</Label>
+                    <Select 
+                      value={routeFilters.routeType} 
+                      onValueChange={(value) => setRouteFilters({ ...routeFilters, routeType: value as any })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los tipos</SelectItem>
+                        <SelectItem value="single">Single</SelectItem>
+                        <SelectItem value="RT">Round Trip</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {/* Filtro por rango de precio */}
+                  <div className="space-y-2">
+                    <Label>Rango de Precio</Label>
+                    <Select 
+                      value={routeFilters.priceRange} 
+                      onValueChange={(value) => setRouteFilters({ ...routeFilters, priceRange: value as any })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los precios</SelectItem>
+                        <SelectItem value="low">Hasta $200</SelectItem>
+                        <SelectItem value="medium">$200 - $500</SelectItem>
+                        <SelectItem value="high">Más de $500</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                
+                {/* Botón para limpiar filtros */}
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span>{filteredRoutes.length} de {routes.length} rutas mostradas</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {(showAddRouteForm || editingRoute) && (
               <Card className="border-dashed">
                 <CardHeader>
@@ -545,6 +683,51 @@ export function TruckingConfig() {
             )}
 
             <div className="rounded-md border">
+              {/* Indicador de filtros activos */}
+              {(routeFilters.search || routeFilters.containerType !== "all" || routeFilters.routeType !== "all" || routeFilters.priceRange !== "all") && (
+                <div className="bg-blue-50 border-b border-blue-200 p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm text-blue-700">
+                      <Search className="h-4 w-4" />
+                      <span>Filtros activos:</span>
+                      {routeFilters.search && (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                          Búsqueda: "{routeFilters.search}"
+                        </Badge>
+                      )}
+                      {routeFilters.containerType !== "all" && (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                          Contenedor: {routeFilters.containerType === "reefer" ? "Reefer" : "Dry"}
+                        </Badge>
+                      )}
+                      {routeFilters.routeType !== "all" && (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                          Ruta: {routeFilters.routeType === "RT" ? "Round Trip" : "Single"}
+                        </Badge>
+                      )}
+                      {routeFilters.priceRange !== "all" && (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                          Precio: {routeFilters.priceRange === "low" ? "Hasta $200" : routeFilters.priceRange === "medium" ? "$200 - $500" : "Más de $500"}
+                        </Badge>
+                      )}
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setRouteFilters({
+                        search: "",
+                        containerType: "all",
+                        routeType: "all",
+                        priceRange: "all"
+                      })}
+                      className="text-blue-700 border-blue-300 hover:bg-blue-100"
+                    >
+                      Limpiar Filtros
+                    </Button>
+                  </div>
+                </div>
+              )}
+              
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -558,7 +741,7 @@ export function TruckingConfig() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {routesLoading && routes.length === 0 ? (
+                  {routesLoading ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-8">
                         <div className="flex items-center justify-center space-x-2">
@@ -573,8 +756,28 @@ export function TruckingConfig() {
                         No hay rutas registradas
                       </TableCell>
                     </TableRow>
+                  ) : filteredRoutes.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        <div className="space-y-2">
+                          <div>No se encontraron rutas con los filtros aplicados</div>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => setRouteFilters({
+                              search: "",
+                              containerType: "all",
+                              routeType: "all",
+                              priceRange: "all"
+                            })}
+                          >
+                            Limpiar Filtros
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
                   ) : (
-                    routes.map((route) => (
+                    filteredRoutes.map((route) => (
                       <TableRow key={route._id}>
                         <TableCell className="font-medium">{route.name}</TableCell>
                         <TableCell>{route.origin}</TableCell>
@@ -761,7 +964,7 @@ export function TruckingConfig() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    containerTypes.map((containerType) => (
+                    containerTypes.map((containerType: ContainerType) => (
                       <TableRow key={containerType._id}>
                         <TableCell className="font-mono font-medium">
                           <Badge variant="outline">{containerType.code}</Badge>

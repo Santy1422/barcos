@@ -23,7 +23,7 @@ const deploy = userConexion.db_uri;
 // Conexión principal con configuración válida
 mongoose.connect(deploy, {
   maxPoolSize: 10, // Mantener hasta 10 conexiones socket
-  serverSelectionTimeoutMS: 5000, // Mantener intentando enviar operaciones por 5 segundos
+  serverSelectionTimeoutMS: 15000, // Mantener intentando enviar operaciones por 5 segundos
   socketTimeoutMS: 45000, // Cerrar sockets después de 45 segundos de inactividad
 }).then(() => {
   console.log("✅ Database connected successfully");

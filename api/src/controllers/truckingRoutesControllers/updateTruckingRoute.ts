@@ -12,6 +12,19 @@ const updateTruckingRoute = async (req: Request, res: Response) => {
 
     console.log('Actualizando ruta de trucking:', { id, updates: req.body });
 
+    // Verificar si ya existe otra ruta con la misma combinación de nombre + tipo de contenedor + tipo de ruta
+    const existingRoute = await TruckingRoute.findOne({ 
+      name, 
+      containerType, 
+      routeType,
+      _id: { $ne: id } // Excluir la ruta actual
+    });
+    if (existingRoute) {
+      return response(res, 400, { 
+        message: `Ya existe una ruta con el nombre "${name}", tipo de contenedor "${containerType}" y tipo de ruta "${routeType}"` 
+      });
+    }
+
     const updated = await TruckingRoute.findByIdAndUpdate(
       id,
       { name, origin, destination, containerType, routeType, price },
