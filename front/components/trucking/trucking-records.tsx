@@ -29,6 +29,7 @@ import {
   fetchAutoridadesRecords,
 } from "@/lib/features/records/recordsSlice"
 import { generateInvoiceXML } from "@/lib/xml-generator"
+import { selectAllServices, fetchServices } from "@/lib/features/services/servicesSlice"
 import { TruckingRecordsViewModal } from "./trucking-records-view-modal"
 import { TruckingPdfViewer } from "./trucking-pdf-viewer"
 import { TruckingXmlViewerModal } from "./trucking-xml-viewer-modal"
@@ -64,12 +65,15 @@ export function TruckingRecords() {
   // Datos
   const invoices = useAppSelector((state) => selectInvoicesByModule(state, "trucking"))
   const allRecords = useAppSelector(selectAllIndividualRecords)
+  const services = useAppSelector(selectAllServices)
   const loading = useAppSelector(selectRecordsLoading)
   const error = useAppSelector(selectRecordsError)
 
   useEffect(() => {
     dispatch(fetchInvoicesAsync("trucking"))
     dispatch(fetchAllRecordsByModule("trucking"))
+    // Cargar servicios para los impuestos PTG
+    dispatch(fetchServices())
   }, [dispatch])
 
   // Debug: verificar que los registros tengan el campo fe
@@ -222,6 +226,8 @@ export function TruckingRecords() {
     console.log("=== DEBUG: buildXmlPayload ===")
     console.log("Invoice:", invoice)
     console.log("All records:", allRecords)
+    console.log("Services:", services)
+    console.log("Services length:", services.length)
     
     const recordsForXml = invoice.relatedRecordIds.map((recordId: string) => {
       const r = allRecords.find((x: any) => (x._id || x.id) === recordId)
@@ -275,7 +281,7 @@ export function TruckingRecords() {
         quantity: 1,
         unitPrice,
         totalPrice: unitPrice,
-        serviceCode: d.serviceCode || 'TRK-STD',
+        serviceCode: d.serviceCode || 'TRK002',
         unit: 'VIAJE',
         blNumber: d.bl || '',
         containerNumber: d.container || d.contenedor || '',
@@ -313,6 +319,84 @@ export function TruckingRecords() {
     console.log("Fecha original issueDate:", invoice.issueDate)
     console.log("Fecha original createdAt:", invoice.createdAt)
 
+    // Agregar impuestos PTG como otheritems
+    const otherItems: any[] = []
+    
+    // Calcular contenedores llenos para los impuestos
+    const fullContainers = recordsForXml.filter((record: any) => {
+      const r = allRecords.find((x: any) => (x._id || x.id) === record.id)
+      if (!r) return false
+      const d = r.data || {}
+      const fe = d.fe || ''
+      return fe.toString().toUpperCase().trim() === 'F'
+    })
+    const totalFullContainers = fullContainers.length
+    
+    console.log("=== DEBUG: Impuestos PTG ===")
+    console.log("Total full containers:", totalFullContainers)
+    console.log("Full containers:", fullContainers)
+    
+    if (totalFullContainers > 0) {
+      // Buscar los impuestos PTG en los servicios
+      const customsTax = services.find(s => s.module === 'trucking' && s.name === 'Customs' && s.isActive)
+      const adminFeeTax = services.find(s => s.module === 'trucking' && s.name === 'Administration Fee' && s.isActive)
+      
+      console.log("Customs tax found:", customsTax)
+      console.log("Admin fee tax found:", adminFeeTax)
+      
+      // Agregar Customs como otheritem
+      if (customsTax && customsTax.price > 0) {
+        console.log("Adding Customs tax to otherItems")
+        const customsTotal = customsTax.price * totalFullContainers
+        const customsItem = {
+          serviceCode: 'TRK135',
+          description: 'Customs',
+          quantity: totalFullContainers,
+          unitPrice: customsTax.price,
+          totalPrice: customsTotal,
+          unit: 'VIAJE',
+          // Campos adicionales requeridos
+          IncomeRebateCode: 'N',
+          AmntTransacCur: customsTotal,
+          ProfitCenter: 'PTG',
+          Activity: 'TRUCKING',
+          Pillar: 'LOGISTICS',
+          BUCountry: 'PA',
+          ServiceCountry: 'PA',
+          ClientType: 'EXTERNAL',
+          // Solo para Customs
+          FullEmpty: 'FULL'
+        }
+        console.log("Customs item to add:", customsItem)
+        otherItems.push(customsItem)
+      }
+      
+      // Agregar Administration Fee como otheritem
+      if (adminFeeTax && adminFeeTax.price > 0) {
+        console.log("Adding Administration Fee tax to otherItems")
+        const adminFeeTotal = adminFeeTax.price * totalFullContainers
+        const adminFeeItem = {
+          serviceCode: 'TRK130',
+          description: 'Administration Fee',
+          quantity: totalFullContainers,
+          unitPrice: adminFeeTax.price,
+          totalPrice: adminFeeTotal,
+          unit: 'VIAJE',
+          // Campos adicionales requeridos
+          IncomeRebateCode: 'N',
+          AmntTransacCur: adminFeeTotal,
+          ProfitCenter: 'PTG',
+          Activity: 'TRUCKING',
+          Pillar: 'LOGISTICS',
+          BUCountry: 'PA',
+          ServiceCountry: 'PA',
+          ClientType: 'EXTERNAL'
+        }
+        console.log("Admin fee item to add:", adminFeeItem)
+        otherItems.push(adminFeeItem)
+      }
+    }
+
     const payload = {
           id: invoice.id || invoice._id || '', // Campo requerido por generateInvoiceXML
           module: "trucking" as const, // Debe ser exactamente "trucking"
@@ -325,10 +409,14 @@ export function TruckingRecords() {
           currency: invoice.currency || 'USD', // Valor por defecto
           total: invoice.totalAmount || 0, // Valor por defecto
           records: recordsForXml,
+          otherItems: otherItems, // Agregar los impuestos PTG
           status: 'finalized' as const, // Status requerido por InvoiceForXmlPayload
     }
     
+    console.log("=== DEBUG: Final XML payload ===")
     console.log("Final XML payload:", payload)
+    console.log("OtherItems in payload:", payload.otherItems)
+    console.log("OtherItems length:", payload.otherItems?.length || 0)
     return payload
   }
 

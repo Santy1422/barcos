@@ -5,6 +5,7 @@ export interface Service {
   _id: string
   name: string
   description: string
+  price: number
   isActive: boolean
   module: "ptyss" | "trucking" | "agency" | "shipchandler" | "all"
   createdBy?: string
@@ -59,6 +60,7 @@ export const createServiceAsync = createAsyncThunk(
   async (serviceData: {
     name: string
     description: string
+    price: number
     module: "ptyss" | "trucking" | "agency" | "shipchandler" | "all"
   }, { rejectWithValue }) => {
     try {

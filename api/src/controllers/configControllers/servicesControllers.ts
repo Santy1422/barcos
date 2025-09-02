@@ -49,7 +49,7 @@ export const getServiceById = catchAsync(async (req: Request, res: Response, nex
 export const createService = catchAsync(async (req: Request, res: Response, next: any) => {
   console.log('🔍 Creating service with body:', req.body)
   
-  const serviceData = pick(req.body, ['name', 'description', 'module'])
+  const serviceData = pick(req.body, ['name', 'description', 'price', 'module'])
   serviceData.createdBy = (req as any).user?.id
   
   console.log('🔍 Service data to create:', serviceData)
@@ -66,7 +66,7 @@ export const createService = catchAsync(async (req: Request, res: Response, next
 
 // Actualizar servicio
 export const updateService = catchAsync(async (req: Request, res: Response, next: any) => {
-  const serviceData = pick(req.body, ['name', 'description', 'module', 'isActive'])
+  const serviceData = pick(req.body, ['name', 'description', 'price', 'module', 'isActive'])
   
   const service = await services.findByIdAndUpdate(
     req.params.id,

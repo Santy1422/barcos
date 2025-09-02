@@ -16,6 +16,11 @@
     "seed:ptyss-local-routes-api": "ts-node scripts/seedPTYSSLocalRoutesAPI.ts",
     "seed:localServices": "node scripts/seedLocalServices.js",
     "seed:container-types": "ts-node scripts/seedContainerTypes.ts",
+    "seed:ptg-taxes": "ts-node scripts/seedPTGTaxes.ts",
+    "seed:ptg-taxes:js": "node scripts/seedPTGTaxes.js",
+    "migrate:ptg-taxes": "ts-node scripts/migratePTGTaxesToPrice.ts",
+    "update:ptg-taxes-descriptions": "ts-node scripts/updatePTGTaxesDescriptions.ts",
+    "test:update-ptg-tax-price": "ts-node scripts/testUpdatePTGTaxPrice.ts",
     "migrate:trucking-routes-container-types": "ts-node scripts/migrateTruckingRoutesContainerTypes.ts",
     "migrate:ptyss-local-routes": "ts-node scripts/migratePTYSSLocalRoutes.ts",
     "test:seed": "ts-node scripts/test-seed-endpoint.ts"

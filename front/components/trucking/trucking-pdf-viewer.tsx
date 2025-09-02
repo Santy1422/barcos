@@ -12,6 +12,7 @@ import saveAs from "file-saver";
 import { useAppSelector } from "@/lib/hooks";
 import { selectAllIndividualRecords, selectAutoridadesRecords } from "@/lib/features/records/recordsSlice";
 import { selectAllClients } from "@/lib/features/clients/clientsSlice";
+import { selectAllServices } from "@/lib/features/services/servicesSlice";
 
 interface TruckingPdfViewerProps {
   open: boolean;
@@ -26,6 +27,7 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
   const allRecords = useAppSelector(selectAllIndividualRecords);
   const autoridadesRecords = useAppSelector(selectAutoridadesRecords);
   const clients = useAppSelector(selectAllClients);
+  const services = useAppSelector(selectAllServices);
 
   // Determinar si es una factura AUTH
   const isAuthInvoice = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-');
@@ -173,10 +175,33 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     const additionalServices = invoiceData.details?.additionalServices || []
     if (additionalServices.length > 0) {
       additionalServices.forEach((svc: any) => {
-        const name = svc.name || 'Additional Service'
+        const description = svc.description || 'Additional Service'
         const amount = Number(svc.amount || 0)
-        bodyRows.push([1, name, amount.toFixed(2), amount.toFixed(2)])
+        bodyRows.push([1, description, amount.toFixed(2), amount.toFixed(2)])
       })
+    }
+
+    // Agregar impuestos PTG (Customs y Administration Fee) basados en contenedores llenos
+    const fullContainers = selectedRecords.filter((r: any) => {
+      const fe = r?.data?.fe || ''
+      return fe.toString().toUpperCase().trim() === 'F'
+    })
+    const totalFullContainers = fullContainers.length
+    
+    if (totalFullContainers > 0) {
+      // Buscar los impuestos PTG en los servicios
+      const customsTax = services.find(s => s.module === 'trucking' && s.name === 'Customs' && s.isActive)
+      const adminFeeTax = services.find(s => s.module === 'trucking' && s.name === 'Administration Fee' && s.isActive)
+      
+      if (customsTax && customsTax.price > 0) {
+        const customsTotal = customsTax.price * totalFullContainers
+        bodyRows.push([totalFullContainers, `Customs`, customsTax.price.toFixed(2), customsTotal.toFixed(2)])
+      }
+      
+      if (adminFeeTax && adminFeeTax.price > 0) {
+        const adminFeeTotal = adminFeeTax.price * totalFullContainers
+        bodyRows.push([totalFullContainers, `Administration Fee`, adminFeeTax.price.toFixed(2), adminFeeTotal.toFixed(2)])
+      }
     }
 
     autoTable(doc, {

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Settings2, Plus, Edit, Trash2, Ship, MapPin, Wrench, Search } from "lucide-react"
+import { Settings2, Plus, Edit, Trash2, Ship, MapPin, Wrench, Search, DollarSign } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 
@@ -52,6 +52,14 @@ import {
   type ContainerTypeInput,
 } from "@/lib/features/containerTypes/containerTypesSlice"
 
+import {
+  fetchServices,
+  selectAllServices,
+  selectServicesLoading,
+  updateServiceAsync,
+  type Service,
+} from "@/lib/features/services/servicesSlice"
+
 export function TruckingConfig() {
   const dispatch = useAppDispatch()
   const { toast } = useToast()
@@ -73,6 +81,10 @@ export function TruckingConfig() {
   const containerTypesCreating = useAppSelector(selectContainerTypesCreating)
   const containerTypesUpdating = useAppSelector(selectContainerTypesUpdating)
   const containerTypesDeleting = useAppSelector(selectContainerTypesDeleting)
+
+  // Impuestos PTG
+  const services = useAppSelector(selectAllServices)
+  const servicesLoading = useAppSelector(selectServicesLoading)
 
   const [activeTab, setActiveTab] = useState<"navieras" | "routes" | "services" | "containers">("navieras")
 
@@ -118,11 +130,16 @@ export function TruckingConfig() {
     isActive: "all" as "all" | "true" | "false"
   })
 
+  // Form: Impuestos PTG
+  const [editingTax, setEditingTax] = useState<Service | null>(null)
+  const [taxPrice, setTaxPrice] = useState<number>(0)
+
   // Load data
   useEffect(() => {
     dispatch(fetchNavieras())
     dispatch(fetchTruckingRoutes())
     dispatch(fetchContainerTypes())
+    dispatch(fetchServices())
   }, [dispatch])
 
   // Errors
@@ -323,6 +340,88 @@ export function TruckingConfig() {
     dispatch(fetchContainerTypes(filters))
   }
 
+  // Funciones para manejar impuestos PTG
+  const handleEditTaxClick = (tax: Service) => {
+    setEditingTax(tax)
+    setTaxPrice(tax.price || 0) // El precio se maneja a través del campo price del servicio
+    
+    // Hacer scroll hacia el formulario de edición
+    setTimeout(() => {
+      const formElement = document.getElementById('tax-edit-form')
+      if (formElement) {
+        formElement.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start',
+          inline: 'nearest'
+        })
+      } else {
+        // Fallback: scroll hacia abajo si no se encuentra el elemento
+        window.scrollTo({
+          top: document.documentElement.scrollHeight,
+          behavior: 'smooth'
+        })
+      }
+    }, 100)
+  }
+
+  const handleCancelEditTax = () => {
+    setEditingTax(null)
+    setTaxPrice(0)
+    
+    // Hacer scroll hacia arriba para volver a la vista de los impuestos
+    setTimeout(() => {
+      const taxesSection = document.querySelector('[data-section="ptg-taxes"]')
+      if (taxesSection) {
+        taxesSection.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start'
+        })
+      }
+    }, 100)
+  }
+
+  const handleUpdateTaxPrice = async () => {
+    if (!editingTax || taxPrice <= 0) {
+      toast({ title: "Error", description: "Ingresa un precio válido", variant: "destructive" })
+      return
+    }
+
+    try {
+      await dispatch(updateServiceAsync({
+        id: editingTax._id,
+        serviceData: {
+          price: taxPrice
+        }
+      })).unwrap()
+      
+      toast({ title: "Precio actualizado", description: `El precio del impuesto ${editingTax.name} ha sido actualizado a $${taxPrice.toFixed(2)}` })
+      setEditingTax(null)
+      setTaxPrice(0)
+      dispatch(fetchServices()) // Recargar servicios
+      
+      // Hacer scroll hacia arriba para volver a la vista de los impuestos
+      setTimeout(() => {
+        const taxesSection = document.querySelector('[data-section="ptg-taxes"]')
+        if (taxesSection) {
+          taxesSection.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'start'
+          })
+        }
+      }, 100)
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Error al actualizar el precio del impuesto", variant: "destructive" })
+    }
+  }
+
+  // Obtener impuestos PTG (Customs y Administration Fee)
+  const ptgTaxes = useMemo(() => {
+    return services.filter(service => 
+      service.module === 'trucking' && 
+      (service.name === 'Customs' || service.name === 'Administration Fee')
+    )
+  }, [services])
+
   // Filtrar rutas basado en los filtros aplicados
   const filteredRoutes = useMemo(() => {
     return routes.filter(route => {
@@ -410,6 +509,7 @@ export function TruckingConfig() {
               <Ship className="h-4 w-4 mr-2" />
               Tipos de Contenedores
             </Button>
+
           </div>
         </CardContent>
       </Card>
@@ -810,8 +910,128 @@ export function TruckingConfig() {
       )}
 
       {activeTab === "services" && (
-        <ServicesManagement module="trucking" title="Gestión de Servicios PTG" />
+        <div className="space-y-6">
+          {/* Gestión de Servicios PTG */}
+          <ServicesManagement module="trucking" title="Gestión de Servicios PTG" />
+          
+          {/* Gestión de Impuestos PTG */}
+          <Card data-section="ptg-taxes">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5" />
+                Gestión de Impuestos PTG
+              </CardTitle>
+              <CardDescription className="text-sm pt-2  ">
+                Configuración de impuestos fijos PTG
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {servicesLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="flex items-center space-x-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                    <span>Cargando impuestos...</span>
+                  </div>
+                </div>
+              ) : ptgTaxes.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <DollarSign className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                  <p className="text-lg font-medium">No hay impuestos configurados</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {ptgTaxes.map((tax) => (
+                    <Card key={tax._id} className="border-l-4 border-l-blue-500">
+                      <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                                {tax.name}
+                              </Badge>
+                              <Badge variant={tax.isActive ? "default" : "secondary"}>
+                                {tax.isActive ? "Activo" : "Inactivo"}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-2">
+                              {tax.description || "Sin descripción"}
+                            </p>
+                                                         <div className="text-lg font-semibold text-green-600">
+                               Precio actual: ${tax.price || 0}
+                             </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={() => handleEditTaxClick(tax)}
+                              disabled={!tax.isActive}
+                            >
+                              <Edit className="h-4 w-4 mr-2" />
+                              Modificar Precio
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {/* Formulario de edición de precio */}
+              {editingTax && (
+                <Card 
+                  id="tax-edit-form" 
+                  className="border-dashed border-blue-300 bg-blue-50 animate-in slide-in-from-bottom-2 duration-300"
+                >
+                  <CardHeader>
+                    <CardTitle className="text-lg text-blue-900">
+                      Modificar Precio - {editingTax.name}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="tax-price" className="text-blue-900">Nuevo Precio *</Label>
+                        <Input
+                          id="tax-price"
+                          type="number"
+                          value={taxPrice === 0 ? "" : taxPrice}
+                          onChange={(e) => setTaxPrice(parseFloat(e.target.value) || 0)}
+                          placeholder="0.00"
+                          min="0"
+                          step="0.01"
+                          className="border-blue-300 focus:border-blue-500 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-blue-900">Precio Actual</Label>
+                                               <div className="text-lg font-semibold text-blue-900 bg-white p-3 rounded-md border border-blue-200">
+                         ${editingTax.price || 0}
+                       </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <Button 
+                        onClick={handleUpdateTaxPrice}
+                        disabled={taxPrice <= 0}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        <Edit className="h-4 w-4 mr-2" />
+                        Actualizar Precio
+                      </Button>
+                      <Button variant="outline" onClick={handleCancelEditTax}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
+
+
 
       {activeTab === "containers" && (
         <Card>

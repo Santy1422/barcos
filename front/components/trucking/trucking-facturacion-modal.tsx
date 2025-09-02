@@ -12,6 +12,7 @@ import { FileText, Code, AlertTriangle, CheckCircle, Calendar, DollarSign, User,
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { selectAllIndividualRecords, selectAutoridadesRecords, fetchAutoridadesRecords } from "@/lib/features/records/recordsSlice"
+import { selectAllServices, fetchServices } from "@/lib/features/services/servicesSlice"
 import { generateInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSapFtp } from "@/lib/xml-generator"
 import { saveAs } from "file-saver"
 
@@ -37,6 +38,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
 
   const allRecords = useAppSelector(selectAllIndividualRecords)
   const autoridadesRecords = useAppSelector(selectAutoridadesRecords)
+  const services = useAppSelector(selectAllServices)
   
   // Detectar si es una factura AUTH
   const isAuthInvoice = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-')
@@ -49,6 +51,11 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
     setSapLogs([])
     setShowSapLogs(false)
     
+    // Cargar servicios para los impuestos PTG
+    if (open) {
+      dispatch(fetchServices())
+    }
+    
     // Pre-rellenar el número de factura para prefacturas AUTH
     if (invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-')) {
       const invoiceNum = invoice.invoiceNumber.toString()
@@ -57,7 +64,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
     }
     const today = new Date(); setInvoiceDate(today.toISOString().split('T')[0])
     setActions({ sendToSAP: false })
-  }, [invoice?.id])
+  }, [invoice?.id, open, dispatch])
 
   // Cargar registros de autoridades cuando se abre el modal
   useEffect(() => {
@@ -291,7 +298,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
             quantity: 1,
             unitPrice,
             totalPrice: unitPrice,
-            serviceCode: d.serviceCode || 'TRK001',
+            serviceCode: d.serviceCode || 'TRK002',
             activityCode: 'TRK',
             unit: 'VIAJE',
             blNumber: d.bl || '',
@@ -308,6 +315,94 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
           return recordForXml
         })
       } as any
+
+      // Agregar impuestos PTG como otherItems (solo para facturas de trasiego, no AUTH)
+      if (!isAuthInvoice) {
+        console.log("=== DEBUG: Agregando impuestos PTG ===")
+        console.log("Services:", services)
+        console.log("Services length:", services.length)
+        
+        // Calcular contenedores llenos para los impuestos
+        const fullContainers = relatedRecords.filter((r: any) => {
+          const d = r.data || {}
+          const fe = d.fe || ''
+          const isFullContainer = fe.toString().toUpperCase().trim() === 'F'
+          console.log(`Container ${d.container}: FE="${fe}" -> Full: ${isFullContainer}`)
+          return isFullContainer
+        })
+        const totalFullContainers = fullContainers.length
+        
+        console.log("Total full containers:", totalFullContainers)
+        console.log("Full containers:", fullContainers)
+        
+        const otherItems: any[] = []
+        
+        if (totalFullContainers > 0) {
+          // Buscar los impuestos PTG en los servicios
+          const customsTax = services.find(s => s.module === 'trucking' && s.name === 'Customs' && s.isActive)
+          const adminFeeTax = services.find(s => s.module === 'trucking' && s.name === 'Administration Fee' && s.isActive)
+          
+          console.log("Customs tax found:", customsTax)
+          console.log("Admin fee tax found:", adminFeeTax)
+          
+          // Agregar Customs como otheritem
+          if (customsTax && customsTax.price > 0) {
+            console.log("Adding Customs tax to otherItems")
+            const customsTotal = customsTax.price * totalFullContainers
+            const customsItem = {
+              serviceCode: 'TRK135',
+              description: 'Customs',
+              quantity: totalFullContainers,
+              unitPrice: customsTax.price,
+              totalPrice: customsTotal,
+              unit: 'VIAJE',
+              // Campos adicionales requeridos
+              IncomeRebateCode: 'N',
+              AmntTransacCur: customsTotal,
+              ProfitCenter: 'PTG',
+              Activity: 'TRUCKING',
+              Pillar: 'LOGISTICS',
+              BUCountry: 'PA',
+              ServiceCountry: 'PA',
+              ClientType: 'EXTERNAL',
+              // Solo para Customs
+              FullEmpty: 'FULL'
+            }
+            console.log("Customs item to add:", customsItem)
+            otherItems.push(customsItem)
+          }
+          
+          // Agregar Administration Fee como otheritem
+          if (adminFeeTax && adminFeeTax.price > 0) {
+            console.log("Adding Administration Fee tax to otherItems")
+            const adminFeeTotal = adminFeeTax.price * totalFullContainers
+            const adminFeeItem = {
+              serviceCode: 'TRK130',
+              description: 'Administration Fee',
+              quantity: totalFullContainers,
+              unitPrice: adminFeeTax.price,
+              totalPrice: adminFeeTotal,
+              unit: 'VIAJE',
+              // Campos adicionales requeridos
+              IncomeRebateCode: 'N',
+              AmntTransacCur: adminFeeTotal,
+              ProfitCenter: 'PTG',
+              Activity: 'TRUCKING',
+              Pillar: 'LOGISTICS',
+              BUCountry: 'PA',
+              ServiceCountry: 'PA',
+              ClientType: 'EXTERNAL'
+            }
+            console.log("Admin fee item to add:", adminFeeItem)
+            otherItems.push(adminFeeItem)
+          }
+        }
+        
+        // Agregar los otherItems al payload
+        xmlPayload.otherItems = otherItems
+        console.log("OtherItems agregados al payload:", otherItems)
+        console.log("OtherItems length:", otherItems.length)
+      }
 
       console.log("Final XML payload:", xmlPayload)
       const xml = generateInvoiceXML(xmlPayload)

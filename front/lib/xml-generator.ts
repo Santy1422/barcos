@@ -219,6 +219,12 @@ export async function markXmlAsSentToSapSimple(invoiceId: string) {
 }
 
 export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
+  // Debug logs
+  console.log("=== DEBUG: generateInvoiceXML ===")
+  console.log("Invoice received:", invoice)
+  console.log("OtherItems received:", invoice.otherItems)
+  console.log("OtherItems length:", invoice.otherItems?.length || 0)
+  
   // Validar datos requeridos
   if (!invoice.invoiceNumber || !invoice.client || !invoice.date) {
     throw new Error("Datos requeridos faltantes para generar XML")
@@ -233,6 +239,14 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
     const routeAmount = (record as any).routeAmount || record.totalPrice || 0
     return sum + routeAmount
   }, 0)
+
+  // Calcular el monto total de los impuestos PTG
+  const taxesAmountTotal = (invoice.otherItems || []).reduce((sum, taxItem) => {
+    return sum + (taxItem.totalPrice || 0)
+  }, 0)
+
+  // Total general incluyendo rutas e impuestos
+  const totalAmount = routeAmountTotal + taxesAmountTotal
 
   const xmlObject = {
     "LogisticARInvoices": {
@@ -263,53 +277,93 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
         // CustomerOpenItem Section
         "CustomerOpenItem": {
           "CustomerNbr": invoice.clientSapNumber || invoice.clientSapCode || invoice.clientSap || invoice.client,
-          "AmntTransactCur": routeAmountTotal.toFixed(3)
+          "AmntTransactCur": totalAmount.toFixed(3)
         },
         // OtherItems Section
         "OtherItems": {
-          "OtherItem": invoice.records.map((record: InvoiceLineItemForXml, index: number) => {
-            // Determinar el valor de BusinessType para el XML (I o E)
-            const businessTypeXmlValue = record.businessType === "IMPORT" ? "I" : "E"
-            
-            // Usar serviceCode del record o TRK002 por defecto
-            const otherItem: any = {
-              "IncomeRebateCode": TRUCKING_DEFAULTS.incomeRebateCode,
-              "InternalOrder": record.internalOrder || "",
-              "Service": record.serviceCode || "TRK002",
-              "Activity": "TRK",
-              "Pillar": TRUCKING_DEFAULTS.pillar,
-              "BUCountry": TRUCKING_DEFAULTS.buCountry,
-              "ServiceCountry": TRUCKING_DEFAULTS.serviceCountry,
-              "ClientType": TRUCKING_DEFAULTS.clientType,
-              "BusinessType": businessTypeXmlValue,
-              "FullEmpty": record.fullEmptyStatus || "FULL",
-              "SubContracting": record.subcontracting || "N"
-            }
-            
-            // Solo incluir CtrType, CtrSize, CtrCategory si tienen valores no vacíos
-            if (record.containerType && record.containerType.trim()) {
-              otherItem.CtrType = record.containerType
-            }
-            if (record.containerSize && record.containerSize.trim()) {
-              otherItem.CtrSize = record.containerSize
-            }
-            if (record.ctrCategory && record.ctrCategory.trim()) {
-              otherItem.CtrCategory = record.ctrCategory
-            }
-            
-            // Si no hay campos de contenedor especificados, usar valores por defecto para trasiego
-            if (!record.containerType && !record.containerSize && !record.ctrCategory) {
-              otherItem.CtrType = "DV"
-              otherItem.CtrSize = "40"
-              otherItem.CtrCategory = "D"
-            }
-            
-            return otherItem
-          })
+          "OtherItem": [
+            // Primero los registros principales (contenedores)
+            ...invoice.records.map((record: InvoiceLineItemForXml, index: number) => {
+              // Determinar el valor de BusinessType para el XML (I o E)
+              const businessTypeXmlValue = record.businessType === "IMPORT" ? "I" : "E"
+              
+              // Usar serviceCode del record o TRK002 por defecto
+              const otherItem: any = {
+                "IncomeRebateCode": TRUCKING_DEFAULTS.incomeRebateCode,
+                "InternalOrder": record.internalOrder || "",
+                "Service": record.serviceCode || "TRK002",
+                "AmntTransacCur": (record.totalPrice || 0).toFixed(3),
+                "Activity": "TRK",
+                "Pillar": TRUCKING_DEFAULTS.pillar,
+                "BUCountry": TRUCKING_DEFAULTS.buCountry,
+                "ServiceCountry": TRUCKING_DEFAULTS.serviceCountry,
+                "ClientType": TRUCKING_DEFAULTS.clientType,
+                "BusinessType": businessTypeXmlValue,
+                "FullEmpty": record.fullEmptyStatus || "FULL",
+                "SubContracting": record.subcontracting || "N"
+              }
+              
+              // Solo incluir CtrType, CtrSize, CtrCategory si tienen valores no vacíos
+              if (record.containerType && record.containerType.trim()) {
+                otherItem.CtrType = record.containerType
+              }
+              if (record.containerSize && record.containerSize.trim()) {
+                otherItem.CtrSize = record.containerSize
+              }
+              if (record.ctrCategory && record.ctrCategory.trim()) {
+                otherItem.CtrCategory = record.ctrCategory
+              }
+              
+              // Si no hay campos de contenedor especificados, usar valores por defecto para trasiego
+              if (!record.containerType && !record.containerSize && !record.ctrCategory) {
+                otherItem.CtrType = "DV"
+                otherItem.CtrSize = "40"
+                otherItem.CtrCategory = "D"
+              }
+              
+              return otherItem
+            }),
+            // Luego los impuestos PTG (otherItems)
+            ...(invoice.otherItems || []).map((taxItem: any) => {
+              console.log("Processing tax item:", taxItem)
+              const otherItem: any = {
+                "IncomeRebateCode": taxItem.IncomeRebateCode || "N",
+                "InternalOrder": "",
+                "Service": taxItem.serviceCode || "TRK135",
+                "AmntTransacCur": (taxItem.totalPrice || 0).toFixed(3),
+                "Activity": taxItem.Activity || "TRUCKING",
+                "Pillar": taxItem.Pillar || "LOGISTICS",
+                "BUCountry": taxItem.BUCountry || "PA",
+                "ServiceCountry": taxItem.ServiceCountry || "PA",
+                "ClientType": taxItem.ClientType || "EXTERNAL",
+                "BusinessType": "E", // Los impuestos siempre son EXPORT
+                "FullEmpty": taxItem.FullEmpty || "FULL",
+                "SubContracting": "N"
+              }
+              
+              // Solo incluir CtrType, CtrSize, CtrCategory si están definidos
+              if (taxItem.containerType && taxItem.containerType.trim()) {
+                otherItem.CtrType = taxItem.containerType
+              }
+              if (taxItem.containerSize && taxItem.containerSize.trim()) {
+                otherItem.CtrSize = taxItem.containerSize
+              }
+              if (taxItem.ctrCategory && taxItem.ctrCategory.trim()) {
+                otherItem.CtrCategory = taxItem.ctrCategory
+              }
+              
+              console.log("Generated tax XML item:", otherItem)
+              return otherItem
+            })
+          ]
         }
       }
     }
   }
+  
+  console.log("=== DEBUG: Final XML object ===")
+  console.log("OtherItems in XML:", xmlObject.LogisticARInvoices.CustomerInvoice.OtherItems)
+  console.log("Number of OtherItems:", xmlObject.LogisticARInvoices.CustomerInvoice.OtherItems.OtherItem.length)
   
   return js2xml(xmlObject, { compact: true, spaces: 2 })
 }

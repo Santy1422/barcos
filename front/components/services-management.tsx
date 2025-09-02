@@ -38,9 +38,12 @@ export function ServicesManagement({ module, title }: ServicesManagementProps) {
   
   const [showAddServiceForm, setShowAddServiceForm] = useState(false)
   const [serviceToDelete, setServiceToDelete] = useState<Service | null>(null)
+  const [editingServicePrice, setEditingServicePrice] = useState<Service | null>(null)
+  const [editingPrice, setEditingPrice] = useState<number>(0)
   const [newService, setNewService] = useState({
     name: "",
-    description: ""
+    description: "",
+    price: 0
   })
 
   // Cargar servicios al montar el componente
@@ -61,10 +64,10 @@ export function ServicesManagement({ module, title }: ServicesManagementProps) {
   }, [error, toast, dispatch])
 
   const handleAddService = async () => {
-    if (!newService.name || !newService.description) {
+    if (!newService.name || !newService.description || newService.price <= 0) {
       toast({
         title: "Error",
-        description: "Completa todos los campos obligatorios",
+        description: "Completa todos los campos obligatorios y asegúrate de que el precio sea mayor a 0",
         variant: "destructive"
       })
       return
@@ -74,12 +77,14 @@ export function ServicesManagement({ module, title }: ServicesManagementProps) {
       await dispatch(createServiceAsync({
         name: newService.name,
         description: newService.description,
+        price: newService.price,
         module
       })).unwrap()
       
       setNewService({
         name: "",
-        description: ""
+        description: "",
+        price: 0
       })
       setShowAddServiceForm(false)
 
@@ -133,8 +138,95 @@ export function ServicesManagement({ module, title }: ServicesManagementProps) {
     }
   }
 
+  const handleEditPriceClick = (service: Service) => {
+    setEditingServicePrice(service)
+    setEditingPrice(service.price || 0)
+    
+    // Hacer scroll hacia el formulario de edición
+    setTimeout(() => {
+      const formElement = document.querySelector('[data-edit-price-form]')
+      if (formElement) {
+        formElement.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start',
+          inline: 'nearest'
+        })
+      }
+    }, 100)
+  }
+
+  const handleCancelEditPrice = () => {
+    setEditingServicePrice(null)
+    setEditingPrice(0)
+    
+    // Hacer scroll hacia arriba para volver a la vista de la tabla
+    setTimeout(() => {
+      const tableElement = document.querySelector('[data-services-table]')
+      if (tableElement) {
+        tableElement.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start'
+        })
+      }
+    }, 100)
+  }
+
+  const handleUpdateServicePrice = async () => {
+    if (!editingServicePrice || editingPrice <= 0) {
+      toast({
+        title: "Error",
+        description: "Ingresa un precio válido mayor a 0",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      await dispatch(updateServiceAsync({
+        id: editingServicePrice._id,
+        serviceData: { price: editingPrice }
+      })).unwrap()
+      
+      toast({
+        title: "Precio actualizado",
+        description: `El precio del servicio ${editingServicePrice.name} ha sido actualizado a $${editingPrice.toFixed(2)}`,
+      })
+      setEditingServicePrice(null)
+      setEditingPrice(0)
+      
+      // Hacer scroll hacia arriba para volver a la vista de la tabla
+      setTimeout(() => {
+        const tableElement = document.querySelector('[data-services-table]')
+        if (tableElement) {
+          tableElement.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'start'
+          })
+        }
+      }, 100)
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Error al actualizar el precio del servicio",
+        variant: "destructive"
+      })
+    }
+  }
+
   // Filtrar servicios por módulo
-  const moduleServices = services.filter(service => service.module === module)
+  const moduleServices = services.filter(service => {
+    // Filtrar por módulo
+    if (service.module !== module) return false
+    
+    // Para el módulo trucking, excluir los impuestos especiales (Customs y Administration Fee)
+    if (module === 'trucking') {
+      if (service.name === 'Customs' || service.name === 'Administration Fee') {
+        return false
+      }
+    }
+    
+    return true
+  })
 
   return (
     <div className="space-y-6">
@@ -158,7 +250,7 @@ export function ServicesManagement({ module, title }: ServicesManagementProps) {
                 <CardTitle className="text-lg">Nuevo Servicio</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="service-name">Nombre del Servicio *</Label>
                     <Input
@@ -177,6 +269,18 @@ export function ServicesManagement({ module, title }: ServicesManagementProps) {
                       placeholder="Descripción detallada del servicio"
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="service-price">Precio *</Label>
+                    <Input
+                      id="service-price"
+                      type="number"
+                      value={newService.price === 0 ? "" : newService.price}
+                      onChange={(e) => setNewService({...newService, price: parseFloat(e.target.value) || 0})}
+                      placeholder="0.00"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <Button onClick={handleAddService} disabled={loading}>
@@ -191,12 +295,13 @@ export function ServicesManagement({ module, title }: ServicesManagementProps) {
             </Card>
           )}
 
-          <div className="rounded-md border">
+          <div className="rounded-md border" data-services-table>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Descripción</TableHead>
+                  <TableHead>Precio</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Acciones</TableHead>
                 </TableRow>
@@ -204,7 +309,7 @@ export function ServicesManagement({ module, title }: ServicesManagementProps) {
               <TableBody>
                 {loading && moduleServices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8">
+                    <TableCell colSpan={5} className="text-center py-8">
                       <div className="flex items-center justify-center space-x-2">
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                         <span>Cargando servicios...</span>
@@ -213,7 +318,7 @@ export function ServicesManagement({ module, title }: ServicesManagementProps) {
                   </TableRow>
                 ) : moduleServices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                       No hay servicios registrados para {module.toUpperCase()}
                     </TableCell>
                   </TableRow>
@@ -224,6 +329,9 @@ export function ServicesManagement({ module, title }: ServicesManagementProps) {
                         <Badge variant="outline">{service.name}</Badge>
                       </TableCell>
                       <TableCell>{service.description}</TableCell>
+                      <TableCell className="font-mono">
+                        ${service.price?.toFixed(2) || '0.00'}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={service.isActive ? "default" : "secondary"}>
                           {service.isActive ? "Activo" : "Inactivo"}
@@ -231,6 +339,16 @@ export function ServicesManagement({ module, title }: ServicesManagementProps) {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2">
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleEditPriceClick(service)}
+                            disabled={loading}
+                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                          >
+                            <Edit className="h-3 w-3 mr-1" />
+                            Precio
+                          </Button>
                           <Button 
                             size="sm" 
                             variant="outline"
@@ -257,6 +375,56 @@ export function ServicesManagement({ module, title }: ServicesManagementProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Formulario de edición de precio */}
+      {editingServicePrice && (
+        <Card 
+          data-edit-price-form
+          className="border-dashed border-blue-300 bg-blue-50 animate-in slide-in-from-bottom-2 duration-300"
+        >
+          <CardHeader>
+            <CardTitle className="text-lg text-blue-900">
+              Modificar Precio - {editingServicePrice.name}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-service-price" className="text-blue-900">Nuevo Precio *</Label>
+                <Input
+                  id="edit-service-price"
+                  type="number"
+                  value={editingPrice === 0 ? "" : editingPrice}
+                  onChange={(e) => setEditingPrice(parseFloat(e.target.value) || 0)}
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                  className="border-blue-300 focus:border-blue-500 focus:ring-blue-500"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-blue-900">Precio Actual</Label>
+                <div className="text-lg font-semibold text-blue-900 bg-white p-3 rounded-md border border-blue-200">
+                  ${editingServicePrice.price?.toFixed(2) || '0.00'}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button 
+                onClick={handleUpdateServicePrice}
+                disabled={editingPrice <= 0}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <Edit className="h-4 w-4 mr-2" />
+                Actualizar Precio
+              </Button>
+              <Button variant="outline" onClick={handleCancelEditPrice}>
+                Cancelar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Modal de confirmación para eliminar servicio */}
       <Dialog open={!!serviceToDelete} onOpenChange={() => setServiceToDelete(null)}>

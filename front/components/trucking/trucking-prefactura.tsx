@@ -259,7 +259,17 @@ export function TruckingPrefactura() {
   // Servicios adicionales (aplicados a la prefactura completa)
   const [additionalServiceId, setAdditionalServiceId] = useState<string>("")
   const [additionalServiceAmount, setAdditionalServiceAmount] = useState<number>(0)
-  const [selectedAdditionalServices, setSelectedAdditionalServices] = useState<Array<{ id: string; name: string; amount: number }>>([])
+  const [selectedAdditionalServices, setSelectedAdditionalServices] = useState<Array<{ id: string; name: string; description: string; amount: number }>>([])
+  
+  // Filtrar servicios para excluir impuestos especiales
+  const availableServices = useMemo(() => {
+    return services.filter(service => 
+      service.module === 'trucking' && 
+      service.isActive &&
+      service.name !== 'Customs' && 
+      service.name !== 'Administration Fee'
+    )
+  }, [services])
   
   // Estados para PDF
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null)
@@ -284,12 +294,26 @@ export function TruckingPrefactura() {
     if (!additionalServiceId || additionalServiceAmount <= 0) return
     const svc = services.find((s: any) => s._id === additionalServiceId)
     if (!svc) return
-    setSelectedAdditionalServices(prev => [...prev, { id: svc._id, name: svc.name, amount: additionalServiceAmount }])
+    setSelectedAdditionalServices(prev => [...prev, { id: svc._id, name: svc.name, description: svc.description, amount: additionalServiceAmount }])
     setAdditionalServiceId("")
     setAdditionalServiceAmount(0)
     
     // Regenerar PDF en vivo después de agregar servicio
     setTimeout(() => handleGenerateRealtimePDF(), 100)
+  }
+  
+  const clearServiceSelection = () => {
+    setAdditionalServiceId("")
+    setAdditionalServiceAmount(0)
+  }
+  
+  // Auto-completar precio cuando se seleccione un servicio
+  const handleServiceSelection = (serviceId: string) => {
+    const selectedService = services.find((s: any) => s._id === serviceId)
+    if (selectedService) {
+      setAdditionalServiceId(serviceId)
+      setAdditionalServiceAmount(selectedService.price || 0)
+    }
   }
   
   const removeService = (id: string) => {
@@ -302,8 +326,29 @@ export function TruckingPrefactura() {
   const totalSelected = useMemo(() => {
     const base = selectedRecords.reduce((sum: number, r: any) => sum + (r.data?.matchedPrice || r.totalValue || 0), 0)
     const extras = selectedAdditionalServices.reduce((sum, s) => sum + s.amount, 0)
-    return base + extras
-  }, [selectedRecords, selectedAdditionalServices])
+    
+    // Calcular impuestos PTG basados en contenedores llenos
+    const fullContainers = selectedRecords.filter((r: any) => {
+      const fe = r?.data?.fe || ''
+      return fe.toString().toUpperCase().trim() === 'F'
+    })
+    const totalFullContainers = fullContainers.length
+    
+    let taxes = 0
+    if (totalFullContainers > 0) {
+      const customsTax = services.find(s => s.module === 'trucking' && s.name === 'Customs' && s.isActive)
+      const adminFeeTax = services.find(s => s.module === 'trucking' && s.name === 'Administration Fee' && s.isActive)
+      
+      if (customsTax && customsTax.price > 0) {
+        taxes += customsTax.price * totalFullContainers
+      }
+      if (adminFeeTax && adminFeeTax.price > 0) {
+        taxes += adminFeeTax.price * totalFullContainers
+      }
+    }
+    
+    return base + extras + taxes
+  }, [selectedRecords, selectedAdditionalServices, services])
 
   const getSelectedClientName = (): string | null => {
     if (selectedRecords.length === 0) return null
@@ -533,10 +578,33 @@ export function TruckingPrefactura() {
     // Agregar servicios adicionales como filas de la tabla (estilo PTYSS)
     if (selectedAdditionalServices.length > 0) {
       selectedAdditionalServices.forEach(svc => {
-        const name = svc.name || 'Additional Service'
+        const description = svc.description || 'Additional Service'
         const amount = Number(svc.amount || 0)
-        bodyRows.push([1, name, amount.toFixed(2), amount.toFixed(2)])
+        bodyRows.push([1, description, amount.toFixed(2), amount.toFixed(2)])
       })
+    }
+
+    // Agregar impuestos PTG (Customs y Administration Fee) basados en contenedores llenos
+    const fullContainers = selectedRecords.filter((r: any) => {
+      const fe = r?.data?.fe || ''
+      return fe.toString().toUpperCase().trim() === 'F'
+    })
+    const totalFullContainers = fullContainers.length
+    
+    if (totalFullContainers > 0) {
+      // Buscar los impuestos PTG en los servicios
+      const customsTax = services.find(s => s.module === 'trucking' && s.name === 'Customs' && s.isActive)
+      const adminFeeTax = services.find(s => s.module === 'trucking' && s.name === 'Administration Fee' && s.isActive)
+      
+      if (customsTax && customsTax.price > 0) {
+        const customsTotal = customsTax.price * totalFullContainers
+        bodyRows.push([totalFullContainers, `Customs`, customsTax.price.toFixed(2), customsTotal.toFixed(2)])
+      }
+      
+      if (adminFeeTax && adminFeeTax.price > 0) {
+        const adminFeeTotal = adminFeeTax.price * totalFullContainers
+        bodyRows.push([totalFullContainers, `Administration Fee`, adminFeeTax.price.toFixed(2), adminFeeTotal.toFixed(2)])
+      }
     }
 
     autoTable(doc, {
@@ -941,28 +1009,24 @@ export function TruckingPrefactura() {
                     <div className="bg-gradient-to-br from-slate-50 to-blue-50 p-3 rounded-lg border border-slate-300">
                       <h3 className="text-lg font-bold text-slate-900 border-b border-slate-300 pb-2 mb-2">Servicios Adicionales</h3>
                       
+
+                      
                       {/* Selección de servicios */}
                       <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-4">
                           <div className="space-y-3">
                             <Label className="text-sm font-semibold text-slate-700">Servicio</Label>
-                            <Select onValueChange={(value) => {
-                              const service = services.find((s: any) => s._id === value)
-                              if (service) {
-                                setAdditionalServiceId(value)
-                              }
-                            }} value={additionalServiceId}>
+                            <Select onValueChange={handleServiceSelection} value={additionalServiceId}>
                               <SelectTrigger className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500 h-12 text-base">
                                 <SelectValue placeholder="Seleccionar servicio..." />
                               </SelectTrigger>
                               <SelectContent>
-                                {services.filter((s: any) => s.module === 'trucking' && s.isActive).length === 0 ? (
+                                {availableServices.length === 0 ? (
                                   <div className="p-2 text-sm text-muted-foreground">
                                     No hay servicios disponibles
                                   </div>
                                 ) : (
-                                  services
-                                    .filter((s: any) => s.module === 'trucking' && s.isActive)
+                                  availableServices
                                     .filter(service => !selectedAdditionalServices.some(s => s.id === service._id))
                                     .map((service) => (
                                       <SelectItem key={service._id} value={service._id}>
@@ -991,24 +1055,36 @@ export function TruckingPrefactura() {
                                 }
                               }}
                               placeholder="0.00"
-                              className="w-full h-12 text-base bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              className={`w-full h-12 text-base border-slate-300 focus:border-slate-500 focus:ring-slate-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                                additionalServiceId ? 'bg-slate-50 text-slate-600' : 'bg-white'
+                              }`}
+                              readOnly={!!additionalServiceId}
                             />
                           </div>
                           
-                          <div className="space-y-3">
-                            <Label className="text-sm font-semibold text-slate-700">&nbsp;</Label>
+                          <div className="flex gap-2">
                             <Button 
                               onClick={addService}
                               disabled={!additionalServiceId || additionalServiceAmount <= 0}
-                              className="w-full h-12 text-base bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white font-semibold shadow-md"
+                              className="flex-1 h-12 text-base bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white font-semibold shadow-md"
                             >
                               <Plus className="h-4 w-4 mr-2" />
                               Agregar
                             </Button>
+                            {additionalServiceId && (
+                              <Button 
+                                variant="outline"
+                                onClick={clearServiceSelection}
+                                className="h-12 px-3 border-slate-300 text-slate-600 hover:bg-slate-50"
+                                title="Limpiar selección"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         </div>
                         
-                        {services.filter((s: any) => s.module === 'trucking' && s.isActive).length === 0 && (
+                        {availableServices.length === 0 && (
                           <div className="text-sm text-muted-foreground">
                             No hay servicios adicionales configurados para Trucking. Ve a Configuración → Servicios PTG para agregar servicios.
                           </div>
@@ -1022,8 +1098,7 @@ export function TruckingPrefactura() {
                           {selectedAdditionalServices.map((service) => (
                             <div key={service.id} className="flex items-center gap-4 p-4 bg-white/70 border border-slate-200 rounded-lg shadow-sm">
                               <div className="flex-1">
-                                <div className="font-semibold text-sm text-slate-900">{service.name}</div>
-                                <div className="text-xs text-slate-600">Importe personalizado</div>
+                                <div className="font-semibold text-sm text-slate-900">{service.description}</div>
                               </div>
                               <div className="flex items-center gap-4">
                                 <span className="text-lg font-bold text-slate-900 bg-slate-100 px-3 py-1 rounded-full">${service.amount.toFixed(2)}</span>
