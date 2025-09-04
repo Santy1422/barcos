@@ -558,7 +558,7 @@ pending → in_progress → completed → [SAP XML Generation] → facturado
 - **completed**: Services ready for SAP invoice generation
 - **facturado**: Services included in generated SAP XML
 
-## 🔧 Technical Features
+## 🔧 Technical Features ∫
 
 ### XML Structure Differences
 Agency XML structure differs from Shipshandler:
