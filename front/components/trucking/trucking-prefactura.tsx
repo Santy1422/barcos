@@ -31,6 +31,37 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 
+// Función para convertir números de serie de Excel a fechas legibles
+const convertExcelDateToReadable = (excelDate: string | number): string => {
+  if (!excelDate) return ''
+  
+  // Si ya es una fecha legible, devolverla tal como está
+  if (typeof excelDate === 'string' && isNaN(Number(excelDate))) {
+    return excelDate
+  }
+  
+  // Convertir número de serie de Excel a fecha
+  const excelSerialNumber = Number(excelDate)
+  if (isNaN(excelSerialNumber)) return String(excelDate)
+  
+  // Excel cuenta los días desde 1900-01-01, pero hay un bug de año bisiesto
+  // que hace que 1900 sea considerado bisiesto cuando no lo es
+  const excelEpoch = new Date(1900, 0, 1) // 1 de enero de 1900
+  const millisecondsPerDay = 24 * 60 * 60 * 1000
+  
+  // Ajustar por el bug del año bisiesto de Excel
+  const adjustedSerialNumber = excelSerialNumber > 59 ? excelSerialNumber - 1 : excelSerialNumber
+  
+  const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
+  
+  // Formatear la fecha como DD/MM/YYYY
+  const day = date.getDate().toString().padStart(2, '0')
+  const month = (date.getMonth() + 1).toString().padStart(2, '0')
+  const year = date.getFullYear()
+  
+  return `${day}/${month}/${year}`
+}
+
 
 export function TruckingPrefactura() {
   const dispatch = useAppDispatch()
@@ -1292,7 +1323,7 @@ export function TruckingPrefactura() {
                                   <Checkbox checked={isSelected((rec as any)._id || rec.id)} onCheckedChange={(c: boolean) => toggleRecord((rec as any)._id || rec.id, !!c)} />
                                 </TableCell>
                                 <TableCell className="font-mono text-sm">{(rec as any).data?.container || ''}</TableCell>
-                                <TableCell>{(rec as any).data?.moveDate || '-'}</TableCell>
+                                <TableCell>{convertExcelDateToReadable((rec as any).data?.moveDate) || '-'}</TableCell>
                                 <TableCell>
                                   <Badge variant="secondary">Trasiego</Badge>
                                 </TableCell>
@@ -1416,7 +1447,7 @@ export function TruckingPrefactura() {
                   const rec: any = selectedRecordForView as any
                   const d = rec.data || {}
                   const createdAt = rec.createdAt ? new Date(rec.createdAt).toLocaleString('es-ES') : '—'
-                  const moveDate = d.moveDate ? new Date(d.moveDate).toLocaleDateString('es-ES') : (d.moveDate || '—')
+                  const moveDate = d.moveDate ? convertExcelDateToReadable(d.moveDate) : '—'
                   return (
                     <div className="space-y-6">
                       {/* Datos principales */}

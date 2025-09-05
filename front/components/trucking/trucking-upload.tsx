@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
-import { FileSpreadsheet, Upload, CheckCircle, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
+import { FileSpreadsheet, Upload, CheckCircle, Loader2, AlertCircle, CheckCircle2, Plus } from "lucide-react"
 import { 
   selectAllClients,
   fetchClients,
@@ -30,7 +30,43 @@ import {
   selectContainerTypesLoading,
   selectContainerTypesError
 } from "@/lib/features/containerTypes/containerTypesSlice"
+import {
+  createTruckingRoute,
+  type TruckingRouteInput,
+} from "@/lib/features/truckingRoutes/truckingRoutesSlice"
 import { TruckingGastosAutoridadesUpload } from "./trucking-gastos-autoridades-upload"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
+// Función para convertir números de serie de Excel a fechas legibles
+const convertExcelDateToReadable = (excelDate: string | number): string => {
+  if (!excelDate) return ''
+  
+  // Si ya es una fecha legible, devolverla tal como está
+  if (typeof excelDate === 'string' && isNaN(Number(excelDate))) {
+    return excelDate
+  }
+  
+  // Convertir número de serie de Excel a fecha
+  const excelSerialNumber = Number(excelDate)
+  if (isNaN(excelSerialNumber)) return String(excelDate)
+  
+  // Excel cuenta los días desde 1900-01-01, pero hay un bug de año bisiesto
+  // que hace que 1900 sea considerado bisiesto cuando no lo es
+  const excelEpoch = new Date(1900, 0, 1) // 1 de enero de 1900
+  const millisecondsPerDay = 24 * 60 * 60 * 1000
+  
+  // Ajustar por el bug del año bisiesto de Excel
+  const adjustedSerialNumber = excelSerialNumber > 59 ? excelSerialNumber - 1 : excelSerialNumber
+  
+  const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
+  
+  // Formatear la fecha como DD/MM/YYYY
+  const day = date.getDate().toString().padStart(2, '0')
+  const month = (date.getMonth() + 1).toString().padStart(2, '0')
+  const year = date.getFullYear()
+  
+  return `${day}/${month}/${year}`
+}
 
 export function TruckingUpload() {
   const [activeTab, setActiveTab] = useState<'trasiego' | 'autoridades'>('trasiego')
@@ -67,6 +103,19 @@ export function TruckingUpload() {
   const [clientToEdit, setClientToEdit] = useState<{ name: string; records: TruckingExcelData[] } | null>(null)
   const [currentMissingIndex, setCurrentMissingIndex] = useState<number>(0)
   const [clientCompleteness, setClientCompleteness] = useState<Map<string, { isComplete: boolean; missingFields: string[] }>>(new Map())
+
+  // Route creation modal state
+  const [showCreateRouteModal, setShowCreateRouteModal] = useState(false)
+  const [recordForRoute, setRecordForRoute] = useState<TruckingExcelData | null>(null)
+  const [newRoute, setNewRoute] = useState<TruckingRouteInput>({
+    name: "",
+    origin: "",
+    destination: "",
+    containerType: "dry",
+    routeType: "single",
+    price: 0,
+  })
+  const [shouldReprocess, setShouldReprocess] = useState(false)
 
   // Cargar rutas al montar el componente
   useEffect(() => {
@@ -118,6 +167,7 @@ export function TruckingUpload() {
     }
     console.log("")
   }, [containerTypes, containerTypesLoading, containerTypesError])
+
 
   // Mostrar error si existe
   useEffect(() => {
@@ -178,6 +228,159 @@ export function TruckingUpload() {
     for (const [, completeness] of clientCompleteness) if (!completeness.isComplete) return false
     return true
   }
+
+  // Route creation handlers
+  const handleCreateRouteClick = (record: TruckingExcelData) => {
+    setRecordForRoute(record)
+    
+    // Pre-llenar el formulario con datos del registro
+    const legParts = record.leg?.split('/') || ['', '']
+    const origin = legParts[0]?.trim() || ''
+    const destination = legParts[1]?.trim() || ''
+    
+    setNewRoute({
+      name: `${origin}/${destination}`,
+      origin: origin,
+      destination: destination,
+      containerType: record.detectedContainerType || "dry",
+      routeType: record.moveType?.toLowerCase() === 'rt' ? "RT" : "single",
+      price: 0,
+    })
+    
+    setShowCreateRouteModal(true)
+  }
+
+  // Función para re-procesar el Excel (simula el handleFileChange pero sin seleccionar archivo)
+  const reprocessExcel = async () => {
+    if (!selectedFile) return
+    
+    setIsLoading(true)
+    
+    try {
+      // Verificar que las rutas y container types estén cargados
+      if (routesLoading || containerTypesLoading) {
+        toast({
+          title: "Cargando configuración",
+          description: "Espera un momento mientras se cargan las rutas y tipos de contenedores...",
+        })
+        return
+      }
+
+      if (routes.length === 0) {
+        toast({
+          title: "No hay rutas configuradas",
+          description: "Debes configurar rutas en la sección de configuración antes de subir archivos.",
+          variant: "destructive",
+        })
+        return
+      }
+      
+      if (containerTypes.length === 0) {
+        toast({
+          title: "No hay tipos de contenedores configurados",
+          description: "Debes configurar tipos de contenedores en la sección de configuración antes de subir archivos.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Parsear el archivo Excel real
+      const realData = await parseTruckingExcel(selectedFile)
+      
+      console.log("=== DEBUGGING RE-PROCESSING MATCHING ===")
+      console.log("Datos del Excel:", realData)
+      console.log("Rutas disponibles:", routes)
+      console.log("Container types disponibles:", containerTypes)
+      console.log("")
+      
+      // Aplicar matching con las rutas configuradas y container types del backend
+      const matchedData = matchTruckingDataWithRoutes(realData, routes, containerTypes)
+      
+      console.log("Datos después del re-matching:", matchedData)
+      console.log("")
+      
+      // Procesar clientes faltantes usando la columna 'line' del Excel
+      const processedData = await processMissingClients(matchedData)
+      setPreviewData(processedData)
+      
+      // Contar registros con match
+      const matchedCount = matchedData.filter(record => record.isMatched).length
+      const unmatchedCount = matchedData.length - matchedCount
+      
+      console.log(`Re-procesamiento: ${matchedCount}/${matchedData.length} registros con match`)
+      
+      // Contar tipos de contenedores detectados
+      const dryCount = matchedData.filter(r => r.detectedContainerType === 'dry').length;
+      const reeferCount = matchedData.filter(r => r.detectedContainerType === 'reefer').length;
+      
+      let description = `Re-procesamiento completado. ${matchedCount} con precio asignado, ${unmatchedCount} sin coincidencia.`;
+      if (dryCount > 0 || reeferCount > 0) {
+        description += ` Tipos detectados: ${dryCount > 0 ? `${dryCount} DRY` : ''}${dryCount > 0 && reeferCount > 0 ? ', ' : ''}${reeferCount > 0 ? `${reeferCount} REEFER` : ''}`;
+      }
+      
+      toast({
+        title: "✅ Excel re-procesado",
+        description: description,
+      })
+    } catch (error) {
+      console.error('Error al re-procesar archivo:', error)
+      toast({
+        title: "Error al re-procesar archivo",
+        description: "No se pudo re-procesar el archivo Excel. Verifica que tenga el formato correcto.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleCreateRoute = async () => {
+    if (!newRoute.origin || !newRoute.destination || !newRoute.containerType || !newRoute.routeType || newRoute.price <= 0) {
+      toast({ title: "Error", description: "Completa todos los campos obligatorios", variant: "destructive" })
+      return
+    }
+    
+    try {
+      await dispatch(createTruckingRoute(newRoute)).unwrap()
+      
+      // Cerrar modal y limpiar estado
+      setShowCreateRouteModal(false)
+      setRecordForRoute(null)
+      setNewRoute({ name: "", origin: "", destination: "", containerType: "dry", routeType: "single", price: 0 })
+      
+      // Activar flag para re-procesar cuando las rutas se actualicen
+      if (selectedFile && previewData.length > 0) {
+        console.log("=== RUTA CREADA, ACTIVANDO RE-PROCESAMIENTO ===")
+        setShouldReprocess(true)
+        toast({ 
+          title: "Ruta creada", 
+          description: `La ruta ${newRoute.name} ha sido creada. Re-procesando Excel...` 
+        })
+      } else {
+        toast({ 
+          title: "Ruta creada", 
+          description: `La ruta ${newRoute.name} ha sido creada correctamente.` 
+        })
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Error al crear la ruta", variant: "destructive" })
+    }
+  }
+
+  const handleCancelCreateRoute = () => {
+    setShowCreateRouteModal(false)
+    setRecordForRoute(null)
+    setNewRoute({ name: "", origin: "", destination: "", containerType: "dry", routeType: "single", price: 0 })
+  }
+
+  // Re-procesar Excel cuando las rutas se actualicen y shouldReprocess sea true
+  useEffect(() => {
+    if (shouldReprocess && !routesLoading && routes.length > 0 && selectedFile && previewData.length > 0) {
+      console.log("=== TRIGGERING RE-PROCESSING DUE TO ROUTES UPDATE ===")
+      setShouldReprocess(false) // Reset flag
+      reprocessExcel()
+    }
+  }, [routes, routesLoading, shouldReprocess, selectedFile, previewData.length, reprocessExcel])
 
   const handleClientClick = (clientName: string) => {
     if (!clientName) return
@@ -666,25 +869,32 @@ export function TruckingUpload() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="rounded-md border max-h-96 overflow-auto">
-              <Table>
+            {/* Headers fijos fuera de la tabla */}
+            <div className="rounded-md border-b bg-gray-50 overflow-x-auto">
+              <Table className="w-full table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Container</TableHead>
-                    <TableHead>Container Consecutive</TableHead>
-                    <TableHead>F/E</TableHead>
-                    <TableHead>Size</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Tipo Detectado</TableHead>
-                    <TableHead>Move Date</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Leg</TableHead>
-                    <TableHead>Move Type</TableHead>
-                    <TableHead>Precio</TableHead>
-                    <TableHead>Estado</TableHead>
-                    {/* <TableHead>Acciones</TableHead> */}
+                    <TableHead className="font-semibold w-32">Container</TableHead>
+                    <TableHead className="font-semibold w-32">Container Consecutive</TableHead>
+                    <TableHead className="font-semibold w-16">F/E</TableHead>
+                    <TableHead className="font-semibold w-16">Size</TableHead>
+                    <TableHead className="font-semibold w-16">Type</TableHead>
+                    <TableHead className="font-semibold w-24">Tipo Detectado</TableHead>
+                    <TableHead className="font-semibold w-24">Move Date</TableHead>
+                    <TableHead className="font-semibold w-24">Cliente</TableHead>
+                    <TableHead className="font-semibold w-24">Leg</TableHead>
+                    <TableHead className="font-semibold w-20">Move Type</TableHead>
+                    <TableHead className="font-semibold w-20">Precio</TableHead>
+                    <TableHead className="font-semibold w-20">Estado</TableHead>
+                    {/* <TableHead className="font-semibold w-20">Acciones</TableHead> */}
                   </TableRow>
                 </TableHeader>
+              </Table>
+            </div>
+            
+            {/* Tabla con solo el cuerpo, scrolleable */}
+            <div className="rounded-md border-t-0 border max-h-96 overflow-auto">
+              <Table className="w-full table-fixed">
                 <TableBody>
                   {previewData.map((record, index) => {
                     const clientName = record.line?.trim()
@@ -692,12 +902,12 @@ export function TruckingUpload() {
                     const isClickable = record.isMatched && clientName && (clientStatus ? !clientStatus.isComplete : true)
                     return (
                     <TableRow key={index}>
-                      <TableCell className="font-mono text-sm">{record.container}</TableCell>
-                      <TableCell>{record.containerConsecutive}</TableCell>
-                      <TableCell>{record.fe}</TableCell>
-                      <TableCell>{record.size}</TableCell>
-                      <TableCell>{record.type}</TableCell>
-                      <TableCell>
+                      <TableCell className="font-mono text-sm w-32">{record.container}</TableCell>
+                      <TableCell className="w-32">{record.containerConsecutive}</TableCell>
+                      <TableCell className="w-16">{record.fe}</TableCell>
+                      <TableCell className="w-16">{record.size}</TableCell>
+                      <TableCell className="w-16">{record.type}</TableCell>
+                      <TableCell className="w-24">
                         {record.detectedContainerType ? (
                           <Badge variant={record.detectedContainerType === 'reefer' ? 'default' : 'secondary'}>
                             {record.detectedContainerType === 'reefer' ? 'REEFER' : 'DRY'}
@@ -706,43 +916,19 @@ export function TruckingUpload() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell>{record.moveDate}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <span
-                            className={isClickable ? "cursor-pointer text-blue-600 hover:text-blue-800 underline" : ""}
-                            onClick={isClickable ? () => handleClientClick(clientName!) : undefined}
-                            title={isClickable ? "Haz clic para editar datos del cliente" : ""}
-                          >
-                            {record.line || "N/A"}
-                          </span>
-                          {record.isMatched && clientName && (
-                            <div className="flex items-center">
-                              {clientStatus ? (
-                                clientStatus.isComplete ? (
-                                  <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
-                                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                                    Completo
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="outline" className="text-red-600 border-red-600 text-xs cursor-pointer" onClick={() => handleClientClick(clientName)}>
-                                    <AlertCircle className="h-3 w-3 mr-1" />
-                                    Incompleto
-                                  </Badge>
-                                )
-                              ) : (
-                                <Badge variant="outline" className="text-orange-600 border-orange-600 text-xs cursor-pointer" onClick={() => handleClientClick(clientName)}>
-                                  <AlertCircle className="h-3 w-3 mr-1" />
-                                  No existe
-                                </Badge>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                      <TableCell className="w-24">{convertExcelDateToReadable(record.moveDate)}</TableCell>
+                      <TableCell className="w-24">
+                        <span
+                          className={isClickable ? "cursor-pointer text-blue-600 hover:text-blue-800 underline" : ""}
+                          onClick={isClickable ? () => handleClientClick(clientName!) : undefined}
+                          title={isClickable ? "Haz clic para editar datos del cliente" : ""}
+                        >
+                          {record.line || "N/A"}
+                        </span>
                       </TableCell>
-                      <TableCell>{record.leg}</TableCell>
-                      <TableCell>{record.moveType}</TableCell>
-                      <TableCell>
+                      <TableCell className="w-24">{record.leg}</TableCell>
+                      <TableCell className="w-20">{record.moveType}</TableCell>
+                      <TableCell className="w-20">
                         {record.isMatched ? (
                           <span className="font-medium text-green-600">
                             ${record.matchedPrice?.toFixed(2)}
@@ -751,14 +937,19 @@ export function TruckingUpload() {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="w-20">
                         {record.isMatched ? (
                           <Badge variant="outline" className="text-green-600 border-green-600">
                             <CheckCircle className="h-3 w-3 mr-1" />
                             Match
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="text-orange-600 border-orange-600">
+                          <Badge 
+                            variant="outline" 
+                            className="text-orange-600 border-orange-600 cursor-pointer hover:bg-orange-50 hover:border-orange-700"
+                            onClick={() => handleCreateRouteClick(record)}
+                            title="Haz clic para crear una ruta para este registro"
+                          >
                             <AlertCircle className="h-3 w-3 mr-1" />
                             Sin match
                           </Badge>
@@ -949,6 +1140,120 @@ export function TruckingUpload() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Modal para crear ruta desde registro sin match */}
+      <Dialog open={showCreateRouteModal} onOpenChange={setShowCreateRouteModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Crear Nueva Ruta PTG
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {recordForRoute && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center space-x-2">
+                  <AlertCircle className="h-5 w-5 text-blue-600" />
+                  <h4 className="font-medium text-blue-800">Registro sin match</h4>
+                </div>
+                <p className="text-sm text-blue-700 mt-2">
+                  Creando ruta para: <strong>{recordForRoute.container}</strong> - {recordForRoute.leg} ({recordForRoute.type})
+                </p>
+              </div>
+            )}
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="route-name">Nombre de la Ruta *</Label>
+                  <Input 
+                    id="route-name"
+                    value={newRoute.origin && newRoute.destination ? `${newRoute.origin}/${newRoute.destination}` : ""} 
+                    placeholder="Se genera automáticamente" 
+                    disabled 
+                    className="bg-gray-50" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-origin">Origen *</Label>
+                  <Input 
+                    id="route-origin" 
+                    value={newRoute.origin} 
+                    onChange={(e) => setNewRoute({ ...newRoute, origin: e.target.value.toUpperCase() })} 
+                    placeholder="PTY" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-destination">Destino *</Label>
+                  <Input 
+                    id="route-destination" 
+                    value={newRoute.destination} 
+                    onChange={(e) => setNewRoute({ ...newRoute, destination: e.target.value.toUpperCase() })} 
+                    placeholder="COL" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-container-type">Tipo de Contenedor *</Label>
+                  <Select 
+                    value={newRoute.containerType} 
+                    onValueChange={(value) => setNewRoute({ ...newRoute, containerType: value as "dry" | "reefer" })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="dry">Dry</SelectItem>
+                      <SelectItem value="reefer">Reefer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-route-type">Tipo de Ruta *</Label>
+                  <Select 
+                    value={newRoute.routeType} 
+                    onValueChange={(value) => setNewRoute({ ...newRoute, routeType: value as "single" | "RT" })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar tipo de ruta" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="single">Single - Viaje único</SelectItem>
+                      <SelectItem value="RT">RT - Round Trip</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-price">Precio *</Label>
+                  <Input 
+                    id="route-price" 
+                    type="number" 
+                    value={newRoute.price} 
+                    onChange={(e) => setNewRoute({ ...newRoute, price: parseFloat(e.target.value) || 0 })} 
+                    placeholder="250.00" 
+                    min="0" 
+                    step="0.01" 
+                  />
+                </div>
+              </div>
+              
+              <div className="flex justify-between items-center space-x-2">
+                <div className="text-sm text-muted-foreground">
+                  La ruta se creará y el Excel se re-procesará automáticamente para mostrar el match.
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={handleCancelCreateRoute}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={handleCreateRoute} disabled={routesLoading}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    {routesLoading ? "Creando..." : "Crear Ruta"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
         </TabsContent>
         <TabsContent value="autoridades">
           <TruckingGastosAutoridadesUpload />
