@@ -562,7 +562,7 @@ pending → in_progress → completed → [SAP XML Generation] → facturado
 
 ### XML Structure Differences
 Agency XML structure differs from Shipshandler:
-- **Source System**: "Agency Transportation System"
+- **Source System**: "Agency Transportation System" 
 - **Service Description**: Includes crew name and vessel
 - **Route Information**: Pickup to dropoff location details
 - **Document Type**: XL (specific to Agency)
