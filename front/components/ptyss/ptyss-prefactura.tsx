@@ -210,8 +210,10 @@ export function PTYSSPrefactura() {
     }
     
     // Los registros de trasiego tienen campos específicos del Excel de trucking
-    // como containerConsecutive, leg, moveType, etc.
-    if (data.containerConsecutive || data.leg || data.moveType || data.associate) {
+    // como containerConsecutive, leg, moveType, associate, etc.
+    // Priorizar la detección de trasiego sobre local
+    if (data.containerConsecutive || data.leg || data.moveType || data.associate || 
+        data.from || data.to || data.line || data.driverName || data.plate) {
       return "trasiego"
     }
     
@@ -264,8 +266,20 @@ export function PTYSSPrefactura() {
     }
     
     // Aplicar filtro por estado
-    if (statusFilter !== "all" && record.status !== statusFilter) {
-      return false
+    if (statusFilter !== "all") {
+      const recordType = getRecordType(record)
+      
+      // Para registros de trasiego, siempre considerarlos como "completado"
+      if (recordType === "trasiego") {
+        if (statusFilter !== "completado") {
+          return false
+        }
+      } else {
+        // Para registros locales, usar el estado real del registro
+        if (record.status !== statusFilter) {
+          return false
+        }
+      }
     }
     
     // Aplicar filtro por fecha
@@ -1722,6 +1736,32 @@ export function PTYSSPrefactura() {
     }
   }
 
+  // Función para formatear fechas correctamente (evitar problema de zona horaria)
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A'
+    
+    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = dateString.split('-').map(Number)
+      const date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+      return date.toLocaleDateString('es-ES')
+    }
+    
+    // Si la fecha está en formato ISO con zona horaria UTC (ej: 2025-09-09T00:00:00.000+00:00)
+    // Extraer solo la parte de la fecha y crear un objeto Date en zona horaria local
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+      const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
+      const [year, month, day] = datePart.split('-').map(Number)
+      const date = new Date(year, month - 1, day) // Crear en zona horaria local
+      return date.toLocaleDateString('es-ES')
+    }
+    
+    // Para otros formatos, usar el método normal
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return 'N/A'
+    return date.toLocaleDateString('es-ES')
+  }
+
   // Función para formatear fecha y hora
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString)
@@ -2361,7 +2401,7 @@ export function PTYSSPrefactura() {
                           </TableCell>
                           <TableCell className="py-2 px-3">
                             <div className="text-sm">
-                              {data.moveDate ? new Date(data.moveDate).toLocaleDateString('es-ES') : "N/A"}
+                              {formatDate(data.moveDate)}
                             </div>
                           </TableCell>
                           <TableCell className="py-2 px-3">
@@ -3248,10 +3288,7 @@ export function PTYSSPrefactura() {
                       />
                     ) : (
                       <p className="text-sm">
-                        {(selectedRecordForView.data as Record<string, any>).moveDate 
-                          ? new Date((selectedRecordForView.data as Record<string, any>).moveDate).toLocaleDateString('es-ES')
-                          : "N/A"
-                        }
+                        {formatDate((selectedRecordForView.data as Record<string, any>).moveDate)}
                       </p>
                     )}
                   </div>
