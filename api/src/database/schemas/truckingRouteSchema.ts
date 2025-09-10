@@ -15,7 +15,7 @@ const truckingRouteSchema = new mongoose.Schema({
   },
   containerType: {
     type: String,
-    enum: ['dry', 'reefer'],
+    enum: ['dry', 'reefer', 'mty', 'fb'],
     required: true
   },
   routeType: {
@@ -26,13 +26,19 @@ const truckingRouteSchema = new mongoose.Schema({
   price: {
     type: Number,
     required: true
+  },
+  status: {
+    type: String,
+    enum: ['Full', 'Empty'],
+    required: true,
+    default: 'Full'
   }
 }, {
   timestamps: true
 });
 
-// Índice compuesto para validar duplicados: nombre + tipo de contenedor + tipo de ruta
-// Esto permite tener rutas con el mismo nombre pero diferentes tipos
-truckingRouteSchema.index({ name: 1, containerType: 1, routeType: 1 }, { unique: true });
+// Índice compuesto para validar duplicados: nombre + tipo de contenedor + tipo de ruta + status
+// Esto permite tener rutas con el mismo nombre pero diferentes tipos y estados
+truckingRouteSchema.index({ name: 1, containerType: 1, routeType: 1, status: 1 }, { unique: true });
 
 export default truckingRouteSchema; 

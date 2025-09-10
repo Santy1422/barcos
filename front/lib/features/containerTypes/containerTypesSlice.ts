@@ -5,7 +5,7 @@ export interface ContainerType {
   _id: string
   code: string
   name: string
-  category: 'A' | 'B' | 'DRY' | 'N' | 'REEFE' | 'T'
+  category: 'A' | 'B' | 'DRY' | 'N' | 'REEFE' | 'T' | 'MTY' | 'FB'
   isActive: boolean
   description?: string
   createdAt?: string
@@ -15,7 +15,7 @@ export interface ContainerType {
 export interface ContainerTypeInput {
   code: string
   name: string
-  category: 'A' | 'B' | 'DRY' | 'N' | 'REEFE' | 'T'
+  category: 'A' | 'B' | 'DRY' | 'N' | 'REEFE' | 'T' | 'MTY' | 'FB'
   description?: string
   isActive?: boolean
 }

@@ -34,7 +34,25 @@ export interface PTYSSRecordForXml {
 }
 
 function formatDateForXML(dateString: string): string {
-  const date = new Date(dateString)
+  // Aplicar la misma lógica de corrección de zona horaria que en trucking-records.tsx
+  let date: Date
+  
+  if (!dateString) {
+    date = new Date()
+  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
+    const [year, month, day] = dateString.split('-').map(Number)
+    date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+    // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
+    const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
+    const [year, month, day] = datePart.split('-').map(Number)
+    date = new Date(year, month - 1, day) // Crear en zona horaria local
+  } else {
+    // Para otros formatos, usar el método normal
+    date = new Date(dateString)
+  }
+  
   const year = date.getFullYear()
   const month = (date.getMonth() + 1).toString().padStart(2, "0")
   const day = date.getDate().toString().padStart(2, "0")

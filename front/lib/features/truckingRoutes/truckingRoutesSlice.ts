@@ -6,9 +6,10 @@ export interface TruckingRoute {
   name: string
   origin: string
   destination: string
-  containerType: "dry" | "reefer"
+  containerType: "dry" | "reefer" | "mty" | "fb"
   routeType: "single" | "RT"
   price: number
+  status: "Full" | "Empty"
   createdAt: string
   updatedAt: string
 }
@@ -18,9 +19,10 @@ export interface TruckingRouteInput {
   name: string
   origin: string
   destination: string
-  containerType: "dry" | "reefer"
+  containerType: "dry" | "reefer" | "mty" | "fb"
   routeType: "single" | "RT"
   price: number
+  status: "Full" | "Empty"
 }
 
 // State structure

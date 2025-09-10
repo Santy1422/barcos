@@ -7,9 +7,9 @@ const TruckingRoute = mongoose.model('TruckingRoute', truckingRouteSchema);
 
 const createTruckingRoute = async (req: Request, res: Response) => {
   try {
-    const { name, origin, destination, containerType, routeType, price } = req.body;
+    const { name, origin, destination, containerType, routeType, price, status } = req.body;
 
-    if (!name || !origin || !destination || !containerType || !routeType || !price) {
+    if (!name || !origin || !destination || !containerType || !routeType || !price || !status) {
       return response(res, 400, { message: 'Todos los campos son requeridos' });
     }
 
@@ -25,7 +25,7 @@ const createTruckingRoute = async (req: Request, res: Response) => {
       });
     }
 
-    const newRoute = new TruckingRoute({ name, origin, destination, containerType, routeType, price });
+    const newRoute = new TruckingRoute({ name, origin, destination, containerType, routeType, price, status });
     await newRoute.save();
 
     return response(res, 201, { 

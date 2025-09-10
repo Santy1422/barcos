@@ -16,7 +16,7 @@ const containerTypesSchema = new mongoose.Schema({
   category: {
     type: String,
     required: true,
-    enum: ['A', 'B', 'DRY', 'N', 'REEFE', 'T'],
+    enum: ['A', 'B', 'DRY', 'N', 'REEFE', 'T', 'MTY', 'FB'],
     default: 'DRY'
   },
   isActive: {

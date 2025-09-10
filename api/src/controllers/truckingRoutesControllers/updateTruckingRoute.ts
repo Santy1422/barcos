@@ -8,7 +8,7 @@ const TruckingRoute = mongoose.model('TruckingRoute', truckingRouteSchema);
 const updateTruckingRoute = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, origin, destination, containerType, routeType, price } = req.body;
+    const { name, origin, destination, containerType, routeType, price, status } = req.body;
 
     console.log('Actualizando ruta de trucking:', { id, updates: req.body });
 
@@ -27,7 +27,7 @@ const updateTruckingRoute = async (req: Request, res: Response) => {
 
     const updated = await TruckingRoute.findByIdAndUpdate(
       id,
-      { name, origin, destination, containerType, routeType, price },
+      { name, origin, destination, containerType, routeType, price, status },
       { new: true, runValidators: true }
     );
 

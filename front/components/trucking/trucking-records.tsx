@@ -27,9 +27,11 @@ import {
   updateMultipleRecordsStatusAsync,
   updateMultipleAutoridadesStatusAsync,
   fetchAutoridadesRecords,
+  selectAutoridadesRecords,
 } from "@/lib/features/records/recordsSlice"
 import { generateInvoiceXML } from "@/lib/xml-generator"
 import { selectAllServices, fetchServices } from "@/lib/features/services/servicesSlice"
+import { selectAllClients } from "@/lib/features/clients/clientsSlice"
 import { TruckingRecordsViewModal } from "./trucking-records-view-modal"
 import { TruckingPdfViewer } from "./trucking-pdf-viewer"
 import { TruckingXmlViewerModal } from "./trucking-xml-viewer-modal"
@@ -65,6 +67,8 @@ export function TruckingRecords() {
   // Datos
   const invoices = useAppSelector((state) => selectInvoicesByModule(state, "trucking"))
   const allRecords = useAppSelector(selectAllIndividualRecords)
+  const autoridadesRecords = useAppSelector(selectAutoridadesRecords)
+  const clients = useAppSelector(selectAllClients)
   const services = useAppSelector(selectAllServices)
   const loading = useAppSelector(selectRecordsLoading)
   const error = useAppSelector(selectRecordsError)
@@ -72,6 +76,8 @@ export function TruckingRecords() {
   useEffect(() => {
     dispatch(fetchInvoicesAsync("trucking"))
     dispatch(fetchAllRecordsByModule("trucking"))
+    // Cargar registros de autoridades para mostrar clientes correctos en facturas AUTH
+    dispatch(fetchAutoridadesRecords())
     // Cargar servicios para los impuestos PTG
     dispatch(fetchServices())
   }, [dispatch])
@@ -101,12 +107,85 @@ export function TruckingRecords() {
 
   const getContainersForInvoice = (invoice: any) => {
     if (!invoice.relatedRecordIds || invoice.relatedRecordIds.length === 0) return "N/A"
+    
+    const isAuth = (invoice.invoiceNumber || '').toString().toUpperCase().startsWith('AUTH-')
+    
+    // Para facturas de gastos de autoridades, buscar en registros de autoridades
+    if (isAuth) {
+      if (autoridadesRecords.length === 0) return "N/A"
+      const related = autoridadesRecords.filter((r: any) => (r._id || r.id) && invoice.relatedRecordIds.includes(r._id || r.id))
+      const containers = related.map((r: any) => r.container || "N/A").filter((c: string) => c !== "N/A")
+      if (containers.length === 0) return "N/A"
+      return `${containers.length} contenedor${containers.length === 1 ? '' : 'es'}`
+    }
+    
+    // Para facturas normales, buscar en registros normales
     if (allRecords.length === 0) return "N/A"
     const related = allRecords.filter((r: any) => (r._id || r.id) && invoice.relatedRecordIds.includes(r._id || r.id))
     const containers = related.map((r: any) => r.data?.container || r.data?.contenedor || "N/A").filter((c: string) => c !== "N/A")
     if (containers.length === 0) return "N/A"
-    if (containers.length === 1) return containers[0]
-    return `${containers[0]} y ${containers.length - 1} más`
+    return `${containers.length} contenedor${containers.length === 1 ? '' : 'es'}`
+  }
+
+  // Función para formatear fechas correctamente (evitar problema de zona horaria)
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A'
+    
+    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = dateString.split('-').map(Number)
+      const date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+      return date.toLocaleDateString('es-ES')
+    }
+    
+    // Si la fecha está en formato ISO con zona horaria UTC (ej: 2025-09-09T00:00:00.000+00:00)
+    // Extraer solo la parte de la fecha y crear un objeto Date en zona horaria local
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+      const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
+      const [year, month, day] = datePart.split('-').map(Number)
+      const date = new Date(year, month - 1, day) // Crear en zona horaria local
+      return date.toLocaleDateString('es-ES')
+    }
+    
+    // Para otros formatos, usar el método normal
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return 'N/A'
+    return date.toLocaleDateString('es-ES')
+  }
+
+  // Función para obtener el cliente real de las facturas de gastos de autoridades
+  const getClientForInvoice = (invoice: any) => {
+    const isAuth = (invoice.invoiceNumber || '').toString().toUpperCase().startsWith('AUTH-')
+    
+    if (!isAuth) {
+      // Para facturas normales, usar el clientName directamente
+      return invoice.clientName || 'N/A'
+    }
+    
+    // Para facturas de gastos de autoridades, obtener el cliente real de los registros
+    if (!invoice.relatedRecordIds || invoice.relatedRecordIds.length === 0) {
+      return invoice.clientName || 'N/A'
+    }
+    
+    // Buscar en registros de autoridades
+    const relatedRecord = autoridadesRecords.find((r: any) => 
+      (r._id || r.id) && invoice.relatedRecordIds.includes(r._id || r.id)
+    )
+    
+    if (!relatedRecord) {
+      return invoice.clientName || 'N/A'
+    }
+    
+    // Intentar obtener cliente por clientId primero
+    if (relatedRecord.clientId) {
+      const client = clients.find((c: any) => (c._id || c.id) === relatedRecord.clientId)
+      if (client) {
+        return client.type === 'natural' ? client.fullName : client.companyName
+      }
+    }
+    
+    // Si no se encontró por ID, usar el campo customer del registro
+    return relatedRecord.customer || invoice.clientName || 'N/A'
   }
 
   const getTodayDates = () => {
@@ -559,9 +638,9 @@ export function TruckingRecords() {
                           {isAuth ? "Gastos Auth" : "Trasiego"}
                         </Badge>
                       </TableCell>
-                      <TableCell><div className="flex items-center gap-2"><User className="h-4 w-4 text-muted-foreground" />{inv.clientName}</div></TableCell>
+                      <TableCell><div className="flex items-center gap-2"><User className="h-4 w-4 text-muted-foreground" />{getClientForInvoice(inv)}</div></TableCell>
                       <TableCell><div className="flex items-center gap-2"><Truck className="h-4 w-4 text-muted-foreground" />{getContainersForInvoice(inv)}</div></TableCell>
-                      <TableCell><div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-muted-foreground" />{new Date(inv.issueDate).toLocaleDateString('es-ES')}</div></TableCell>
+                      <TableCell><div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-muted-foreground" />{formatDate(inv.issueDate)}</div></TableCell>
                       <TableCell className="font-bold"><div className="flex items-center gap-2"><DollarSign className="h-4 w-4 text-muted-foreground" />${(inv.totalAmount || 0).toFixed(2)}</div></TableCell>
                       <TableCell>{inv.status === 'prefactura' ? <Badge variant="outline" className="text-blue-600 border-blue-600">Prefactura</Badge> : <Badge variant="outline" className="text-green-600 border-green-600">Facturada</Badge>}</TableCell>
                       <TableCell className="text-right">
@@ -623,13 +702,16 @@ export function TruckingRecords() {
           console.log("InvoiceDate:", invoiceDate)
           
           // Actualizar la factura con el nuevo número y XML
+          // Convertir la fecha a objeto Date en zona horaria local para evitar problemas de UTC
+          const dateObj = new Date(invoiceDate + 'T00:00:00')
+          
           await dispatch(updateInvoiceAsync({ 
             id: facturarInvoice.id, 
             updates: { 
               status: 'facturada', 
               invoiceNumber, 
               xmlData: xmlData ? xmlData.xml : undefined,
-              issueDate: invoiceDate
+              issueDate: dateObj.toISOString()
             } 
           })).unwrap()
           
