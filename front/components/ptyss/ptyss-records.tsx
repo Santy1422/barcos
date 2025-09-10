@@ -165,8 +165,8 @@ export function PTYSSRecords() {
         'Número de Factura': invoice.invoiceNumber || 'N/A',
         'Cliente': invoice.clientName || 'N/A',
         'Contenedores': containers,
-        'Fecha Emisión': invoice.issueDate ? new Date(invoice.issueDate).toLocaleDateString('es-ES') : 'N/A',
-        'Fecha Creación': invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString('es-ES') : 'N/A',
+        'Fecha Emisión': formatDate(invoice.issueDate),
+        'Fecha Creación': formatDate(invoice.createdAt),
         'Total': invoice.totalAmount || 0,
         'Estado': invoice.status === 'prefactura' ? 'Prefactura' : 
                   invoice.status === 'facturada' ? 'Facturada' : 
@@ -363,7 +363,28 @@ export function PTYSSRecords() {
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es-ES')
+    if (!dateString) return 'N/A'
+    
+    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = dateString.split('-').map(Number)
+      const date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+      return date.toLocaleDateString('es-ES')
+    }
+    
+    // Si la fecha está en formato ISO con zona horaria UTC (ej: 2025-09-09T00:00:00.000+00:00)
+    // Extraer solo la parte de la fecha y crear un objeto Date en zona horaria local
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+      const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
+      const [year, month, day] = datePart.split('-').map(Number)
+      const date = new Date(year, month - 1, day) // Crear en zona horaria local
+      return date.toLocaleDateString('es-ES')
+    }
+    
+    // Para otros formatos, usar el método normal
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return 'N/A'
+    return date.toLocaleDateString('es-ES')
   }
 
   return (

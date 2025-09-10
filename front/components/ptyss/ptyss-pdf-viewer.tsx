@@ -42,11 +42,32 @@ export function PTYSSPdfViewer({ open, onOpenChange, invoice, clients, allRecord
     doc.setFontSize(14);
     doc.setFont(undefined, 'bold');
     doc.text(`${pdfTitle} No. ${invoiceData.invoiceNumber}`, 195, 20, { align: 'right' });
-    // Fecha
-    const currentDate = new Date();
-    const day = currentDate.getDate().toString().padStart(2, '0');
-    const month = (currentDate.getMonth() + 1).toString().padStart(2, '0');
-    const year = currentDate.getFullYear();
+    // Fecha - usar la fecha de la factura en lugar de la fecha actual
+    // Aplicar la misma lógica de corrección de zona horaria que en trucking-records.tsx
+    const formatInvoiceDate = (dateString: string) => {
+      if (!dateString) return new Date()
+
+      // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
+      if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [year, month, day] = dateString.split('-').map(Number)
+        return new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+      }
+
+      // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
+      if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+        const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
+        const [year, month, day] = datePart.split('-').map(Number)
+        return new Date(year, month - 1, day) // Crear en zona horaria local
+      }
+
+      // Para otros formatos, usar el método normal
+      return new Date(dateString)
+    }
+
+    const invoiceDate = formatInvoiceDate(invoiceData.issueDate)
+    const day = invoiceDate.getDate().toString().padStart(2, '0');
+    const month = (invoiceDate.getMonth() + 1).toString().padStart(2, '0');
+    const year = invoiceDate.getFullYear();
     doc.setFontSize(10);
     doc.text('DATE:', 195, 30, { align: 'right' });
     doc.setFontSize(12);
