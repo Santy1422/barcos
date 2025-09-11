@@ -7,16 +7,25 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { Checkbox } from "@/components/ui/checkbox"
 import { 
-  UserPlus, Save, RotateCcw, ChevronDown, Clock, CheckCircle, 
-  MapPin, Ship, User, Calendar, DollarSign, AlertCircle, Loader2, Calculator 
+  Plus, Save, Send, 
+  MapPin, Ship, User, Calendar, Clock, Plane, Users
 } from "lucide-react"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
 import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
+
+interface CrewMember {
+  id: string
+  name: string
+  nationality: string
+  crewRank: string
+  crewCategory: string
+  status: 'Visit' | 'On Signer'
+  flight: string
+}
 
 interface ServiceFormData {
   pickupDate: string
@@ -24,19 +33,15 @@ interface ServiceFormData {
   pickupLocation: string
   dropoffLocation: string
   vessel: string
-  crewName: string
-  clientId: string
-  voyage?: string
-  crewRank?: string
-  nationality?: string
-  transportCompany?: string
-  driverName?: string
-  flightInfo?: string
-  waitingTime?: number
-  comments?: string
-  serviceCode?: string
-  price?: number
-  currency: string
+  voyage: string
+  taulia: string
+  moveType: 'RT' | 'SINGLE'
+  transportCompany: string
+  driver: string
+  totalWaitingTime: number
+  approve: boolean
+  comments: string
+  crewMembers: CrewMember[]
 }
 
 const initialFormData: ServiceFormData = {
@@ -45,19 +50,25 @@ const initialFormData: ServiceFormData = {
   pickupLocation: '',
   dropoffLocation: '',
   vessel: '',
-  crewName: '',
-  clientId: '',
   voyage: '',
-  crewRank: '',
-  nationality: '',
+  taulia: '',
+  moveType: 'SINGLE',
   transportCompany: '',
-  driverName: '',
-  flightInfo: '',
-  waitingTime: 0,
+  driver: '',
+  totalWaitingTime: 0,
+  approve: false,
   comments: '',
-  serviceCode: '',
-  price: 0,
-  currency: 'USD'
+  crewMembers: []
+}
+
+const initialCrewMember: CrewMember = {
+  id: '',
+  name: '',
+  nationality: '',
+  crewRank: '',
+  crewCategory: '',
+  status: 'Visit',
+  flight: ''
 }
 
 export function AgencyServices() {
@@ -94,7 +105,6 @@ export function AgencyServices() {
 
   // Form state
   const [formData, setFormData] = useState<ServiceFormData>(initialFormData)
-  const [showOptionalFields, setShowOptionalFields] = useState(false)
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
 
   // Load data on mount
@@ -133,13 +143,40 @@ export function AgencyServices() {
     }
   }, [currentPrice, formData.price])
 
-  const handleInputChange = (field: keyof ServiceFormData, value: string | number) => {
+  const handleInputChange = (field: keyof ServiceFormData, value: string | number | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }))
     
     // Clear error when user starts typing
     if (formErrors[field]) {
       setFormErrors(prev => ({ ...prev, [field]: '' }))
     }
+  }
+
+  const addCrewMember = () => {
+    const newCrewMember = {
+      ...initialCrewMember,
+      id: Date.now().toString()
+    }
+    setFormData(prev => ({
+      ...prev,
+      crewMembers: [...prev.crewMembers, newCrewMember]
+    }))
+  }
+
+  const updateCrewMember = (id: string, field: keyof CrewMember, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      crewMembers: prev.crewMembers.map(member =>
+        member.id === id ? { ...member, [field]: value } : member
+      )
+    }))
+  }
+
+  const removeCrewMember = (id: string) => {
+    setFormData(prev => ({
+      ...prev,
+      crewMembers: prev.crewMembers.filter(member => member.id !== id)
+    }))
   }
 
   const validateForm = (): boolean => {
@@ -151,27 +188,28 @@ export function AgencyServices() {
     if (!formData.pickupLocation) errors.pickupLocation = 'Pickup location is required'
     if (!formData.dropoffLocation) errors.dropoffLocation = 'Drop-off location is required'
     if (!formData.vessel) errors.vessel = 'Vessel is required'
-    if (!formData.crewName) errors.crewName = 'Crew name is required'
-    if (!formData.clientId) errors.clientId = 'Client is required'
+    if (!formData.taulia) errors.taulia = 'Taulia is required'
+    if (!formData.transportCompany) errors.transportCompany = 'Transport company is required'
+    if (!formData.driver) errors.driver = 'Driver is required'
 
     // Validation rules
     if (formData.pickupLocation === formData.dropoffLocation) {
       errors.dropoffLocation = 'Drop-off location must be different from pickup location'
     }
 
-    if (formData.price && formData.price < 0) {
-      errors.price = 'Price cannot be negative'
+    if (formData.totalWaitingTime && formData.totalWaitingTime < 0) {
+      errors.totalWaitingTime = 'Waiting time cannot be negative'
     }
 
-    if (formData.waitingTime && formData.waitingTime < 0) {
-      errors.waitingTime = 'Waiting time cannot be negative'
+    if (formData.crewMembers.length === 0) {
+      errors.crewMembers = 'At least one crew member is required'
     }
 
     setFormErrors(errors)
     return Object.keys(errors).length === 0
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, action: 'create' | 'createAndSend') => {
     e.preventDefault()
     
     if (!validateForm()) {
@@ -184,38 +222,32 @@ export function AgencyServices() {
     }
 
     try {
-      // Use calculated price or manual price
-      const servicePrice = currentPrice > 0 ? currentPrice : (formData.price || 0);
-      
       await createService({
         pickupDate: formData.pickupDate,
         pickupTime: formData.pickupTime,
         pickupLocation: formData.pickupLocation,
         dropoffLocation: formData.dropoffLocation,
         vessel: formData.vessel,
-        crewName: formData.crewName,
-        clientId: formData.clientId,
-        voyage: formData.voyage || undefined,
-        crewRank: formData.crewRank || undefined,
-        nationality: formData.nationality || undefined,
-        transportCompany: formData.transportCompany || undefined,
-        driverName: formData.driverName || undefined,
-        flightInfo: formData.flightInfo || undefined,
-        waitingTime: formData.waitingTime || undefined,
-        comments: formData.comments || undefined,
-        serviceCode: formData.serviceCode || undefined,
-        price: servicePrice,
-        currency: formData.currency
+        voyage: formData.voyage,
+        taulia: formData.taulia,
+        moveType: formData.moveType,
+        transportCompany: formData.transportCompany,
+        driver: formData.driver,
+        totalWaitingTime: formData.totalWaitingTime,
+        approve: formData.approve,
+        comments: formData.comments,
+        crewMembers: formData.crewMembers
       })
 
       toast({
         title: "Success",
-        description: "Service created successfully",
+        description: action === 'create' 
+          ? "Service order created successfully" 
+          : "Service order created and sent to driver successfully",
       })
 
       // Reset form
       setFormData(initialFormData)
-      setShowOptionalFields(false)
       
       // Refresh services list
       fetchServices({ page: 1, limit: 10 })
@@ -232,8 +264,6 @@ export function AgencyServices() {
   const handleClearForm = () => {
     setFormData(initialFormData)
     setFormErrors({})
-    setShowOptionalFields(false)
-    clearPricingState()
   }
 
   return (
@@ -242,567 +272,478 @@ export function AgencyServices() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-green-500 flex items-center justify-center">
-              <UserPlus className="h-6 w-6 text-white" />
+            <div className="h-10 w-10 rounded-lg bg-blue-500 flex items-center justify-center">
+              <Plus className="h-6 w-6 text-white" />
             </div>
-            Create New Service
+            Service Request Form
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Create a new transportation service for crew members
-          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button 
+            onClick={(e) => handleSubmit(e, 'create')}
+            disabled={isCreating || loading}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            <Save className="mr-2 h-4 w-4" />
+            Create
+          </Button>
+          <Button 
+            onClick={(e) => handleSubmit(e, 'createAndSend')}
+            disabled={isCreating || loading}
+            className="bg-green-600 hover:bg-green-700"
+          >
+            <Send className="mr-2 h-4 w-4" />
+            Create & Send
+          </Button>
         </div>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-yellow-500" />
-              <div>
-                <div className="text-2xl font-bold">{quickStats.pending}</div>
-                <p className="text-xs text-muted-foreground">Pending</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-blue-500" />
-              <div>
-                <div className="text-2xl font-bold">{quickStats.inProgress}</div>
-                <p className="text-xs text-muted-foreground">In Progress</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-green-500" />
-              <div>
-                <div className="text-2xl font-bold">{quickStats.completed}</div>
-                <p className="text-xs text-muted-foreground">Completed</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-purple-500" />
-              <div>
-                <div className="text-2xl font-bold">${quickStats.totalValue.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">Total Value</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Service Form */}
+      {/* Service Request Form */}
       <Card>
-        <CardHeader>
-          <CardTitle>Service Information</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Required Fields */}
-            <div className="grid gap-4 md:grid-cols-2">
-              {/* Pickup Date */}
-              <div className="space-y-2">
-                <Label htmlFor="pickupDate">
-                  Pickup Date <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <Calendar className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="pickupDate"
-                    type="date"
-                    value={formData.pickupDate}
-                    onChange={(e) => handleInputChange('pickupDate', e.target.value)}
-                    className={`pl-8 ${formErrors.pickupDate ? 'border-red-500' : ''}`}
-                    min={format(new Date(), 'yyyy-MM-dd')}
-                  />
-                </div>
-                {formErrors.pickupDate && (
-                  <p className="text-xs text-red-500 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    {formErrors.pickupDate}
-                  </p>
-                )}
-              </div>
-
-              {/* Pickup Time */}
-              <div className="space-y-2">
-                <Label htmlFor="pickupTime">
-                  Pickup Time <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <Clock className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="pickupTime"
-                    type="time"
-                    value={formData.pickupTime}
-                    onChange={(e) => handleInputChange('pickupTime', e.target.value)}
-                    className={`pl-8 ${formErrors.pickupTime ? 'border-red-500' : ''}`}
-                  />
-                </div>
-                {formErrors.pickupTime && (
-                  <p className="text-xs text-red-500 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    {formErrors.pickupTime}
-                  </p>
-                )}
-              </div>
-
-              {/* Pickup Location */}
-              <div className="space-y-2">
-                <Label htmlFor="pickupLocation">
-                  Pickup Location <span className="text-red-500">*</span>
-                </Label>
-                <Select
-                  value={formData.pickupLocation}
-                  onValueChange={(value) => handleInputChange('pickupLocation', value)}
-                >
-                  <SelectTrigger className={formErrors.pickupLocation ? 'border-red-500' : ''}>
-                    <SelectValue placeholder="Select pickup location" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {locations.map((location) => (
-                      <SelectItem key={location._id} value={location.name}>
-                        <div className="flex items-center gap-2">
-                          <MapPin className="h-3 w-3" />
-                          {location.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {formErrors.pickupLocation && (
-                  <p className="text-xs text-red-500 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    {formErrors.pickupLocation}
-                  </p>
-                )}
-              </div>
-
-              {/* Drop-off Location */}
-              <div className="space-y-2">
-                <Label htmlFor="dropoffLocation">
-                  Drop-off Location <span className="text-red-500">*</span>
-                </Label>
-                <Select
-                  value={formData.dropoffLocation}
-                  onValueChange={(value) => handleInputChange('dropoffLocation', value)}
-                >
-                  <SelectTrigger className={formErrors.dropoffLocation ? 'border-red-500' : ''}>
-                    <SelectValue placeholder="Select drop-off location" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {locations.map((location) => (
-                      <SelectItem key={location._id} value={location.name}>
-                        <div className="flex items-center gap-2">
-                          <MapPin className="h-3 w-3" />
-                          {location.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {formErrors.dropoffLocation && (
-                  <p className="text-xs text-red-500 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    {formErrors.dropoffLocation}
-                  </p>
-                )}
-              </div>
-
-              {/* Vessel */}
-              <div className="space-y-2">
-                <Label htmlFor="vessel">
-                  Vessel <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <Ship className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="vessel"
-                    value={formData.vessel}
-                    onChange={(e) => handleInputChange('vessel', e.target.value)}
-                    placeholder="MSC FANTASIA"
-                    className={`pl-8 ${formErrors.vessel ? 'border-red-500' : ''}`}
-                  />
-                </div>
-                {formErrors.vessel && (
-                  <p className="text-xs text-red-500 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    {formErrors.vessel}
-                  </p>
-                )}
-              </div>
-
-              {/* Crew Name */}
-              <div className="space-y-2">
-                <Label htmlFor="crewName">
-                  Crew Name <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <User className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="crewName"
-                    value={formData.crewName}
-                    onChange={(e) => handleInputChange('crewName', e.target.value)}
-                    placeholder="John Smith"
-                    className={`pl-8 ${formErrors.crewName ? 'border-red-500' : ''}`}
-                  />
-                </div>
-                {formErrors.crewName && (
-                  <p className="text-xs text-red-500 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    {formErrors.crewName}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Price Display */}
-            {(formData.pickupLocation && formData.dropoffLocation) && (
-              <Card className={`${currentPrice > 0 ? 'bg-green-50 border-green-200' : 'bg-gray-50'}`}>
-                <CardContent className="pt-4">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <Calculator className="h-4 w-4" />
-                        <h3 className="font-semibold">Calculated Price</h3>
-                        {routeFound && (
-                          <Badge variant="outline" className="text-xs bg-blue-50">
-                            Route Found
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {pricing.description || `${formData.pickupLocation} → ${formData.dropoffLocation}`}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      {pricingLoading ? (
-                        <div className="flex items-center gap-2">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span className="text-sm text-muted-foreground">Calculating...</span>
-                        </div>
-                      ) : pricingError ? (
-                        <div className="flex items-center gap-2 text-red-500">
-                          <AlertCircle className="h-4 w-4" />
-                          <span className="text-sm">Error calculating price</span>
-                        </div>
-                      ) : currentPrice > 0 ? (
-                        <div>
-                          <p className="text-2xl font-bold text-green-600">
-                            ${currentPrice.toLocaleString()}
-                          </p>
-                          <p className="text-xs text-muted-foreground">USD</p>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No price available</p>
-                      )}
-                    </div>
+        <CardContent className="pt-6">
+          <form className="space-y-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Left Column - Service Timings & Locations */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-gray-700">Service Details</h3>
+                
+                {/* Pick Up Date */}
+                <div className="space-y-2">
+                  <Label htmlFor="pickupDate" className="text-sm font-medium">
+                    Pick Up DATE <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="relative">
+                    <Calendar className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="pickupDate"
+                      type="date"
+                      value={formData.pickupDate}
+                      onChange={(e) => handleInputChange('pickupDate', e.target.value)}
+                      className={`pl-8 ${formErrors.pickupDate ? 'border-red-500' : ''}`}
+                      min={format(new Date(), 'yyyy-MM-dd')}
+                    />
                   </div>
-                  
-                  {/* Price Breakdown */}
-                  {priceBreakdown && currentPrice > 0 && (
-                    <div className="mt-3 pt-3 border-t border-green-200">
-                      <div className="text-sm space-y-1">
-                        <div className="flex justify-between">
-                          <span>Base Rate:</span>
-                          <span>${priceBreakdown.baseRate.toLocaleString()}</span>
-                        </div>
-                        {priceBreakdown.waitingTime > 0 && (
-                          <div className="flex justify-between">
-                            <span>Waiting Time ({formData.waitingTime}h):</span>
-                            <span>${priceBreakdown.waitingTime.toLocaleString()}</span>
-                          </div>
-                        )}
-                        {priceBreakdown.extraPassengers > 0 && (
-                          <div className="flex justify-between">
-                            <span>Extra Passengers:</span>
-                            <span>${priceBreakdown.extraPassengers.toLocaleString()}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                  {formErrors.pickupDate && (
+                    <p className="text-xs text-red-500">{formErrors.pickupDate}</p>
                   )}
-                </CardContent>
-              </Card>
-            )}
+                </div>
 
-            {/* Client Selection - Full Width */}
-            <div className="space-y-2">
-              <Label htmlFor="clientId">
-                Client <span className="text-red-500">*</span>
-              </Label>
-              <Select
-                value={formData.clientId}
-                onValueChange={(value) => handleInputChange('clientId', value)}
-              >
-                <SelectTrigger className={formErrors.clientId ? 'border-red-500' : ''}>
-                  <SelectValue placeholder="Select client" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="default-client">MSC Shipping</SelectItem>
-                  {/* Add actual clients from useClients hook */}
-                </SelectContent>
-              </Select>
-              {formErrors.clientId && (
-                <p className="text-xs text-red-500 flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />
-                  {formErrors.clientId}
-                </p>
-              )}
+                {/* Pick Up Time */}
+                <div className="space-y-2">
+                  <Label htmlFor="pickupTime" className="text-sm font-medium">
+                    PICK UP TIME <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="relative">
+                    <Clock className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="pickupTime"
+                      type="time"
+                      value={formData.pickupTime}
+                      onChange={(e) => handleInputChange('pickupTime', e.target.value)}
+                      className={`pl-8 ${formErrors.pickupTime ? 'border-red-500' : ''}`}
+                    />
+                  </div>
+                  {formErrors.pickupTime && (
+                    <p className="text-xs text-red-500">{formErrors.pickupTime}</p>
+                  )}
+                </div>
+
+                {/* Pick Up Location */}
+                <div className="space-y-2">
+                  <Label htmlFor="pickupLocation" className="text-sm font-medium">
+                    PICK UP Loc <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={formData.pickupLocation}
+                    onValueChange={(value) => handleInputChange('pickupLocation', value)}
+                  >
+                    <SelectTrigger className={formErrors.pickupLocation ? 'border-red-500' : ''}>
+                      <SelectValue placeholder="del catálogo / selección dinámica" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {locations.map((location) => (
+                        <SelectItem key={location._id} value={location.name}>
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-3 w-3" />
+                            {location.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formErrors.pickupLocation && (
+                    <p className="text-xs text-red-500">{formErrors.pickupLocation}</p>
+                  )}
+                </div>
+
+                {/* Drop Off Location */}
+                <div className="space-y-2">
+                  <Label htmlFor="dropoffLocation" className="text-sm font-medium">
+                    DROP OFF Loc <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={formData.dropoffLocation}
+                    onValueChange={(value) => handleInputChange('dropoffLocation', value)}
+                  >
+                    <SelectTrigger className={formErrors.dropoffLocation ? 'border-red-500' : ''}>
+                      <SelectValue placeholder="del catálogo / selección dinámica" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {locations.map((location) => (
+                        <SelectItem key={location._id} value={location.name}>
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-3 w-3" />
+                            {location.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formErrors.dropoffLocation && (
+                    <p className="text-xs text-red-500">{formErrors.dropoffLocation}</p>
+                  )}
+                </div>
+
+                {/* Comments */}
+                <div className="space-y-2">
+                  <Label htmlFor="comments" className="text-sm font-medium">
+                    Comments
+                  </Label>
+                  <Textarea
+                    id="comments"
+                    value={formData.comments}
+                    onChange={(e) => handleInputChange('comments', e.target.value)}
+                    placeholder="alfanumérico"
+                    rows={3}
+                  />
+                </div>
+              </div>
+
+              {/* Right Column - Vessel & Transport Details */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-gray-700">Transport Details</h3>
+                
+                {/* Vessel */}
+                <div className="space-y-2">
+                  <Label htmlFor="vessel" className="text-sm font-medium">
+                    VESSEL <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={formData.vessel}
+                    onValueChange={(value) => handleInputChange('vessel', value)}
+                  >
+                    <SelectTrigger className={formErrors.vessel ? 'border-red-500' : ''}>
+                      <SelectValue placeholder="del catálogo / selección dinámica" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {vessels.map((vessel) => (
+                        <SelectItem key={vessel._id} value={vessel.name}>
+                          <div className="flex items-center gap-2">
+                            <Ship className="h-3 w-3" />
+                            {vessel.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formErrors.vessel && (
+                    <p className="text-xs text-red-500">{formErrors.vessel}</p>
+                  )}
+                </div>
+
+                {/* Voyage */}
+                <div className="space-y-2">
+                  <Label htmlFor="voyage" className="text-sm font-medium">
+                    VOY (Voyage)
+                  </Label>
+                  <Input
+                    id="voyage"
+                    value={formData.voyage}
+                    onChange={(e) => handleInputChange('voyage', e.target.value)}
+                    placeholder="alfanumérico"
+                  />
+                  <p className="text-xs text-yellow-600">Voyage puede quedar en blanco.</p>
+                </div>
+
+                {/* Taulia */}
+                <div className="space-y-2">
+                  <Label htmlFor="taulia" className="text-sm font-medium">
+                    TAULIA <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={formData.taulia}
+                    onValueChange={(value) => handleInputChange('taulia', value)}
+                  >
+                    <SelectTrigger className={formErrors.taulia ? 'border-red-500' : ''}>
+                      <SelectValue placeholder="del catálogo / selección dinámica" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tauliaCodes.map((code) => (
+                        <SelectItem key={code._id} value={code.code || code.name}>
+                          <div>
+                            <div>{code.name}</div>
+                            {code.code && (
+                              <div className="text-xs text-muted-foreground">
+                                {code.code}
+                              </div>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formErrors.taulia && (
+                    <p className="text-xs text-red-500">{formErrors.taulia}</p>
+                  )}
+                </div>
+
+                {/* Move Type */}
+                <div className="space-y-2">
+                  <Label htmlFor="moveType" className="text-sm font-medium">
+                    Move type
+                  </Label>
+                  <Select
+                    value={formData.moveType}
+                    onValueChange={(value) => handleInputChange('moveType', value as 'RT' | 'SINGLE')}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="RT o SINGLE" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="RT">RT</SelectItem>
+                      <SelectItem value="SINGLE">SINGLE</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Transport Company */}
+                <div className="space-y-2">
+                  <Label htmlFor="transportCompany" className="text-sm font-medium">
+                    Transport Co. <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={formData.transportCompany}
+                    onValueChange={(value) => handleInputChange('transportCompany', value)}
+                  >
+                    <SelectTrigger className={formErrors.transportCompany ? 'border-red-500' : ''}>
+                      <SelectValue placeholder="del catálogo / selección dinámica" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {transportCompanies.map((company) => (
+                        <SelectItem key={company._id} value={company.name}>
+                          {company.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formErrors.transportCompany && (
+                    <p className="text-xs text-red-500">{formErrors.transportCompany}</p>
+                  )}
+                </div>
+
+                {/* Driver */}
+                <div className="space-y-2">
+                  <Label htmlFor="driver" className="text-sm font-medium">
+                    Driver <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={formData.driver}
+                    onValueChange={(value) => handleInputChange('driver', value)}
+                  >
+                    <SelectTrigger className={formErrors.driver ? 'border-red-500' : ''}>
+                      <SelectValue placeholder="del catálogo / selección dinámica" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {drivers.map((driver) => (
+                        <SelectItem key={driver._id} value={driver.name}>
+                          <div>
+                            {driver.name}
+                            {driver.metadata?.phone && (
+                              <div className="text-xs text-muted-foreground">
+                                {driver.metadata.phone}
+                              </div>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formErrors.driver && (
+                    <p className="text-xs text-red-500">{formErrors.driver}</p>
+                  )}
+                </div>
+              </div>
             </div>
 
-            {/* Optional Fields - Collapsible */}
-            <Collapsible open={showOptionalFields} onOpenChange={setShowOptionalFields}>
-              <CollapsibleTrigger asChild>
-                <Button type="button" variant="ghost" className="w-full">
-                  <ChevronDown className={`h-4 w-4 mr-2 transition-transform ${showOptionalFields ? 'rotate-180' : ''}`} />
-                  Optional Fields
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="grid gap-4 md:grid-cols-3 mt-4">
-                  {/* Voyage */}
-                  <div className="space-y-2">
-                    <Label htmlFor="voyage">Voyage</Label>
-                    <Input
-                      id="voyage"
-                      value={formData.voyage}
-                      onChange={(e) => handleInputChange('voyage', e.target.value)}
-                      placeholder="V001"
-                    />
-                  </div>
+            {/* Waiting Time & Approval */}
+            <div className="grid gap-4 md:grid-cols-2 pt-4 border-t">
+              <div className="space-y-2">
+                <Label htmlFor="totalWaitingTime" className="text-sm font-medium">
+                  Total Waiting Time
+                </Label>
+                <Input
+                  id="totalWaitingTime"
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={formData.totalWaitingTime}
+                  onChange={(e) => handleInputChange('totalWaitingTime', parseFloat(e.target.value) || 0)}
+                  placeholder="Numérico"
+                />
+                {formErrors.totalWaitingTime && (
+                  <p className="text-xs text-red-500">{formErrors.totalWaitingTime}</p>
+                )}
+              </div>
 
-                  {/* Crew Rank */}
-                  <div className="space-y-2">
-                    <Label htmlFor="crewRank">Crew Rank</Label>
-                    <Select
-                      value={formData.crewRank}
-                      onValueChange={(value) => handleInputChange('crewRank', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select rank" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ranks.map((rank) => (
-                          <SelectItem key={rank._id} value={rank.name}>
-                            {rank.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Nationality */}
-                  <div className="space-y-2">
-                    <Label htmlFor="nationality">Nationality</Label>
-                    <Select
-                      value={formData.nationality}
-                      onValueChange={(value) => handleInputChange('nationality', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select nationality" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {nationalities.map((nationality) => (
-                          <SelectItem key={nationality._id} value={nationality.name}>
-                            {nationality.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Transport Company */}
-                  <div className="space-y-2">
-                    <Label htmlFor="transportCompany">Transport Company</Label>
-                    <Select
-                      value={formData.transportCompany}
-                      onValueChange={(value) => handleInputChange('transportCompany', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select company" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {transportCompanies.map((company) => (
-                          <SelectItem key={company._id} value={company.name}>
-                            {company.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Driver */}
-                  <div className="space-y-2">
-                    <Label htmlFor="driverName">Driver</Label>
-                    <Select
-                      value={formData.driverName}
-                      onValueChange={(value) => handleInputChange('driverName', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select driver" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {drivers.map((driver) => (
-                          <SelectItem key={driver._id} value={driver.name}>
-                            <div>
-                              {driver.name}
-                              {driver.metadata?.phone && (
-                                <div className="text-xs text-muted-foreground">
-                                  {driver.metadata.phone}
-                                </div>
-                              )}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Waiting Time */}
-                  <div className="space-y-2">
-                    <Label htmlFor="waitingTime">Waiting Time (hours)</Label>
-                    <Input
-                      id="waitingTime"
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={formData.waitingTime}
-                      onChange={(e) => handleInputChange('waitingTime', parseFloat(e.target.value) || 0)}
-                      placeholder="0"
-                    />
-                  </div>
-
-                  {/* Price */}
-                  <div className="space-y-2">
-                    <Label htmlFor="price" className="flex items-center gap-2">
-                      Price 
-                      {currentPrice > 0 && (
-                        <Badge variant="outline" className="text-xs">
-                          Auto-calculated
-                        </Badge>
-                      )}
-                    </Label>
-                    <div className="flex">
-                      <Select
-                        value={formData.currency}
-                        onValueChange={(value) => handleInputChange('currency', value)}
-                      >
-                        <SelectTrigger className="w-20">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="USD">USD</SelectItem>
-                          <SelectItem value="PAB">PAB</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        id="price"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formData.price}
-                        onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
-                        placeholder={pricingLoading ? "Calculating..." : "0.00"}
-                        className={`rounded-l-none ${currentPrice > 0 ? 'bg-green-50' : ''}`}
-                        disabled={pricingLoading}
-                      />
-                    </div>
-                    {currentPrice > 0 && (
-                      <p className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Calculator className="h-3 w-3" />
-                        Price calculated automatically based on route
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Service Code */}
-                  <div className="space-y-2">
-                    <Label htmlFor="serviceCode">Service Code</Label>
-                    <Select
-                      value={formData.serviceCode}
-                      onValueChange={(value) => handleInputChange('serviceCode', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select service code" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {tauliaCodes.map((code) => (
-                          <SelectItem key={code._id} value={code.code || code.name}>
-                            <div>
-                              <div>{code.name}</div>
-                              {code.code && (
-                                <div className="text-xs text-muted-foreground">
-                                  {code.code}
-                                </div>
-                              )}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Flight Info - Full Width */}
-                  <div className="space-y-2 md:col-span-3">
-                    <Label htmlFor="flightInfo">Flight Information</Label>
-                    <Input
-                      id="flightInfo"
-                      value={formData.flightInfo}
-                      onChange={(e) => handleInputChange('flightInfo', e.target.value)}
-                      placeholder="AA1234 - Departing 14:30"
-                    />
-                  </div>
-
-                  {/* Comments - Full Width */}
-                  <div className="space-y-2 md:col-span-3">
-                    <Label htmlFor="comments">Comments</Label>
-                    <Textarea
-                      id="comments"
-                      value={formData.comments}
-                      onChange={(e) => handleInputChange('comments', e.target.value)}
-                      placeholder="Additional notes or special instructions..."
-                      rows={3}
-                    />
-                  </div>
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="approve"
+                    checked={formData.approve}
+                    onCheckedChange={(checked) => handleInputChange('approve', checked as boolean)}
+                  />
+                  <Label htmlFor="approve" className="text-sm font-medium">
+                    Approve
+                  </Label>
                 </div>
-              </CollapsibleContent>
-            </Collapsible>
-
-            {/* Form Actions */}
-            <div className="flex gap-4 pt-4">
-              <Button 
-                type="submit" 
-                disabled={isCreating || loading}
-                className="flex-1 md:flex-none"
-              >
-                <Save className="mr-2 h-4 w-4" />
-                {isCreating ? 'Creating...' : 'Create Service'}
-              </Button>
-              
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={handleClearForm}
-                disabled={isCreating || loading}
-              >
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Clear Form
-              </Button>
+                <div className="bg-yellow-50 p-3 rounded-lg text-xs text-gray-700">
+                  Total del tiempo considerando más de 1:20 entre pickup y onroute y/o arrived y completed. 
+                  Si hubo waiting time en el pickup y el dropoff, se sumariza todo. Debe poder editarse.
+                </div>
+              </div>
             </div>
           </form>
         </CardContent>
       </Card>
+
+      {/* Crew Members Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Crew Members
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {formData.crewMembers.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No crew members added yet. Click the + button to add one.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {formData.crewMembers.map((member, index) => (
+                  <div key={member.id} className="grid grid-cols-6 gap-4 items-center p-3 border rounded-lg">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeCrewMember(member.id)}
+                      className="h-8 w-8 p-0"
+                    >
+                      <Plus className="h-4 w-4 rotate-45" />
+                    </Button>
+                    
+                    <div>
+                      <Input
+                        placeholder="Alfabético"
+                        value={member.name}
+                        onChange={(e) => updateCrewMember(member.id, 'name', e.target.value)}
+                        className="text-sm"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Select
+                        value={member.nationality}
+                        onValueChange={(value) => updateCrewMember(member.id, 'nationality', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Nacionalidad" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {nationalities.map((nationality) => (
+                            <SelectItem key={nationality._id} value={nationality.name}>
+                              {nationality.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div>
+                      <Select
+                        value={member.crewRank}
+                        onValueChange={(value) => updateCrewMember(member.id, 'crewRank', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Rango" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ranks.map((rank) => (
+                            <SelectItem key={rank._id} value={rank.name}>
+                              {rank.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div>
+                      <Select
+                        value={member.crewCategory}
+                        onValueChange={(value) => updateCrewMember(member.id, 'crewCategory', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Categoría" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Visit">Visit</SelectItem>
+                          <SelectItem value="On Signer">On Signer</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div>
+                      <Input
+                        placeholder="alfanumérico"
+                        value={member.flight}
+                        onChange={(e) => updateCrewMember(member.id, 'flight', e.target.value)}
+                        className="text-sm"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <Button
+              type="button"
+              variant="outline"
+              onClick={addCrewMember}
+              className="w-full"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add Crew Member
+            </Button>
+            
+            {formErrors.crewMembers && (
+              <p className="text-xs text-red-500">{formErrors.crewMembers}</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Workflow Note */}
+      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+        <div className="flex">
+          <div className="ml-3">
+            <p className="text-sm text-yellow-700">
+              <strong>Nota:</strong> Que se marque en rojo el SR. Será necesaria la aprobación para envío de factura.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
