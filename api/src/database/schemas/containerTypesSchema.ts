@@ -19,6 +19,12 @@ const containerTypesSchema = new mongoose.Schema({
     enum: ['A', 'B', 'DRY', 'N', 'REEFE', 'T', 'MTY', 'FB'],
     default: 'DRY'
   },
+  sapCode: {
+    type: String,
+    required: true,
+    trim: true,
+    uppercase: true
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -36,6 +42,7 @@ const containerTypesSchema = new mongoose.Schema({
 containerTypesSchema.index({ code: 1 })
 containerTypesSchema.index({ category: 1 })
 containerTypesSchema.index({ isActive: 1 })
+containerTypesSchema.index({ sapCode: 1 })
 
 export const ContainerType = mongoose.model('ContainerType', containerTypesSchema)
 export default containerTypesSchema

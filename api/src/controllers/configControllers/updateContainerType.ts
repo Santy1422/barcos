@@ -8,13 +8,13 @@ interface AuthenticatedRequest extends Request {
 export const updateContainerType = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params
-    const { code, name, category, description, isActive } = req.body
+    const { code, name, category, sapCode, description, isActive } = req.body
 
     // Validar campos requeridos
-    if (!code || !name || !category) {
+    if (!code || !name || !category || !sapCode) {
       return res.status(400).json({
         success: false,
-        message: 'Los campos code, name y category son obligatorios'
+        message: 'Los campos code, name, category y sapCode son obligatorios'
       })
     }
 
@@ -38,6 +38,7 @@ export const updateContainerType = async (req: AuthenticatedRequest, res: Respon
         code: code.toUpperCase(),
         name,
         category,
+        sapCode: sapCode.toUpperCase(),
         description: description || '',
         isActive: isActive !== undefined ? isActive : true
       },

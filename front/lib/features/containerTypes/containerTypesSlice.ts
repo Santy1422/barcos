@@ -6,6 +6,7 @@ export interface ContainerType {
   code: string
   name: string
   category: 'A' | 'B' | 'DRY' | 'N' | 'REEFE' | 'T' | 'MTY' | 'FB'
+  sapCode: string
   isActive: boolean
   description?: string
   createdAt?: string
@@ -16,6 +17,7 @@ export interface ContainerTypeInput {
   code: string
   name: string
   category: 'A' | 'B' | 'DRY' | 'N' | 'REEFE' | 'T' | 'MTY' | 'FB'
+  sapCode: string
   description?: string
   isActive?: boolean
 }

@@ -123,11 +123,12 @@ export function TruckingConfig() {
     code: "",
     name: "",
     category: "DRY",
+    sapCode: "",
     description: "",
     isActive: true,
   })
   const [containerTypeFilters, setContainerTypeFilters] = useState({
-    category: "all" as "all" | "A" | "B" | "DRY" | "N" | "REEFE" | "T" | "MTY" | "FB",
+    category: "all" as "all" | "DRY" | "REEFE",
     isActive: "all" as "all" | "true" | "false"
   })
 
@@ -270,13 +271,13 @@ export function TruckingConfig() {
 
   // Container Types handlers
   const handleAddContainerType = async () => {
-    if (!newContainerType.code || !newContainerType.name || !newContainerType.category) {
+    if (!newContainerType.code || !newContainerType.name || !newContainerType.category || !newContainerType.sapCode) {
       toast({ title: "Error", description: "Completa todos los campos obligatorios", variant: "destructive" })
       return
     }
     try {
       await dispatch(createContainerType(newContainerType)).unwrap()
-      setNewContainerType({ code: "", name: "", category: "DRY", description: "", isActive: true })
+      setNewContainerType({ code: "", name: "", category: "DRY", sapCode: "", description: "", isActive: true })
       setShowAddContainerTypeForm(false)
       toast({ title: "Tipo de contenedor agregado", description: "El nuevo tipo de contenedor ha sido configurado correctamente" })
     } catch (error: any) {
@@ -286,13 +287,13 @@ export function TruckingConfig() {
 
   const handleEditContainerType = async () => {
     if (!editingContainerType) return
-    if (!newContainerType.code || !newContainerType.name || !newContainerType.category) {
+    if (!newContainerType.code || !newContainerType.name || !newContainerType.category || !newContainerType.sapCode) {
       toast({ title: "Error", description: "Completa todos los campos obligatorios", variant: "destructive" })
       return
     }
     try {
       await dispatch(updateContainerType({ id: editingContainerType._id, containerTypeData: newContainerType })).unwrap()
-      setNewContainerType({ code: "", name: "", category: "DRY", description: "", isActive: true })
+      setNewContainerType({ code: "", name: "", category: "DRY", sapCode: "", description: "", isActive: true })
       setEditingContainerType(null)
       toast({ title: "Tipo de contenedor actualizado", description: "El tipo de contenedor ha sido actualizado correctamente" })
     } catch (error: any) {
@@ -316,6 +317,7 @@ export function TruckingConfig() {
       code: containerType.code,
       name: containerType.name,
       category: containerType.category,
+      sapCode: containerType.sapCode,
       description: containerType.description || "",
       isActive: containerType.isActive,
     })
@@ -323,7 +325,7 @@ export function TruckingConfig() {
 
   const handleCancelEditContainerType = () => {
     setEditingContainerType(null)
-    setNewContainerType({ code: "", name: "", category: "DRY", description: "", isActive: true })
+    setNewContainerType({ code: "", name: "", category: "DRY", sapCode: "", description: "", isActive: true })
   }
 
   const handleToggleContainerTypeStatus = async (containerType: ContainerType) => {
@@ -1074,14 +1076,8 @@ export function TruckingConfig() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas las categorías</SelectItem>
-                    <SelectItem value="A">All (A)</SelectItem>
-                    <SelectItem value="B">BulkC (B)</SelectItem>
-                    <SelectItem value="DRY">Dry (DRY)</SelectItem>
-                    <SelectItem value="N">Non Containerized (N)</SelectItem>
-                    <SelectItem value="REEFE">Reefer (REEFE)</SelectItem>
-                    <SelectItem value="T">TankD (T)</SelectItem>
-                    <SelectItem value="MTY">MTY</SelectItem>
-                    <SelectItem value="FB">FB (Flatbed)</SelectItem>
+                    <SelectItem value="DRY">Dry</SelectItem>
+                    <SelectItem value="REEFE">Reefer</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1131,6 +1127,16 @@ export function TruckingConfig() {
                       />
                     </div>
                     <div className="space-y-2">
+                      <Label htmlFor="container-type-sap-code">Código SAP *</Label>
+                      <Input
+                        id="container-type-sap-code"
+                        value={newContainerType.sapCode}
+                        onChange={(e) => setNewContainerType({ ...newContainerType, sapCode: e.target.value.toUpperCase() })}
+                        placeholder="RE, DV, FL, TK, etc."
+                        maxLength={2}
+                      />
+                    </div>
+                    <div className="space-y-2">
                       <Label htmlFor="container-type-category">Categoría *</Label>
                       <Select 
                         value={newContainerType.category} 
@@ -1140,14 +1146,8 @@ export function TruckingConfig() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="A">All (A)</SelectItem>
-                          <SelectItem value="B">BulkC (B)</SelectItem>
-                          <SelectItem value="DRY">Dry (DRY)</SelectItem>
-                          <SelectItem value="N">Non Containerized (N)</SelectItem>
-                          <SelectItem value="REEFE">Reefer (REEFE)</SelectItem>
-                          <SelectItem value="T">TankD (T)</SelectItem>
-                          <SelectItem value="MTY">MTY</SelectItem>
-                          <SelectItem value="FB">FB (Flatbed)</SelectItem>
+                          <SelectItem value="DRY">Dry</SelectItem>
+                          <SelectItem value="REEFE">Reefer</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -1181,6 +1181,7 @@ export function TruckingConfig() {
                   <TableRow>
                     <TableHead>Código</TableHead>
                     <TableHead>Nombre</TableHead>
+                    <TableHead>Código SAP</TableHead>
                     <TableHead>Categoría</TableHead>
                     <TableHead>Descripción</TableHead>
                     <TableHead>Estado</TableHead>
@@ -1190,7 +1191,7 @@ export function TruckingConfig() {
                 <TableBody>
                   {containerTypesLoading && containerTypes.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8">
+                      <TableCell colSpan={7} className="text-center py-8">
                         <div className="flex items-center justify-center space-x-2">
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                           <span>Cargando tipos de contenedores...</span>
@@ -1199,7 +1200,7 @@ export function TruckingConfig() {
                     </TableRow>
                   ) : containerTypes.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                         No hay tipos de contenedores registrados
                       </TableCell>
                     </TableRow>
@@ -1210,6 +1211,11 @@ export function TruckingConfig() {
                           <Badge variant="outline">{containerType.code}</Badge>
                         </TableCell>
                         <TableCell className="font-medium">{containerType.name}</TableCell>
+                        <TableCell className="font-mono font-medium">
+                          <Badge variant="outline" className="bg-blue-100 text-blue-800">
+                            {containerType.sapCode}
+                          </Badge>
+                        </TableCell>
                         <TableCell>
                           <Badge variant="secondary">{containerType.category}</Badge>
                         </TableCell>
