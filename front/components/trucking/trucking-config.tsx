@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Settings2, Plus, Edit, Trash2, Ship, MapPin, Wrench, Search, DollarSign } from "lucide-react"
+import { Settings2, Plus, Edit, Trash2, Ship, MapPin, Wrench, Search, DollarSign, Upload } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 
@@ -32,6 +32,10 @@ import {
   selectTruckingRoutes,
   selectTruckingRoutesLoading,
   selectTruckingRoutesError,
+  selectTruckingRoutesPagination,
+  selectTruckingRoutesFilters,
+  setFilters,
+  setPage,
   type TruckingRoute,
   type TruckingRouteInput,
 } from "@/lib/features/truckingRoutes/truckingRoutesSlice"
@@ -60,6 +64,9 @@ import {
   type Service,
 } from "@/lib/features/services/servicesSlice"
 
+import { PriceImporter } from "./price-importer"
+import { Pagination } from "@/components/ui/pagination"
+
 export function TruckingConfig() {
   const dispatch = useAppDispatch()
   const { toast } = useToast()
@@ -73,6 +80,8 @@ export function TruckingConfig() {
   const routes = useAppSelector(selectTruckingRoutes)
   const routesLoading = useAppSelector(selectTruckingRoutesLoading)
   const routesError = useAppSelector(selectTruckingRoutesError)
+  const pagination = useAppSelector(selectTruckingRoutesPagination)
+  const filters = useAppSelector(selectTruckingRoutesFilters)
 
   // Container Types
   const containerTypes = useAppSelector(selectAllContainerTypes)
@@ -101,19 +110,28 @@ export function TruckingConfig() {
     name: "",
     origin: "",
     destination: "",
-    containerType: "dry",
-    routeType: "single",
+    containerType: "",
+    routeType: "SINGLE",
     price: 0,
-    status: "Full",
+    status: "FULL",
+    cliente: "",
+    routeArea: "",
+    sizeContenedor: "",
   })
 
-  // Filtros y búsqueda para rutas
-  const [routeFilters, setRouteFilters] = useState({
-    search: "",
-    containerType: "all" as "all" | "dry" | "reefer" | "mty" | "fb",
-    routeType: "all" as "all" | "single" | "RT",
-    status: "all" as "all" | "Full" | "Empty"
-  })
+  // Handlers para filtros
+  const handleFilterChange = (newFilters: Partial<typeof filters>) => {
+    dispatch(setFilters(newFilters))
+  }
+
+  const handlePageChange = (page: number) => {
+    dispatch(setPage(page))
+    dispatch(fetchTruckingRoutes({ 
+      page, 
+      limit: 50,
+      ...filters
+    }))
+  }
 
   // Form: Container Type
   const [showAddContainerTypeForm, setShowAddContainerTypeForm] = useState(false)
@@ -136,13 +154,25 @@ export function TruckingConfig() {
   const [editingTax, setEditingTax] = useState<Service | null>(null)
   const [taxPrice, setTaxPrice] = useState<number>(0)
 
+  // Importador de precios
+  const [showPriceImporter, setShowPriceImporter] = useState(false)
+
   // Load data
   useEffect(() => {
     dispatch(fetchNavieras())
-    dispatch(fetchTruckingRoutes())
+    dispatch(fetchTruckingRoutes({ page: 1, limit: 50 }))
     dispatch(fetchContainerTypes())
     dispatch(fetchServices())
   }, [dispatch])
+
+  // Cargar rutas cuando cambien los filtros
+  useEffect(() => {
+    dispatch(fetchTruckingRoutes({ 
+      page: 1, 
+      limit: 50,
+      ...filters
+    }))
+  }, [dispatch, filters])
 
   // Errors
   useEffect(() => {
@@ -200,7 +230,7 @@ export function TruckingConfig() {
 
   // Routes handlers
   const handleAddRoute = async () => {
-    if (!newRoute.origin || !newRoute.destination || !newRoute.containerType || !newRoute.routeType || newRoute.price <= 0 || !newRoute.status) {
+    if (!newRoute.origin || !newRoute.destination || !newRoute.containerType || !newRoute.routeType || newRoute.price <= 0 || !newRoute.status || !newRoute.cliente || !newRoute.routeArea || !newRoute.sizeContenedor) {
       toast({ title: "Error", description: "Completa todos los campos obligatorios", variant: "destructive" })
       return
     }
@@ -208,7 +238,7 @@ export function TruckingConfig() {
     const name = `${newRoute.origin}/${newRoute.destination}`
     try {
       await dispatch(createTruckingRoute({ ...newRoute, name })).unwrap()
-      setNewRoute({ name: "", origin: "", destination: "", containerType: "dry", routeType: "single", price: 0, status: "Full" })
+      setNewRoute({ name: "", origin: "", destination: "", containerType: "", routeType: "SINGLE", price: 0, status: "FULL", cliente: "", routeArea: "", sizeContenedor: "" })
       setShowAddRouteForm(false)
       toast({ title: "Ruta agregada", description: "La nueva ruta ha sido configurada correctamente" })
     } catch (error: any) {
@@ -226,14 +256,17 @@ export function TruckingConfig() {
       routeType: newRoute.routeType,
       price: newRoute.price,
       status: newRoute.status,
+      cliente: newRoute.cliente,
+      routeArea: newRoute.routeArea,
+      sizeContenedor: newRoute.sizeContenedor,
     }
-    if (!routeData.origin || !routeData.destination || !routeData.containerType || !routeData.routeType || routeData.price <= 0 || !routeData.status) {
+    if (!routeData.origin || !routeData.destination || !routeData.containerType || !routeData.routeType || routeData.price <= 0 || !routeData.status || !routeData.cliente || !routeData.routeArea || !routeData.sizeContenedor) {
       toast({ title: "Error", description: "Completa todos los campos obligatorios", variant: "destructive" })
       return
     }
     try {
       await dispatch(updateTruckingRoute({ id: editingRoute._id, routeData })).unwrap()
-      setNewRoute({ name: "", origin: "", destination: "", containerType: "dry", routeType: "single", price: 0, status: "Full" })
+      setNewRoute({ name: "", origin: "", destination: "", containerType: "", routeType: "SINGLE", price: 0, status: "FULL", cliente: "", routeArea: "", sizeContenedor: "" })
       setEditingRoute(null)
       toast({ title: "Ruta actualizada", description: "La ruta ha sido actualizada correctamente" })
     } catch (error: any) {
@@ -261,12 +294,15 @@ export function TruckingConfig() {
       routeType: route.routeType,
       price: route.price,
       status: route.status,
+      cliente: route.cliente,
+      routeArea: route.routeArea,
+      sizeContenedor: route.sizeContenedor,
     })
   }
 
   const handleCancelEditRoute = () => {
     setEditingRoute(null)
-    setNewRoute({ name: "", origin: "", destination: "", containerType: "dry", routeType: "single", price: 0, status: "Full" })
+    setNewRoute({ name: "", origin: "", destination: "", containerType: "", routeType: "SINGLE", price: 0, status: "FULL", cliente: "", routeArea: "", sizeContenedor: "" })
   }
 
   // Container Types handlers
@@ -419,6 +455,91 @@ export function TruckingConfig() {
     }
   }
 
+  // Handler para importación de precios
+  const handleImportPrices = async (routes: any[], onProgress?: (progress: number, status: string) => void, overwriteDuplicates: boolean = false) => {
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+
+      const totalRoutes = routes.length
+      const BATCH_SIZE = 500
+      const results = {
+        success: 0,
+        duplicates: 0,
+        errors: 0,
+        errorsList: [] as string[]
+      }
+
+      onProgress?.(0, 'Iniciando importación...')
+
+      for (let i = 0; i < routes.length; i += BATCH_SIZE) {
+        const batch = routes.slice(i, i + BATCH_SIZE)
+        const currentBatch = Math.floor(i / BATCH_SIZE) + 1
+        const totalBatches = Math.ceil(totalRoutes / BATCH_SIZE)
+        
+        onProgress?.(
+          Math.round((i / totalRoutes) * 100), 
+          `Procesando lote ${currentBatch}/${totalBatches} (${batch.length} rutas)...`
+        )
+        
+        try {
+          const response = await fetch('/api/trucking-routes/import', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ routes: batch, overwriteDuplicates })
+          })
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}))
+            throw new Error(errorData.payload?.message || `Error ${response.status}: ${response.statusText}`)
+          }
+
+          const data = await response.json()
+          
+          // Acumular resultados
+          results.success += data.payload.data.success
+          results.duplicates += data.payload.data.duplicates
+          results.errors += data.payload.data.errors
+          results.errorsList.push(...(data.payload.data.errorsList || []))
+
+        } catch (error) {
+          console.error(`Error procesando lote ${currentBatch}:`, error)
+          results.errors += batch.length
+          results.errorsList.push(`Error en lote ${currentBatch}: ${error instanceof Error ? error.message : 'Error desconocido'}`)
+        }
+
+        // Pequeña pausa para no sobrecargar el servidor
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+
+      onProgress?.(100, 'Finalizando importación...')
+
+      // Mostrar resultados finales
+      toast({ 
+        title: "Importación completada", 
+        description: `${results.success} rutas importadas, ${results.duplicates} duplicadas, ${results.errors} errores` 
+      })
+
+      // Recargar las rutas
+      dispatch(fetchTruckingRoutes())
+
+    } catch (error) {
+      console.error('Error en importación de precios:', error)
+      onProgress?.(0, 'Error en la importación')
+      toast({ 
+        title: "Error", 
+        description: error instanceof Error ? error.message : "Error al importar las rutas", 
+        variant: "destructive" 
+      })
+    }
+  }
+
   // Obtener impuestos PTG (Customs y Administration Fee)
   const ptgTaxes = useMemo(() => {
     return services.filter(service => 
@@ -427,37 +548,6 @@ export function TruckingConfig() {
     )
   }, [services])
 
-  // Filtrar rutas basado en los filtros aplicados
-  const filteredRoutes = useMemo(() => {
-    return routes.filter(route => {
-      // Filtro de búsqueda (nombre, origen, destino)
-      if (routeFilters.search) {
-        const searchLower = routeFilters.search.toLowerCase()
-        const matchesSearch = 
-          route.name.toLowerCase().includes(searchLower) ||
-          route.origin.toLowerCase().includes(searchLower) ||
-          route.destination.toLowerCase().includes(searchLower)
-        if (!matchesSearch) return false
-      }
-
-      // Filtro de tipo de contenedor
-      if (routeFilters.containerType !== "all" && route.containerType !== routeFilters.containerType) {
-        return false
-      }
-
-      // Filtro de tipo de ruta
-      if (routeFilters.routeType !== "all" && route.routeType !== routeFilters.routeType) {
-        return false
-      }
-
-      // Filtro de estado
-      if (routeFilters.status !== "all" && route.status !== routeFilters.status) {
-        return false
-      }
-
-      return true
-    })
-  }, [routes, routeFilters])
 
   return (
     <div className="space-y-6">
@@ -621,10 +711,16 @@ export function TruckingConfig() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Gestión de Rutas PTG</CardTitle>
-              <Button onClick={() => setShowAddRouteForm(!showAddRouteForm)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Agregar Ruta
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setShowPriceImporter(true)}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Importar Precios
+                </Button>
+                <Button onClick={() => setShowAddRouteForm(!showAddRouteForm)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Agregar Ruta
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -644,8 +740,8 @@ export function TruckingConfig() {
                     <Input
                       id="route-search"
                       placeholder="Nombre, origen o destino..."
-                      value={routeFilters.search}
-                      onChange={(e) => setRouteFilters({ ...routeFilters, search: e.target.value })}
+                      value={filters.search}
+                      onChange={(e) => handleFilterChange({ search: e.target.value })}
                     />
                   </div>
                   
@@ -653,18 +749,17 @@ export function TruckingConfig() {
                   <div className="space-y-2">
                     <Label>Tipo de Contenedor</Label>
                     <Select 
-                      value={routeFilters.containerType} 
-                      onValueChange={(value) => setRouteFilters({ ...routeFilters, containerType: value as any })}
+                      value={filters.containerType} 
+                      onValueChange={(value) => handleFilterChange({ containerType: value })}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">Todos los tipos</SelectItem>
-                        <SelectItem value="dry">Dry</SelectItem>
-                        <SelectItem value="reefer">Reefer</SelectItem>
-                        <SelectItem value="mty">MTY</SelectItem>
-                        <SelectItem value="fb">FB (Flatbed)</SelectItem>
+                        {Array.from(new Set(routes.map(route => route.containerType))).map(type => (
+                          <SelectItem key={type} value={type}>{type}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -673,15 +768,15 @@ export function TruckingConfig() {
                   <div className="space-y-2">
                     <Label>Tipo de Ruta</Label>
                     <Select 
-                      value={routeFilters.routeType} 
-                      onValueChange={(value) => setRouteFilters({ ...routeFilters, routeType: value as any })}
+                      value={filters.routeType} 
+                      onValueChange={(value) => handleFilterChange({ routeType: value })}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">Todos los tipos</SelectItem>
-                        <SelectItem value="single">Single</SelectItem>
+                        <SelectItem value="SINGLE">Single</SelectItem>
                         <SelectItem value="RT">Round Trip</SelectItem>
                       </SelectContent>
                     </Select>
@@ -691,16 +786,16 @@ export function TruckingConfig() {
                   <div className="space-y-2">
                     <Label>Estado</Label>
                     <Select 
-                      value={routeFilters.status} 
-                      onValueChange={(value) => setRouteFilters({ ...routeFilters, status: value as any })}
+                      value={filters.status} 
+                      onValueChange={(value) => handleFilterChange({ status: value })}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">Todos los estados</SelectItem>
-                        <SelectItem value="Full">Full</SelectItem>
-                        <SelectItem value="Empty">Empty</SelectItem>
+                        <SelectItem value="FULL">Full</SelectItem>
+                        <SelectItem value="EMPTY">Empty</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -709,7 +804,9 @@ export function TruckingConfig() {
                 {/* Botón para limpiar filtros */}
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span>{filteredRoutes.length} de {routes.length} rutas mostradas</span>
+                    <span>
+                      {pagination ? `${pagination.totalItems} rutas totales` : `${routes.length} rutas mostradas`}
+                    </span>
                   </div>
                 </div>
               </CardContent>
@@ -728,53 +825,55 @@ export function TruckingConfig() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="route-origin">Origen *</Label>
-                      <Input id="route-origin" value={newRoute.origin} onChange={(e) => setNewRoute({ ...newRoute, origin: e.target.value.toUpperCase() })} placeholder="PTY" />
+                      <Input id="route-origin" value={newRoute.origin} onChange={(e) => setNewRoute({ ...newRoute, origin: e.target.value.toUpperCase() })} placeholder="PSA" />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="route-destination">Destino *</Label>
-                      <Input id="route-destination" value={newRoute.destination} onChange={(e) => setNewRoute({ ...newRoute, destination: e.target.value.toUpperCase() })} placeholder="COL" />
+                      <Input id="route-destination" value={newRoute.destination} onChange={(e) => setNewRoute({ ...newRoute, destination: e.target.value.toUpperCase() })} placeholder="BLB" />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="route-container-type">Tipo de Contenedor *</Label>
-                      <Select value={newRoute.containerType} onValueChange={(value) => setNewRoute({ ...newRoute, containerType: value as "dry" | "reefer" | "mty" | "fb" })}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccionar tipo" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="dry">Dry</SelectItem>
-                          <SelectItem value="reefer">Reefer</SelectItem>
-                          <SelectItem value="mty">MTY</SelectItem>
-                          <SelectItem value="fb">FB (Flatbed)</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Input id="route-container-type" value={newRoute.containerType} onChange={(e) => setNewRoute({ ...newRoute, containerType: e.target.value.toUpperCase() })} placeholder="CA, CT, DV, FL, etc." />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="route-route-type">Tipo de Ruta *</Label>
-                      <Select value={newRoute.routeType} onValueChange={(value) => setNewRoute({ ...newRoute, routeType: value as "single" | "RT" })}>
+                      <Select value={newRoute.routeType} onValueChange={(value) => setNewRoute({ ...newRoute, routeType: value as "SINGLE" | "RT" })}>
                         <SelectTrigger>
                           <SelectValue placeholder="Seleccionar tipo de ruta" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="single">Single - Viaje único</SelectItem>
+                          <SelectItem value="SINGLE">Single - Viaje único</SelectItem>
                           <SelectItem value="RT">RT - Round Trip</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="route-price">Precio *</Label>
-                      <Input id="route-price" type="number" value={newRoute.price} onChange={(e) => setNewRoute({ ...newRoute, price: parseFloat(e.target.value) || 0 })} placeholder="250.00" min="0" step="0.01" />
+                      <Input id="route-price" type="number" value={newRoute.price} onChange={(e) => setNewRoute({ ...newRoute, price: parseFloat(e.target.value) || 0 })} placeholder="265.00" min="0" step="0.01" />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="route-status">Estado *</Label>
-                      <Select value={newRoute.status} onValueChange={(value) => setNewRoute({ ...newRoute, status: value as "Full" | "Empty" })}>
+                      <Select value={newRoute.status} onValueChange={(value) => setNewRoute({ ...newRoute, status: value as "FULL" | "EMPTY" })}>
                         <SelectTrigger>
                           <SelectValue placeholder="Seleccionar estado" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Full">Full</SelectItem>
-                          <SelectItem value="Empty">Empty</SelectItem>
+                          <SelectItem value="FULL">Full</SelectItem>
+                          <SelectItem value="EMPTY">Empty</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="route-cliente">Cliente *</Label>
+                      <Input id="route-cliente" value={newRoute.cliente} onChange={(e) => setNewRoute({ ...newRoute, cliente: e.target.value.toUpperCase() })} placeholder="MSC" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="route-area">Área de Ruta *</Label>
+                      <Input id="route-area" value={newRoute.routeArea} onChange={(e) => setNewRoute({ ...newRoute, routeArea: e.target.value.toUpperCase() })} placeholder="PACIFIC, NORTH, SOUTH, ATLANTIC" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="route-size">Tamaño del Contenedor *</Label>
+                      <Input id="route-size" value={newRoute.sizeContenedor} onChange={(e) => setNewRoute({ ...newRoute, sizeContenedor: e.target.value })} placeholder="20, 40, 45" />
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -792,39 +891,37 @@ export function TruckingConfig() {
 
             <div className="rounded-md border">
               {/* Indicador de filtros activos */}
-              {(routeFilters.search || routeFilters.containerType !== "all" || routeFilters.routeType !== "all" || routeFilters.status !== "all") && (
+              {(filters.search || filters.containerType !== "all" || filters.routeType !== "all" || filters.status !== "all") && (
                 <div className="bg-blue-50 border-b border-blue-200 p-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm text-blue-700">
                       <Search className="h-4 w-4" />
                       <span>Filtros activos:</span>
-                      {routeFilters.search && (
+                      {filters.search && (
                         <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                          Búsqueda: "{routeFilters.search}"
+                          Búsqueda: "{filters.search}"
                         </Badge>
                       )}
-                      {routeFilters.containerType !== "all" && (
+                      {filters.containerType !== "all" && (
                         <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                          Contenedor: {routeFilters.containerType === "reefer" ? "Reefer" : 
-                                     routeFilters.containerType === "mty" ? "MTY" :
-                                     routeFilters.containerType === "fb" ? "FB" : "Dry"}
+                          Contenedor: {filters.containerType}
                         </Badge>
                       )}
-                      {routeFilters.routeType !== "all" && (
+                      {filters.routeType !== "all" && (
                         <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                          Ruta: {routeFilters.routeType === "RT" ? "Round Trip" : "Single"}
+                          Ruta: {filters.routeType === "RT" ? "Round Trip" : "Single"}
                         </Badge>
                       )}
-                      {routeFilters.status !== "all" && (
+                      {filters.status !== "all" && (
                         <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                          Estado: {routeFilters.status}
+                          Estado: {filters.status}
                         </Badge>
                       )}
                     </div>
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => setRouteFilters({
+                      onClick={() => handleFilterChange({
                         search: "",
                         containerType: "all",
                         routeType: "all",
@@ -845,6 +942,9 @@ export function TruckingConfig() {
                     <TableHead>Origen</TableHead>
                     <TableHead>Destino</TableHead>
                     <TableHead>Tipo Contenedor</TableHead>
+                    <TableHead>Tamaño</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Área</TableHead>
                     <TableHead>Tipo Ruta</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Precio</TableHead>
@@ -854,7 +954,7 @@ export function TruckingConfig() {
                 <TableBody>
                   {routesLoading ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8">
+                      <TableCell colSpan={11} className="text-center py-8">
                         <div className="flex items-center justify-center space-x-2">
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                           <span>Cargando rutas...</span>
@@ -863,48 +963,31 @@ export function TruckingConfig() {
                     </TableRow>
                   ) : routes.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                         No hay rutas registradas
                       </TableCell>
                     </TableRow>
-                  ) : filteredRoutes.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                        <div className="space-y-2">
-                          <div>No se encontraron rutas con los filtros aplicados</div>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => setRouteFilters({
-                              search: "",
-                              containerType: "all",
-                              routeType: "all",
-                              status: "all"
-                            })}
-                          >
-                            Limpiar Filtros
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
                   ) : (
-                    filteredRoutes.map((route) => (
+                    routes.map((route) => (
                       <TableRow key={route._id}>
                         <TableCell className="font-medium">{route.name}</TableCell>
                         <TableCell>{route.origin}</TableCell>
                         <TableCell>{route.destination}</TableCell>
                         <TableCell>
-                          <Badge variant="outline">
-                            {route.containerType === "reefer" ? "Reefer" : 
-                             route.containerType === "mty" ? "MTY" :
-                             route.containerType === "fb" ? "FB" : "Dry"}
-                          </Badge>
+                          <Badge variant="outline">{route.containerType}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{route.sizeContenedor}</Badge>
+                        </TableCell>
+                        <TableCell>{route.cliente}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="bg-blue-100 text-blue-800">{route.routeArea}</Badge>
                         </TableCell>
                         <TableCell>
                           <Badge variant={route.routeType === "RT" ? "default" : "secondary"}>{route.routeType === "RT" ? "Round Trip" : "Single"}</Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={route.status === "Full" ? "default" : "secondary"}>{route.status}</Badge>
+                          <Badge variant={route.status === "FULL" ? "default" : "secondary"}>{route.status}</Badge>
                         </TableCell>
                         <TableCell>${route.price.toFixed(2)}</TableCell>
                         <TableCell>
@@ -922,6 +1005,21 @@ export function TruckingConfig() {
                   )}
                 </TableBody>
               </Table>
+              
+              {/* Paginación */}
+              {pagination && pagination.totalPages > 1 && (
+                <div className="border-t p-4">
+                  <Pagination
+                    currentPage={pagination.currentPage}
+                    totalPages={pagination.totalPages}
+                    onPageChange={handlePageChange}
+                    hasNextPage={pagination.hasNextPage}
+                    hasPrevPage={pagination.hasPrevPage}
+                    totalItems={pagination.totalItems}
+                    itemsPerPage={pagination.itemsPerPage}
+                  />
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1248,6 +1346,14 @@ export function TruckingConfig() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Importador de precios */}
+      {showPriceImporter && (
+        <PriceImporter
+          onImport={handleImportPrices}
+          onClose={() => setShowPriceImporter(false)}
+        />
       )}
 
       {/* Dialogs */}

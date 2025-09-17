@@ -7,25 +7,43 @@ const TruckingRoute = mongoose.model('TruckingRoute', truckingRouteSchema);
 
 const createTruckingRoute = async (req: Request, res: Response) => {
   try {
-    const { name, origin, destination, containerType, routeType, price, status } = req.body;
+    const { name, origin, destination, containerType, routeType, price, status, cliente, routeArea, sizeContenedor } = req.body;
 
-    if (!name || !origin || !destination || !containerType || !routeType || !price || !status) {
+    if (!name || !origin || !destination || !containerType || !routeType || !price || !status || !cliente || !routeArea || !sizeContenedor) {
       return response(res, 400, { message: 'Todos los campos son requeridos' });
     }
 
-    // Verificar si ya existe una ruta con la misma combinación de nombre + tipo de contenedor + tipo de ruta
+    // Verificar si ya existe una ruta exactamente igual (todas las columnas)
     const existingRoute = await TruckingRoute.findOne({ 
       name, 
+      origin, 
+      destination, 
       containerType, 
-      routeType 
+      routeType,
+      status,
+      cliente,
+      routeArea,
+      sizeContenedor,
+      price
     });
     if (existingRoute) {
       return response(res, 400, { 
-        message: `Ya existe una ruta con el nombre "${name}", tipo de contenedor "${containerType}" y tipo de ruta "${routeType}"` 
+        message: `Ya existe una ruta idéntica con todos los mismos valores` 
       });
     }
 
-    const newRoute = new TruckingRoute({ name, origin, destination, containerType, routeType, price, status });
+    const newRoute = new TruckingRoute({ 
+      name, 
+      origin, 
+      destination, 
+      containerType, 
+      routeType, 
+      price, 
+      status, 
+      cliente, 
+      routeArea, 
+      sizeContenedor 
+    });
     await newRoute.save();
 
     return response(res, 201, { 

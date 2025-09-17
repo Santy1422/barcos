@@ -15,12 +15,11 @@ const truckingRouteSchema = new mongoose.Schema({
   },
   containerType: {
     type: String,
-    enum: ['dry', 'reefer', 'mty', 'fb'],
     required: true
   },
   routeType: {
     type: String,
-    enum: ['single', 'RT'],
+    enum: ['SINGLE', 'RT'],
     required: true
   },
   price: {
@@ -29,16 +28,47 @@ const truckingRouteSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Full', 'Empty'],
+    enum: ['FULL', 'EMPTY'],
     required: true,
-    default: 'Full'
+    default: 'FULL'
+  },
+  cliente: {
+    type: String,
+    required: true
+  },
+  routeArea: {
+    type: String,
+    required: true
+  },
+  sizeContenedor: {
+    type: String,
+    required: true
   }
 }, {
   timestamps: true
 });
 
-// Índice compuesto para validar duplicados: nombre + tipo de contenedor + tipo de ruta + status
-// Esto permite tener rutas con el mismo nombre pero diferentes tipos y estados
-truckingRouteSchema.index({ name: 1, containerType: 1, routeType: 1, status: 1 }, { unique: true });
+// Índices para mejorar el rendimiento de las consultas
+// Índice único basado en campos clave (sin precio) para evitar duplicados de ruta
+truckingRouteSchema.index({ 
+  name: 1, 
+  origin: 1, 
+  destination: 1, 
+  containerType: 1, 
+  routeType: 1, 
+  status: 1, 
+  cliente: 1, 
+  routeArea: 1, 
+  sizeContenedor: 1
+}, { unique: true });
+
+// Índices adicionales para consultas frecuentes
+truckingRouteSchema.index({ cliente: 1 });
+truckingRouteSchema.index({ routeArea: 1 });
+truckingRouteSchema.index({ sizeContenedor: 1 });
+truckingRouteSchema.index({ origin: 1, destination: 1 });
+truckingRouteSchema.index({ containerType: 1 });
+truckingRouteSchema.index({ routeType: 1 });
+truckingRouteSchema.index({ status: 1 });
 
 export default truckingRouteSchema; 

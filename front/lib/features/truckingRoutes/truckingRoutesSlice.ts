@@ -6,10 +6,13 @@ export interface TruckingRoute {
   name: string
   origin: string
   destination: string
-  containerType: "dry" | "reefer" | "mty" | "fb"
-  routeType: "single" | "RT"
+  containerType: string
+  routeType: "SINGLE" | "RT"
   price: number
-  status: "Full" | "Empty"
+  status: "FULL" | "EMPTY"
+  cliente: string
+  routeArea: string
+  sizeContenedor: string
   createdAt: string
   updatedAt: string
 }
@@ -19,10 +22,25 @@ export interface TruckingRouteInput {
   name: string
   origin: string
   destination: string
-  containerType: "dry" | "reefer" | "mty" | "fb"
-  routeType: "single" | "RT"
+  containerType: string
+  routeType: "SINGLE" | "RT"
   price: number
-  status: "Full" | "Empty"
+  status: "FULL" | "EMPTY"
+  cliente: string
+  routeArea: string
+  sizeContenedor: string
+}
+
+// Interface para paginación
+export interface PaginationInfo {
+  currentPage: number
+  totalPages: number
+  totalItems: number
+  itemsPerPage: number
+  hasNextPage: boolean
+  hasPrevPage: boolean
+  nextPage: number | null
+  prevPage: number | null
 }
 
 // State structure
@@ -30,18 +48,32 @@ interface TruckingRoutesState {
   routes: TruckingRoute[]
   loading: boolean
   error: string | null
+  pagination: PaginationInfo | null
+  filters: {
+    search: string
+    containerType: string
+    routeType: string
+    status: string
+  }
 }
 
 const initialState: TruckingRoutesState = {
   routes: [],
   loading: false,
-  error: null
+  error: null,
+  pagination: null,
+  filters: {
+    search: '',
+    containerType: 'all',
+    routeType: 'all',
+    status: 'all'
+  }
 }
 
 // Async thunks para conectar con API
 export const fetchTruckingRoutes = createAsyncThunk(
   'truckingRoutes/fetchRoutes',
-  async (_, { rejectWithValue }) => {
+  async (params: { page?: number; limit?: number; search?: string; containerType?: string; routeType?: string; status?: string } = {}, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem('token')
       
@@ -53,7 +85,19 @@ export const fetchTruckingRoutes = createAsyncThunk(
         throw new Error('Token inválido en localStorage')
       }
       
-      const response = await fetch('/api/trucking-routes', {
+      // Construir query string
+      const queryParams = new URLSearchParams()
+      if (params.page) queryParams.append('page', params.page.toString())
+      if (params.limit) queryParams.append('limit', params.limit.toString())
+      if (params.search) queryParams.append('search', params.search)
+      if (params.containerType && params.containerType !== 'all') queryParams.append('containerType', params.containerType)
+      if (params.routeType && params.routeType !== 'all') queryParams.append('routeType', params.routeType)
+      if (params.status && params.status !== 'all') queryParams.append('status', params.status)
+      
+      const queryString = queryParams.toString()
+      const url = `/api/trucking-routes${queryString ? `?${queryString}` : ''}`
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -66,7 +110,10 @@ export const fetchTruckingRoutes = createAsyncThunk(
       }
       
       const data = await response.json()
-      return data.payload?.data || []
+      return {
+        routes: data.payload?.data || [],
+        pagination: data.payload?.pagination || null
+      }
     } catch (error) {
       console.error('Error en fetchTruckingRoutes:', error)
       return rejectWithValue(error instanceof Error ? error.message : 'Error desconocido')
@@ -177,6 +224,14 @@ const truckingRoutesSlice = createSlice({
   reducers: {
     clearError: (state) => {
       state.error = null
+    },
+    setFilters: (state, action: PayloadAction<Partial<typeof initialState.filters>>) => {
+      state.filters = { ...state.filters, ...action.payload }
+    },
+    setPage: (state, action: PayloadAction<number>) => {
+      if (state.pagination) {
+        state.pagination.currentPage = action.payload
+      }
     }
   },
   extraReducers: (builder) => {
@@ -188,7 +243,8 @@ const truckingRoutesSlice = createSlice({
       })
       .addCase(fetchTruckingRoutes.fulfilled, (state, action) => {
         state.loading = false
-        state.routes = action.payload
+        state.routes = action.payload.routes
+        state.pagination = action.payload.pagination
       })
       .addCase(fetchTruckingRoutes.rejected, (state, action) => {
         state.loading = false
@@ -245,11 +301,13 @@ const truckingRoutesSlice = createSlice({
   }
 })
 
-export const { clearError } = truckingRoutesSlice.actions
+export const { clearError, setFilters, setPage } = truckingRoutesSlice.actions
 
 // Selectors
 export const selectTruckingRoutes = (state: { truckingRoutes: TruckingRoutesState }) => state.truckingRoutes.routes
 export const selectTruckingRoutesLoading = (state: { truckingRoutes: TruckingRoutesState }) => state.truckingRoutes.loading
 export const selectTruckingRoutesError = (state: { truckingRoutes: TruckingRoutesState }) => state.truckingRoutes.error
+export const selectTruckingRoutesPagination = (state: { truckingRoutes: TruckingRoutesState }) => state.truckingRoutes.pagination
+export const selectTruckingRoutesFilters = (state: { truckingRoutes: TruckingRoutesState }) => state.truckingRoutes.filters
 
 export default truckingRoutesSlice.reducer 

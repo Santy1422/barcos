@@ -8,26 +8,33 @@ const TruckingRoute = mongoose.model('TruckingRoute', truckingRouteSchema);
 const updateTruckingRoute = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, origin, destination, containerType, routeType, price, status } = req.body;
+    const { name, origin, destination, containerType, routeType, price, status, cliente, routeArea, sizeContenedor } = req.body;
 
     console.log('Actualizando ruta de trucking:', { id, updates: req.body });
 
-    // Verificar si ya existe otra ruta con la misma combinación de nombre + tipo de contenedor + tipo de ruta
+    // Verificar si ya existe otra ruta exactamente igual (todas las columnas)
     const existingRoute = await TruckingRoute.findOne({ 
       name, 
+      origin, 
+      destination, 
       containerType, 
       routeType,
+      status,
+      cliente,
+      routeArea,
+      sizeContenedor,
+      price,
       _id: { $ne: id } // Excluir la ruta actual
     });
     if (existingRoute) {
       return response(res, 400, { 
-        message: `Ya existe una ruta con el nombre "${name}", tipo de contenedor "${containerType}" y tipo de ruta "${routeType}"` 
+        message: `Ya existe una ruta idéntica con todos los mismos valores` 
       });
     }
 
     const updated = await TruckingRoute.findByIdAndUpdate(
       id,
-      { name, origin, destination, containerType, routeType, price, status },
+      { name, origin, destination, containerType, routeType, price, status, cliente, routeArea, sizeContenedor },
       { new: true, runValidators: true }
     );
 
