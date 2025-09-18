@@ -757,9 +757,14 @@ export function TruckingConfig() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">Todos los tipos</SelectItem>
-                        {Array.from(new Set(routes.map(route => route.containerType))).map(type => (
-                          <SelectItem key={type} value={type}>{type}</SelectItem>
-                        ))}
+                        {containerTypes
+                          .filter(ct => ct.isActive)
+                          .sort((a, b) => a.code.localeCompare(b.code))
+                          .map(containerType => (
+                            <SelectItem key={containerType.code} value={containerType.code}>
+                              {containerType.code} - {containerType.name}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>

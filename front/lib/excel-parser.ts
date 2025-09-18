@@ -82,78 +82,315 @@ export const determineContainerTypeMatch = (
 };
 
 // Función para hacer matching con las rutas configuradas
-export const matchTruckingDataWithRoutes = (
+export const matchTruckingDataWithRoutes = async (
   excelData: TruckingExcelData[], 
-  routes: Array<{_id: string, name: string, containerType: "dry" | "reefer", routeType: "single" | "RT", price: number}>,
-  containerTypesFromBackend: Array<{ code: string; category: string }>
-): TruckingExcelData[] => {
+  routes: Array<{
+    _id: string, 
+    name: string, 
+    origin: string,
+    destination: string,
+    containerType: string, 
+    routeType: "SINGLE" | "RT", 
+    price: number,
+    status: "FULL" | "EMPTY",
+    cliente: string,
+    routeArea: string,
+    sizeContenedor: string
+  }>,
+  containerTypesFromBackend: Array<{ code: string; category: string }>,
+  onProgress?: (current: number, total: number, currentRecord: string, matchesFound: number) => void
+): Promise<TruckingExcelData[]> => {
   console.log("=== INICIANDO MATCHING ===")
-  console.log("Rutas disponibles:", routes)
-  console.log("Tipos de contenedores del backend:", containerTypesFromBackend)
+  console.log("Rutas disponibles:", routes.length)
+  console.log("Tipos de contenedores del backend:", containerTypesFromBackend.length)
+  console.log("Datos del Excel:", excelData.length)
   console.log("")
   
-  return excelData.map((record, index) => {
+  // Mostrar algunos ejemplos de rutas para debug
+  if (routes.length > 0) {
+    console.log("Ejemplos de rutas disponibles:")
+    routes.slice(0, 3).forEach((route, index) => {
+      console.log(`  Ruta ${index + 1}: ${route.name} | ${route.containerType} | ${route.routeType} | ${route.cliente} | ${route.sizeContenedor}`)
+    })
+  }
+  
+  // Mostrar algunos ejemplos de datos del Excel
+  if (excelData.length > 0) {
+    console.log("Ejemplos de datos del Excel:")
+    excelData.slice(0, 3).forEach((record, index) => {
+      console.log(`  Registro ${index + 1}: ${record.leg} | ${record.type} | ${record.moveType} | ${record.line} | ${record.size}`)
+    })
+  }
+  console.log("")
+  
+  let matchesFound = 0;
+  const results: TruckingExcelData[] = [];
+  
+  // Crear índices para optimizar las búsquedas
+  console.log("=== CREANDO ÍNDICES PARA OPTIMIZACIÓN ===")
+  
+  // Índice por nombre de ruta (más específico)
+  const routesByName = new Map<string, typeof routes>();
+  routes.forEach(route => {
+    const normalizedName = route.name?.trim().replace(/\s*\/\s*/g, '/').toUpperCase() || '';
+    if (!routesByName.has(normalizedName)) {
+      routesByName.set(normalizedName, []);
+    }
+    routesByName.get(normalizedName)!.push(route);
+  });
+  
+  // Índice por tipo de contenedor
+  const routesByContainerType = new Map<string, typeof routes>();
+  routes.forEach(route => {
+    const containerType = route.containerType?.trim().toUpperCase() || '';
+    if (!routesByContainerType.has(containerType)) {
+      routesByContainerType.set(containerType, []);
+    }
+    routesByContainerType.get(containerType)!.push(route);
+  });
+  
+  // Índice por cliente
+  const routesByCliente = new Map<string, typeof routes>();
+  routes.forEach(route => {
+    const cliente = route.cliente?.trim().toLowerCase() || '';
+    if (!routesByCliente.has(cliente)) {
+      routesByCliente.set(cliente, []);
+    }
+    routesByCliente.get(cliente)!.push(route);
+  });
+  
+  console.log(`Índices creados: ${routesByName.size} nombres únicos, ${routesByContainerType.size} tipos de contenedor, ${routesByCliente.size} clientes`)
+  
+  for (let index = 0; index < excelData.length; index++) {
+    const record = excelData[index];
+    
+    // Reportar progreso (incluyendo el primer registro en 0%)
+    onProgress?.(index, excelData.length, `${record.container || 'N/A'} - ${record.leg || 'N/A'}`, matchesFound);
+    
+    // Permitir que la UI se actualice
+    if (index % 10 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    
     console.log(`Procesando registro ${index + 1}:`)
     console.log(`  Leg: "${record.leg}"`)
     console.log(`  MoveType: "${record.moveType}"`)
     console.log(`  Type: "${record.type}"`)
+    console.log(`  Line (Cliente): "${record.line}"`)
+    console.log(`  Size: "${record.size}"`)
     
-    // Buscar coincidencia basada en los criterios:
-    // 1. leg (name de la ruta) - normalizar espacios
-    // 2. moveType (routeType de la ruta) - case insensitive
-    // 3. type (containerType de la ruta) - HR = refrigerated, HC = normal
+    // OPTIMIZACIÓN: Filtrar por criterios más específicos primero
     
-    const matchedRoute = routes.find(route => {
-      // Normalizar el leg: remover espacios extra y normalizar formato
-      const normalizedLeg = record.leg?.trim().replace(/\s*\/\s*/g, '/').toUpperCase() || '';
-      const normalizedRouteName = route.name?.trim().replace(/\s*\/\s*/g, '/').toUpperCase() || '';
-      
-      // Matching por leg (name de la ruta)
-      const legMatch = normalizedRouteName === normalizedLeg;
-      
-      // Matching por moveType (routeType de la ruta) - case insensitive
-      const normalizedMoveType = record.moveType?.trim().toLowerCase() || '';
-      const moveTypeMatch = 
-        (normalizedMoveType === 's' && route.routeType === 'single') ||
-        (normalizedMoveType === 'single' && route.routeType === 'single') ||
-        (normalizedMoveType === 'rt' && route.routeType === 'RT') ||
-        (normalizedMoveType === 'rt' && route.routeType === 'RT');
-      
-      // Matching por type (containerType de la ruta) - usando categoría real del backend
-      const normalizedType = record.type?.trim().toUpperCase() || '';
-      const containerTypeMatch = determineContainerTypeMatch(normalizedType, route.containerType, containerTypesFromBackend);
-      
-      console.log(`  Comparando con ruta "${route.name}":`)
-      console.log(`    Leg normalizado: "${normalizedLeg}" vs "${normalizedRouteName}" = ${legMatch}`)
-      console.log(`    MoveType normalizado: "${normalizedMoveType}" vs "${route.routeType}" = ${moveTypeMatch}`)
-      console.log(`    Type normalizado: "${normalizedType}" vs "${route.containerType}" = ${containerTypeMatch}`)
-      console.log(`    Tipo de contenedor: ${normalizedType} → ${route.containerType === 'reefer' ? 'REEFER' : 'DRY'}`)
-      console.log(`    Match total: ${legMatch && moveTypeMatch && containerTypeMatch}`)
-      
-      return legMatch && moveTypeMatch && containerTypeMatch;
-    });
+    // 1. Filtrar por nombre de ruta (más específico)
+    const normalizedLeg = record.leg?.trim().replace(/\s*\/\s*/g, '/').toUpperCase() || '';
+    let candidateRoutes = routesByName.get(normalizedLeg) || [];
+    console.log(`  Rutas candidatas por nombre "${normalizedLeg}": ${candidateRoutes.length}`)
+    
+    if (candidateRoutes.length === 0) {
+      console.log(`  ❌ No hay rutas con nombre "${normalizedLeg}"`)
+      results.push({
+        ...record,
+        matchedPrice: 0,
+        matchedRouteId: '',
+        matchedRouteName: '',
+        isMatched: false,
+        sapCode: 'TRK002'
+      });
+      continue;
+    }
+    
+    // 2. Filtrar por moveType (solo 2 valores posibles)
+    const normalizedMoveType = record.moveType?.trim().toLowerCase() || '';
+    const targetRouteType = 
+      (normalizedMoveType === 's' || normalizedMoveType === 'single') ? 'SINGLE' :
+      (normalizedMoveType === 'rt') ? 'RT' : null;
+    
+    if (!targetRouteType) {
+      console.log(`  ❌ MoveType "${normalizedMoveType}" no válido`)
+      results.push({
+        ...record,
+        matchedPrice: 0,
+        matchedRouteId: '',
+        matchedRouteName: '',
+        isMatched: false,
+        sapCode: 'TRK002'
+      });
+      continue;
+    }
+    
+    candidateRoutes = candidateRoutes.filter(route => route.routeType === targetRouteType);
+    console.log(`  Rutas candidatas después de filtrar por moveType "${targetRouteType}": ${candidateRoutes.length}`)
+    
+    if (candidateRoutes.length === 0) {
+      console.log(`  ❌ No hay rutas con moveType "${targetRouteType}"`)
+      results.push({
+        ...record,
+        matchedPrice: 0,
+        matchedRouteId: '',
+        matchedRouteName: '',
+        isMatched: false,
+        sapCode: 'TRK002'
+      });
+      continue;
+    }
+    
+    // 3. Verificar que el tipo de contenedor existe en la BD
+    const normalizedType = record.type?.trim().toUpperCase() || '';
+    const containerTypeExists = containerTypesFromBackend.some(ct =>
+      ct.code.toUpperCase() === normalizedType
+    );
+
+    if (!containerTypeExists && normalizedType) {
+      console.warn(`    ⚠️  Tipo de contenedor "${normalizedType}" no existe en la base de datos de tipos de contenedores`);
+    }
+    
+    if (!containerTypeExists) {
+      console.log(`  ❌ Tipo de contenedor "${normalizedType}" no existe en BD`)
+      results.push({
+        ...record,
+        matchedPrice: 0,
+        matchedRouteId: '',
+        matchedRouteName: '',
+        isMatched: false,
+        sapCode: 'TRK002'
+      });
+      continue;
+    }
+    
+    // 4. Filtrar por tipo de contenedor
+    candidateRoutes = candidateRoutes.filter(route => 
+      route.containerType?.trim().toUpperCase() === normalizedType
+    );
+    console.log(`  Rutas candidatas después de filtrar por tipo "${normalizedType}": ${candidateRoutes.length}`)
+    
+    if (candidateRoutes.length === 0) {
+      console.log(`  ❌ No hay rutas con tipo de contenedor "${normalizedType}"`)
+      results.push({
+        ...record,
+        matchedPrice: 0,
+        matchedRouteId: '',
+        matchedRouteName: '',
+        isMatched: false,
+        sapCode: 'TRK002'
+      });
+      continue;
+    }
+    
+    // 5. Filtrar por cliente (si existe en el registro)
+    const normalizedLine = record.line?.trim().toLowerCase() || '';
+    if (normalizedLine) {
+      candidateRoutes = candidateRoutes.filter(route => {
+        const normalizedCliente = route.cliente?.trim().toLowerCase() || '';
+        return normalizedCliente === normalizedLine;
+      });
+      console.log(`  Rutas candidatas después de filtrar por cliente "${normalizedLine}": ${candidateRoutes.length}`)
+    }
+    
+    // 6. Filtrar por tamaño (si existe en el registro)
+    const normalizedSize = record.size?.trim().toUpperCase() || '';
+    if (normalizedSize) {
+      candidateRoutes = candidateRoutes.filter(route => {
+        const normalizedSizeContenedor = route.sizeContenedor?.trim().toUpperCase() || '';
+        return normalizedSizeContenedor === normalizedSize;
+      });
+      console.log(`  Rutas candidatas después de filtrar por tamaño "${normalizedSize}": ${candidateRoutes.length}`)
+    }
+    
+    // Buscar la mejor coincidencia (ya filtradas las candidatas)
+    const matchedRoute = candidateRoutes[0]; // Tomar la primera coincidencia ya que ya están filtradas
+    
+    console.log(`  Rutas candidatas finales: ${candidateRoutes.length}`)
+    if (candidateRoutes.length > 1) {
+      console.log(`  ⚠️  Múltiples coincidencias encontradas, tomando la primera`)
+    }
     
     if (matchedRoute) {
+      matchesFound++;
       console.log(`  ✅ MATCH ENCONTRADO: ${matchedRoute.name} - $${matchedRoute.price}`)
-      return {
+      
+      // Determinar el tipo de contenedor detectado basado en la categoría del backend
+      const containerTypeInfo = containerTypesFromBackend.find(ct => 
+        ct.code.toUpperCase() === matchedRoute.containerType?.toUpperCase()
+      );
+      const detectedContainerType = containerTypeInfo?.category === 'REEFE' ? 'reefer' : 'dry';
+      
+      results.push({
         ...record,
         matchedPrice: matchedRoute.price,
         matchedRouteId: matchedRoute._id || '',
         matchedRouteName: matchedRoute.name || '',
         isMatched: true,
         sapCode: 'TRK002',
-        detectedContainerType: matchedRoute.containerType
-      };
+        detectedContainerType: detectedContainerType
+      });
+      continue;
     } else {
-      console.log(`  ❌ NO SE ENCONTRÓ MATCH`)
-      return {
+      console.log(`  ❌ NO SE ENCONTRÓ MATCH - Intentando matching flexible...`)
+      
+      // Intentar matching más flexible - leg, moveType y containerType (pero sin cliente ni size)
+      const flexibleMatch = routes.find(route => {
+        const normalizedLeg = record.leg?.trim().replace(/\s*\/\s*/g, '/').toUpperCase() || '';
+        const normalizedRouteName = route.name?.trim().replace(/\s*\/\s*/g, '/').toUpperCase() || '';
+        const legMatch = normalizedRouteName === normalizedLeg;
+        
+        const normalizedMoveType = record.moveType?.trim().toLowerCase() || '';
+        const moveTypeMatch = 
+          (normalizedMoveType === 's' && route.routeType === 'SINGLE') ||
+          (normalizedMoveType === 'single' && route.routeType === 'SINGLE') ||
+          (normalizedMoveType === 'rt' && route.routeType === 'RT') ||
+          (normalizedMoveType === 'rt' && route.routeType === 'RT');
+        
+        // Verificar que el tipo de contenedor del Excel existe en las rutas guardadas
+        const normalizedType = record.type?.trim().toUpperCase() || '';
+        const containerTypeMatch = normalizedType === route.containerType?.trim().toUpperCase();
+        
+        // Verificar que el tipo de contenedor existe en la base de datos de tipos de contenedores
+        const containerTypeExists = containerTypesFromBackend.some(ct => 
+          ct.code.toUpperCase() === normalizedType
+        );
+        
+        if (!containerTypeExists && normalizedType) {
+          console.warn(`    ⚠️  [Flexible] Tipo de contenedor "${normalizedType}" no existe en la base de datos de tipos de contenedores`);
+        }
+        
+        console.log(`    Matching flexible: "${normalizedLeg}" vs "${normalizedRouteName}" = ${legMatch}, "${normalizedMoveType}" vs "${route.routeType}" = ${moveTypeMatch}, "${normalizedType}" vs "${route.containerType}" = ${containerTypeMatch}, tipo existe en BD = ${containerTypeExists}`)
+        return legMatch && moveTypeMatch && containerTypeMatch && containerTypeExists;
+      });
+      
+      if (flexibleMatch) {
+        matchesFound++;
+        console.log(`  ✅ MATCH FLEXIBLE ENCONTRADO: ${flexibleMatch.name} - $${flexibleMatch.price}`)
+        
+        const containerTypeInfo = containerTypesFromBackend.find(ct => 
+          ct.code.toUpperCase() === flexibleMatch.containerType?.toUpperCase()
+        );
+        const detectedContainerType = containerTypeInfo?.category === 'REEFE' ? 'reefer' : 'dry';
+        
+        results.push({
+          ...record,
+          matchedPrice: flexibleMatch.price,
+          matchedRouteId: flexibleMatch._id || '',
+          matchedRouteName: flexibleMatch.name || '',
+          isMatched: true,
+          sapCode: 'TRK002',
+          detectedContainerType: detectedContainerType
+        });
+        continue;
+      }
+      
+      console.log(`  ❌ NO SE ENCONTRÓ NINGÚN MATCH`)
+      results.push({
         ...record,
         matchedPrice: 0,
+        matchedRouteId: '',
+        matchedRouteName: '',
         isMatched: false,
         sapCode: 'TRK002'
-      };
+      });
     }
-  });
+  }
+  
+  return results;
 };
 
 export const parseTruckingExcel = async (file: File): Promise<TruckingExcelData[]> => {

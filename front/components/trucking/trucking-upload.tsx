@@ -5,7 +5,7 @@ import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 import { createTruckingRecords, selectCreatingRecords, selectRecordsError } from "@/lib/features/records/recordsSlice"
 import { addExcelFile } from "@/lib/features/excel/excelSlice"
 import { parseTruckingExcel, TruckingExcelData, matchTruckingDataWithRoutes } from "@/lib/excel-parser"
-import { selectTruckingRoutes, fetchTruckingRoutes, selectTruckingRoutesLoading, selectTruckingRoutesError } from "@/lib/features/truckingRoutes/truckingRoutesSlice"
+import { selectTruckingRoutes, fetchTruckingRoutes, selectTruckingRoutesLoading, selectTruckingRoutesError, selectTruckingRoutesPagination } from "@/lib/features/truckingRoutes/truckingRoutesSlice"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
 import { FileSpreadsheet, Upload, CheckCircle, Loader2, AlertCircle, CheckCircle2, Plus } from "lucide-react"
 import { 
   selectAllClients,
@@ -74,6 +75,16 @@ export function TruckingUpload() {
   const [previewData, setPreviewData] = useState<TruckingExcelData[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  
+  // Estado para la barra de progreso del matching
+  const [matchingProgress, setMatchingProgress] = useState({
+    isMatching: false,
+    current: 0,
+    total: 0,
+    percentage: 0,
+    currentRecord: '',
+    matchesFound: 0
+  })
 
   const dispatch = useAppDispatch()
   const { toast } = useToast()
@@ -86,6 +97,7 @@ export function TruckingUpload() {
   const routes = useAppSelector(selectTruckingRoutes)
   const routesLoading = useAppSelector(selectTruckingRoutesLoading)
   const routesError = useAppSelector(selectTruckingRoutesError)
+  const routesPagination = useAppSelector(selectTruckingRoutesPagination)
 
   // Container Types state
   const containerTypes = useAppSelector(selectAllContainerTypes)
@@ -111,15 +123,19 @@ export function TruckingUpload() {
     name: "",
     origin: "",
     destination: "",
-    containerType: "dry",
-    routeType: "single",
+    containerType: "",
+    routeType: "SINGLE",
     price: 0,
+    status: "FULL",
+    cliente: "",
+    routeArea: "",
+    sizeContenedor: "",
   })
   const [shouldReprocess, setShouldReprocess] = useState(false)
 
-  // Cargar rutas al montar el componente
+  // Cargar rutas al montar el componente - cargar todas las rutas para matching
   useEffect(() => {
-    dispatch(fetchTruckingRoutes())
+    dispatch(fetchTruckingRoutes({ page: 1, limit: 10000 })) // Cargar hasta 10,000 rutas para matching
   }, [dispatch])
 
   // Cargar container types al montar el componente
@@ -242,9 +258,13 @@ export function TruckingUpload() {
       name: `${origin}/${destination}`,
       origin: origin,
       destination: destination,
-      containerType: record.detectedContainerType || "dry",
-      routeType: record.moveType?.toLowerCase() === 'rt' ? "RT" : "single",
+      containerType: record.type || "",
+      routeType: record.moveType?.toLowerCase() === 'rt' ? "RT" : "SINGLE",
       price: 0,
+      status: "FULL",
+      cliente: record.line || "",
+      routeArea: "",
+      sizeContenedor: record.size || "",
     })
     
     setShowCreateRouteModal(true)
@@ -293,8 +313,27 @@ export function TruckingUpload() {
       console.log("Container types disponibles:", containerTypes)
       console.log("")
       
+      // Inicializar estado de progreso inmediatamente
+      setMatchingProgress({
+        isMatching: true,
+        current: 0,
+        total: realData.length,
+        percentage: 0,
+        currentRecord: 'Re-procesando...',
+        matchesFound: 0
+      })
+      
       // Aplicar matching con las rutas configuradas y container types del backend
-      const matchedData = matchTruckingDataWithRoutes(realData, routes, containerTypes)
+      const matchedData = await matchTruckingDataWithRoutes(realData, routes, containerTypes, (current, total, currentRecord, matchesFound) => {
+        setMatchingProgress({
+          isMatching: true,
+          current: current + 1, // Mostrar como 1-based para el usuario
+          total,
+          percentage: Math.round(((current + 1) / total) * 100),
+          currentRecord,
+          matchesFound
+        })
+      })
       
       console.log("Datos después del re-matching:", matchedData)
       console.log("")
@@ -302,6 +341,16 @@ export function TruckingUpload() {
       // Procesar clientes faltantes usando la columna 'line' del Excel
       const processedData = await processMissingClients(matchedData)
       setPreviewData(processedData)
+      
+      // Limpiar estado de progreso
+      setMatchingProgress({
+        isMatching: false,
+        current: 0,
+        total: 0,
+        percentage: 0,
+        currentRecord: '',
+        matchesFound: 0
+      })
       
       // Contar registros con match
       const matchedCount = matchedData.filter(record => record.isMatched).length
@@ -335,7 +384,7 @@ export function TruckingUpload() {
   }
 
   const handleCreateRoute = async () => {
-    if (!newRoute.origin || !newRoute.destination || !newRoute.containerType || !newRoute.routeType || newRoute.price <= 0) {
+    if (!newRoute.origin || !newRoute.destination || !newRoute.containerType || !newRoute.routeType || newRoute.price <= 0 || !newRoute.status || !newRoute.cliente || !newRoute.routeArea || !newRoute.sizeContenedor) {
       toast({ title: "Error", description: "Completa todos los campos obligatorios", variant: "destructive" })
       return
     }
@@ -346,7 +395,7 @@ export function TruckingUpload() {
       // Cerrar modal y limpiar estado
       setShowCreateRouteModal(false)
       setRecordForRoute(null)
-      setNewRoute({ name: "", origin: "", destination: "", containerType: "dry", routeType: "single", price: 0 })
+      setNewRoute({ name: "", origin: "", destination: "", containerType: "", routeType: "SINGLE", price: 0, status: "FULL", cliente: "", routeArea: "", sizeContenedor: "" })
       
       // Activar flag para re-procesar cuando las rutas se actualicen
       if (selectedFile && previewData.length > 0) {
@@ -370,7 +419,7 @@ export function TruckingUpload() {
   const handleCancelCreateRoute = () => {
     setShowCreateRouteModal(false)
     setRecordForRoute(null)
-    setNewRoute({ name: "", origin: "", destination: "", containerType: "dry", routeType: "single", price: 0 })
+    setNewRoute({ name: "", origin: "", destination: "", containerType: "", routeType: "SINGLE", price: 0, status: "FULL", cliente: "", routeArea: "", sizeContenedor: "" })
   }
 
   // Re-procesar Excel cuando las rutas se actualicen y shouldReprocess sea true
@@ -512,8 +561,45 @@ export function TruckingUpload() {
         console.log("Container types disponibles:", containerTypes)
         console.log("")
         
+        // Inicializar estado de progreso inmediatamente
+        console.log("=== INICIANDO BARRA DE PROGRESO ===")
+        console.log("Configurando estado de progreso:", {
+          isMatching: true,
+          current: 0,
+          total: realData.length,
+          percentage: 0,
+          currentRecord: 'Iniciando...',
+          matchesFound: 0
+        })
+        
+        setMatchingProgress({
+          isMatching: true,
+          current: 0,
+          total: realData.length,
+          percentage: 0,
+          currentRecord: 'Iniciando...',
+          matchesFound: 0
+        })
+        
+        console.log("Estado de progreso configurado")
+        
+        // Forzar re-render con un pequeño delay
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
         // Aplicar matching con las rutas configuradas y container types del backend
-        const matchedData = matchTruckingDataWithRoutes(realData, routes, containerTypes)
+        const matchedData = await matchTruckingDataWithRoutes(realData, routes, containerTypes, (current, total, currentRecord, matchesFound) => {
+          console.log("=== CALLBACK DE PROGRESO ===")
+          console.log("Current:", current, "Total:", total, "Record:", currentRecord, "Matches:", matchesFound)
+          
+          setMatchingProgress({
+            isMatching: true,
+            current: current + 1, // Mostrar como 1-based para el usuario
+            total,
+            percentage: Math.round(((current + 1) / total) * 100),
+            currentRecord,
+            matchesFound
+          })
+        })
         
         console.log("Datos después del matching:", matchedData)
         console.log("")
@@ -521,6 +607,16 @@ export function TruckingUpload() {
         // Procesar clientes faltantes usando la columna 'line' del Excel
         const processedData = await processMissingClients(matchedData)
         setPreviewData(processedData)
+        
+        // Limpiar estado de progreso
+        setMatchingProgress({
+          isMatching: false,
+          current: 0,
+          total: 0,
+          percentage: 0,
+          currentRecord: '',
+          matchesFound: 0
+        })
         
         // Contar registros con match
         const matchedCount = matchedData.filter(record => record.isMatched).length
@@ -800,7 +896,7 @@ export function TruckingUpload() {
           {!routesLoading && !containerTypesLoading && routes.length > 0 && containerTypes.length > 0 && (
             <div className="flex items-center gap-2 text-sm text-green-600">
               <CheckCircle className="h-4 w-4" />
-              {routes.length} ruta{routes.length !== 1 ? 's' : ''} y {containerTypes.length} tipo{containerTypes.length !== 1 ? 's' : ''} de contenedor{containerTypes.length !== 1 ? 'es' : ''} configurado{routes.length !== 1 ? 's' : ''} listo{routes.length !== 1 ? 's' : ''}
+              {routesPagination?.totalItems || routes.length} ruta{(routesPagination?.totalItems || routes.length) !== 1 ? 's' : ''} y {containerTypes.length} tipo{containerTypes.length !== 1 ? 's' : ''} de contenedor{containerTypes.length !== 1 ? 'es' : ''} configurado{(routesPagination?.totalItems || routes.length) !== 1 ? 's' : ''} listo{(routesPagination?.totalItems || routes.length) !== 1 ? 's' : ''}
             </div>
           )}
           
@@ -810,6 +906,51 @@ export function TruckingUpload() {
               {selectedFile.name}
               <Badge variant="secondary">{previewData.length} registros</Badge>
             </div>
+          )}
+
+          {/* Barra de progreso del matching */}
+          {console.log("=== RENDERIZANDO BARRA DE PROGRESO ===", matchingProgress.isMatching, matchingProgress)}
+          {matchingProgress.isMatching && (
+            <Card className="border-blue-200 bg-blue-50">
+              <CardContent className="p-4">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                      <span className="text-sm font-medium text-blue-900">
+                        Buscando coincidencias...
+                      </span>
+                    </div>
+                    <span className="text-sm text-blue-700">
+                      {matchingProgress.percentage}%
+                    </span>
+                  </div>
+                  
+                  <Progress 
+                    value={matchingProgress.percentage} 
+                    className="h-2"
+                  />
+                  
+                  <div className="flex items-center justify-between text-xs text-blue-700">
+                    <span>
+                      Procesando: {matchingProgress.currentRecord}
+                    </span>
+                    <span>
+                      {matchingProgress.current} de {matchingProgress.total} registros
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center justify-between text-xs text-blue-600">
+                    <span>
+                      ✅ {matchingProgress.matchesFound} coincidencias encontradas
+                    </span>
+                    <span>
+                      🔍 Comparando con {routes.length} rutas disponibles
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           )}
         </CardContent>
       </Card>
@@ -1194,30 +1335,24 @@ export function TruckingUpload() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="route-container-type">Tipo de Contenedor *</Label>
-                  <Select 
+                  <Input 
+                    id="route-container-type" 
                     value={newRoute.containerType} 
-                    onValueChange={(value) => setNewRoute({ ...newRoute, containerType: value as "dry" | "reefer" })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="dry">Dry</SelectItem>
-                      <SelectItem value="reefer">Reefer</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    onChange={(e) => setNewRoute({ ...newRoute, containerType: e.target.value.toUpperCase() })} 
+                    placeholder="DV, CA, CT, RE, etc." 
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="route-route-type">Tipo de Ruta *</Label>
                   <Select 
                     value={newRoute.routeType} 
-                    onValueChange={(value) => setNewRoute({ ...newRoute, routeType: value as "single" | "RT" })}
+                    onValueChange={(value) => setNewRoute({ ...newRoute, routeType: value as "SINGLE" | "RT" })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar tipo de ruta" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="single">Single - Viaje único</SelectItem>
+                      <SelectItem value="SINGLE">Single - Viaje único</SelectItem>
                       <SelectItem value="RT">RT - Round Trip</SelectItem>
                     </SelectContent>
                   </Select>
@@ -1232,6 +1367,48 @@ export function TruckingUpload() {
                     placeholder="250.00" 
                     min="0" 
                     step="0.01" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-status">Estado *</Label>
+                  <Select 
+                    value={newRoute.status} 
+                    onValueChange={(value) => setNewRoute({ ...newRoute, status: value as "FULL" | "EMPTY" })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FULL">Full</SelectItem>
+                      <SelectItem value="EMPTY">Empty</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-cliente">Cliente *</Label>
+                  <Input 
+                    id="route-cliente" 
+                    value={newRoute.cliente} 
+                    onChange={(e) => setNewRoute({ ...newRoute, cliente: e.target.value.toUpperCase() })} 
+                    placeholder="MSC" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-area">Área de Ruta *</Label>
+                  <Input 
+                    id="route-area" 
+                    value={newRoute.routeArea} 
+                    onChange={(e) => setNewRoute({ ...newRoute, routeArea: e.target.value.toUpperCase() })} 
+                    placeholder="PACIFIC, NORTH, SOUTH, ATLANTIC" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-size">Tamaño del Contenedor *</Label>
+                  <Input 
+                    id="route-size" 
+                    value={newRoute.sizeContenedor} 
+                    onChange={(e) => setNewRoute({ ...newRoute, sizeContenedor: e.target.value })} 
+                    placeholder="20, 40, 45" 
                   />
                 </div>
               </div>

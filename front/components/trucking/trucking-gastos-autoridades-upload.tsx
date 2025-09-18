@@ -612,8 +612,8 @@ export function TruckingGastosAutoridadesUpload() {
   };
 
   return (
-    <>
-      <Card>
+    <div className="w-full flex flex-col gap-4">
+      <Card className="w-full">
              <CardHeader>
          <CardTitle>Subir Excel Gastos Autoridades</CardTitle>
          <div className="text-sm text-muted-foreground space-y-1">
@@ -622,7 +622,7 @@ export function TruckingGastosAutoridadesUpload() {
            <p>• Los campos opcionales se llenarán automáticamente con valores por defecto</p>
          </div>
        </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 w-full min-w-0">
         <Input type="file" accept=".xlsx,.xls" onChange={handleFileChange} />
         {fileName && <div className="text-sm text-muted-foreground">Archivo: {fileName}</div>}
         
@@ -682,68 +682,114 @@ export function TruckingGastosAutoridadesUpload() {
                </div>
              )}
              
-             {/* Tabla de datos */}
-             <div className="overflow-auto border rounded-md max-h-96">
-               <Table>
-                 <TableHeader>
-                   <TableRow>
-                     {columns.map(col => <TableHead key={col}>{col}</TableHead>)}
-                     <TableHead>Estado Cliente</TableHead>
-                   </TableRow>
-                 </TableHeader>
-                 <TableBody>
-                   {excelRows.map((row, idx) => {
-                     const orderValue = row[columns.find(col => col.toLowerCase().includes('order')) || 'Order'];
-                     const orderNumbers = excelRows.map(r => r[columns.find(col => col.toLowerCase().includes('order')) || 'Order']);
-                     const isDuplicate = orderNumbers.filter(order => order === orderValue).length > 1;
-                     
-                     return (
-                       <TableRow key={idx} className={isDuplicate ? 'bg-red-50' : ''}>
-                         {columns.map(col => (
-                           <TableCell key={col} className={isDuplicate ? 'text-red-600 font-medium' : ''}>
-                             {row[col]}
-                           </TableCell>
-                         ))}
-                         <TableCell>
-                           {(() => {
-                             const customerName = row[columns.find(col => col.toLowerCase().includes('customer')) || 'Customer'];
-                             if (!customerName || customerName === 'N/A') {
-                               return <span className="text-muted-foreground">Sin cliente</span>;
-                             }
-                             
-                             const clientStatus = clientCompleteness.get(customerName);
-                             if (!clientStatus) {
-                               return <span className="text-muted-foreground">No verificado</span>;
-                             }
-                             
-                             if (clientStatus.isComplete) {
-                               return (
-                                 <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
-                                   <CheckCircle2 className="h-3 w-3 mr-1" />
-                                   Completo
-                                 </Badge>
-                               );
-                             } else {
-                               return (
-                                 <Badge variant="outline" className="text-red-600 border-red-600 text-xs cursor-pointer" 
-                                        onClick={() => handleClientClick(customerName)}>
-                                   <AlertCircle className="h-3 w-3 mr-1" />
-                                   Incompleto
-                                 </Badge>
-                               );
-                             }
-                           })()}
-                         </TableCell>
-                       </TableRow>
-                     );
-                   })}
-                 </TableBody>
-               </Table>
+             {/* Contenedor de tabla con scroll horizontal optimizado */}
+             <div className="w-full min-w-0">
+               <div className="border rounded-md bg-white overflow-hidden">
+                 <div className="overflow-x-auto overflow-y-auto max-h-96">
+                   <div className="min-w-max">
+                     <Table className="w-full">
+                       <TableHeader className="sticky top-0 bg-white z-10">
+                         <TableRow>
+                           {columns.map((col, index) => (
+                             <TableHead 
+                               key={col} 
+                               className="whitespace-nowrap px-3 py-2 text-left font-medium text-gray-900 bg-gray-50"
+                               style={{ 
+                                 minWidth: index === 0 ? '180px' : '140px',
+                                 width: 'auto'
+                               }}
+                             >
+                               {col}
+                             </TableHead>
+                           ))}
+                           <TableHead 
+                             className="whitespace-nowrap px-3 py-2 text-left font-medium text-gray-900 sticky right-0 bg-gray-50 border-l z-20"
+                             style={{ 
+                               minWidth: '160px',
+                               width: '160px'
+                             }}
+                           >
+                             Estado Cliente
+                           </TableHead>
+                         </TableRow>
+                       </TableHeader>
+                       <TableBody>
+                         {excelRows.map((row, idx) => {
+                           const orderValue = row[columns.find(col => col.toLowerCase().includes('order')) || 'Order'];
+                           const orderNumbers = excelRows.map(r => r[columns.find(col => col.toLowerCase().includes('order')) || 'Order']);
+                           const isDuplicate = orderNumbers.filter(order => order === orderValue).length > 1;
+                           
+                           return (
+                             <TableRow key={idx} className={isDuplicate ? 'bg-red-50' : 'hover:bg-gray-50'}>
+                               {columns.map((col, colIndex) => (
+                                 <TableCell 
+                                   key={col} 
+                                   className={`px-3 py-2 text-sm ${isDuplicate ? 'text-red-600 font-medium' : 'text-gray-900'} whitespace-nowrap`}
+                                   style={{ 
+                                     minWidth: colIndex === 0 ? '180px' : '140px',
+                                     width: 'auto'
+                                   }}
+                                 >
+                                   <div 
+                                     className="truncate" 
+                                     title={String(row[col])}
+                                     style={{ 
+                                       maxWidth: colIndex === 0 ? '160px' : '120px'
+                                     }}
+                                   >
+                                     {row[col]}
+                                   </div>
+                                 </TableCell>
+                               ))}
+                               <TableCell 
+                                 className="px-3 py-2 text-sm sticky right-0 bg-white border-l z-10"
+                                 style={{ 
+                                   minWidth: '160px',
+                                   width: '160px'
+                                 }}
+                               >
+                                 {(() => {
+                                   const customerName = row[columns.find(col => col.toLowerCase().includes('customer')) || 'Customer'];
+                                   if (!customerName || customerName === 'N/A') {
+                                     return <span className="text-muted-foreground text-xs">Sin cliente</span>;
+                                   }
+                                   
+                                   const clientStatus = clientCompleteness.get(customerName);
+                                   if (!clientStatus) {
+                                     return <span className="text-muted-foreground text-xs">No verificado</span>;
+                                   }
+                                   
+                                   if (clientStatus.isComplete) {
+                                     return (
+                                       <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
+                                         <CheckCircle2 className="h-3 w-3 mr-1" />
+                                         Completo
+                                       </Badge>
+                                     );
+                                   } else {
+                                     return (
+                                       <Badge variant="outline" className="text-red-600 border-red-600 text-xs cursor-pointer" 
+                                              onClick={() => handleClientClick(customerName)}>
+                                         <AlertCircle className="h-3 w-3 mr-1" />
+                                         Incompleto
+                                       </Badge>
+                                     );
+                                   }
+                                 })()}
+                               </TableCell>
+                             </TableRow>
+                           );
+                         })}
+                       </TableBody>
+                     </Table>
+                   </div>
+                 </div>
+               </div>
              </div>
            </div>
          )}
         {excelRows.length > 0 && (
-          <div className="space-y-3">
+          <div className="space-y-3 mt-4">
             {hasPendingClients && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                 <div className="flex items-center gap-2">
@@ -758,31 +804,37 @@ export function TruckingGastosAutoridadesUpload() {
               </div>
             )}
             
-            <Button 
-              onClick={handleUpload} 
-              disabled={loading || hasPendingClients} 
-              className="mt-2"
-            >
-              {loading ? "Subiendo..." : hasPendingClients ? "Completar clientes primero" : "Subir registros"}
-            </Button>
-            
-            {uploadProgress && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Progreso de carga</span>
-                  <span>{uploadProgress.current} de {uploadProgress.total}</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
-                  />
-                </div>
-                <div className="text-xs text-muted-foreground text-center">
-                  {Math.round((uploadProgress.current / uploadProgress.total) * 100)}% completado
-                </div>
+            {/* Botón centrado que no se mueve con el scroll */}
+            <div className="sticky bottom-0 bg-white pt-4 border-t">
+              <div className="flex justify-center">
+                <Button 
+                  onClick={handleUpload} 
+                  disabled={loading || hasPendingClients} 
+                  className="w-auto px-8"
+                  size="lg"
+                >
+                  {loading ? "Subiendo..." : hasPendingClients ? "Completar clientes primero" : "Subir registros"}
+                </Button>
               </div>
-            )}
+              
+              {uploadProgress && (
+                <div className="space-y-2 mt-3">
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>Progreso de carga</span>
+                    <span>{uploadProgress.current} de {uploadProgress.total}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                    />
+                  </div>
+                  <div className="text-xs text-muted-foreground text-center">
+                    {Math.round((uploadProgress.current / uploadProgress.total) * 100)}% completado
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </CardContent>
@@ -802,7 +854,7 @@ export function TruckingGastosAutoridadesUpload() {
       onClientSaved={handleClientSaved}
       setHasPendingClients={setHasPendingClients}
     />
-  </>
+    </div>
   );
 }
 
