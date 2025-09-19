@@ -194,9 +194,11 @@ export const createTruckingRecords = createAsyncThunk(
       console.log("data.payload:", data.payload);
       console.log("data.payload.records:", data.payload?.records);
       console.log("data.payload.records length:", data.payload?.records?.length);
-      const result = data.payload?.records || [];
+      
+      // Retornar toda la respuesta del backend para que el frontend pueda acceder a duplicates, count, etc.
+      const result = data.payload || {};
       console.log("Resultado final a retornar:", result);
-      console.log("Resultado final length:", result.length);
+      console.log("Resultado final length:", result.records?.length || 0);
       return result
     } catch (error) {
                                        //@ts-ignore
@@ -949,7 +951,10 @@ const recordsSlice = createSlice({
       })
       .addCase(createTruckingRecords.fulfilled, (state, action) => {
         state.creatingRecords = false
-        state.individualRecords.push(...action.payload)
+        // action.payload ahora es un objeto con {records, count, duplicates, message}
+        if (action.payload.records && Array.isArray(action.payload.records)) {
+          state.individualRecords.push(...action.payload.records)
+        }
       })
       .addCase(createTruckingRecords.rejected, (state, action) => {
         state.creatingRecords = false

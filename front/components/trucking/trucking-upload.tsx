@@ -745,10 +745,8 @@ export function TruckingUpload() {
         recordsData
       })).unwrap()
       
-      console.log("Resultado del guardado:", result)
-      console.log("Result length:", result.length)
-      console.log("Result type:", typeof result)
-      console.log("Result is array:", Array.isArray(result))
+      console.log("=== RESULTADO DEL GUARDADO ===")
+      console.log("Result:", result)
       console.log("Result.count:", result.count)
       console.log("Result.duplicates:", result.duplicates)
       console.log("Result.records:", result.records)
@@ -768,11 +766,18 @@ export function TruckingUpload() {
         recordsCreated = result.length
       }
       
+      console.log("=== PROCESANDO MENSAJE ===")
+      console.log("recordsCreated:", recordsCreated)
+      console.log("result.duplicates:", result.duplicates)
+      console.log("result.duplicates?.count:", result.duplicates?.count)
+      
       // Si no pudimos obtener el conteo, usar un mensaje genérico
       if (recordsCreated === 0 && !result.duplicates) {
         successMessage = "Registros procesados exitosamente. Verifica la consola para más detalles."
+        console.log("Caso 1: Sin conteo y sin duplicados")
       } else if (result.duplicates && result.duplicates.count > 0) {
-        successMessage = `${recordsCreated} registros nuevos guardados, ${result.duplicates.count} duplicados (containerConsecutive) omitidos.`
+        successMessage = `${recordsCreated} registros guardados correctamente. ${result.duplicates.count} registros existentes no guardados (duplicados).`
+        console.log("Caso 2: Con duplicados - Mensaje:", successMessage)
         if (result.duplicates.containerConsecutives) {
           console.log("ContainerConsecutives duplicados:", result.duplicates.containerConsecutives)
         }
@@ -782,10 +787,13 @@ export function TruckingUpload() {
         const reeferCount = recordsData.filter(r => r.data?.detectedContainerType === 'reefer').length;
         
         successMessage = `${recordsCreated} registros con match guardados correctamente en el sistema (${previewData.length - recordsData.length} sin match omitidos)`;
+        console.log("Caso 3: Sin duplicados - Mensaje:", successMessage)
         if (dryCount > 0 || reeferCount > 0) {
           successMessage += ` Tipos: ${dryCount > 0 ? `${dryCount} DRY` : ''}${dryCount > 0 && reeferCount > 0 ? ', ' : ''}${reeferCount > 0 ? `${reeferCount} REEFER` : ''}`;
         }
       }
+      
+      console.log("Mensaje final:", successMessage)
       
       toast({
         title: "Éxito",

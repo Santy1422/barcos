@@ -544,7 +544,7 @@ export function TruckingConfig() {
   const ptgTaxes = useMemo(() => {
     return services.filter(service => 
       service.module === 'trucking' && 
-      (service.name === 'Customs' || service.name === 'Administration Fee')
+      (service.name === 'Aduana' || service.name === 'Administration Fee')
     )
   }, [services])
 
