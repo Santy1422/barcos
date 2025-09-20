@@ -108,7 +108,9 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
     groupedByBL.forEach((blRecords, blNumber) => {
       console.log(`Processing BL: ${blNumber} with ${blRecords.length} records`)
 
-      // 1. Un otherItem por cada contenedor (con Service según AUTH type)
+      // 1. Agrupar contenedores por características similares (AUTH type, precio, etc.)
+      const groupedContainers = new Map<string, { records: any[], count: number, totalPrice: number }>()
+      
       blRecords.forEach((record: any) => {
         const authType = (record.auth || '').toString().toUpperCase().trim()
         let serviceCode = ''
@@ -122,70 +124,117 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
           serviceCode = 'TRK182'
         }
 
+        const unitPrice = parseFloat(record.seal) || 0
+        const fe = record.fe ? (record.fe.toString().toUpperCase().trim() === 'F' ? 'FULL' : 'EMPTY') : 'FULL'
+        
+        // Crear clave única para agrupar contenedores similares
+        const groupKey = `${serviceCode}-${unitPrice}-${fe}-${blNumber}`
+        
+        if (!groupedContainers.has(groupKey)) {
+          groupedContainers.set(groupKey, {
+            records: [],
+            count: 0,
+            totalPrice: 0
+          })
+        }
+        
+        const group = groupedContainers.get(groupKey)!
+        group.records.push(record)
+        group.count += 1
+        group.totalPrice += unitPrice
+      })
+
+      // Convertir grupos a registros agrupados
+      groupedContainers.forEach((group, groupKey) => {
+        const [serviceCode, unitPrice, fe, blNumber] = groupKey.split('-')
+        const authType = serviceCode === 'TRK175' ? 'QUA' : 'APA'
+        
         const authRecord = {
-          id: record._id || record.id,
-          description: `${authType} - Container ${record.container} - BL ${blNumber}`,
-          quantity: 1,
-          unitPrice: parseFloat(record.seal) || 0, // SEAL va por contenedor
-          totalPrice: parseFloat(record.seal) || 0,
+          id: `${blNumber}-${serviceCode}-${group.count}`,
+          description: `${authType} - BL ${blNumber} (${group.count} contenedores)`,
+          quantity: group.count,
+          unitPrice: parseFloat(unitPrice),
+          totalPrice: group.totalPrice,
           serviceCode: serviceCode,
           unit: 'SERVICIO',
           blNumber: blNumber,
-          containerNumber: record.container || '',
+          containerNumber: '', // No específico para contenedores agrupados
           containerSize: '', // Se asigna solo para QUA
           containerType: '', // Se asigna solo para QUA
           containerIsoCode: '',
-          fullEmptyStatus: record.fe ? (record.fe.toString().toUpperCase().trim() === 'F' ? 'FULL' : 'EMPTY') : 'FULL',
+          fullEmptyStatus: fe,
           businessType: 'IMPORT',
-          internalOrder: record.order || '',
+          internalOrder: group.records[0]?.order || '',
           ctrCategory: '', // Se asigna solo para QUA
           subcontracting: 'N'
         }
 
-        // Para QUA, agregar información de contenedor
-        if (authType === 'QUA') {
-          authRecord.containerSize = record.size || record.containerSize || ''
-          authRecord.containerType = record.type || record.containerType || ''
+        // Para QUA, agregar información de contenedor del primer registro
+        if (authType === 'QUA' && group.records.length > 0) {
+          const firstRecord = group.records[0]
+          authRecord.containerSize = firstRecord.size || firstRecord.containerSize || ''
+          authRecord.containerType = firstRecord.type || firstRecord.containerType || ''
           // Determinar CtrCategory basado en tipo detectado o por defecto 'D'
-          authRecord.ctrCategory = record.detectedContainerType === 'reefer' ? 'R' : 'D'
+          authRecord.ctrCategory = firstRecord.detectedContainerType === 'reefer' ? 'R' : 'D'
         }
 
         authRecords.push(authRecord)
       })
 
-      // 2. Un otherItem adicional por BL Number con Service TRK009 (NOTF)
-      const notfRecord = blRecords
-        .filter(r => r.order && !isNaN(parseFloat(r.order)))
-        .sort((a, b) => parseFloat(a.order) - parseFloat(b.order))[0]
+      // 2. Agrupar NOTF por BL Number
+      const notfRecords = blRecords
+        .filter(r => r.order && !isNaN(parseFloat(r.order)) && r.notf && parseFloat(r.notf) > 0)
+        .sort((a, b) => parseFloat(a.order) - parseFloat(b.order))
       
-      const notfValue = notfRecord?.notf ? parseFloat(notfRecord.notf) || 0 : 0
+      if (notfRecords.length > 0) {
+        // Agrupar NOTF por precio
+        const groupedNOTF = new Map<number, { records: any[], count: number, totalPrice: number }>()
+        
+        notfRecords.forEach((record: any) => {
+          const notfValue = parseFloat(record.notf) || 0
+          
+          if (!groupedNOTF.has(notfValue)) {
+            groupedNOTF.set(notfValue, {
+              records: [],
+              count: 0,
+              totalPrice: 0
+            })
+          }
+          
+          const group = groupedNOTF.get(notfValue)!
+          group.records.push(record)
+          group.count += 1
+          group.totalPrice += notfValue
+        })
 
-      if (notfValue > 0) {
-        const blAuthRecord = {
-          id: `${blNumber}-NOTF`,
-          description: `NOTF - BL ${blNumber}`,
-          quantity: 1,
-          unitPrice: notfValue,
-          totalPrice: notfValue,
-          serviceCode: 'TRK009',
-          unit: 'SERVICIO',
-          blNumber: blNumber,
-          containerNumber: '',
-          containerSize: '',
-          containerType: '',
-          containerIsoCode: '',
-          fullEmptyStatus: 'FULL',
-          businessType: 'IMPORT',
-          internalOrder: notfRecord?.order || '',
-          ctrCategory: '',
-          subcontracting: 'N'
-        }
+        // Convertir grupos NOTF a registros agrupados
+        groupedNOTF.forEach((group, notfValue) => {
+          const blAuthRecord = {
+            id: `${blNumber}-TRK009-${group.count}`,
+            description: `NOTF - BL ${blNumber} (${group.count} registros)`,
+            quantity: group.count,
+            unitPrice: notfValue,
+            totalPrice: group.totalPrice,
+            serviceCode: 'TRK009',
+            unit: 'SERVICIO',
+            blNumber: blNumber,
+            containerNumber: '',
+            containerSize: '',
+            containerType: '',
+            containerIsoCode: '',
+            fullEmptyStatus: 'FULL',
+            businessType: 'IMPORT',
+            internalOrder: group.records[0]?.order || '',
+            ctrCategory: '',
+            subcontracting: 'N'
+          }
 
-        authRecords.push(blAuthRecord)
+          authRecords.push(blAuthRecord)
+        })
       }
     })
 
-    console.log("Final AUTH records for XML:", authRecords)
+    console.log("Final AUTH records for XML (grouped):", authRecords)
 
     // Construir payload para generateInvoiceXML
     const xmlPayload = {
@@ -292,6 +341,19 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
             console.log(`No hay campo fe, usando valor por defecto`)
           }
           
+          // Determinar CtrCategory basado en el tipo de contenedor detectado
+          let ctrCategory = 'D' // Valor por defecto para DRY
+          if (d.detectedContainerType) {
+            if (d.detectedContainerType === 'reefer') {
+              ctrCategory = 'R'
+            } else if (d.detectedContainerType === 'dry') {
+              ctrCategory = 'D'
+            }
+            console.log(`Detected container type: "${d.detectedContainerType}" -> CtrCategory: "${ctrCategory}"`)
+          } else {
+            console.log(`No hay detectedContainerType, usando valor por defecto CtrCategory: "${ctrCategory}"`)
+          }
+          
           const recordForXml = {
             id: r._id || r.id,
             description: desc,
@@ -309,6 +371,11 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
             fullEmptyStatus: fullEmptyStatus,
             route: d.leg || `${d.from || ''} / ${d.to || ''}`,
             commodity: 'TRUCK',
+            // Campos adicionales requeridos por el XML
+            businessType: d.moveType || 'IMPORT',
+            internalOrder: d.internalOrder || '',
+            ctrCategory: ctrCategory,
+            subcontracting: d.subcontracting || 'N'
           }
           
           console.log(`Record for XML:`, recordForXml)
@@ -396,6 +463,47 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
             console.log("Admin fee item to add:", adminFeeItem)
             otherItems.push(adminFeeItem)
           }
+        }
+        
+        // Agregar servicios adicionales como otheritems
+        if (invoice.details?.additionalServices && Array.isArray(invoice.details.additionalServices)) {
+          console.log("=== DEBUG: Servicios adicionales en modal ===")
+          console.log("Additional services found:", invoice.details.additionalServices)
+          
+          invoice.details.additionalServices.forEach((additionalService: any) => {
+            console.log("Processing additional service:", additionalService)
+            
+            // Buscar el servicio en la base de datos para obtener el serviceCode real
+            const serviceFromDb = services.find((s: any) => s._id === additionalService.id)
+            const serviceCode = serviceFromDb?.name || 'TRK999' // Usar el name como serviceCode (ej: "TRK006")
+            const serviceDescription = serviceFromDb?.description || additionalService.description || additionalService.name || 'Servicio Adicional'
+            
+            console.log("Service from DB:", serviceFromDb)
+            console.log("Using serviceCode:", serviceCode)
+            
+            const additionalServiceItem = {
+              serviceCode: serviceCode, // Usar el serviceCode real de la DB
+              description: serviceDescription,
+              quantity: 1,
+              unitPrice: additionalService.amount || 0,
+              totalPrice: additionalService.amount || 0,
+              unit: 'VIAJE',
+              // Campos adicionales requeridos
+              IncomeRebateCode: 'N',
+              AmntTransacCur: (additionalService.amount || 0).toFixed(3),
+              ProfitCenter: 'PTG',
+              Activity: 'TRUCKING',
+              Pillar: 'LOGISTICS',
+              BUCountry: 'PA',
+              ServiceCountry: 'PA',
+              ClientType: 'EXTERNAL',
+              // Solo para servicios adicionales
+              FullEmpty: 'FULL'
+            }
+            
+            console.log("Additional service item to add:", additionalServiceItem)
+            otherItems.push(additionalServiceItem)
+          })
         }
         
         // Agregar los otherItems al payload

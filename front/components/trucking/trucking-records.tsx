@@ -398,7 +398,7 @@ export function TruckingRecords() {
     console.log("Fecha original issueDate:", invoice.issueDate)
     console.log("Fecha original createdAt:", invoice.createdAt)
 
-    // Agregar impuestos PTG como otheritems
+    // Agregar impuestos PTG y servicios adicionales como otheritems
     const otherItems: any[] = []
     
     // Calcular contenedores llenos para los impuestos
@@ -489,6 +489,47 @@ export function TruckingRecords() {
         console.log("Admin fee item to add:", adminFeeItem)
         otherItems.push(adminFeeItem)
       }
+    }
+
+    // Agregar servicios adicionales como otheritems
+    if (invoice.details?.additionalServices && Array.isArray(invoice.details.additionalServices)) {
+      console.log("=== DEBUG: Servicios adicionales ===")
+      console.log("Additional services found:", invoice.details.additionalServices)
+      
+      invoice.details.additionalServices.forEach((additionalService: any) => {
+        console.log("Processing additional service:", additionalService)
+        
+        // Buscar el servicio en la base de datos para obtener el serviceCode real
+        const serviceFromDb = services.find((s: any) => s._id === additionalService.id)
+        const serviceCode = serviceFromDb?.name || 'TRK999' // Usar el name como serviceCode (ej: "TRK006")
+        const serviceDescription = serviceFromDb?.description || additionalService.description || additionalService.name || 'Servicio Adicional'
+        
+        console.log("Service from DB:", serviceFromDb)
+        console.log("Using serviceCode:", serviceCode)
+        
+        const additionalServiceItem = {
+          serviceCode: serviceCode, // Usar el serviceCode real de la DB
+          description: serviceDescription,
+          quantity: 1,
+          unitPrice: additionalService.amount || 0,
+          totalPrice: additionalService.amount || 0,
+          unit: 'VIAJE',
+          // Campos adicionales requeridos
+          IncomeRebateCode: 'N',
+          AmntTransacCur: (additionalService.amount || 0).toFixed(3),
+          ProfitCenter: 'PTG',
+          Activity: 'TRUCKING',
+          Pillar: 'LOGISTICS',
+          BUCountry: 'PA',
+          ServiceCountry: 'PA',
+          ClientType: 'EXTERNAL',
+          // Solo para servicios adicionales
+          FullEmpty: 'FULL'
+        }
+        
+        console.log("Additional service item to add:", additionalServiceItem)
+        otherItems.push(additionalServiceItem)
+      })
     }
 
     const payload = {

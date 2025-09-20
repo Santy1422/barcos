@@ -67,6 +67,170 @@ function formatTimeForXML(dateString: string): string {
   return `${hours}${minutes}${seconds}`
 }
 
+// Función para obtener el CtrISOcode basándose en CtrType y CtrSize
+const getCtrISOcode = (ctrType: string, ctrSize: string): string => {
+  const type = ctrType?.toUpperCase() || ''
+  const size = ctrSize?.toString() || ''
+  
+  // Tabla de mapeo CtrISOcode -> CtrSize -> CtrType (ordenada de arriba a abajo)
+  const isoCodeMap = [
+    { isoCode: '10G0', size: '10', type: 'DV' },
+    { isoCode: '10T0', size: '10', type: 'TK' },
+    { isoCode: '12R1', size: '10', type: 'RE' },
+    { isoCode: '20G0', size: '20', type: 'DV' },
+    { isoCode: '20G1', size: '20', type: 'DV' },
+    { isoCode: '20H0', size: '20', type: 'HR' },
+    { isoCode: '20P1', size: '20', type: 'FL' },
+    { isoCode: '20T0', size: '20', type: 'TK' },
+    { isoCode: '20T1', size: '20', type: 'TK' },
+    { isoCode: '20T2', size: '20', type: 'TK' },
+    { isoCode: '20T3', size: '20', type: 'TK' },
+    { isoCode: '20T4', size: '20', type: 'TK' },
+    { isoCode: '20T5', size: '20', type: 'TK' },
+    { isoCode: '20T6', size: '20', type: 'TK' },
+    { isoCode: '20T7', size: '20', type: 'TK' },
+    { isoCode: '20T8', size: '20', type: 'TK' },
+    { isoCode: '22B0', size: '20', type: 'BV' },
+    { isoCode: '22G0', size: '20', type: 'DV' },
+    { isoCode: '22G1', size: '20', type: 'DV' },
+    { isoCode: '22H0', size: '20', type: 'IS' },
+    { isoCode: '22K2', size: '20', type: 'TK' },
+    { isoCode: '22OS', size: '20', type: 'OS' },
+    { isoCode: '22P1', size: '20', type: 'FL' },
+    { isoCode: '22P3', size: '20', type: 'FL' },
+    { isoCode: '22P7', size: '20', type: 'FL' },
+    { isoCode: '22P8', size: '20', type: 'FL' },
+    { isoCode: '22P9', size: '20', type: 'FL' },
+    { isoCode: '22R1', size: '20', type: 'RE' },
+    { isoCode: '22R7', size: '20', type: 'PP' },
+    { isoCode: '22R9', size: '20', type: 'RE' },
+    { isoCode: '22S1', size: '20', type: 'XX' },
+    { isoCode: '22T0', size: '20', type: 'TK' },
+    { isoCode: '22T1', size: '20', type: 'TK' },
+    { isoCode: '22T2', size: '20', type: 'TK' },
+    { isoCode: '22T3', size: '20', type: 'TK' },
+    { isoCode: '22T4', size: '20', type: 'TK' },
+    { isoCode: '22T5', size: '20', type: 'TK' },
+    { isoCode: '22T6', size: '20', type: 'TK' },
+    { isoCode: '22T7', size: '20', type: 'TK' },
+    { isoCode: '22T8', size: '20', type: 'TK' },
+    { isoCode: '22U1', size: '20', type: 'OT' },
+    { isoCode: '22U6', size: '20', type: 'HT' },
+    { isoCode: '22V0', size: '20', type: 'VE' },
+    { isoCode: '22V2', size: '20', type: 'VE' },
+    { isoCode: '22V3', size: '20', type: 'VE' },
+    { isoCode: '22W0', size: '20', type: 'PW' },
+    { isoCode: '24T6', size: '20', type: 'TK' },
+    { isoCode: '24W1', size: '20', type: 'PW' },
+    { isoCode: '24ZZ', size: '20', type: 'ZZ' },
+    { isoCode: '25G0', size: '20', type: 'DV' },
+    { isoCode: '25P0', size: '20', type: 'PL' },
+    { isoCode: '26G0', size: '20', type: 'DV' },
+    { isoCode: '26H0', size: '20', type: 'IS' },
+    { isoCode: '26T9', size: '20', type: 'TK' },
+    { isoCode: '28G0', size: '20', type: 'HH' },
+    { isoCode: '28T0', size: '20', type: 'HH' },
+    { isoCode: '28T8', size: '20', type: 'TK' },
+    { isoCode: '28U1', size: '20', type: 'HH' },
+    { isoCode: '28V0', size: '20', type: 'HH' },
+    { isoCode: '29P0', size: '20', type: 'PL' },
+    { isoCode: '2EG0', size: '20', type: 'HC' },
+    { isoCode: '2LXX', size: '20', type: 'XX' },
+    { isoCode: '30B1', size: '30', type: 'BV' },
+    { isoCode: '30G0', size: '30', type: 'DV' },
+    { isoCode: '32R3', size: '30', type: 'PP' },
+    { isoCode: '32T1', size: '30', type: 'TK' },
+    { isoCode: '32T6', size: '30', type: 'TK' },
+    { isoCode: '3LXX', size: '30', type: 'XX' },
+    { isoCode: '3MB0', size: '30', type: 'BB' },
+    { isoCode: '40I0', size: '40', type: 'IS' },
+    { isoCode: '40V0', size: '40', type: 'VE' },
+    { isoCode: '42G0', size: '40', type: 'DV' },
+    { isoCode: '42G1', size: '40', type: 'DV' },
+    { isoCode: '42H0', size: '40', type: 'RE' },
+    { isoCode: '42OS', size: '40', type: 'OS' },
+    { isoCode: '42P1', size: '40', type: 'FL' },
+    { isoCode: '42P3', size: '40', type: 'FL' },
+    { isoCode: '42P4', size: '40', type: 'FL' },
+    { isoCode: '42P6', size: '40', type: 'FL' },
+    { isoCode: '42P8', size: '40', type: 'FL' },
+    { isoCode: '42P9', size: '40', type: 'FL' },
+    { isoCode: '42R1', size: '40', type: 'RE' },
+    { isoCode: '42R3', size: '40', type: 'PP' },
+    { isoCode: '42R9', size: '40', type: 'RE' },
+    { isoCode: '42S1', size: '40', type: 'XX' },
+    { isoCode: '42T2', size: '40', type: 'TK' },
+    { isoCode: '42T5', size: '40', type: 'TK' },
+    { isoCode: '42T6', size: '40', type: 'TK' },
+    { isoCode: '42T8', size: '40', type: 'TK' },
+    { isoCode: '42U1', size: '40', type: 'OT' },
+    { isoCode: '42U6', size: '40', type: 'HT' },
+    { isoCode: '43T5', size: '40', type: 'TK' },
+    { isoCode: '44ZZ', size: '40', type: 'ZZ' },
+    { isoCode: '45B3', size: '40', type: 'BV' },
+    { isoCode: '45G0', size: '40', type: 'HC' },
+    { isoCode: '45G1', size: '40', type: 'HC' },
+    { isoCode: '45P0', size: '40', type: 'PL' },
+    { isoCode: '45P1', size: '40', type: 'FT' },
+    { isoCode: '45P3', size: '40', type: 'FT' },
+    { isoCode: '45P8', size: '40', type: 'FT' },
+    { isoCode: '45R1', size: '40', type: 'HR' },
+    { isoCode: '45R9', size: '40', type: 'RE' },
+    { isoCode: '45U1', size: '40', type: 'OT' },
+    { isoCode: '45U6', size: '40', type: 'HT' },
+    { isoCode: '46H0', size: '40', type: 'HR' },
+    { isoCode: '47T9', size: '40', type: 'TK' },
+    { isoCode: '48G0', size: '20', type: 'HH' },
+    { isoCode: '48T8', size: '40', type: 'TK' },
+    { isoCode: '49P0', size: '40', type: 'PL' },
+    { isoCode: '49P3', size: '40', type: 'FL' },
+    { isoCode: '4CG0', size: '40', type: 'DV' },
+    { isoCode: '4EG1', size: '40', type: 'HC' },
+    { isoCode: '4MNL', size: '40', type: 'TK' },
+    { isoCode: '72T0', size: '23', type: 'TK' },
+    { isoCode: '72T8', size: '23', type: 'TK' },
+    { isoCode: '74T0', size: '23', type: 'TK' },
+    { isoCode: '74T1', size: '23', type: 'TK' },
+    { isoCode: '74T6', size: '23', type: 'TK' },
+    { isoCode: '74T7', size: '23', type: 'TK' },
+    { isoCode: '74T8', size: '23', type: 'TK' },
+    { isoCode: '74ZZ', size: '23', type: 'ZZ' },
+    { isoCode: '75T8', size: '23', type: 'TK' },
+    { isoCode: 'A2T1', size: '23', type: 'TK' },
+    { isoCode: 'A2T3', size: '23', type: 'TK' },
+    { isoCode: 'CMT1', size: '20', type: 'TK' },
+    { isoCode: 'L0G0', size: '45', type: 'DV' },
+    { isoCode: 'L0G1', size: '45', type: 'HC' },
+    { isoCode: 'L2G1', size: '45', type: 'HC' },
+    { isoCode: 'L2W0', size: '45', type: 'PW' },
+    { isoCode: 'L4ZZ', size: '45', type: 'ZZ' },
+    { isoCode: 'L5G1', size: '45', type: 'HC' },
+    { isoCode: 'L5R0', size: '45', type: 'HR' },
+    { isoCode: 'L5R1', size: '45', type: 'RE' },
+    { isoCode: 'LEG1', size: '45', type: 'HC' },
+    { isoCode: 'M0G0', size: '48', type: 'DV' },
+    { isoCode: 'P0G0', size: '53', type: 'DV' },
+    { isoCode: 'P5G0', size: '53', type: 'HC' },
+    { isoCode: 'P5OS', size: '53', type: 'OS' },
+    { isoCode: 'P5R1', size: '53', type: 'RE' },
+    { isoCode: 'ZZNC', size: '0', type: 'ZZ' }
+  ]
+  
+  // Buscar el primer match (de arriba a abajo en la lista)
+  const match = isoCodeMap.find(item => 
+    item.size === size && item.type === type
+  )
+  
+  if (match) {
+    console.log(`CtrISOcode encontrado: ${match.isoCode} para CtrType: ${type}, CtrSize: ${size}`)
+    return match.isoCode
+  }
+  
+  // Si no se encuentra match, usar valor por defecto
+  console.warn(`No se encontró CtrISOcode para CtrType: ${type}, CtrSize: ${size}. Usando valor por defecto.`)
+  return '42G1' // Valor por defecto para 40' DV
+}
+
 // Función para generar nombre de archivo XML según estructura SAP
 export function generateXmlFileName(companyCode: string = '9325'): string {
   const now = new Date()
@@ -259,7 +423,7 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
   }, 0)
 
   // Calcular el monto total de los impuestos PTG
-  const taxesAmountTotal = (invoice.otherItems || []).reduce((sum, taxItem) => {
+  const taxesAmountTotal = (invoice.otherItems || []).reduce((sum: number, taxItem: any) => {
     return sum + (taxItem.totalPrice || 0)
   }, 0)
 
@@ -300,79 +464,160 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
         // OtherItems Section
         "OtherItems": {
           "OtherItem": [
-            // Primero los registros principales (contenedores)
-            ...invoice.records.map((record: InvoiceLineItemForXml, index: number) => {
-              // Determinar el valor de BusinessType para el XML (I o E)
-              const businessTypeXmlValue = record.businessType === "IMPORT" ? "I" : "E"
+            // Primero los registros principales (contenedores) - AGRUPADOS
+            ...(function() {
+              // Agrupar registros por características similares
+              const groupedRecords = new Map<string, {
+                record: InvoiceLineItemForXml,
+                count: number,
+                totalPrice: number
+              }>()
               
-              // Usar serviceCode del record o TRK002 por defecto
-              const otherItem: any = {
-                "IncomeRebateCode": TRUCKING_DEFAULTS.incomeRebateCode,
-                "InternalOrder": record.internalOrder || "",
-                "Service": record.serviceCode || "TRK002",
-                "AmntTransacCur": (record.totalPrice || 0).toFixed(3),
-                "Activity": "TRK",
-                "Pillar": TRUCKING_DEFAULTS.pillar,
-                "BUCountry": TRUCKING_DEFAULTS.buCountry,
-                "ServiceCountry": TRUCKING_DEFAULTS.serviceCountry,
-                "ClientType": TRUCKING_DEFAULTS.clientType,
-                "BusinessType": businessTypeXmlValue,
-                "FullEmpty": record.fullEmptyStatus || "FULL",
-                "SubContracting": record.subcontracting || "N"
-              }
+              invoice.records.forEach((record: InvoiceLineItemForXml) => {
+                // Crear una clave única basada en las características del registro
+                const key = `${record.serviceCode || "TRK002"}-${record.description}-${record.unitPrice}-${record.containerType || "DV"}-${record.containerSize || "40"}-${record.fullEmptyStatus || "FULL"}-${record.businessType || "IMPORT"}`
+                
+                // Para registros AUTH ya agrupados, usar la cantidad que ya viene en el registro
+                const recordQuantity = record.quantity || 1
+                
+                if (groupedRecords.has(key)) {
+                  const existing = groupedRecords.get(key)!
+                  existing.count += recordQuantity
+                  existing.totalPrice += record.totalPrice || 0
+                } else {
+                  groupedRecords.set(key, {
+                    record,
+                    count: recordQuantity,
+                    totalPrice: record.totalPrice || 0
+                  })
+                }
+              })
               
-              // Solo incluir CtrType, CtrSize, CtrCategory si tienen valores no vacíos
-              if (record.containerType && record.containerType.trim()) {
-                otherItem.CtrType = record.containerType
-              }
-              if (record.containerSize && record.containerSize.trim()) {
-                otherItem.CtrSize = record.containerSize
-              }
-              if (record.ctrCategory && record.ctrCategory.trim()) {
-                otherItem.CtrCategory = record.ctrCategory
-              }
+              // Convertir grupos a OtherItems con Qty y BaseUnitMeasure
+              return Array.from(groupedRecords.values()).map((group) => {
+                const record = group.record
+                const businessTypeXmlValue = record.businessType === "IMPORT" ? "I" : "E"
+                
+                // Determinar si es un servicio de impuestos AUTH
+                const isAuthTaxService = ['TRK182', 'TRK175', 'TRK009'].includes(record.serviceCode || '')
+                
+                const otherItem: any = {
+                  "IncomeRebateCode": TRUCKING_DEFAULTS.incomeRebateCode,
+                  "InternalOrder": record.internalOrder || "",
+                  "Service": record.serviceCode || "TRK002",
+                  "Qty": group.count.toString(),
+                  "BaseUnitMeasure": isAuthTaxService ? "EA" : "CTR", // EA para impuestos AUTH, CTR para contenedores
+                  "AmntTransacCur": group.totalPrice.toFixed(3),
+                  "Activity": "TRK",
+                  "Pillar": TRUCKING_DEFAULTS.pillar,
+                  "BUCountry": TRUCKING_DEFAULTS.buCountry,
+                  "ServiceCountry": TRUCKING_DEFAULTS.serviceCountry,
+                  "ClientType": TRUCKING_DEFAULTS.clientType,
+                  "BusinessType": businessTypeXmlValue,
+                  "FullEmpty": (record.fullEmptyStatus || "FULL").substring(0, 1),
+                  "SubContracting": record.subcontracting || "N"
+                }
+                
+                // Solo incluir CtrType, CtrSize, CtrCategory si tienen valores no vacíos
+                if (record.containerType && record.containerType.trim()) {
+                  otherItem.CtrType = record.containerType
+                }
+                if (record.containerSize && record.containerSize.trim()) {
+                  otherItem.CtrSize = record.containerSize
+                }
+                if (record.ctrCategory && record.ctrCategory.trim()) {
+                  otherItem.CtrCategory = record.ctrCategory
+                }
+                
+                // Calcular y agregar CtrISOcode basándose en CtrType y CtrSize
+                const ctrType = record.containerType || "DV"
+                const ctrSize = record.containerSize || "40"
+                const ctrISOcode = getCtrISOcode(ctrType, ctrSize)
+                otherItem.CtrISOcode = ctrISOcode
+                
+                // Si no hay campos de contenedor especificados, usar valores por defecto para trasiego
+                if (!record.containerType && !record.containerSize && !record.ctrCategory) {
+                  otherItem.CtrType = "DV"
+                  otherItem.CtrSize = "40"
+                  otherItem.CtrCategory = "D"
+                  otherItem.CtrISOcode = "42G1" // Valor por defecto para 40' DV
+                }
+                
+                return otherItem
+              })
+            })(),
+            // Luego los impuestos PTG (otherItems) - AGRUPADOS
+            ...(function() {
+              if (!invoice.otherItems || invoice.otherItems.length === 0) return []
               
-              // Si no hay campos de contenedor especificados, usar valores por defecto para trasiego
-              if (!record.containerType && !record.containerSize && !record.ctrCategory) {
-                otherItem.CtrType = "DV"
-                otherItem.CtrSize = "40"
-                otherItem.CtrCategory = "D"
-              }
+              // Agrupar impuestos por serviceCode
+              const groupedTaxes = new Map<string, {
+                taxItem: any,
+                count: number,
+                totalPrice: number
+              }>()
               
-              return otherItem
-            }),
-            // Luego los impuestos PTG (otherItems)
-            ...(invoice.otherItems || []).map((taxItem: any) => {
-              console.log("Processing tax item:", taxItem)
-              const otherItem: any = {
-                "IncomeRebateCode": taxItem.IncomeRebateCode || "N",
-                "InternalOrder": "",
-                "Service": taxItem.serviceCode || "TRK135",
-                "AmntTransacCur": (taxItem.totalPrice || 0).toFixed(3),
-                "Activity": taxItem.Activity || "TRUCKING",
-                "Pillar": taxItem.Pillar || "LOGISTICS",
-                "BUCountry": taxItem.BUCountry || "PA",
-                "ServiceCountry": taxItem.ServiceCountry || "PA",
-                "ClientType": taxItem.ClientType || "EXTERNAL",
-                "BusinessType": "E", // Los impuestos siempre son EXPORT
-                "FullEmpty": taxItem.FullEmpty || "FULL",
-                "SubContracting": "N"
-              }
+              invoice.otherItems.forEach((taxItem: any) => {
+                const key = `${taxItem.serviceCode || "TRK135"}-${taxItem.description || ""}`
+                
+                if (groupedTaxes.has(key)) {
+                  const existing = groupedTaxes.get(key)!
+                  existing.count += taxItem.quantity || 1
+                  existing.totalPrice += taxItem.totalPrice || 0
+                } else {
+                  groupedTaxes.set(key, {
+                    taxItem,
+                    count: taxItem.quantity || 1,
+                    totalPrice: taxItem.totalPrice || 0
+                  })
+                }
+              })
               
-              // Solo incluir CtrType, CtrSize, CtrCategory si están definidos
-              if (taxItem.containerType && taxItem.containerType.trim()) {
-                otherItem.CtrType = taxItem.containerType
-              }
-              if (taxItem.containerSize && taxItem.containerSize.trim()) {
-                otherItem.CtrSize = taxItem.containerSize
-              }
-              if (taxItem.ctrCategory && taxItem.ctrCategory.trim()) {
-                otherItem.CtrCategory = taxItem.ctrCategory
-              }
-              
-              console.log("Generated tax XML item:", otherItem)
-              return otherItem
-            })
+              // Convertir grupos a OtherItems con Qty y BaseUnitMeasure
+              return Array.from(groupedTaxes.values()).map((group) => {
+                const taxItem = group.taxItem
+                console.log("Processing grouped tax item:", taxItem)
+                
+                const otherItem: any = {
+                  "IncomeRebateCode": taxItem.IncomeRebateCode || "N",
+                  "InternalOrder": "",
+                  "Service": taxItem.serviceCode || "TRK135",
+                  "Qty": group.count.toString(),
+                  "BaseUnitMeasure": "EA", // Unidad de medida para impuestos y servicios
+                  "AmntTransacCur": group.totalPrice.toFixed(3),
+                  "Activity": taxItem.Activity || "TRUCKING",
+                  "Pillar": taxItem.Pillar || "LOGISTICS",
+                  "BUCountry": taxItem.BUCountry || "PA",
+                  "ServiceCountry": taxItem.ServiceCountry || "PA",
+                  "ClientType": taxItem.ClientType || "EXTERNAL",
+                  "BusinessType": "E", // Los impuestos siempre son EXPORT
+                  "FullEmpty": (taxItem.FullEmpty || "FULL").substring(0, 1),
+                  "SubContracting": "N"
+                }
+                
+                // Solo incluir CtrType, CtrSize, CtrCategory si están definidos
+                if (taxItem.containerType && taxItem.containerType.trim()) {
+                  otherItem.CtrType = taxItem.containerType
+                }
+                if (taxItem.containerSize && taxItem.containerSize.trim()) {
+                  otherItem.CtrSize = taxItem.containerSize
+                }
+                if (taxItem.ctrCategory && taxItem.ctrCategory.trim()) {
+                  otherItem.CtrCategory = taxItem.ctrCategory
+                }
+                
+                // Calcular y agregar CtrISOcode para impuestos si tienen información de contenedor
+                if (taxItem.containerType && taxItem.containerSize) {
+                  const ctrType = taxItem.containerType
+                  const ctrSize = taxItem.containerSize
+                  const ctrISOcode = getCtrISOcode(ctrType, ctrSize)
+                  otherItem.CtrISOcode = ctrISOcode
+                }
+                
+                console.log("Generated grouped tax XML item:", otherItem)
+                return otherItem
+              })
+            })()
           ]
         }
       }
