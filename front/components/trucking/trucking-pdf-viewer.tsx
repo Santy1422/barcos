@@ -212,12 +212,12 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     
     if (totalFullContainers > 0) {
       // Buscar los impuestos PTG en los servicios
-      const customsTax = services.find(s => s.module === 'trucking' && s.name === 'Customs' && s.isActive)
+      const customsTax = services.find(s => s.module === 'trucking' && s.name === 'Aduana' && s.isActive)
       const adminFeeTax = services.find(s => s.module === 'trucking' && s.name === 'Administration Fee' && s.isActive)
       
       if (customsTax && customsTax.price > 0) {
         const customsTotal = customsTax.price * totalFullContainers
-        bodyRows.push([totalFullContainers, `Customs`, customsTax.price.toFixed(2), customsTotal.toFixed(2)])
+        bodyRows.push([totalFullContainers, `Aduana`, customsTax.price.toFixed(2), customsTotal.toFixed(2)])
       }
       
       if (adminFeeTax && adminFeeTax.price > 0) {

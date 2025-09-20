@@ -79,7 +79,7 @@ export function TruckingRecords() {
     // Cargar registros de autoridades para mostrar clientes correctos en facturas AUTH
     dispatch(fetchAutoridadesRecords())
     // Cargar servicios para los impuestos PTG
-    dispatch(fetchServices())
+    dispatch(fetchServices("trucking"))
   }, [dispatch])
 
   // Debug: verificar que los registros tengan el campo fe
@@ -414,22 +414,34 @@ export function TruckingRecords() {
     console.log("=== DEBUG: Impuestos PTG ===")
     console.log("Total full containers:", totalFullContainers)
     console.log("Full containers:", fullContainers)
+    console.log("All services loaded:", services)
+    console.log("Trucking services:", services.filter(s => s.module === 'trucking'))
+    console.log("Active trucking services:", services.filter(s => s.module === 'trucking' && s.isActive))
+    console.log("All services details:", services.map(s => ({ name: s.name, module: s.module, isActive: s.isActive, price: s.price })))
     
     if (totalFullContainers > 0) {
       // Buscar los impuestos PTG en los servicios
-      const customsTax = services.find(s => s.module === 'trucking' && s.name === 'Customs' && s.isActive)
+      // Buscar Aduana con diferentes variaciones del nombre
+      const customsTax = services.find(s => 
+        s.module === 'trucking' && 
+        s.isActive && 
+        (s.name === 'Aduana' || 
+         s.name === 'Customs' || 
+         s.name.toLowerCase().includes('aduana') ||
+         s.name.toLowerCase().includes('customs'))
+      )
       const adminFeeTax = services.find(s => s.module === 'trucking' && s.name === 'Administration Fee' && s.isActive)
       
-      console.log("Customs tax found:", customsTax)
+      console.log("Aduana tax found:", customsTax)
       console.log("Admin fee tax found:", adminFeeTax)
       
-      // Agregar Customs como otheritem
+      // Agregar Aduana como otheritem
       if (customsTax && customsTax.price > 0) {
-        console.log("Adding Customs tax to otherItems")
+        console.log("Adding Aduana tax to otherItems")
         const customsTotal = customsTax.price * totalFullContainers
         const customsItem = {
           serviceCode: 'TRK135',
-          description: 'Customs',
+          description: 'Aduana',
           quantity: totalFullContainers,
           unitPrice: customsTax.price,
           totalPrice: customsTotal,
@@ -443,11 +455,14 @@ export function TruckingRecords() {
           BUCountry: 'PA',
           ServiceCountry: 'PA',
           ClientType: 'EXTERNAL',
-          // Solo para Customs
+          // Solo para Aduana
           FullEmpty: 'FULL'
         }
-        console.log("Customs item to add:", customsItem)
+        console.log("Aduana item to add:", customsItem)
         otherItems.push(customsItem)
+      } else {
+        console.log("Aduana service not found in services array")
+        console.log("Available trucking services:", services.filter(s => s.module === 'trucking').map(s => ({ name: s.name, isActive: s.isActive, price: s.price })))
       }
       
       // Agregar Administration Fee como otheritem

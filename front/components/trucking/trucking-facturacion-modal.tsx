@@ -339,19 +339,19 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
         
         if (totalFullContainers > 0) {
           // Buscar los impuestos PTG en los servicios
-          const customsTax = services.find(s => s.module === 'trucking' && s.name === 'Customs' && s.isActive)
+          const customsTax = services.find(s => s.module === 'trucking' && s.name === 'Aduana' && s.isActive)
           const adminFeeTax = services.find(s => s.module === 'trucking' && s.name === 'Administration Fee' && s.isActive)
           
-          console.log("Customs tax found:", customsTax)
+          console.log("Aduana tax found:", customsTax)
           console.log("Admin fee tax found:", adminFeeTax)
           
-          // Agregar Customs como otheritem
+          // Agregar Aduana como otheritem
           if (customsTax && customsTax.price > 0) {
-            console.log("Adding Customs tax to otherItems")
+            console.log("Adding Aduana tax to otherItems")
             const customsTotal = customsTax.price * totalFullContainers
             const customsItem = {
               serviceCode: 'TRK135',
-              description: 'Customs',
+              description: 'Aduana',
               quantity: totalFullContainers,
               unitPrice: customsTax.price,
               totalPrice: customsTotal,
@@ -365,10 +365,10 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
               BUCountry: 'PA',
               ServiceCountry: 'PA',
               ClientType: 'EXTERNAL',
-              // Solo para Customs
+              // Solo para Aduana
               FullEmpty: 'FULL'
             }
-            console.log("Customs item to add:", customsItem)
+            console.log("Aduana item to add:", customsItem)
             otherItems.push(customsItem)
           }
           
