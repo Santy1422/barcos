@@ -67,6 +67,63 @@ function formatTimeForXML(dateString: string): string {
   return `${hours}${minutes}${seconds}`
 }
 
+function calculateDueDate(dateString: string): string {
+  // Aplicar la misma lógica de corrección de zona horaria que en formatDateForXML
+  let date: Date
+  
+  if (!dateString) {
+    date = new Date()
+  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
+    const [year, month, day] = dateString.split('-').map(Number)
+    date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+    // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
+    const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
+    const [year, month, day] = datePart.split('-').map(Number)
+    date = new Date(year, month - 1, day) // Crear en zona horaria local
+  } else {
+    // Para otros formatos, usar el método normal
+    date = new Date(dateString)
+  }
+  
+  // Agregar 30 días
+  const dueDate = new Date(date)
+  dueDate.setDate(date.getDate() + 30)
+  
+  // Formatear como YYYYMMDD
+  const year = dueDate.getFullYear()
+  const month = (dueDate.getMonth() + 1).toString().padStart(2, "0")
+  const day = dueDate.getDate().toString().padStart(2, "0")
+  return `${year}${month}${day}`
+}
+
+function formatReferencePeriod(dateString: string): string {
+  // Aplicar la misma lógica de corrección de zona horaria que en formatDateForXML
+  let date: Date
+  
+  if (!dateString) {
+    date = new Date()
+  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
+    const [year, month, day] = dateString.split('-').map(Number)
+    date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+    // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
+    const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
+    const [year, month, day] = datePart.split('-').map(Number)
+    date = new Date(year, month - 1, day) // Crear en zona horaria local
+  } else {
+    // Para otros formatos, usar el método normal
+    date = new Date(dateString)
+  }
+  
+  // Formatear como MM.YYYY
+  const year = date.getFullYear()
+  const month = (date.getMonth() + 1).toString().padStart(2, "0")
+  return `${month}.${year}`
+}
+
 // Función para obtener el CtrISOcode basándose en CtrType y CtrSize
 const getCtrISOcode = (ctrType: string, ctrSize: string): string => {
   const type = ctrType?.toUpperCase() || ''
@@ -431,15 +488,14 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
   const totalAmount = routeAmountTotal + taxesAmountTotal
 
   const xmlObject = {
-    "LogisticARInvoices": {
+    "ns1:LogisticARInvoices": {
       _attributes: {
-        "xmlns": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00",
-        "targetNamespace": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00"
+        "xmlns:ns1": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00"
       },
       "CustomerInvoice": {
         // Protocol Section
         "Protocol": {
-          "SourceSystem": "DEP",
+          "SourceSystem": "PTGFACTUGO",
           "TechnicalContact": "almeida.kant@ptyrmgmt.com;renee.taylor@ptyrmgmt.com"
         },
         // Header Section
@@ -459,7 +515,9 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
         // CustomerOpenItem Section
         "CustomerOpenItem": {
           "CustomerNbr": invoice.clientSapNumber || invoice.clientSapCode || invoice.clientSap || invoice.client,
-          "AmntTransactCur": totalAmount.toFixed(3)
+          "AmntTransactCur": totalAmount.toFixed(3),
+          "BaselineDate": formatDateForXML(invoice.date),
+          "DueDate": calculateDueDate(invoice.date)
         },
         // OtherItems Section
         "OtherItems": {
@@ -503,19 +561,19 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 
                 const otherItem: any = {
                   "IncomeRebateCode": TRUCKING_DEFAULTS.incomeRebateCode,
-                  "InternalOrder": record.internalOrder || "",
                   "Service": record.serviceCode || "TRK002",
                   "Qty": group.count.toString(),
                   "BaseUnitMeasure": isAuthTaxService ? "EA" : "CTR", // EA para impuestos AUTH, CTR para contenedores
                   "AmntTransacCur": group.totalPrice.toFixed(3),
                   "Activity": "TRK",
                   "Pillar": TRUCKING_DEFAULTS.pillar,
-                  "BUCountry": TRUCKING_DEFAULTS.buCountry,
-                  "ServiceCountry": TRUCKING_DEFAULTS.serviceCountry,
+                  "BUCountry": "PA",
+                  "ServiceCountry": "PA",
                   "ClientType": TRUCKING_DEFAULTS.clientType,
+                  "ProfitCenter": "PAPANB110",
+                  "ReferencePeriod": formatReferencePeriod(invoice.date),
                   "BusinessType": businessTypeXmlValue,
-                  "FullEmpty": (record.fullEmptyStatus || "FULL").substring(0, 1),
-                  "SubContracting": record.subcontracting || "N"
+                  "FullEmpty": record.fullEmptyStatus || "FULL"
                 }
                 
                 // Solo incluir CtrType, CtrSize, CtrCategory si tienen valores no vacíos
@@ -580,19 +638,19 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 
                 const otherItem: any = {
                   "IncomeRebateCode": taxItem.IncomeRebateCode || "N",
-                  "InternalOrder": "",
                   "Service": taxItem.serviceCode || "TRK135",
                   "Qty": group.count.toString(),
                   "BaseUnitMeasure": "EA", // Unidad de medida para impuestos y servicios
                   "AmntTransacCur": group.totalPrice.toFixed(3),
-                  "Activity": taxItem.Activity || "TRUCKING",
-                  "Pillar": taxItem.Pillar || "LOGISTICS",
-                  "BUCountry": taxItem.BUCountry || "PA",
-                  "ServiceCountry": taxItem.ServiceCountry || "PA",
-                  "ClientType": taxItem.ClientType || "EXTERNAL",
+                  "Activity": "TRK",
+                  "Pillar": "TRSP",
+                  "BUCountry": "PA",
+                  "ServiceCountry": "PA",
+                  "ClientType": "MEDLOG",
+                  "ProfitCenter": "PAPANB110",
+                  "ReferencePeriod": formatReferencePeriod(invoice.date),
                   "BusinessType": "E", // Los impuestos siempre son EXPORT
-                  "FullEmpty": (taxItem.FullEmpty || "FULL").substring(0, 1),
-                  "SubContracting": "N"
+                  "FullEmpty": taxItem.FullEmpty || "FULL"
                 }
                 
                 // Solo incluir CtrType, CtrSize, CtrCategory si están definidos
@@ -625,10 +683,13 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
   }
   
   console.log("=== DEBUG: Final XML object ===")
-  console.log("OtherItems in XML:", xmlObject.LogisticARInvoices.CustomerInvoice.OtherItems)
-  console.log("Number of OtherItems:", xmlObject.LogisticARInvoices.CustomerInvoice.OtherItems.OtherItem.length)
+  console.log("OtherItems in XML:", xmlObject["ns1:LogisticARInvoices"].CustomerInvoice.OtherItems)
+  console.log("Number of OtherItems:", xmlObject["ns1:LogisticARInvoices"].CustomerInvoice.OtherItems.OtherItem.length)
   
-  return js2xml(xmlObject, { compact: true, spaces: 2 })
+  const xmlContent = js2xml(xmlObject, { compact: true, spaces: 2 })
+  
+  // Agregar la declaración XML al principio
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' + xmlContent
 }
 
 export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
@@ -643,10 +704,9 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
   }, 0)
 
   const xmlObject = {
-    "LogisticARInvoices": {
+    "ns1:LogisticARInvoices": {
       _attributes: {
-        "xmlns": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00",
-        "targetNamespace": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00"
+        "xmlns:ns1": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00"
       },
       "CustomerInvoice": {
         // Protocol Section
@@ -671,7 +731,9 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
         // CustomerOpenItem Section
         "CustomerOpenItem": {
           "CustomerNbr": invoice.client,
-          "AmntTransactCur": totalAmount.toFixed(2)
+          "AmntTransactCur": totalAmount.toFixed(2),
+          "BaselineDate": formatDateForXML(invoice.date),
+          "DueDate": calculateDueDate(invoice.date)
         },
         // OtherItems Section
         "OtherItems": {
@@ -748,7 +810,10 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
     }
   }
   
-  return js2xml(xmlObject, { compact: true, spaces: 2 })
+  const xmlContent = js2xml(xmlObject, { compact: true, spaces: 2 })
+  
+  // Agregar la declaración XML al principio
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' + xmlContent
 }
 
 // Función para validar el XML generado
@@ -757,8 +822,8 @@ export function validateXMLForSAP(xmlString: string): { isValid: boolean; errors
   
   try {
     // Verificar que el XML es válido
-    if (!xmlString.includes('LogisticARInvoices')) {
-      errors.push("Falta el elemento raíz LogisticARInvoices")
+    if (!xmlString.includes('ns1:LogisticARInvoices')) {
+      errors.push("Falta el elemento raíz ns1:LogisticARInvoices")
     }
     
     if (!xmlString.includes('CustomerInvoice')) {
