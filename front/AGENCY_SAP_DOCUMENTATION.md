@@ -120,7 +120,7 @@ POST /api/agency/catalogs/pricing/calculate
 }
 
 // Response
-{
+{ 
   "success": true,
   "pricing": {
     "basePrice": 160,           // $120 base + $20 waiting + $20 extra passengers
