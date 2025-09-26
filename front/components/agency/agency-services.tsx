@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { 
   Plus, Save, Send, 
-  MapPin, Ship, User, Calendar, Clock, Plane, Users
+  MapPin, Ship, User, Calendar, Clock, Plane, Users, DollarSign
 } from "lucide-react"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
@@ -42,6 +42,11 @@ interface ServiceFormData {
   approve: boolean
   comments: string
   crewMembers: CrewMember[]
+  serviceCode?: string    // Para matcheo con códigos SAP/Taulia
+  waitingTime?: number    // Horas de espera para cálculo de precio
+  price?: number          // Precio calculado automáticamente
+  currency?: string       // Moneda (USD por defecto)
+  passengerCount?: number // Número de pasajeros para cálculo
 }
 
 const initialFormData: ServiceFormData = {
@@ -58,7 +63,12 @@ const initialFormData: ServiceFormData = {
   totalWaitingTime: 0,
   approve: false,
   comments: '',
-  crewMembers: []
+  crewMembers: [],
+  serviceCode: 'ECR000669',  // Código SAP por defecto
+  waitingTime: 0,             // Tiempo de espera inicial
+  price: 0,                   // Precio inicial
+  currency: 'USD',            // Moneda por defecto
+  passengerCount: 1           // Un pasajero por defecto
 }
 
 const initialCrewMember: CrewMember = {
@@ -121,7 +131,7 @@ export function AgencyServices() {
         dropoffLocation: formData.dropoffLocation,
         serviceCode: formData.serviceCode || undefined,
         waitingTime: formData.waitingTime || 0,
-        passengerCount: 1 // Default to 1 passenger for now
+        passengerCount: formData.passengerCount || 1
       });
     } else {
       // Clear pricing when locations are not set
@@ -132,6 +142,7 @@ export function AgencyServices() {
     formData.dropoffLocation, 
     formData.serviceCode,
     formData.waitingTime,
+    formData.passengerCount,
     calculateServicePrice,
     clearPricingState
   ])
@@ -236,7 +247,13 @@ export function AgencyServices() {
         totalWaitingTime: formData.totalWaitingTime,
         approve: formData.approve,
         comments: formData.comments,
-        crewMembers: formData.crewMembers
+        crewMembers: formData.crewMembers,
+        // Incluir campos de pricing y SAP
+        serviceCode: formData.serviceCode || 'ECR000669',
+        waitingTime: formData.waitingTime || 0,
+        price: pricing?.currentPrice || formData.price || 0,
+        currency: formData.currency || 'USD',
+        passengerCount: formData.passengerCount || 1
       })
 
       toast({
@@ -402,6 +419,79 @@ export function AgencyServices() {
                   {formErrors.dropoffLocation && (
                     <p className="text-xs text-red-500">{formErrors.dropoffLocation}</p>
                   )}
+                </div>
+
+                {/* Automatic Price Display */}
+                {pricing && pricing.currentPrice > 0 && formData.pickupLocation && formData.dropoffLocation && (
+                  <Card className="bg-green-50 border-green-200">
+                    <CardContent className="pt-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <DollarSign className="h-4 w-4 text-green-600" />
+                        <span className="font-medium text-green-800">Precio Calculado Automáticamente</span>
+                      </div>
+                      <div className="text-2xl font-bold text-green-700">
+                        ${pricing.currentPrice || formData.price || 0} {formData.currency || 'USD'}
+                      </div>
+                      {pricing.priceBreakdown && (
+                        <div className="text-sm text-green-600 mt-2 space-y-1">
+                          <div>Tarifa Base: ${pricing.priceBreakdown.baseRate || 0}</div>
+                          <div>Tiempo de Espera: ${pricing.priceBreakdown.waitingTime || 0}</div>
+                          <div>Pasajeros Extra: ${pricing.priceBreakdown.extraPassengers || 0}</div>
+                        </div>
+                      )}
+                      <div className="text-xs text-green-600 mt-2">
+                        {pricing.routeFound ? '✅ Precio basado en ruta específica' : '⚠️ Precio por defecto aplicado'}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Service Code (SAP/Taulia) */}
+                <div className="space-y-2">
+                  <Label htmlFor="serviceCode" className="text-sm font-medium">
+                    Código de Servicio (SAP)
+                  </Label>
+                  <Input
+                    id="serviceCode"
+                    value={formData.serviceCode || 'ECR000669'}
+                    onChange={(e) => handleInputChange('serviceCode', e.target.value)}
+                    placeholder="ECR000669"
+                  />
+                  <p className="text-xs text-muted-foreground">Código SAP/Taulia para facturación</p>
+                </div>
+
+                {/* Waiting Time */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="waitingTime" className="text-sm font-medium">
+                      Tiempo de Espera (horas)
+                    </Label>
+                    <Input
+                      id="waitingTime"
+                      type="number"
+                      min="0"
+                      max="24"
+                      step="0.5"
+                      value={formData.waitingTime || 0}
+                      onChange={(e) => handleInputChange('waitingTime', parseFloat(e.target.value) || 0)}
+                      className="w-full"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="passengerCount" className="text-sm font-medium">
+                      Número de Pasajeros
+                    </Label>
+                    <Input
+                      id="passengerCount"
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={formData.passengerCount || 1}
+                      onChange={(e) => handleInputChange('passengerCount', parseInt(e.target.value) || 1)}
+                      className="w-full"
+                    />
+                  </div>
                 </div>
 
                 {/* Comments */}

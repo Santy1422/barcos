@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/toolkit";
+import { createApiUrl } from '@/lib/api-config';
 
 // Types based on backend schema
 export type CatalogType = 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code';
@@ -148,7 +149,7 @@ export const fetchAgencyCatalogs = createAsyncThunk(
         }
       });
       
-      const response = await fetch(`/api/agency/catalogs?${queryParams}`, {
+      const response = await fetch(createApiUrl(`/api/agency/catalogs?${queryParams}`), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -174,7 +175,7 @@ export const fetchGroupedCatalogs = createAsyncThunk(
   'agencyCatalogs/fetchGroupedCatalogs',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/agency/catalogs/grouped', {
+      const response = await fetch(createApiUrl('/api/agency/catalogs/grouped'), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -200,7 +201,7 @@ export const createAgencyCatalog = createAsyncThunk(
   'agencyCatalogs/createAgencyCatalog',
   async (catalogData: AgencyCatalogInput, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/agency/catalogs', {
+      const response = await fetch(createApiUrl('/api/agency/catalogs'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -227,7 +228,7 @@ export const updateAgencyCatalog = createAsyncThunk(
   'agencyCatalogs/updateAgencyCatalog',
   async ({ id, updateData }: UpdateCatalogParams, { rejectWithValue }) => {
     try {
-      const response = await fetch(`/api/agency/catalogs/${id}`, {
+      const response = await fetch(createApiUrl(`/api/agency/catalogs/${id}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -254,7 +255,7 @@ export const deactivateAgencyCatalog = createAsyncThunk(
   'agencyCatalogs/deactivateAgencyCatalog',
   async (id: string, { rejectWithValue }) => {
     try {
-      const response = await fetch(`/api/agency/catalogs/${id}/deactivate`, {
+      const response = await fetch(createApiUrl(`/api/agency/catalogs/${id}/deactivate`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -280,7 +281,7 @@ export const reactivateAgencyCatalog = createAsyncThunk(
   'agencyCatalogs/reactivateAgencyCatalog',
   async (id: string, { rejectWithValue }) => {
     try {
-      const response = await fetch(`/api/agency/catalogs/${id}/reactivate`, {
+      const response = await fetch(createApiUrl(`/api/agency/catalogs/${id}/reactivate`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -306,7 +307,7 @@ export const fetchCatalogById = createAsyncThunk(
   'agencyCatalogs/fetchCatalogById',
   async (id: string, { rejectWithValue }) => {
     try {
-      const response = await fetch(`/api/agency/catalogs/${id}`, {
+      const response = await fetch(createApiUrl(`/api/agency/catalogs/${id}`), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -332,7 +333,7 @@ export const searchCatalogs = createAsyncThunk(
   'agencyCatalogs/searchCatalogs',
   async (searchTerm: string, { rejectWithValue }) => {
     try {
-      const response = await fetch(`/api/agency/catalogs/search?q=${encodeURIComponent(searchTerm)}`, {
+      const response = await fetch(createApiUrl(`/api/agency/catalogs/search?q=${encodeURIComponent(searchTerm)}`), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -358,7 +359,7 @@ export const fetchCatalogStatistics = createAsyncThunk(
   'agencyCatalogs/fetchCatalogStatistics',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/agency/catalogs/statistics', {
+      const response = await fetch(createApiUrl('/api/agency/catalogs/statistics'), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

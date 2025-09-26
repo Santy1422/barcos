@@ -11,6 +11,11 @@ import {
   reactivateCatalogEntry
 } from '../controllers/agencyCatalogsControllers/agencyCatalogsControllers';
 import {
+  exportAgencyCatalogs,
+  importAgencyCatalogs,
+  bulkDeleteAgencyCatalogs
+} from '../controllers/agencyControllers/agencyCatalogImportExportControllers';
+import {
   calculateServicePrice,
   createRoutePricing,
   updateRoutePricing,
@@ -466,6 +471,45 @@ router.post('/pricing/seed',
 router.get('/pricing/stats',
   requireAdminOrOperations,
   getPricingStats
+);
+
+// ===== IMPORT/EXPORT ROUTES =====
+
+// GET /api/agency/catalogs/export - Export catalogs to JSON
+router.get('/export',
+  requireAdminOrOperations,
+  [
+    query('type').optional().isIn(VALID_CATALOG_TYPES)
+      .withMessage(`Type must be one of: ${VALID_CATALOG_TYPES.join(', ')}`),
+    handleValidationErrors
+  ],
+  catchedAsync(exportAgencyCatalogs)
+);
+
+// POST /api/agency/catalogs/import - Import catalogs from JSON
+router.post('/import',
+  requireAdmin,
+  [
+    body('catalogs').isArray().notEmpty()
+      .withMessage('catalogs array is required'),
+    body('overwriteDuplicates').optional().isBoolean()
+      .withMessage('overwriteDuplicates must be boolean'),
+    handleValidationErrors
+  ],
+  catchedAsync(importAgencyCatalogs)
+);
+
+// DELETE /api/agency/catalogs/bulk - Bulk delete catalogs
+router.delete('/bulk',
+  requireAdmin,
+  [
+    body('catalogIds').optional().isArray()
+      .withMessage('catalogIds must be array'),
+    body('type').optional().isIn(VALID_CATALOG_TYPES)
+      .withMessage(`Type must be one of: ${VALID_CATALOG_TYPES.join(', ')}`),
+    handleValidationErrors
+  ],
+  catchedAsync(bulkDeleteAgencyCatalogs)
 );
 
 export default router;

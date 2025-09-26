@@ -19,6 +19,9 @@ router.post('/trucking/bulk', jwtUtils, catchedAsync(recordsControllers.createTr
 // Crear múltiples registros de PTYSS desde entrada manual
 router.post('/ptyss/bulk', jwtUtils, catchedAsync(recordsControllers.createPTYSSRecords));
 
+// Crear múltiples registros de Agency desde Excel o entrada manual
+router.post('/agency/bulk', jwtUtils, catchedAsync(recordsControllers.createAgencyRecords));
+
 // Gastos Autoridades
 router.post('/autoridades', jwtUtils, catchedAsync(recordsAutoridadesControllers.createAutoridadesRecord));
 router.post('/autoridades/bulk', jwtUtils, catchedAsync(recordsAutoridadesControllers.createAutoridadesRecords));

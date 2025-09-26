@@ -1,0 +1,1 @@
+export { ConfigMain as AgencyConfig } from "./ConfigMain"

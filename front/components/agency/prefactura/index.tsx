@@ -1,0 +1,1 @@
+export { PrefacturaMain as PTYSSPrefactura } from "./PrefacturaMain"

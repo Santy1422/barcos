@@ -158,6 +158,41 @@ export const fetchPendingRecordsByModule = createAsyncThunk(
   }
 )
 
+export const createAgencyRecords = createAsyncThunk(
+  'records/createAgency',
+  async ({ excelId, recordsData, isManualEntry = false }: {
+    excelId?: string | null
+    recordsData: any[]
+    isManualEntry?: boolean
+  }, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      console.log("Creating Agency records:", { excelId, recordsCount: recordsData.length, isManualEntry })
+      
+      const response = await fetch(createApiUrl('/api/records/agency/bulk'), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ excelId, recordsData, isManualEntry })
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Error al crear registros de Agency')
+      }
+      
+      const data = await response.json()
+      console.log("Agency records created:", data)
+      return data
+    } catch (error: any) {
+      console.error("Error creating Agency records:", error)
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
 export const createTruckingRecords = createAsyncThunk(
   'records/createTrucking',
   async ({ excelId, recordsData }: {
@@ -957,6 +992,23 @@ const recordsSlice = createSlice({
         }
       })
       .addCase(createTruckingRecords.rejected, (state, action) => {
+        state.creatingRecords = false
+        state.error = action.payload as string
+      })
+      
+      // Create Agency records
+      .addCase(createAgencyRecords.pending, (state) => {
+        state.creatingRecords = true
+        state.error = null
+      })
+      .addCase(createAgencyRecords.fulfilled, (state, action) => {
+        state.creatingRecords = false
+        // action.payload es un objeto con {records, count, duplicates, message}
+        if (action.payload.records && Array.isArray(action.payload.records)) {
+          state.individualRecords.push(...action.payload.records)
+        }
+      })
+      .addCase(createAgencyRecords.rejected, (state, action) => {
         state.creatingRecords = false
         state.error = action.payload as string
       })

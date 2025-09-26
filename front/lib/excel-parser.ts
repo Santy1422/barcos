@@ -660,6 +660,38 @@ export interface PTYSSExcelData {
   isMatched?: boolean
 }
 
+// Agency Excel Data Interface
+export interface AgencyExcelData {
+  serviceDate: string
+  pickupDate: string
+  pickupTime: string
+  pickupLocation: string
+  dropoffLocation: string
+  vessel: string
+  voyage?: string
+  crewName: string
+  crewMembers?: string
+  crewRank?: string
+  nationality?: string
+  transportCompany?: string
+  driverName?: string
+  flightInfo?: string
+  waitingTime?: number
+  passengerCount?: number
+  price?: number
+  currency?: string
+  serviceCode?: string
+  clientName: string
+  comments?: string
+  notes?: string
+  // Campos agregados para el matching
+  matchedPrice?: number
+  matchedRouteId?: string
+  matchedRouteName?: string
+  isMatched?: boolean
+  sapCode?: string
+}
+
 // Función para hacer matching con las rutas configuradas de PTYSS
 export const matchPTYSSDataWithRoutes = (
   excelData: PTYSSExcelData[], 
@@ -946,4 +978,313 @@ export const parsePTYSSExcel = async (file: File): Promise<PTYSSExcelData[]> => 
       reject(new Error(`Error al procesar archivo: ${error}`))
     }
   })
+}
+
+// Función para parsear Excel de Agency
+export const parseAgencyExcel = (file: File): Promise<AgencyExcelData[]> => {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!file) {
+        reject(new Error('No se seleccionó ningún archivo'))
+        return
+      }
+
+      if (file.size === 0) {
+        reject(new Error('El archivo seleccionado está vacío'))
+        return
+      }
+
+      const reader = new FileReader()
+      
+      reader.onload = (e) => {
+        try {
+          console.log('=== PARSEANDO EXCEL DE AGENCY ===')
+          
+          const arrayBuffer = e.target?.result as ArrayBuffer
+          if (!arrayBuffer) {
+            throw new Error('No se pudo obtener el contenido del archivo')
+          }
+
+          const workbook = XLSX.read(arrayBuffer, { 
+            type: 'array',
+            cellText: false,
+            cellHTML: false
+          })
+          
+          if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+            throw new Error('El archivo Excel no contiene hojas de trabajo')
+          }
+          
+          const sheetName = workbook.SheetNames[0]
+          const worksheet = workbook.Sheets[sheetName]
+          
+          // Convertir a array de arrays
+          const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, { 
+            header: 1, 
+            defval: '', 
+            raw: false 
+          })
+          
+          if (rawData.length < 2) {
+            throw new Error('El archivo debe contener al menos una fila de encabezados y una fila de datos')
+          }
+          
+          // Primera fila como headers
+          const headers = rawData[0].map((header: any) => 
+            String(header || '').trim().toLowerCase()
+          )
+          
+          console.log('Headers encontrados:', headers)
+          
+          // Mapeo de headers a campos del objeto Agency
+          const fieldMapping: { [key: string]: keyof AgencyExcelData } = {
+            'service date': 'serviceDate',
+            'servicedate': 'serviceDate',
+            'fecha servicio': 'serviceDate',
+            'pickup date': 'pickupDate',
+            'pickupdate': 'pickupDate',
+            'fecha recogida': 'pickupDate',
+            'pickup time': 'pickupTime',
+            'pickuptime': 'pickupTime',
+            'hora recogida': 'pickupTime',
+            'pickup location': 'pickupLocation',
+            'pickup': 'pickupLocation',
+            'origen': 'pickupLocation',
+            'from': 'pickupLocation',
+            'dropoff location': 'dropoffLocation',
+            'dropoff': 'dropoffLocation',
+            'destino': 'dropoffLocation',
+            'to': 'dropoffLocation',
+            'vessel': 'vessel',
+            'buque': 'vessel',
+            'ship': 'vessel',
+            'voyage': 'voyage',
+            'viaje': 'voyage',
+            'crew name': 'crewName',
+            'crewname': 'crewName',
+            'crew': 'crewName',
+            'tripulante': 'crewName',
+            'nombre': 'crewName',
+            'crew members': 'crewMembers',
+            'crewmembers': 'crewMembers',
+            'passengers': 'passengerCount',
+            'pasajeros': 'passengerCount',
+            'pax': 'passengerCount',
+            'rank': 'crewRank',
+            'rango': 'crewRank',
+            'position': 'crewRank',
+            'nationality': 'nationality',
+            'nacionalidad': 'nationality',
+            'transport company': 'transportCompany',
+            'transportcompany': 'transportCompany',
+            'empresa': 'transportCompany',
+            'driver': 'driverName',
+            'conductor': 'driverName',
+            'chofer': 'driverName',
+            'flight': 'flightInfo',
+            'vuelo': 'flightInfo',
+            'waiting time': 'waitingTime',
+            'waitingtime': 'waitingTime',
+            'espera': 'waitingTime',
+            'price': 'price',
+            'precio': 'price',
+            'amount': 'price',
+            'currency': 'currency',
+            'moneda': 'currency',
+            'service code': 'serviceCode',
+            'servicecode': 'serviceCode',
+            'sap code': 'sapCode',
+            'sapcode': 'sapCode',
+            'taulia': 'serviceCode',
+            'client': 'clientName',
+            'cliente': 'clientName',
+            'customer': 'clientName',
+            'comments': 'comments',
+            'comentarios': 'comments',
+            'notes': 'notes',
+            'notas': 'notes',
+            'observaciones': 'notes'
+          }
+          
+          // Mapear índices de columnas
+          const columnIndexes: { [key: string]: number | undefined } = {}
+          headers.forEach((header, index) => {
+            const field = fieldMapping[header]
+            if (field) {
+              columnIndexes[field] = index
+            }
+          })
+          
+          console.log('Mapeo de columnas:', columnIndexes)
+          
+          // Procesar las filas de datos
+          const parsedData: AgencyExcelData[] = []
+          
+          for (let i = 1; i < rawData.length; i++) {
+            const row = rawData[i]
+            
+            // Saltar filas completamente vacías
+            const hasData = row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '')
+            if (!hasData) continue
+            
+            const record: Partial<AgencyExcelData> = {}
+            
+            // Mapear cada campo
+            Object.entries(columnIndexes).forEach(([field, columnIndex]) => {
+              if (columnIndex !== undefined && columnIndex < row.length) {
+                const cellValue = row[columnIndex]
+                ;(record as any)[field] = cellValue ? String(cellValue).trim() : ''
+              }
+            })
+            
+            // Validar que al menos algunos campos importantes estén presentes
+            if (record.vessel || record.crewName || record.pickupLocation) {
+              // Agregar valores por defecto para campos faltantes
+              const completeRecord: AgencyExcelData = {
+                serviceDate: record.serviceDate || new Date().toISOString().split('T')[0],
+                pickupDate: record.pickupDate || record.serviceDate || new Date().toISOString().split('T')[0],
+                pickupTime: record.pickupTime || '00:00',
+                pickupLocation: record.pickupLocation || '',
+                dropoffLocation: record.dropoffLocation || '',
+                vessel: record.vessel || '',
+                voyage: record.voyage || '',
+                crewName: record.crewName || '',
+                crewMembers: record.crewMembers || '',
+                crewRank: record.crewRank || '',
+                nationality: record.nationality || '',
+                transportCompany: record.transportCompany || '',
+                driverName: record.driverName || '',
+                flightInfo: record.flightInfo || '',
+                waitingTime: Number(record.waitingTime) || 0,
+                passengerCount: Number(record.passengerCount) || 1,
+                price: Number(record.price) || 0,
+                currency: record.currency || 'USD',
+                serviceCode: record.serviceCode || '',
+                clientName: record.clientName || 'DEFAULT',
+                comments: record.comments || '',
+                notes: record.notes || '',
+                sapCode: record.sapCode || record.serviceCode || ''
+              }
+              
+              parsedData.push(completeRecord)
+            }
+          }
+          
+          console.log('=== RESUMEN DEL PROCESAMIENTO AGENCY ===')
+          console.log('Total de filas procesadas:', rawData.length - 1)
+          console.log('Registros válidos extraídos:', parsedData.length)
+          
+          if (parsedData.length === 0) {
+            throw new Error('No se encontraron registros válidos en el archivo Excel')
+          }
+          
+          resolve(parsedData)
+          
+        } catch (error) {
+          console.error('Error en parseAgencyExcel:', error)
+          reject(new Error(`Error al parsear Excel de Agency: ${error instanceof Error ? error.message : String(error)}`))
+        }
+      }
+      
+      reader.onerror = (error) => {
+        console.error('Error del FileReader:', error)
+        reject(new Error('Error al leer el archivo'))
+      }
+      
+      reader.readAsArrayBuffer(file)
+      
+    } catch (error) {
+      reject(new Error(`Error al procesar archivo: ${error}`))
+    }
+  })
+}
+
+// Función para hacer matching con las rutas de precios de Agency
+export const matchAgencyDataWithPricing = async (
+  excelData: AgencyExcelData[],
+  routePricing: Array<{
+    _id: string,
+    metadata: {
+      fromLocation: string,
+      toLocation: string,
+      basePrice: number,
+      pricePerPerson: number,
+      waitingTimePrice: number,
+      currency: string
+    }
+  }>,
+  onProgress?: (progress: number) => void
+): Promise<AgencyExcelData[]> => {
+  console.log("=== INICIANDO MATCHING AGENCY ===")
+  console.log("Rutas de precios disponibles:", routePricing.length)
+  
+  const totalRecords = excelData.length
+  let processedRecords = 0
+  
+  const matchedData = excelData.map((record, index) => {
+    console.log(`Procesando registro Agency ${index + 1}:`)
+    console.log(`  Pickup: "${record.pickupLocation}"`)
+    console.log(`  Dropoff: "${record.dropoffLocation}"`)
+    console.log(`  Passengers: ${record.passengerCount}`)
+    console.log(`  Waiting Time: ${record.waitingTime}`)
+    
+    // Buscar coincidencia de ruta
+    const matchedRoute = routePricing.find(route => {
+      const fromMatch = route.metadata.fromLocation.toLowerCase().trim() === 
+        (record.pickupLocation || '').toLowerCase().trim()
+      const toMatch = route.metadata.toLocation.toLowerCase().trim() === 
+        (record.dropoffLocation || '').toLowerCase().trim()
+      
+      return fromMatch && toMatch
+    })
+    
+    processedRecords++
+    if (onProgress) {
+      onProgress(Math.round((processedRecords / totalRecords) * 100))
+    }
+    
+    if (matchedRoute) {
+      // Calcular precio basado en la ruta encontrada
+      const basePrice = matchedRoute.metadata.basePrice || 100
+      const waitingTimeCharge = (record.waitingTime || 0) * (matchedRoute.metadata.waitingTimePrice || 10)
+      const passengerSurcharge = Math.max(0, ((record.passengerCount || 1) - 1) * (matchedRoute.metadata.pricePerPerson || 20))
+      const totalPrice = basePrice + waitingTimeCharge + passengerSurcharge
+      
+      console.log(`  ✅ Match encontrado: ${matchedRoute.metadata.fromLocation} → ${matchedRoute.metadata.toLocation}`)
+      console.log(`     Base: $${basePrice}, Waiting: $${waitingTimeCharge}, Extra Pax: $${passengerSurcharge}`)
+      console.log(`     Total: $${totalPrice}`)
+      
+      return {
+        ...record,
+        matchedPrice: totalPrice,
+        matchedRouteId: matchedRoute._id,
+        matchedRouteName: `${matchedRoute.metadata.fromLocation} → ${matchedRoute.metadata.toLocation}`,
+        isMatched: true,
+        price: record.price || totalPrice,
+        currency: matchedRoute.metadata.currency || record.currency || 'USD'
+      }
+    } else {
+      console.log(`  ❌ No se encontró ruta configurada`)
+      
+      // Precio por defecto si no hay match
+      const defaultPrice = 100
+      const waitingTimeCharge = (record.waitingTime || 0) * 10
+      const passengerSurcharge = Math.max(0, ((record.passengerCount || 1) - 1) * 20)
+      const totalPrice = defaultPrice + waitingTimeCharge + passengerSurcharge
+      
+      return {
+        ...record,
+        matchedPrice: totalPrice,
+        isMatched: false,
+        price: record.price || totalPrice
+      }
+    }
+  })
+  
+  console.log("=== MATCHING AGENCY COMPLETADO ===")
+  console.log(`Total procesados: ${matchedData.length}`)
+  console.log(`Con match: ${matchedData.filter(r => r.isMatched).length}`)
+  console.log(`Sin match: ${matchedData.filter(r => !r.isMatched).length}`)
+  
+  return matchedData
 }

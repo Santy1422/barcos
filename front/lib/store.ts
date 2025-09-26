@@ -13,6 +13,7 @@ import navieraReducer from './features/naviera/navieraSlice'
 import servicesReducer from './features/services/servicesSlice'
 import agencyServicesReducer from './features/agencyServices/agencyServicesSlice'
 import agencyCatalogsReducer from './features/agencyServices/agencyCatalogsSlice'
+import agencyPricingConfigReducer from './features/agencyServices/agencyPricingConfigSlice'
 import containerTypesReducer from './features/containerTypes/containerTypesSlice'
 import { loadState, saveState } from './storage'
 
@@ -36,6 +37,7 @@ export const makeStore = () => {
       services: servicesReducer,
       agencyServices: agencyServicesReducer,
       agencyCatalogs: agencyCatalogsReducer,
+      agencyPricingConfig: agencyPricingConfigReducer,
       containerTypes: containerTypesReducer,
     },
     preloadedState: persistedState

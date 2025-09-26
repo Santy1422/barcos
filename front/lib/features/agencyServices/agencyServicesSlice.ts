@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/toolkit";
+import { createApiUrl } from '@/lib/api-config';
 
 // Interface para cliente (referencia)
 export interface Client {
@@ -324,7 +325,7 @@ export const fetchAgencyServices = createAsyncThunk(
         }
       });
       
-      const response = await fetch(`/api/agency/services?${queryParams}`, {
+      const response = await fetch(createApiUrl(`/api/agency/services?${queryParams}`), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -350,7 +351,7 @@ export const createAgencyService = createAsyncThunk(
   'agencyServices/createAgencyService',
   async (serviceData: AgencyServiceInput, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/agency/services', {
+      const response = await fetch(createApiUrl('/api/agency/services'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -377,7 +378,7 @@ export const updateAgencyService = createAsyncThunk(
   'agencyServices/updateAgencyService',
   async ({ id, updateData }: UpdateServiceParams, { rejectWithValue }) => {
     try {
-      const response = await fetch(`/api/agency/services/${id}`, {
+      const response = await fetch(createApiUrl(`/api/agency/services/${id}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -404,7 +405,7 @@ export const updateServiceStatus = createAsyncThunk(
   'agencyServices/updateServiceStatus',
   async ({ id, status }: UpdateStatusParams, { rejectWithValue }) => {
     try {
-      const response = await fetch(`/api/agency/services/${id}/status`, {
+      const response = await fetch(createApiUrl(`/api/agency/services/${id}/status`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -431,7 +432,7 @@ export const deleteAgencyService = createAsyncThunk(
   'agencyServices/deleteAgencyService',
   async (id: string, { rejectWithValue }) => {
     try {
-      const response = await fetch(`/api/agency/services/${id}`, {
+      const response = await fetch(createApiUrl(`/api/agency/services/${id}`), {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -456,7 +457,7 @@ export const fetchServiceById = createAsyncThunk(
   'agencyServices/fetchServiceById',
   async (id: string, { rejectWithValue }) => {
     try {
-      const response = await fetch(`/api/agency/services/${id}`, {
+      const response = await fetch(createApiUrl(`/api/agency/services/${id}`), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -489,7 +490,7 @@ export const fetchAgencyStatistics = createAsyncThunk(
         }
       });
       
-      const response = await fetch(`/api/agency/services/statistics?${queryParams}`, {
+      const response = await fetch(createApiUrl(`/api/agency/services/statistics?${queryParams}`), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -543,7 +544,7 @@ export const calculateServicePrice = createAsyncThunk(
   'agencyServices/calculateServicePrice',
   async (priceData: PriceCalculationRequest, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/agency/catalogs/pricing/calculate', {
+      const response = await fetch(createApiUrl('/api/agency/catalogs/pricing/calculate'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -585,7 +586,7 @@ export const fetchServicesReadyForInvoice = createAsyncThunk(
         }
       });
       
-      const response = await fetch(`/api/agency/sap/ready-for-invoice?${queryParams}`, {
+      const response = await fetch(createApiUrl(`/api/agency/sap/ready-for-invoice?${queryParams}`), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -611,7 +612,7 @@ export const generateSapXml = createAsyncThunk(
   'agencyServices/generateSapXml',
   async (invoiceData: SapXmlGenerationRequest, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/agency/sap/generate-xml', {
+      const response = await fetch(createApiUrl('/api/agency/sap/generate-xml'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -638,7 +639,7 @@ export const downloadSapXml = createAsyncThunk(
   'agencyServices/downloadSapXml',
   async (fileName: string, { rejectWithValue }) => {
     try {
-      const response = await fetch(`/api/agency/sap/download/${fileName}`, {
+      const response = await fetch(createApiUrl(`/api/agency/sap/download/${fileName}`), {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -670,7 +671,7 @@ export const fetchSapXmlHistory = createAsyncThunk(
         limit: (params.limit || 20).toString()
       });
       
-      const response = await fetch(`/api/agency/sap/history?${queryParams}`, {
+      const response = await fetch(createApiUrl(`/api/agency/sap/history?${queryParams}`), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

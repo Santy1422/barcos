@@ -6,7 +6,7 @@ import { useAgencyCatalogs } from '@/lib/features/agencyServices/useAgencyCatalo
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Car, Clock, CheckCircle, Users, MapPin, Ship, Plus, DollarSign, ArrowRight, Building, Flag, Code } from 'lucide-react';
+import { Car, Clock, CheckCircle, Users, MapPin, Ship, Plus, DollarSign, ArrowRight, Building, Flag, Code, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -67,6 +67,13 @@ export default function AgencyDashboard() {
       href: '/agency/services', 
       icon: Plus,
       color: 'bg-blue-500 hover:bg-blue-600'
+    },
+    {
+      title: 'Upload Services',
+      description: 'Import from Excel or manual entry',
+      href: '/agency/upload',
+      icon: Upload,
+      color: 'bg-indigo-500 hover:bg-indigo-600'
     },
     { 
       title: 'Manage Catalogs', 
@@ -162,7 +169,7 @@ export default function AgencyDashboard() {
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             {quickActions.map((action, index) => (
               <Link key={index} href={action.href}>
                 <Card className="cursor-pointer hover:shadow-md transition-shadow">
