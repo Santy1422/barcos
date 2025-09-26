@@ -561,20 +561,26 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 
                 const otherItem: any = {
                   "IncomeRebateCode": TRUCKING_DEFAULTS.incomeRebateCode,
-                  "Service": record.serviceCode || "TRK002",
-                  "Qty": group.count.toString(),
-                  "BaseUnitMeasure": isAuthTaxService ? "EA" : "CTR", // EA para impuestos AUTH, CTR para contenedores
                   "AmntTransacCur": group.totalPrice.toFixed(3),
+                  "BaseUnitMeasure": isAuthTaxService ? "EA" : "CTR", // EA para impuestos AUTH, CTR para contenedores
+                  "Qty": group.count.toString(),
+                  "ProfitCenter": "PAPANB110",
+                  "ReferencePeriod": formatReferencePeriod(invoice.date),
+                  "Service": record.serviceCode || "TRK002",
                   "Activity": "TRK",
                   "Pillar": TRUCKING_DEFAULTS.pillar,
                   "BUCountry": "PA",
                   "ServiceCountry": "PA",
                   "ClientType": TRUCKING_DEFAULTS.clientType,
-                  "ProfitCenter": "PAPANB110",
-                  "ReferencePeriod": formatReferencePeriod(invoice.date),
                   "BusinessType": businessTypeXmlValue,
                   "FullEmpty": record.fullEmptyStatus || "FULL"
                 }
+                
+                // Calcular y agregar CtrISOcode basándose en CtrType y CtrSize
+                const ctrType = record.containerType || "DV"
+                const ctrSize = record.containerSize || "40"
+                const ctrISOcode = getCtrISOcode(ctrType, ctrSize)
+                otherItem.CtrISOcode = ctrISOcode
                 
                 // Solo incluir CtrType, CtrSize, CtrCategory si tienen valores no vacíos
                 if (record.containerType && record.containerType.trim()) {
@@ -586,12 +592,6 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 if (record.ctrCategory && record.ctrCategory.trim()) {
                   otherItem.CtrCategory = record.ctrCategory
                 }
-                
-                // Calcular y agregar CtrISOcode basándose en CtrType y CtrSize
-                const ctrType = record.containerType || "DV"
-                const ctrSize = record.containerSize || "40"
-                const ctrISOcode = getCtrISOcode(ctrType, ctrSize)
-                otherItem.CtrISOcode = ctrISOcode
                 
                 // Si no hay campos de contenedor especificados, usar valores por defecto para trasiego
                 if (!record.containerType && !record.containerSize && !record.ctrCategory) {
@@ -638,19 +638,27 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 
                 const otherItem: any = {
                   "IncomeRebateCode": taxItem.IncomeRebateCode || "N",
-                  "Service": taxItem.serviceCode || "TRK135",
-                  "Qty": group.count.toString(),
-                  "BaseUnitMeasure": "EA", // Unidad de medida para impuestos y servicios
                   "AmntTransacCur": group.totalPrice.toFixed(3),
+                  "BaseUnitMeasure": "EA", // Unidad de medida para impuestos y servicios
+                  "Qty": group.count.toString(),
+                  "ProfitCenter": "PAPANB110",
+                  "ReferencePeriod": formatReferencePeriod(invoice.date),
+                  "Service": taxItem.serviceCode || "TRK135",
                   "Activity": "TRK",
                   "Pillar": "TRSP",
                   "BUCountry": "PA",
                   "ServiceCountry": "PA",
                   "ClientType": "MEDLOG",
-                  "ProfitCenter": "PAPANB110",
-                  "ReferencePeriod": formatReferencePeriod(invoice.date),
                   "BusinessType": "E", // Los impuestos siempre son EXPORT
                   "FullEmpty": taxItem.FullEmpty || "FULL"
+                }
+                
+                // Calcular y agregar CtrISOcode para impuestos si tienen información de contenedor
+                if (taxItem.containerType && taxItem.containerSize) {
+                  const ctrType = taxItem.containerType
+                  const ctrSize = taxItem.containerSize
+                  const ctrISOcode = getCtrISOcode(ctrType, ctrSize)
+                  otherItem.CtrISOcode = ctrISOcode
                 }
                 
                 // Solo incluir CtrType, CtrSize, CtrCategory si están definidos
@@ -662,14 +670,6 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 }
                 if (taxItem.ctrCategory && taxItem.ctrCategory.trim()) {
                   otherItem.CtrCategory = taxItem.ctrCategory
-                }
-                
-                // Calcular y agregar CtrISOcode para impuestos si tienen información de contenedor
-                if (taxItem.containerType && taxItem.containerSize) {
-                  const ctrType = taxItem.containerType
-                  const ctrSize = taxItem.containerSize
-                  const ctrISOcode = getCtrISOcode(ctrType, ctrSize)
-                  otherItem.CtrISOcode = ctrISOcode
                 }
                 
                 console.log("Generated grouped tax XML item:", otherItem)
@@ -791,6 +791,11 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
             const serviceCode = isTrasiego ? 'TRK002' : 'TRK001'
             return {
               "IncomeRebateCode": "I",
+              "AmntTransacCur": record.totalValue.toFixed(3),
+              "BaseUnitMeasure": "CTR",
+              "Qty": "1.00",
+              "ProfitCenter": "PAPANB110",
+              "ReferencePeriod": formatReferencePeriod(invoice.date),
               "Service": serviceCode,
               "Activity": "TRK",
               "Pillar": "TRSP",
@@ -799,6 +804,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
               "ClientType": "MEDLOG",
               "BusinessType": businessTypeXmlValue,
               "FullEmpty": "FULL",
+              "CtrISOcode": isoCode,
               "CtrType": containerType,
               "CtrSize": containerSize,
               "CtrCategory": ctrCategory,

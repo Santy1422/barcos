@@ -25,6 +25,12 @@ import {
 } from "@/lib/features/naviera/navieraSlice"
 
 import {
+  selectAllClients,
+  fetchClients,
+  type Client,
+} from "@/lib/features/clients/clientsSlice"
+
+import {
   fetchTruckingRoutes,
   createTruckingRoute,
   updateTruckingRoute,
@@ -75,6 +81,10 @@ export function TruckingConfig() {
   const navieras = useAppSelector(selectAllNavieras)
   const navierasLoading = useAppSelector(selectNavieraLoading)
   const navierasError = useAppSelector(selectNavieraError)
+
+  // Clients state
+  const clients = useAppSelector(selectAllClients)
+  const clientsLoading = useAppSelector((state) => state.clients.loading)
 
   // Rutas Trucking (PTG)
   const routes = useAppSelector(selectTruckingRoutes)
@@ -160,10 +170,26 @@ export function TruckingConfig() {
   // Load data
   useEffect(() => {
     dispatch(fetchNavieras())
+    dispatch(fetchClients())
     dispatch(fetchTruckingRoutes({ page: 1, limit: 50 }))
     dispatch(fetchContainerTypes())
     dispatch(fetchServices())
   }, [dispatch])
+
+  // Debug: Verificar datos cargados
+  useEffect(() => {
+    console.log("=== DEBUG TRUCKING CONFIG ===")
+    console.log("Clients cargados:", clients.length)
+    console.log("Container Types cargados:", containerTypes.length)
+    console.log("Clients activos:", clients.filter((c: any) => c.isActive).length)
+    console.log("Container Types activos:", containerTypes.filter((c: any) => c.isActive).length)
+    if (clients.length > 0) {
+      console.log("Ejemplo de cliente:", clients[0])
+    }
+    if (containerTypes.length > 0) {
+      console.log("Ejemplo de container type:", containerTypes[0])
+    }
+  }, [clients, containerTypes])
 
   // Cargar rutas cuando cambien los filtros
   useEffect(() => {
@@ -378,7 +404,7 @@ export function TruckingConfig() {
 
   const handleContainerTypeFiltersChange = (filters: typeof containerTypeFilters) => {
     setContainerTypeFilters(filters)
-    dispatch(fetchContainerTypes(filters))
+    dispatch(fetchContainerTypes())
   }
 
   // Funciones para manejar impuestos PTG
@@ -527,7 +553,7 @@ export function TruckingConfig() {
       })
 
       // Recargar las rutas
-      dispatch(fetchTruckingRoutes())
+      dispatch(fetchTruckingRoutes({ page: 1, limit: 50 }))
 
     } catch (error) {
       console.error('Error en importación de precios:', error)
@@ -758,9 +784,9 @@ export function TruckingConfig() {
                       <SelectContent>
                         <SelectItem value="all">Todos los tipos</SelectItem>
                         {containerTypes
-                          .filter(ct => ct.isActive)
-                          .sort((a, b) => a.code.localeCompare(b.code))
-                          .map(containerType => (
+                          .filter((ct: any) => ct.isActive)
+                          .sort((a: any, b: any) => a.code.localeCompare(b.code))
+                          .map((containerType: any) => (
                             <SelectItem key={containerType.code} value={containerType.code}>
                               {containerType.code} - {containerType.name}
                             </SelectItem>
@@ -838,7 +864,21 @@ export function TruckingConfig() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="route-container-type">Tipo de Contenedor *</Label>
-                      <Input id="route-container-type" value={newRoute.containerType} onChange={(e) => setNewRoute({ ...newRoute, containerType: e.target.value.toUpperCase() })} placeholder="CA, CT, DV, FL, etc." />
+                      <Select value={newRoute.containerType} onValueChange={(value) => setNewRoute({ ...newRoute, containerType: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar tipo de contenedor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {containerTypes
+                            .filter((ct: any) => ct.isActive)
+                            .sort((a: any, b: any) => a.code.localeCompare(b.code))
+                            .map((containerType: any) => (
+                              <SelectItem key={containerType.code} value={containerType.code}>
+                                {containerType.code} - {containerType.name}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="route-route-type">Tipo de Ruta *</Label>
@@ -870,15 +910,56 @@ export function TruckingConfig() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="route-cliente">Cliente *</Label>
-                      <Input id="route-cliente" value={newRoute.cliente} onChange={(e) => setNewRoute({ ...newRoute, cliente: e.target.value.toUpperCase() })} placeholder="MSC" />
+                      <Select value={newRoute.cliente} onValueChange={(value) => setNewRoute({ ...newRoute, cliente: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar cliente" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {clients
+                            .filter((client: any) => client.isActive)
+                            .sort((a: any, b: any) => {
+                              const nameA = a.type === 'juridico' ? a.companyName : a.fullName
+                              const nameB = b.type === 'juridico' ? b.companyName : b.fullName
+                              return nameA.localeCompare(nameB)
+                            })
+                            .map((client: any) => {
+                              const displayName = client.type === 'juridico' ? client.companyName : client.fullName
+                              const code = client.type === 'juridico' ? client.name : client.documentNumber
+                              return (
+                                <SelectItem key={client._id || client.id} value={code || displayName}>
+                                  {displayName} ({code})
+                                </SelectItem>
+                              )
+                            })}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="route-area">Área de Ruta *</Label>
-                      <Input id="route-area" value={newRoute.routeArea} onChange={(e) => setNewRoute({ ...newRoute, routeArea: e.target.value.toUpperCase() })} placeholder="PACIFIC, NORTH, SOUTH, ATLANTIC" />
+                      <Select value={newRoute.routeArea} onValueChange={(value) => setNewRoute({ ...newRoute, routeArea: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar área de ruta" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="PACIFIC">PACIFIC</SelectItem>
+                          <SelectItem value="NORTH">NORTH</SelectItem>
+                          <SelectItem value="SOUTH">SOUTH</SelectItem>
+                          <SelectItem value="ATLANTIC">ATLANTIC</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="route-size">Tamaño del Contenedor *</Label>
-                      <Input id="route-size" value={newRoute.sizeContenedor} onChange={(e) => setNewRoute({ ...newRoute, sizeContenedor: e.target.value })} placeholder="20, 40, 45" />
+                      <Select value={newRoute.sizeContenedor} onValueChange={(value) => setNewRoute({ ...newRoute, sizeContenedor: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar tamaño" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="20">20</SelectItem>
+                          <SelectItem value="40">40</SelectItem>
+                          <SelectItem value="45">45</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   <div className="flex gap-2">

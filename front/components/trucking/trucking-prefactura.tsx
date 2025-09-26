@@ -26,7 +26,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { Database, Search, X, Edit, Eye as EyeIcon, Trash2 as TrashIcon, Calendar, Eye, Download, FileText, DollarSign, ArrowLeft, Plus, Trash2, Loader2 } from "lucide-react"
+import { Database, Search, X, Edit, Eye as EyeIcon, Trash2 as TrashIcon, Calendar, Eye, Download, FileText, DollarSign, ArrowLeft, Plus, Trash2, Loader2, Filter, Check } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -35,26 +35,57 @@ import autoTable from "jspdf-autotable"
 const convertExcelDateToReadable = (excelDate: string | number): string => {
   if (!excelDate) return ''
   
-  // Si ya es una fecha legible, devolverla tal como está
-  if (typeof excelDate === 'string' && isNaN(Number(excelDate))) {
-    return excelDate
+  
+  let date: Date
+  
+  // Si es una fecha ISO (formato de base de datos), convertirla directamente
+  if (typeof excelDate === 'string' && excelDate.includes('T')) {
+    date = new Date(excelDate)
+  } else if (typeof excelDate === 'string' && excelDate.includes('-') && !excelDate.includes('/')) {
+    // Si es una fecha en formato YYYY-MM-DD
+    date = new Date(excelDate)
+  } else if (typeof excelDate === 'string' && excelDate.includes('/')) {
+    // Si es una fecha en formato MM/DD/YYYY o DD/MM/YYYY, parsearla correctamente
+    const dateStr = excelDate.split(' ')[0] // Quitar la hora si existe
+    const parts = dateStr.split('/')
+    
+    if (parts.length === 3) {
+      const [part1, part2, part3] = parts
+      // Asumir que viene en formato MM/DD/YYYY y convertir a DD/MM/YYYY
+      if (part1.length <= 2 && part2.length <= 2 && part3.length === 4) {
+        // Es MM/DD/YYYY, convertir a DD/MM/YYYY
+        const day = part2.padStart(2, '0')
+        const month = part1.padStart(2, '0')
+        const year = part3
+        const result = `${day}/${month}/${year}`
+        return result
+      }
+    }
+    
+    // Si no se puede parsear, intentar con Date normal
+    date = new Date(excelDate)
+  } else {
+    // Convertir número de serie de Excel a fecha
+    const excelSerialNumber = Number(excelDate)
+    if (isNaN(excelSerialNumber)) return String(excelDate)
+    
+    // Excel cuenta los días desde 1900-01-01, pero hay un bug de año bisiesto
+    // que hace que 1900 sea considerado bisiesto cuando no lo es
+    const excelEpoch = new Date(1900, 0, 1) // 1 de enero de 1900
+    const millisecondsPerDay = 24 * 60 * 60 * 1000
+    
+    // Ajustar por el bug del año bisiesto de Excel
+    const adjustedSerialNumber = excelSerialNumber > 59 ? excelSerialNumber - 1 : excelSerialNumber
+    
+    date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
   }
   
-  // Convertir número de serie de Excel a fecha
-  const excelSerialNumber = Number(excelDate)
-  if (isNaN(excelSerialNumber)) return String(excelDate)
+  // Verificar que la fecha es válida
+  if (isNaN(date.getTime())) {
+    return String(excelDate)
+  }
   
-  // Excel cuenta los días desde 1900-01-01, pero hay un bug de año bisiesto
-  // que hace que 1900 sea considerado bisiesto cuando no lo es
-  const excelEpoch = new Date(1900, 0, 1) // 1 de enero de 1900
-  const millisecondsPerDay = 24 * 60 * 60 * 1000
-  
-  // Ajustar por el bug del año bisiesto de Excel
-  const adjustedSerialNumber = excelSerialNumber > 59 ? excelSerialNumber - 1 : excelSerialNumber
-  
-  const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
-  
-  // Formatear la fecha como DD/MM/YYYY
+  // Formatear la fecha como DD/MM/YYYY (forzando el formato)
   const day = date.getDate().toString().padStart(2, '0')
   const month = (date.getMonth() + 1).toString().padStart(2, '0')
   const year = date.getFullYear()
@@ -95,6 +126,8 @@ export function TruckingPrefactura() {
 
   // Filtros estilo PTYSS
   const [statusFilter, setStatusFilter] = useState<'all'|'pendiente'|'completado'>('all')
+  const [clientFilter, setClientFilter] = useState<string>('all')
+  const [showClientFilter, setShowClientFilter] = useState(false)
   const [dateFilter, setDateFilter] = useState<'createdAt'|'moveDate'>('createdAt')
   const [isUsingPeriodFilter, setIsUsingPeriodFilter] = useState(false)
   const [activePeriodFilter, setActivePeriodFilter] = useState<'none'|'today'|'week'|'month'|'advanced'>('none')
@@ -169,31 +202,12 @@ export function TruckingPrefactura() {
     { prefacturaNumber: `TRK-PRE-${Date.now().toString().slice(-5)}`, notes: "" }
   )
 
-  // Filtrar SOLO trasiego y por búsqueda, tomando todos los registros del módulo que no estén prefacturados/facturados
+  // Filtrar SOLO trasiego, tomando todos los registros del módulo que no estén prefacturados/facturados
   const allTruckingRecords = useAppSelector(state => selectRecordsByModule(state as any, 'trucking')) as any[]
   const trasiegoRecords = useMemo(() => {
     const isTrasiego = (rec: any) => !!(rec?.data?.leg || rec?.data?.matchedPrice || rec?.data?.line)
     const isNotClosed = (rec: any) => !['prefacturado','facturado'].includes((rec?.status || '').toLowerCase())
-    const matches = (rec: any) => {
-      if (!search.trim()) return true
-      const hay = (v?: string) => (v || "").toString().toLowerCase().includes(search.toLowerCase())
-      const clientName = (() => {
-        const d = rec?.data || {}
-        const byId = d.clientId || rec?.clientId
-        if (byId) {
-          const c = clients.find((x: any) => (x._id || x.id) === byId)
-          if (c) return c.type === 'natural' ? c.fullName : c.companyName
-        }
-        const bySap = d.clientSapCode || rec?.clientSapCode
-        if (bySap) {
-          const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
-          if (c) return c.type === 'natural' ? c.fullName : c.companyName
-        }
-        return 'PTY SHIP SUPPLIERS, S.A.'
-      })()
-      return hay(rec?.data?.container) || hay(clientName) || hay(rec?.data?.containerConsecutive) || hay(rec?.data?.order)
-    }
-    const filtered = (allTruckingRecords as any[]).filter(isTrasiego).filter(isNotClosed).filter(matches)
+    const filtered = (allTruckingRecords as any[]).filter(isTrasiego).filter(isNotClosed)
     
     // Debug: verificar campo fe en registros filtrados
     if (filtered.length > 0) {
@@ -221,23 +235,110 @@ export function TruckingPrefactura() {
     }
     
     return filtered
-  }, [allTruckingRecords, search])
+  }, [allTruckingRecords])
 
-  // Aplicar filtros de estado y fecha
+  // Aplicar TODOS los filtros (búsqueda, estado, cliente y fecha) en una sola función
   const visibleRecords = useMemo(() => {
     let list: any[] = [...trasiegoRecords]
-    if (statusFilter !== 'all') list = list.filter(r => (r.status || '').toLowerCase() === statusFilter)
+    
+    // Filtro de búsqueda
+    if (search.trim()) {
+      const hay = (v?: string) => (v || "").toString().toLowerCase().includes(search.toLowerCase())
+      list = list.filter((rec: any) => {
+        const clientName = (() => {
+          const d = rec?.data || {}
+          const byId = d.clientId || rec?.clientId
+          if (byId) {
+            const c = clients.find((x: any) => (x._id || x.id) === byId)
+            if (c) return c.type === 'natural' ? c.fullName : c.companyName
+          }
+          const bySap = d.clientSapCode || rec?.clientSapCode
+          if (bySap) {
+            const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
+            if (c) return c.type === 'natural' ? c.fullName : c.companyName
+          }
+          return 'PTY SHIP SUPPLIERS, S.A.'
+        })()
+        return hay(rec?.data?.container) || hay(clientName) || hay(rec?.data?.containerConsecutive) || hay(rec?.data?.order)
+      })
+    }
+    
+    // Filtro de estado
+    if (statusFilter !== 'all') {
+      list = list.filter(r => (r.status || '').toLowerCase() === statusFilter)
+    }
+    
+    // Filtro de cliente
+    if (clientFilter !== 'all') {
+      list = list.filter((rec: any) => {
+        const clientName = (() => {
+          const d = rec?.data || {}
+          const byId = d.clientId || rec?.clientId
+          if (byId) {
+            const c = clients.find((x: any) => (x._id || x.id) === byId)
+            if (c) return c.type === 'natural' ? c.fullName : c.companyName
+          }
+          const bySap = d.clientSapCode || rec?.clientSapCode
+          if (bySap) {
+            const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
+            if (c) return c.type === 'natural' ? c.fullName : c.companyName
+          }
+          return 'PTY SHIP SUPPLIERS, S.A.'
+        })()
+        return clientName === clientFilter
+      })
+    }
+    
+    // Filtro de fecha
     if (isUsingPeriodFilter && startDate && endDate) {
       const s = new Date(startDate)
       const e = new Date(endDate); e.setHours(23,59,59,999)
       list = list.filter((r: any) => {
-        const val = dateFilter === 'moveDate' ? (r.data?.moveDate || r.createdAt) : r.createdAt
+        let val = dateFilter === 'moveDate' ? (r.data?.moveDate || r.createdAt) : r.createdAt
+        
+        // Si es moveDate y viene en formato MM/DD/YYYY, convertirlo a formato parseable
+        if (dateFilter === 'moveDate' && val && typeof val === 'string' && val.includes('/') && !val.includes('T')) {
+          const dateStr = val.split(' ')[0] // Quitar la hora si existe
+          const parts = dateStr.split('/')
+          if (parts.length === 3) {
+            const [month, day, year] = parts
+            // Convertir MM/DD/YYYY a YYYY-MM-DD para que Date lo parsee correctamente
+            val = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+          }
+        }
+        
         const d = new Date(val)
         return d >= s && d <= e
       })
     }
+    
     return list
-  }, [trasiegoRecords, statusFilter, isUsingPeriodFilter, startDate, endDate, dateFilter])
+  }, [trasiegoRecords, search, statusFilter, clientFilter, isUsingPeriodFilter, startDate, endDate, dateFilter, clients])
+
+  // Obtener clientes únicos de los registros visibles
+  const uniqueClients = useMemo(() => {
+    const clientNames = new Set<string>()
+    
+    trasiegoRecords.forEach((rec: any) => {
+      const clientName = (() => {
+        const d = rec?.data || {}
+        const byId = d.clientId || rec?.clientId
+        if (byId) {
+          const c = clients.find((x: any) => (x._id || x.id) === byId)
+          if (c) return c.type === 'natural' ? c.fullName : c.companyName
+        }
+        const bySap = d.clientSapCode || rec?.clientSapCode
+        if (bySap) {
+          const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
+          if (c) return c.type === 'natural' ? c.fullName : c.companyName
+        }
+        return 'PTY SHIP SUPPLIERS, S.A.'
+      })()
+      clientNames.add(clientName)
+    })
+    
+    return Array.from(clientNames).sort()
+  }, [trasiegoRecords, clients])
 
   const groupedByClient = useMemo(() => {
     const groups = new Map<string, IndividualExcelRecord[]>()
@@ -857,12 +958,34 @@ export function TruckingPrefactura() {
   // Estados de paginación para la tabla de registros (Paso 1)
   const [currentPage, setCurrentPage] = useState(1)
   const recordsPerPage = 10 // Cambiado de 15 a 10
-  const totalPages = Math.ceil(trasiegoRecords.length / recordsPerPage)
+  const totalPages = Math.ceil(visibleRecords.length / recordsPerPage)
   const paginatedRecords = useMemo(() => {
     const start = (currentPage - 1) * recordsPerPage
     const end = start + recordsPerPage
-    return trasiegoRecords.slice(start, end)
-  }, [trasiegoRecords, currentPage, recordsPerPage])
+    return visibleRecords.slice(start, end)
+  }, [visibleRecords, currentPage, recordsPerPage])
+
+  // Resetear página cuando cambien los filtros
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search, statusFilter, clientFilter, isUsingPeriodFilter, startDate, endDate, dateFilter])
+
+  // Cerrar el filtro de cliente cuando se hace clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showClientFilter) {
+        const target = event.target as Element
+        if (!target.closest('[data-client-filter]')) {
+          setShowClientFilter(false)
+        }
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showClientFilter])
 
   return (
     <div className="space-y-6">
@@ -878,8 +1001,8 @@ export function TruckingPrefactura() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="text-sm opacity-90">{selectedRecordIds.length} de {trasiegoRecords.length} seleccionados</div>
+                  <div className="flex items-center gap-3">
+                <div className="text-sm opacity-90">{selectedRecordIds.length} de {visibleRecords.length} seleccionados</div>
                 <Button variant="outline" disabled={selectedRecordIds.length === 0} onClick={clearSelection} className="bg-white/10 hover:bg-white/20 border-white/30 text-white">
                   Limpiar Selección
                 </Button>
@@ -1258,7 +1381,7 @@ export function TruckingPrefactura() {
             <Card>
               <CardContent>
                 <div className="mb-3 flex items-center gap-3 pt-4">
-                  <div className="text-sm text-muted-foreground">Total en base de datos (cargados): <span className="font-medium">{trasiegoRecords.length}</span></div>
+                  <div className="text-sm text-muted-foreground">Mostrando: <span className="font-medium">{visibleRecords.length}</span> de <span className="font-medium">{trasiegoRecords.length}</span> registros</div>
                   <div className="ml-auto w-full max-w-md">
                     <Input placeholder="Buscar por contenedor, cliente o orden..." value={search} onChange={(e) => setSearch(e.target.value)} />
                   </div>
@@ -1269,9 +1392,9 @@ export function TruckingPrefactura() {
                       <TableRow>
                         <TableHead>
                           <Checkbox
-                            checked={selectedRecordIds.length > 0 && selectedRecordIds.length === trasiegoRecords.length}
+                            checked={selectedRecordIds.length > 0 && selectedRecordIds.length === visibleRecords.length}
                             onCheckedChange={(c: boolean) => {
-                              if (c) setSelectedRecordIds(trasiegoRecords.map((r: any) => r._id || r.id))
+                              if (c) setSelectedRecordIds(visibleRecords.map((r: any) => r._id || r.id))
                               else setSelectedRecordIds([])
                             }}
                           />
@@ -1280,7 +1403,63 @@ export function TruckingPrefactura() {
                         <TableHead>Fecha Movimiento</TableHead>
                         <TableHead>Tipo</TableHead>
                         <TableHead>F/E</TableHead>
-                        <TableHead>Cliente</TableHead>
+                        <TableHead>
+                          <div className="flex items-center justify-between relative" data-client-filter>
+                            <span>Cliente</span>
+                            <div className="flex items-center gap-1">
+                              {clientFilter !== 'all' && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  onClick={() => setClientFilter('all')}
+                                  className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  title="Limpiar filtro"
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              )}
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => setShowClientFilter(!showClientFilter)}
+                                className={`h-6 w-6 p-0 ${clientFilter !== 'all' ? 'text-blue-600' : 'text-gray-500'}`}
+                                title="Filtrar por cliente"
+                              >
+                                <Filter className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            {showClientFilter && (
+                              <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-md shadow-lg p-3 min-w-64">
+                                <div className="space-y-2">
+                                  <div className="text-xs font-medium text-gray-700 mb-2">Filtrar por cliente:</div>
+                                  <div className="max-h-48 overflow-y-auto space-y-1">
+                                    <div 
+                                      className={`px-2 py-1 text-xs cursor-pointer rounded hover:bg-gray-100 ${clientFilter === 'all' ? 'bg-blue-100 text-blue-800 font-medium' : ''}`}
+                                      onClick={() => {
+                                        setClientFilter('all')
+                                        setShowClientFilter(false)
+                                      }}
+                                    >
+                                      Todos los clientes
+                                    </div>
+                                    {uniqueClients.map((clientName) => (
+                                      <div 
+                                        key={clientName}
+                                        className={`px-2 py-1 text-xs cursor-pointer rounded hover:bg-gray-100 ${clientFilter === clientName ? 'bg-blue-100 text-blue-800 font-medium' : ''}`}
+                                        onClick={() => {
+                                          setClientFilter(clientName)
+                                          setShowClientFilter(false)
+                                        }}
+                                      >
+                                        {clientName}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </TableHead>
                         <TableHead>Orden</TableHead>
                         <TableHead>Ruta</TableHead>
                         <TableHead>Operación</TableHead>
@@ -1290,84 +1469,79 @@ export function TruckingPrefactura() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {trasiegoRecords.length === 0 ? (
+                      {visibleRecords.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={12} className="text-center text-muted-foreground py-8">No hay registros</TableCell>
+                          <TableCell colSpan={12} className="text-center text-muted-foreground py-8">No hay registros que coincidan con los filtros</TableCell>
                         </TableRow>
                       ) : (
-                        Array.from(groupedByClient.entries()).map(([clientName, records]) => (
-                          paginatedRecords
-                            .filter(rec => {
-                              // Agrupar por cliente solo los de la página actual
-                              const name = (() => {
-                                const d = rec?.data || {}
-                                let n = 'PTY SHIP SUPPLIERS, S.A.'
-                                const byId = d.clientId || rec?.clientId
-                                if (byId) {
-                                  const c = clients.find((x: any) => (x._id || x.id) === byId)
-                                  if (c) n = c.type === 'natural' ? c.fullName : c.companyName
-                                } else {
-                                  const bySap = d.clientSapCode || rec?.clientSapCode
-                                  if (bySap) {
-                                    const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
-                                    if (c) n = c.type === 'natural' ? c.fullName : c.companyName
-                                  }
-                                }
-                                return n
-                              })()
-                              return name === clientName
-                            })
-                            .map((rec, idx) => (
-                              <TableRow key={(rec as any)._id || rec.id}>
-                                <TableCell>
-                                  <Checkbox checked={isSelected((rec as any)._id || rec.id)} onCheckedChange={(c: boolean) => toggleRecord((rec as any)._id || rec.id, !!c)} />
-                                </TableCell>
-                                <TableCell className="font-mono text-sm">{(rec as any).data?.container || ''}</TableCell>
-                                <TableCell>{convertExcelDateToReadable((rec as any).data?.moveDate) || '-'}</TableCell>
-                                <TableCell>
-                                  <Badge variant="secondary">Trasiego</Badge>
-                                </TableCell>
-                                <TableCell>{(rec as any).data?.fe || '-'}</TableCell>
-                                <TableCell>{clientName}</TableCell>
-                                <TableCell>{(rec as any).data?.containerConsecutive || (rec as any).data?.order || ''}</TableCell>
-                                <TableCell>{(rec as any).data?.leg || `${(rec as any).data?.from || ''} → ${(rec as any).data?.to || ''}`}</TableCell>
-                                <TableCell>
-                                  <Badge variant={((rec as any).data?.moveType || '').toLowerCase() === 'import' ? 'default' : 'outline'}>
-                                    {((rec as any).data?.moveType || 'IMPORT').toUpperCase()}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>${((rec as any).data?.matchedPrice || (rec as any).totalValue || 0).toFixed(2)}</TableCell>
-                                <TableCell>
-                                  {(() => {
-                                    const isMatched = (((rec as any).data?.matchedPrice || 0) > 0) || ((rec as any).data?.isMatched === true)
-                                    const isCompleted = isMatched || (((rec as any).status || '').toLowerCase() === 'completado')
-                                    return (
-                                      <Badge variant={isCompleted ? 'default' : 'secondary'}>
-                                        {isCompleted ? 'Completado' : 'Pendiente'}
-                                      </Badge>
-                                    )
-                                  })()}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-2">
-                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-600 hover:text-slate-800 hover:bg-slate-100" onClick={() => handleViewRecord(rec)} title="Ver">
-                                      <EyeIcon className="h-4 w-4" />
-                                    </Button>
-                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDeleteRecord(rec as any)} title="Eliminar">
-                                      <TrashIcon className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          ))
-                        )}
+                        paginatedRecords.map((rec, idx) => {
+                          // Obtener el nombre del cliente para este registro
+                          const clientName = (() => {
+                            const d = rec?.data || {}
+                            const byId = d.clientId || rec?.clientId
+                            if (byId) {
+                              const c = clients.find((x: any) => (x._id || x.id) === byId)
+                              if (c) return c.type === 'natural' ? c.fullName : c.companyName
+                            }
+                            const bySap = d.clientSapCode || rec?.clientSapCode
+                            if (bySap) {
+                              const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
+                              if (c) return c.type === 'natural' ? c.fullName : c.companyName
+                            }
+                            return 'PTY SHIP SUPPLIERS, S.A.'
+                          })()
+                          
+                          return (
+                            <TableRow key={(rec as any)._id || rec.id}>
+                              <TableCell>
+                                <Checkbox checked={isSelected((rec as any)._id || rec.id)} onCheckedChange={(c: boolean) => toggleRecord((rec as any)._id || rec.id, !!c)} />
+                              </TableCell>
+                              <TableCell className="font-mono text-sm">{(rec as any).data?.container || ''}</TableCell>
+                              <TableCell>{convertExcelDateToReadable((rec as any).data?.moveDate || (rec as any).createdAt) || '-'}</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">Trasiego</Badge>
+                              </TableCell>
+                              <TableCell>{(rec as any).data?.fe || '-'}</TableCell>
+                              <TableCell>{clientName}</TableCell>
+                              <TableCell>{(rec as any).data?.containerConsecutive || (rec as any).data?.order || ''}</TableCell>
+                              <TableCell>{(rec as any).data?.leg || `${(rec as any).data?.from || ''} → ${(rec as any).data?.to || ''}`}</TableCell>
+                              <TableCell>
+                                <Badge variant={((rec as any).data?.moveType || '').toLowerCase() === 'import' ? 'default' : 'outline'}>
+                                  {((rec as any).data?.moveType || 'IMPORT').toUpperCase()}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>${((rec as any).data?.matchedPrice || (rec as any).totalValue || 0).toFixed(2)}</TableCell>
+                              <TableCell>
+                                {(() => {
+                                  const isMatched = (((rec as any).data?.matchedPrice || 0) > 0) || ((rec as any).data?.isMatched === true)
+                                  const isCompleted = isMatched || (((rec as any).status || '').toLowerCase() === 'completado')
+                                  return (
+                                    <Badge variant={isCompleted ? 'default' : 'secondary'}>
+                                      {isCompleted ? 'Completado' : 'Pendiente'}
+                                    </Badge>
+                                  )
+                                })()}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-600 hover:text-slate-800 hover:bg-slate-100" onClick={() => handleViewRecord(rec)} title="Ver">
+                                    <EyeIcon className="h-4 w-4" />
+                                  </Button>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDeleteRecord(rec as any)} title="Eliminar">
+                                    <TrashIcon className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })
+                      )}
                       </TableBody>
                     </Table>
                   </div>
                   <div className="flex items-center justify-between mt-6">
                     <div className="text-sm">
-                      Seleccionados: {selectedRecords.length} de {trasiegoRecords.length} | Total: <span className="font-semibold">${totalSelected.toFixed(2)}</span>
+                      Seleccionados: {selectedRecords.length} de {visibleRecords.length} | Total: <span className="font-semibold">${totalSelected.toFixed(2)}</span>
                     </div>
                     <div className="flex gap-2 items-center">
                       <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>

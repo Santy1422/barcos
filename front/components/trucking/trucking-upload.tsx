@@ -184,6 +184,23 @@ export function TruckingUpload() {
     console.log("")
   }, [containerTypes, containerTypesLoading, containerTypesError])
 
+  // Debug: Monitorear cuando los clientes se cargan
+  useEffect(() => {
+    console.log("=== CLIENTES CARGADOS ===")
+    console.log("Clientes disponibles:", clients)
+    console.log("Número de clientes:", clients.length)
+    console.log("Cargando clientes:", clientsLoading)
+    if (clients.length > 0) {
+      console.log("Ejemplos de clientes:")
+      clients.slice(0, 5).forEach((client: any, index: number) => {
+        const displayName = client.type === 'juridico' ? client.companyName : client.fullName
+        const code = client.type === 'juridico' ? client.name : client.documentNumber
+        console.log(`  ${index + 1}: ${displayName} (${code}) - ${client.type}`)
+      })
+    }
+    console.log("")
+  }, [clients, clientsLoading])
+
 
   // Mostrar error si existe
   useEffect(() => {
@@ -263,7 +280,7 @@ export function TruckingUpload() {
       price: 0,
       status: "FULL",
       cliente: record.line || "",
-      routeArea: "",
+      routeArea: record.route || "", // Usar la columna Route del Excel para el área de ruta
       sizeContenedor: record.size || "",
     })
     
@@ -665,6 +682,17 @@ export function TruckingUpload() {
       return
     }
 
+    // Verificar que todos los registros tengan match antes de continuar
+    const unmatchedRecords = previewData.filter(record => !record.isMatched)
+    if (unmatchedRecords.length > 0) {
+      toast({
+        title: "Registros sin match",
+        description: `No se puede guardar. Hay ${unmatchedRecords.length} registros sin coincidencia. Crea las rutas faltantes o corrige los datos.`,
+        variant: "destructive"
+      })
+      return
+    }
+
     // Verificar que todos los clientes estén completos antes de continuar
     if (!areAllClientsComplete()) {
       toast({
@@ -967,6 +995,45 @@ export function TruckingUpload() {
         <Card>
           <CardHeader>
             <CardTitle className="text-2xl font-bold  mb-4">Vista Previa de Datos</CardTitle>
+            
+            {/* Cartel de registros sin match */}
+            {unmatchedCount > 0 && (
+              <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <AlertCircle className="h-5 w-5 text-red-400" />
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-red-800">
+                      ⚠️ Registros sin coincidencia detectados
+                    </h3>
+                    <div className="mt-2 text-sm text-red-700">
+                      <p className="mb-2">
+                        <strong>No se puede proceder</strong> hasta que todos los registros tengan una ruta asignada.
+                      </p>
+                      <p className="mb-2">
+                        <strong>Para crear las rutas faltantes:</strong>
+                      </p>
+                      <ol className="list-decimal list-inside space-y-1 ml-4">
+                        <li>Haz clic en el botón <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
+                          <AlertCircle className="h-3 w-3 mr-1" />
+                          Sin match
+                        </span> en la columna "Estado" de cada registro sin coincidencia</li>
+                        <li>Completa el formulario de creación de ruta con los datos del registro</li>
+                        <li>El sistema re-procesará automáticamente y mostrará el match</li>
+                        <li>Repite hasta que todos los registros tengan <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Match
+                        </span></li>
+                      </ol>
+                      <p className="mt-2 font-medium">
+                        Registros pendientes: <span className="text-red-600 font-bold">{unmatchedCount}</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap mt-2">
               <span className="font-medium">{previewData.length} registros encontrados</span>
               <Badge variant="outline" className="text-green-600 border-green-600 px-3 py-1">
@@ -1112,6 +1179,17 @@ export function TruckingUpload() {
             
             <div className="mt-4 flex justify-between items-center">
               <div className="flex items-center gap-2">
+                {unmatchedCount > 0 && (
+                  <div className="flex items-center space-x-2 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>
+                      <strong>No se puede guardar:</strong> {unmatchedCount} registros sin match. 
+                      <span className="ml-1 text-orange-600">
+                        Haz clic en los botones "Sin match" para crear las rutas faltantes.
+                      </span>
+                    </span>
+                  </div>
+                )}
                 {!areAllClientsComplete() && (
                   <div className="flex items-center space-x-2 text-sm text-red-600">
                     <AlertCircle className="h-4 w-4" />
@@ -1155,8 +1233,8 @@ export function TruckingUpload() {
               
               <Button 
                 onClick={handleUpload}
-                disabled={isLoading || isCreatingRecords || !areAllClientsComplete()}
-                className={`${areAllClientsComplete() ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
+                disabled={isLoading || isCreatingRecords || !areAllClientsComplete() || unmatchedCount > 0}
+                className={`${areAllClientsComplete() && unmatchedCount === 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
               >
                 {isLoading || isCreatingRecords ? (
                   <>
@@ -1343,12 +1421,21 @@ export function TruckingUpload() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="route-container-type">Tipo de Contenedor *</Label>
-                  <Input 
-                    id="route-container-type" 
-                    value={newRoute.containerType} 
-                    onChange={(e) => setNewRoute({ ...newRoute, containerType: e.target.value.toUpperCase() })} 
-                    placeholder="DV, CA, CT, RE, etc." 
-                  />
+                  <Select value={newRoute.containerType} onValueChange={(value) => setNewRoute({ ...newRoute, containerType: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar tipo de contenedor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {containerTypes
+                        .filter(ct => ct.isActive)
+                        .sort((a, b) => a.code.localeCompare(b.code))
+                        .map(containerType => (
+                          <SelectItem key={containerType.code} value={containerType.code}>
+                            {containerType.code} - {containerType.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="route-route-type">Tipo de Ruta *</Label>
@@ -1394,30 +1481,56 @@ export function TruckingUpload() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="route-cliente">Cliente *</Label>
-                  <Input 
-                    id="route-cliente" 
-                    value={newRoute.cliente} 
-                    onChange={(e) => setNewRoute({ ...newRoute, cliente: e.target.value.toUpperCase() })} 
-                    placeholder="MSC" 
-                  />
+                  <Select value={newRoute.cliente} onValueChange={(value) => setNewRoute({ ...newRoute, cliente: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar cliente" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients
+                        .filter(client => client.isActive)
+                        .sort((a, b) => {
+                          const nameA = a.type === 'juridico' ? (a as any).companyName : (a as any).fullName
+                          const nameB = b.type === 'juridico' ? (b as any).companyName : (b as any).fullName
+                          return nameA.localeCompare(nameB)
+                        })
+                        .map(client => {
+                          const displayName = client.type === 'juridico' ? (client as any).companyName : (client as any).fullName
+                          const code = client.type === 'juridico' ? (client as any).name : (client as any).documentNumber
+                          return (
+                            <SelectItem key={client._id || client.id} value={code || displayName}>
+                              {displayName} ({code})
+                            </SelectItem>
+                          )
+                        })}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="route-area">Área de Ruta *</Label>
-                  <Input 
-                    id="route-area" 
-                    value={newRoute.routeArea} 
-                    onChange={(e) => setNewRoute({ ...newRoute, routeArea: e.target.value.toUpperCase() })} 
-                    placeholder="PACIFIC, NORTH, SOUTH, ATLANTIC" 
-                  />
+                  <Select value={newRoute.routeArea} onValueChange={(value) => setNewRoute({ ...newRoute, routeArea: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar área de ruta" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PACIFIC">PACIFIC</SelectItem>
+                      <SelectItem value="NORTH">NORTH</SelectItem>
+                      <SelectItem value="SOUTH">SOUTH</SelectItem>
+                      <SelectItem value="ATLANTIC">ATLANTIC</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="route-size">Tamaño del Contenedor *</Label>
-                  <Input 
-                    id="route-size" 
-                    value={newRoute.sizeContenedor} 
-                    onChange={(e) => setNewRoute({ ...newRoute, sizeContenedor: e.target.value })} 
-                    placeholder="20, 40, 45" 
-                  />
+                  <Select value={newRoute.sizeContenedor} onValueChange={(value) => setNewRoute({ ...newRoute, sizeContenedor: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar tamaño" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="40">40</SelectItem>
+                      <SelectItem value="45">45</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               
