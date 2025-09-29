@@ -29,9 +29,14 @@ import {
   createPTYSSRoute,
   updatePTYSSRoute,
   deletePTYSSRoute,
+  importPTYSSRoutes,
   selectPTYSSRoutes,
   selectPTYSSRoutesLoading,
   selectPTYSSRoutesError,
+  selectPTYSSRoutesPagination,
+  selectPTYSSRoutesFilters,
+  setFilters,
+  setPage,
   type PTYSSRoute,
   type PTYSSRouteInput,
 } from "@/lib/features/ptyssRoutes/ptyssRoutesSlice"
@@ -48,10 +53,27 @@ import {
   clearError as clearAdditionalServicesError,
   type LocalService as AdditionalService,
 } from "@/lib/features/localServices/localServicesSlice"
+
+import {
+  fetchContainerTypes,
+  createContainerType,
+  updateContainerType,
+  deleteContainerType,
+  selectAllContainerTypes,
+  selectContainerTypesLoading,
+  selectContainerTypesError,
+  selectContainerTypesCreating,
+  selectContainerTypesUpdating,
+  selectContainerTypesDeleting,
+  type ContainerType,
+  type ContainerTypeInput,
+} from "@/lib/features/containerTypes/containerTypesSlice"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
-import { Loader2 } from "lucide-react"
+import { Loader2, Search, Upload } from "lucide-react"
+import { PTYSSPriceImporter } from "./ptyss-price-importer"
+import { Pagination } from "@/components/ui/pagination"
 
 export function PTYSSConfig() {
   const dispatch = useAppDispatch()
@@ -65,10 +87,20 @@ export function PTYSSConfig() {
   const routes = useAppSelector(selectPTYSSRoutes)
   const routesLoading = useAppSelector(selectPTYSSRoutesLoading)
   const routesError = useAppSelector(selectPTYSSRoutesError)
+  const routesPagination = useAppSelector(selectPTYSSRoutesPagination)
+  const routesFilters = useAppSelector(selectPTYSSRoutesFilters)
 
   // Additional Services state (servicios adicionales)
   const additionalServices = useAppSelector(selectAllAdditionalServices)
   const additionalServicesLoading = useAppSelector(selectAdditionalServicesLoading)
+  
+  // Container Types state
+  const containerTypes = useAppSelector(selectAllContainerTypes)
+  const containerTypesLoading = useAppSelector(selectContainerTypesLoading)
+  const containerTypesError = useAppSelector(selectContainerTypesError)
+  const containerTypesCreating = useAppSelector(selectContainerTypesCreating)
+  const containerTypesUpdating = useAppSelector(selectContainerTypesUpdating)
+  const containerTypesDeleting = useAppSelector(selectContainerTypesDeleting)
   
   // Local Services state (servicios locales fijos)
   const [localServices, setLocalServices] = useState<AdditionalService[]>([])
@@ -76,7 +108,7 @@ export function PTYSSConfig() {
   
   const [showAddNavieraForm, setShowAddNavieraForm] = useState(false)
   const [navieraToDelete, setNavieraToDelete] = useState<Naviera | null>(null)
-  const [activeTab, setActiveTab] = useState<'navieras' | 'routes' | 'localRoutes' | 'services' | 'localServices'>('navieras')
+  const [activeTab, setActiveTab] = useState<'navieras' | 'routes' | 'localRoutes' | 'services' | 'localServices' | 'containers'>('navieras')
 
   // PTYSS Routes form state
   const [showAddRouteForm, setShowAddRouteForm] = useState(false)
@@ -87,7 +119,10 @@ export function PTYSSConfig() {
     to: "",
     containerType: "",
     routeType: "single",
-    price: 0
+    price: 0,
+    status: "FULL",
+    cliente: "",
+    routeArea: ""
   })
 
   // Estado para servicios adicionales
@@ -108,6 +143,26 @@ export function PTYSSConfig() {
     SLR168: 10
   })
 
+  // Importador de precios
+  const [showPriceImporter, setShowPriceImporter] = useState(false)
+
+  // Form: Container Type
+  const [showAddContainerTypeForm, setShowAddContainerTypeForm] = useState(false)
+  const [containerTypeToDelete, setContainerTypeToDelete] = useState<ContainerType | null>(null)
+  const [editingContainerType, setEditingContainerType] = useState<ContainerType | null>(null)
+  const [newContainerType, setNewContainerType] = useState<ContainerTypeInput>({
+    code: "",
+    name: "",
+    category: "DRY",
+    sapCode: "",
+    description: "",
+    isActive: true,
+  })
+  const [containerTypeFilters, setContainerTypeFilters] = useState({
+    category: "all" as "all" | "DRY" | "REEFE",
+    isActive: "all" as "all" | "true" | "false"
+  })
+
   // Cargar navieras al montar el componente
   useEffect(() => {
     dispatch(fetchNavieras())
@@ -115,12 +170,26 @@ export function PTYSSConfig() {
 
   // Cargar rutas al montar el componente
   useEffect(() => {
-    dispatch(fetchPTYSSRoutes())
+    dispatch(fetchPTYSSRoutes({ page: 1, limit: 50 }))
   }, [dispatch])
+
+  // Cargar rutas cuando cambien los filtros
+  useEffect(() => {
+    dispatch(fetchPTYSSRoutes({ 
+      page: 1, 
+      limit: 50,
+      ...routesFilters
+    }))
+  }, [dispatch, routesFilters])
 
   // Cargar servicios adicionales al montar el componente
   useEffect(() => {
     dispatch(fetchAdditionalServices('ptyss'))
+  }, [dispatch])
+
+  // Cargar tipos de contenedores al montar el componente
+  useEffect(() => {
+    dispatch(fetchContainerTypes())
   }, [dispatch])
 
   // Cargar servicios locales fijos
@@ -210,6 +279,17 @@ export function PTYSSConfig() {
     }
   }, [routesError, toast])
 
+  // Mostrar error de tipos de contenedores si existe
+  useEffect(() => {
+    if (containerTypesError) {
+      toast({
+        title: "Error",
+        description: containerTypesError,
+        variant: "destructive",
+      })
+    }
+  }, [containerTypesError, toast])
+
   const [newNaviera, setNewNaviera] = useState({
     name: "",
     code: ""
@@ -289,7 +369,7 @@ export function PTYSSConfig() {
 
   // PTYSS Routes handlers
   const handleAddRoute = async () => {
-    if (!newRoute.from || !newRoute.to || !newRoute.containerType || !newRoute.routeType || newRoute.price <= 0) {
+    if (!newRoute.from || !newRoute.to || !newRoute.containerType || !newRoute.routeType || newRoute.price <= 0 || !newRoute.status || !newRoute.cliente || !newRoute.routeArea) {
       toast({
         title: "Error",
         description: "Completa todos los campos obligatorios",
@@ -306,7 +386,10 @@ export function PTYSSConfig() {
         to: "",
         containerType: "",
         routeType: "single",
-        price: 0
+        price: 0,
+        status: "FULL",
+        cliente: "",
+        routeArea: ""
       })
       setShowAddRouteForm(false)
 
@@ -324,7 +407,7 @@ export function PTYSSConfig() {
   }
 
   const handleEditRoute = async () => {
-    if (!editingRoute || !newRoute.from || !newRoute.to || !newRoute.containerType || !newRoute.routeType || newRoute.price <= 0) {
+    if (!editingRoute || !newRoute.from || !newRoute.to || !newRoute.containerType || !newRoute.routeType || newRoute.price <= 0 || !newRoute.status || !newRoute.cliente || !newRoute.routeArea) {
       toast({
         title: "Error",
         description: "Completa todos los campos obligatorios",
@@ -341,7 +424,10 @@ export function PTYSSConfig() {
         to: "",
         containerType: "",
         routeType: "single",
-        price: 0
+        price: 0,
+        status: "FULL",
+        cliente: "",
+        routeArea: ""
       })
       setEditingRoute(null)
 
@@ -382,7 +468,10 @@ export function PTYSSConfig() {
       to: route.to,
       containerType: route.containerType,
       routeType: route.routeType,
-      price: route.price
+      price: route.price,
+      status: route.status,
+      cliente: route.cliente,
+      routeArea: route.routeArea
     })
   }
 
@@ -393,7 +482,10 @@ export function PTYSSConfig() {
       to: "",
       containerType: "",
       routeType: "single",
-      price: 0
+      price: 0,
+      status: "FULL",
+      cliente: "",
+      routeArea: ""
     })
   }
 
@@ -584,6 +676,217 @@ export function PTYSSConfig() {
     setEditingLocalService(null)
   }
 
+  // Container Types handlers
+  const handleAddContainerType = async () => {
+    if (!newContainerType.code || !newContainerType.name || !newContainerType.category || !newContainerType.sapCode) {
+      toast({
+        title: "Error",
+        description: "Completa todos los campos obligatorios",
+        variant: "destructive"
+      })
+      return
+    }
+    try {
+      await dispatch(createContainerType(newContainerType)).unwrap()
+      setNewContainerType({ code: "", name: "", category: "DRY", sapCode: "", description: "", isActive: true })
+      setShowAddContainerTypeForm(false)
+      toast({
+        title: "Tipo de contenedor agregado",
+        description: "El nuevo tipo de contenedor ha sido configurado correctamente",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Error al crear el tipo de contenedor",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleEditContainerType = async () => {
+    if (!editingContainerType) return
+    if (!newContainerType.code || !newContainerType.name || !newContainerType.category || !newContainerType.sapCode) {
+      toast({
+        title: "Error",
+        description: "Completa todos los campos obligatorios",
+        variant: "destructive"
+      })
+      return
+    }
+    try {
+      await dispatch(updateContainerType({ id: editingContainerType._id, containerTypeData: newContainerType })).unwrap()
+      setNewContainerType({ code: "", name: "", category: "DRY", sapCode: "", description: "", isActive: true })
+      setEditingContainerType(null)
+      toast({
+        title: "Tipo de contenedor actualizado",
+        description: "El tipo de contenedor ha sido actualizado correctamente",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Error al actualizar el tipo de contenedor",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleDeleteContainerType = async (containerTypeId: string) => {
+    try {
+      await dispatch(deleteContainerType(containerTypeId)).unwrap()
+      toast({
+        title: "Tipo de contenedor eliminado",
+        description: "El tipo de contenedor ha sido eliminado del sistema",
+      })
+      setContainerTypeToDelete(null)
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Error al eliminar el tipo de contenedor",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleEditContainerTypeClick = (containerType: ContainerType) => {
+    setEditingContainerType(containerType)
+    setNewContainerType({
+      code: containerType.code,
+      name: containerType.name,
+      category: containerType.category,
+      sapCode: containerType.sapCode,
+      description: containerType.description || "",
+      isActive: containerType.isActive,
+    })
+  }
+
+  const handleCancelEditContainerType = () => {
+    setEditingContainerType(null)
+    setNewContainerType({ code: "", name: "", category: "DRY", sapCode: "", description: "", isActive: true })
+  }
+
+  const handleToggleContainerTypeStatus = async (containerType: ContainerType) => {
+    try {
+      await dispatch(updateContainerType({ 
+        id: containerType._id, 
+        containerTypeData: { ...containerType, isActive: !containerType.isActive } 
+      })).unwrap()
+      toast({
+        title: "Estado actualizado",
+        description: `El tipo de contenedor ${containerType.name} ha sido ${!containerType.isActive ? "activado" : "desactivado"}`,
+      })
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Error al actualizar el estado del tipo de contenedor",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleContainerTypeFiltersChange = (filters: typeof containerTypeFilters) => {
+    setContainerTypeFilters(filters)
+    dispatch(fetchContainerTypes())
+  }
+
+  // Handlers para filtros de rutas
+  const handleRouteFilterChange = (newFilters: Partial<typeof routesFilters>) => {
+    dispatch(setFilters(newFilters))
+  }
+
+  const handleRoutePageChange = (page: number) => {
+    dispatch(setPage(page))
+    dispatch(fetchPTYSSRoutes({ 
+      page, 
+      limit: 50,
+      ...routesFilters
+    }))
+  }
+
+  // Handler para importación de precios
+  const handleImportPrices = async (routes: any[], onProgress?: (progress: number, status: string) => void, overwriteDuplicates: boolean = false) => {
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+
+      const totalRoutes = routes.length
+      const BATCH_SIZE = 500
+      const results = {
+        success: 0,
+        duplicates: 0,
+        errors: 0,
+        errorsList: [] as string[]
+      }
+
+      onProgress?.(0, 'Iniciando importación...')
+
+      for (let i = 0; i < routes.length; i += BATCH_SIZE) {
+        const batch = routes.slice(i, i + BATCH_SIZE)
+        const currentBatch = Math.floor(i / BATCH_SIZE) + 1
+        const totalBatches = Math.ceil(totalRoutes / BATCH_SIZE)
+        
+        onProgress?.(
+          Math.round((i / totalRoutes) * 100), 
+          `Procesando lote ${currentBatch}/${totalBatches} (${batch.length} rutas)...`
+        )
+        
+        try {
+          const response = await fetch('/api/ptyss-routes/import', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ routes: batch, overwriteDuplicates })
+          })
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}))
+            throw new Error(errorData.payload?.message || `Error ${response.status}: ${response.statusText}`)
+          }
+
+          const data = await response.json()
+          
+          // Acumular resultados
+          results.success += data.payload.data.success
+          results.duplicates += data.payload.data.duplicates
+          results.errors += data.payload.data.errors
+          results.errorsList.push(...(data.payload.data.errorsList || []))
+
+        } catch (error) {
+          console.error(`Error procesando lote ${currentBatch}:`, error)
+          results.errors += batch.length
+          results.errorsList.push(`Error en lote ${currentBatch}: ${error instanceof Error ? error.message : 'Error desconocido'}`)
+        }
+
+        // Pequeña pausa para no sobrecargar el servidor
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+
+      onProgress?.(100, 'Finalizando importación...')
+
+      // Mostrar resultados finales
+      toast({ 
+        title: "Importación completada", 
+        description: `${results.success} rutas importadas, ${results.duplicates} duplicadas, ${results.errors} errores` 
+      })
+
+      // Recargar las rutas
+      dispatch(fetchPTYSSRoutes({ page: 1, limit: 50 }))
+
+    } catch (error) {
+      console.error('Error en importación de precios:', error)
+      onProgress?.(0, 'Error en la importación')
+      toast({ 
+        title: "Error", 
+        description: error instanceof Error ? error.message : "Error al importar las rutas", 
+        variant: "destructive" 
+      })
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -634,6 +937,14 @@ export function PTYSSConfig() {
             >
               <Wrench className="h-4 w-4 mr-2" />
               Servicios Locales
+            </Button>
+            <Button
+              variant={activeTab === 'containers' ? "default" : "outline"}
+              className={activeTab === 'containers' ? "bg-blue-600 hover:bg-blue-700" : ""}
+              onClick={() => setActiveTab('containers')}
+            >
+              <Ship className="h-4 w-4 mr-2" />
+              Tipos de Contenedores
             </Button>
           </div>
         </CardContent>
@@ -763,13 +1074,141 @@ export function PTYSSConfig() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Gestión de Rutas Trasiego PTYSS</CardTitle>
-              <Button onClick={() => setShowAddRouteForm(!showAddRouteForm)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Agregar Ruta
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setShowPriceImporter(true)}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Importar Precios
+                </Button>
+                <Button onClick={() => setShowAddRouteForm(!showAddRouteForm)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Agregar Ruta
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Filtros de búsqueda */}
+            <Card className="border-dashed bg-gray-50">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Search className="h-5 w-5" />
+                  Buscar y Filtrar Rutas
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+                  {/* Búsqueda por texto */}
+                  <div className="space-y-2">
+                    <Label htmlFor="route-search">Buscar</Label>
+                    <Input
+                      id="route-search"
+                      placeholder="Nombre, origen o destino..."
+                      value={routesFilters.search}
+                      onChange={(e) => handleRouteFilterChange({ search: e.target.value })}
+                    />
+                  </div>
+                  
+                  {/* Filtro por tipo de contenedor */}
+                  <div className="space-y-2">
+                    <Label>Tipo de Contenedor</Label>
+                    <Select 
+                      value={routesFilters.containerType} 
+                      onValueChange={(value) => handleRouteFilterChange({ containerType: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los tipos</SelectItem>
+                        {containerTypes
+                          .filter((ct: any) => ct.isActive)
+                          .sort((a: any, b: any) => a.code.localeCompare(b.code))
+                          .map((containerType: any) => (
+                            <SelectItem key={containerType.code} value={containerType.code}>
+                              {containerType.code} - {containerType.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {/* Filtro por tipo de ruta */}
+                  <div className="space-y-2">
+                    <Label>Tipo de Ruta</Label>
+                    <Select 
+                      value={routesFilters.routeType} 
+                      onValueChange={(value) => handleRouteFilterChange({ routeType: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los tipos</SelectItem>
+                        <SelectItem value="single">Single</SelectItem>
+                        <SelectItem value="RT">Round Trip</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Filtro por estado */}
+                  <div className="space-y-2">
+                    <Label>Estado</Label>
+                    <Select 
+                      value={routesFilters.status} 
+                      onValueChange={(value) => handleRouteFilterChange({ status: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los estados</SelectItem>
+                        <SelectItem value="FULL">Full</SelectItem>
+                        <SelectItem value="EMPTY">Empty</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Filtro por cliente */}
+                  <div className="space-y-2">
+                    <Label>Cliente</Label>
+                    <Input
+                      placeholder="Código del cliente..."
+                      value={routesFilters.cliente}
+                      onChange={(e) => handleRouteFilterChange({ cliente: e.target.value })}
+                    />
+                  </div>
+
+                  {/* Filtro por área de ruta */}
+                  <div className="space-y-2">
+                    <Label>Área de Ruta</Label>
+                    <Select 
+                      value={routesFilters.routeArea} 
+                      onValueChange={(value) => handleRouteFilterChange({ routeArea: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas las áreas</SelectItem>
+                        <SelectItem value="PACIFIC">PACIFIC</SelectItem>
+                        <SelectItem value="NORTH">NORTH</SelectItem>
+                        <SelectItem value="SOUTH">SOUTH</SelectItem>
+                        <SelectItem value="ATLANTIC">ATLANTIC</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                
+                {/* Botón para limpiar filtros */}
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span>
+                      {routesPagination ? `${routesPagination.totalItems} rutas totales` : `${routes.length} rutas mostradas`}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
             {(showAddRouteForm || editingRoute) && (
               <Card className="border-dashed">
                 <CardHeader>
@@ -794,7 +1233,7 @@ export function PTYSSConfig() {
                       <Input
                         id="route-from"
                         value={newRoute.from}
-                        onChange={(e) => setNewRoute({...newRoute, from: e.target.value})}
+                        onChange={(e) => setNewRoute({...newRoute, from: e.target.value.toUpperCase()})}
                         placeholder="Balboa"
                       />
                     </div>
@@ -803,7 +1242,7 @@ export function PTYSSConfig() {
                       <Input
                         id="route-to"
                         value={newRoute.to}
-                        onChange={(e) => setNewRoute({...newRoute, to: e.target.value})}
+                        onChange={(e) => setNewRoute({...newRoute, to: e.target.value.toUpperCase()})}
                         placeholder="Cristóbal"
                       />
                     </div>
@@ -814,21 +1253,14 @@ export function PTYSSConfig() {
                           <SelectValue placeholder="Seleccionar tipo" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="DV">DV - Dry Van</SelectItem>
-                          <SelectItem value="HC">HC - High Cube</SelectItem>
-                          <SelectItem value="RE">RE - Reefer</SelectItem>
-                          <SelectItem value="TK">TK - Tank</SelectItem>
-                          <SelectItem value="FL">FL - Flat Rack</SelectItem>
-                          <SelectItem value="OS">OS - Open Side</SelectItem>
-                          <SelectItem value="OT">OT - Open Top</SelectItem>
-                          <SelectItem value="HR">HR - Hard Top</SelectItem>
-                          <SelectItem value="PL">PL - Platform</SelectItem>
-                          <SelectItem value="BV">BV - Bulk</SelectItem>
-                          <SelectItem value="VE">VE - Ventilated</SelectItem>
-                          <SelectItem value="PW">PW - Pallet Wide</SelectItem>
-                          <SelectItem value="HT">HT - Hard Top</SelectItem>
-                          <SelectItem value="IS">IS - Insulated</SelectItem>
-                          <SelectItem value="XX">XX - Special</SelectItem>
+                          {containerTypes
+                            .filter((ct: any) => ct.isActive)
+                            .sort((a: any, b: any) => a.code.localeCompare(b.code))
+                            .map((containerType: any) => (
+                              <SelectItem key={containerType.code} value={containerType.code}>
+                                {containerType.code} - {containerType.name}
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -856,6 +1288,41 @@ export function PTYSSConfig() {
                         step="0.01"
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="route-status">Estado *</Label>
+                      <Select value={newRoute.status} onValueChange={(value) => setNewRoute({...newRoute, status: value as "FULL" | "EMPTY"})}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar estado" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="FULL">Full</SelectItem>
+                          <SelectItem value="EMPTY">Empty</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="route-cliente">Cliente *</Label>
+                      <Input
+                        id="route-cliente"
+                        value={newRoute.cliente}
+                        onChange={(e) => setNewRoute({...newRoute, cliente: e.target.value})}
+                        placeholder="Código del cliente"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="route-area">Área de Ruta *</Label>
+                      <Select value={newRoute.routeArea} onValueChange={(value) => setNewRoute({...newRoute, routeArea: value})}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar área de ruta" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="PACIFIC">PACIFIC</SelectItem>
+                          <SelectItem value="NORTH">NORTH</SelectItem>
+                          <SelectItem value="SOUTH">SOUTH</SelectItem>
+                          <SelectItem value="ATLANTIC">ATLANTIC</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <Button onClick={editingRoute ? handleEditRoute : handleAddRoute} disabled={routesLoading}>
@@ -871,6 +1338,63 @@ export function PTYSSConfig() {
             )}
 
             <div className="rounded-md border">
+              {/* Indicador de filtros activos */}
+              {(routesFilters.search || routesFilters.containerType !== "all" || routesFilters.routeType !== "all" || routesFilters.status !== "all" || routesFilters.cliente !== "all" || routesFilters.routeArea !== "all") && (
+                <div className="bg-blue-50 border-b border-blue-200 p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm text-blue-700">
+                      <Search className="h-4 w-4" />
+                      <span>Filtros activos:</span>
+                      {routesFilters.search && (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                          Búsqueda: "{routesFilters.search}"
+                        </Badge>
+                      )}
+                      {routesFilters.containerType !== "all" && (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                          Contenedor: {routesFilters.containerType}
+                        </Badge>
+                      )}
+                      {routesFilters.routeType !== "all" && (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                          Ruta: {routesFilters.routeType === "RT" ? "Round Trip" : "Single"}
+                        </Badge>
+                      )}
+                      {routesFilters.status !== "all" && (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                          Estado: {routesFilters.status}
+                        </Badge>
+                      )}
+                      {routesFilters.cliente !== "all" && (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                          Cliente: {routesFilters.cliente}
+                        </Badge>
+                      )}
+                      {routesFilters.routeArea !== "all" && (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                          Área: {routesFilters.routeArea}
+                        </Badge>
+                      )}
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handleRouteFilterChange({
+                        search: "",
+                        containerType: "all",
+                        routeType: "all",
+                        status: "all",
+                        cliente: "all",
+                        routeArea: "all"
+                      })}
+                      className="text-blue-700 border-blue-300 hover:bg-blue-100"
+                    >
+                      Limpiar Filtros
+                    </Button>
+                  </div>
+                </div>
+              )}
+              
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -879,14 +1403,17 @@ export function PTYSSConfig() {
                     <TableHead>Destino</TableHead>
                     <TableHead>Tipo Contenedor</TableHead>
                     <TableHead>Tipo Ruta</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Área</TableHead>
                     <TableHead>Precio</TableHead>
                     <TableHead>Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {routesLoading && routes.length === 0 ? (
+                  {routesLoading ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8">
+                      <TableCell colSpan={10} className="text-center py-8">
                         <div className="flex items-center justify-center space-x-2">
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                           <span>Cargando rutas...</span>
@@ -895,7 +1422,7 @@ export function PTYSSConfig() {
                     </TableRow>
                   ) : routes.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                         No hay rutas registradas
                       </TableCell>
                     </TableRow>
@@ -911,6 +1438,17 @@ export function PTYSSConfig() {
                         <TableCell>
                           <Badge variant={route.routeType === "RT" ? "default" : "secondary"}>
                             {route.routeType === "RT" ? "Round Trip" : "Single"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={route.status === "FULL" ? "default" : "secondary"}>
+                            {route.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{route.cliente}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="bg-blue-100 text-blue-800">
+                            {route.routeArea}
                           </Badge>
                         </TableCell>
                         <TableCell>${route.price.toFixed(2)}</TableCell>
@@ -937,6 +1475,21 @@ export function PTYSSConfig() {
                   )}
                 </TableBody>
               </Table>
+              
+              {/* Paginación */}
+              {routesPagination && routesPagination.totalPages > 1 && (
+                <div className="border-t p-4">
+                  <Pagination
+                    currentPage={routesPagination.currentPage}
+                    totalPages={routesPagination.totalPages}
+                    onPageChange={handleRoutePageChange}
+                    hasNextPage={routesPagination.hasNextPage}
+                    hasPrevPage={routesPagination.hasPrevPage}
+                    totalItems={routesPagination.totalItems}
+                    itemsPerPage={routesPagination.itemsPerPage}
+                  />
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1342,6 +1895,205 @@ export function PTYSSConfig() {
         </div>
       )}
 
+      {activeTab === 'containers' && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Gestión de Tipos de Contenedores</CardTitle>
+              <Button onClick={() => setShowAddContainerTypeForm(!showAddContainerTypeForm)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Agregar Tipo de Contenedor
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Filtros */}
+            <div className="flex flex-wrap gap-4 p-4 bg-gray-50 rounded-lg">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Categoría:</Label>
+                <Select 
+                  value={containerTypeFilters.category} 
+                  onValueChange={(value) => handleContainerTypeFiltersChange({ ...containerTypeFilters, category: value as any })}
+                >
+                  <SelectTrigger className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas las categorías</SelectItem>
+                    <SelectItem value="DRY">Dry</SelectItem>
+                    <SelectItem value="REEFE">Reefer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Estado:</Label>
+                <Select 
+                  value={containerTypeFilters.isActive} 
+                  onValueChange={(value) => handleContainerTypeFiltersChange({ ...containerTypeFilters, isActive: value as any })}
+                >
+                  <SelectTrigger className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los estados</SelectItem>
+                    <SelectItem value="true">Activos</SelectItem>
+                    <SelectItem value="false">Inactivos</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Formulario de agregar/editar */}
+            {(showAddContainerTypeForm || editingContainerType) && (
+              <Card className="border-dashed">
+                <CardHeader>
+                  <CardTitle className="text-lg">{editingContainerType ? "Editar Tipo de Contenedor" : "Nuevo Tipo de Contenedor"}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="container-type-code">Código *</Label>
+                      <Input
+                        id="container-type-code"
+                        value={newContainerType.code}
+                        onChange={(e) => setNewContainerType({ ...newContainerType, code: e.target.value.toUpperCase() })}
+                        placeholder="BB, BH, BV, DV, FL, etc."
+                        maxLength={2}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="container-type-name">Nombre *</Label>
+                      <Input
+                        id="container-type-name"
+                        value={newContainerType.name}
+                        onChange={(e) => setNewContainerType({ ...newContainerType, name: e.target.value })}
+                        placeholder="Swap Body High, Bulk van, Dry van, etc."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="container-type-sap-code">Código SAP *</Label>
+                      <Input
+                        id="container-type-sap-code"
+                        value={newContainerType.sapCode}
+                        onChange={(e) => setNewContainerType({ ...newContainerType, sapCode: e.target.value.toUpperCase() })}
+                        placeholder="RE, DV, FL, TK, etc."
+                        maxLength={2}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="container-type-category">Categoría *</Label>
+                      <Select 
+                        value={newContainerType.category} 
+                        onValueChange={(value) => setNewContainerType({ ...newContainerType, category: value as any })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="DRY">Dry</SelectItem>
+                          <SelectItem value="REEFE">Reefer</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="container-type-description">Descripción</Label>
+                      <Input
+                        id="container-type-description"
+                        value={newContainerType.description}
+                        onChange={(e) => setNewContainerType({ ...newContainerType, description: e.target.value })}
+                        placeholder="Descripción opcional del tipo de contenedor"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button onClick={editingContainerType ? handleEditContainerType : handleAddContainerType} disabled={containerTypesCreating || containerTypesUpdating}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      {containerTypesCreating || containerTypesUpdating ? "Guardando..." : editingContainerType ? "Actualizar Tipo de Contenedor" : "Agregar Tipo de Contenedor"}
+                    </Button>
+                    <Button variant="outline" onClick={editingContainerType ? handleCancelEditContainerType : () => setShowAddContainerTypeForm(false)}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Tabla de tipos de contenedores */}
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Código</TableHead>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Código SAP</TableHead>
+                    <TableHead>Categoría</TableHead>
+                    <TableHead>Descripción</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {containerTypesLoading && containerTypes.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8">
+                        <div className="flex items-center justify-center space-x-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                          <span>Cargando tipos de contenedores...</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : containerTypes.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        No hay tipos de contenedores registrados
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    containerTypes.map((containerType: ContainerType) => (
+                      <TableRow key={containerType._id}>
+                        <TableCell className="font-mono font-medium">
+                          <Badge variant="outline">{containerType.code}</Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">{containerType.name}</TableCell>
+                        <TableCell className="font-mono font-medium">
+                          <Badge variant="outline" className="bg-blue-100 text-blue-800">
+                            {containerType.sapCode}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{containerType.category}</Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {containerType.description || "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={containerType.isActive ? "default" : "secondary"}>
+                            {containerType.isActive ? "Activo" : "Inactivo"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => handleToggleContainerTypeStatus(containerType)} disabled={containerTypesUpdating}>
+                              {containerType.isActive ? "Desactivar" : "Activar"}
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => handleEditContainerTypeClick(containerType)}>
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setContainerTypeToDelete(containerType)}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Modal de confirmación para eliminar naviera */}
       <Dialog open={!!navieraToDelete} onOpenChange={() => setNavieraToDelete(null)}>
         <DialogContent>
@@ -1407,6 +2159,47 @@ export function PTYSSConfig() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de confirmación para eliminar tipo de contenedor */}
+      <Dialog open={!!containerTypeToDelete} onOpenChange={() => setContainerTypeToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar eliminación</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p>¿Estás seguro de que quieres eliminar el tipo de contenedor?</p>
+            {containerTypeToDelete && (
+              <p className="font-medium mt-2">
+                {containerTypeToDelete.name} ({containerTypeToDelete.code})
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end space-x-2">
+            <Button variant="outline" onClick={() => setContainerTypeToDelete(null)}>
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={() => {
+                if (containerTypeToDelete) {
+                  handleDeleteContainerType(containerTypeToDelete._id)
+                }
+              }}
+              disabled={containerTypesDeleting}
+            >
+              Eliminar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Importador de precios */}
+      {showPriceImporter && (
+        <PTYSSPriceImporter
+          onImport={handleImportPrices}
+          onClose={() => setShowPriceImporter(false)}
+        />
+      )}
     </div>
   )
 } 

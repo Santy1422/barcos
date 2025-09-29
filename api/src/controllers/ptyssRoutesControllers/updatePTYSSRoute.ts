@@ -8,29 +8,34 @@ const PTYSSRoute = mongoose.model('PTYSSRoute', ptyssRouteSchema);
 const updatePTYSSRoute = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { from, to, containerType, routeType, price } = req.body;
+    const { from, to, containerType, routeType, price, status, cliente, routeArea } = req.body;
 
     console.log('Actualizando ruta de PTYSS:', { id, updates: req.body });
 
     // Generar automáticamente el nombre de la ruta
     const name = `${from}/${to}`;
 
-    // Verificar si ya existe otra ruta con la misma combinación de nombre + tipo de contenedor + tipo de ruta
+    // Verificar si ya existe otra ruta con la misma combinación completa (según el índice único)
     const existingRoute = await PTYSSRoute.findOne({ 
       name, 
+      from, 
+      to, 
       containerType, 
-      routeType,
+      routeType, 
+      status, 
+      cliente, 
+      routeArea,
       _id: { $ne: id } // Excluir la ruta actual
     });
     if (existingRoute) {
       return response(res, 400, { 
-        message: `Ya existe una ruta con el nombre "${name}", tipo de contenedor "${containerType}" y tipo de ruta "${routeType}"` 
+        message: `Ya existe una ruta con estos parámetros: "${name}" (${containerType}, ${routeType}, ${status}, ${cliente}, ${routeArea})` 
       });
     }
 
     const updated = await PTYSSRoute.findByIdAndUpdate(
       id,
-      { name, from, to, containerType, routeType, price },
+      { name, from, to, containerType, routeType, price, status, cliente, routeArea },
       { new: true, runValidators: true }
     );
 

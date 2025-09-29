@@ -7,28 +7,43 @@ const PTYSSRoute = mongoose.model('PTYSSRoute', ptyssRouteSchema);
 
 const createPTYSSRoute = async (req: Request, res: Response) => {
   try {
-    const { from, to, containerType, routeType, price } = req.body;
+    const { from, to, containerType, routeType, price, status, cliente, routeArea } = req.body;
 
-    if (!from || !to || !containerType || !routeType || !price) {
-      return response(res, 400, { message: 'Todos los campos son requeridos' });
+    if (!from || !to || !containerType || !routeType || !price || !status || !cliente || !routeArea) {
+      return response(res, 400, { message: 'Todos los campos son requeridos (from, to, containerType, routeType, price, status, cliente, routeArea)' });
     }
 
     // Generar automáticamente el nombre de la ruta
     const name = `${from}/${to}`;
 
-    // Verificar si ya existe una ruta con la misma combinación de nombre + tipo de contenedor + tipo de ruta
+    // Verificar si ya existe una ruta con la misma combinación completa (según el índice único)
     const existingRoute = await PTYSSRoute.findOne({ 
       name, 
+      from, 
+      to, 
       containerType, 
-      routeType 
+      routeType, 
+      status, 
+      cliente, 
+      routeArea
     });
     if (existingRoute) {
       return response(res, 400, { 
-        message: `Ya existe una ruta con el nombre "${name}", tipo de contenedor "${containerType}" y tipo de ruta "${routeType}"` 
+        message: `Ya existe una ruta con estos parámetros: "${name}" (${containerType}, ${routeType}, ${status}, ${cliente}, ${routeArea})` 
       });
     }
 
-    const newRoute = new PTYSSRoute({ name, from, to, containerType, routeType, price });
+    const newRoute = new PTYSSRoute({ 
+      name, 
+      from, 
+      to, 
+      containerType, 
+      routeType, 
+      price, 
+      status, 
+      cliente, 
+      routeArea 
+    });
     await newRoute.save();
 
     return response(res, 201, { 

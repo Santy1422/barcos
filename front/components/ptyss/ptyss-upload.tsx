@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -44,7 +44,9 @@ import {
   selectPTYSSRoutes,
   fetchPTYSSRoutes,
   selectPTYSSRoutesLoading,
-  selectPTYSSRoutesError
+  selectPTYSSRoutesError,
+  createPTYSSRoute,
+  type PTYSSRouteInput
 } from "@/lib/features/ptyssRoutes/ptyssRoutesSlice"
 import { 
   selectPTYSSLocalRoutes,
@@ -53,6 +55,11 @@ import {
   selectPTYSSLocalRoutesError,
   type PTYSSLocalRoute
 } from "@/lib/features/ptyssLocalRoutes/ptyssLocalRoutesSlice"
+import {
+  selectAllContainerTypes,
+  fetchContainerTypes,
+  selectContainerTypesLoading,
+} from "@/lib/features/containerTypes/containerTypesSlice"
 import { parseTruckingExcel, matchTruckingDataWithRoutes, type TruckingExcelData } from "@/lib/excel-parser"
 import { ClientModal } from "@/components/clients-management"
 
@@ -119,6 +126,7 @@ export function PTYSSUpload() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState<"local" | "trasiego">("local")
   
   // Excel upload state
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -140,9 +148,28 @@ export function PTYSSUpload() {
   const localRoutes = useAppSelector(selectPTYSSLocalRoutes)
   const localRoutesLoading = useAppSelector(selectPTYSSLocalRoutesLoading)
   const localRoutesError = useAppSelector(selectPTYSSLocalRoutesError)
+
+  // Container Types state
+  const containerTypes = useAppSelector(selectAllContainerTypes)
+  const containerTypesLoading = useAppSelector(selectContainerTypesLoading)
   
   const isCreatingRecords = useAppSelector(selectCreatingRecords)
   const recordsError = useAppSelector(selectRecordsError)
+
+  // Estado para crear rutas desde registros sin match
+  const [showCreateRouteModal, setShowCreateRouteModal] = useState(false)
+  const [recordForRoute, setRecordForRoute] = useState<TruckingExcelData | null>(null)
+  const [newRoute, setNewRoute] = useState({
+    from: "",
+    to: "",
+    containerType: "",
+    routeType: "single" as "single" | "RT",
+    price: 0,
+    status: "FULL" as "FULL" | "EMPTY",
+    cliente: "",
+    routeArea: ""
+  })
+  const [shouldReprocess, setShouldReprocess] = useState(false)
 
   // Debug: Log clientes cargados
   console.log('🔍 PTYSSUpload - clients:', clients)
@@ -159,15 +186,118 @@ export function PTYSSUpload() {
     dispatch(fetchClients())
   }, [dispatch])
 
-  // Cargar rutas al montar el componente
+  // Cargar rutas al montar el componente - cargar todas las rutas para matching
   useEffect(() => {
-    dispatch(fetchPTYSSRoutes())
+    dispatch(fetchPTYSSRoutes({ page: 1, limit: 10000 })) // Cargar hasta 10,000 rutas para matching
   }, [dispatch])
 
   // Cargar rutas locales al montar el componente
   useEffect(() => {
     dispatch(fetchPTYSSLocalRoutes())
   }, [dispatch])
+
+  // Cargar tipos de contenedores al montar el componente
+  useEffect(() => {
+    dispatch(fetchContainerTypes())
+  }, [dispatch])
+
+  // Función para re-procesar el Excel (simula el handleFileChange pero sin seleccionar archivo)
+  const reprocessExcel = useCallback(async () => {
+    if (!selectedFile) return
+    
+    setIsLoading(true)
+    
+    try {
+      // Verificar que las rutas estén cargadas
+      if (routesLoading) {
+        toast({
+          title: "Cargando rutas",
+          description: "Espera un momento mientras se cargan las rutas configuradas...",
+        })
+        return
+      }
+
+      if (routes.length === 0) {
+        toast({
+          title: "No hay rutas configuradas",
+          description: "Debes configurar rutas en la sección de configuración antes de subir archivos.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Parsear el archivo Excel real
+      const realData = await parseTruckingExcel(selectedFile)
+      
+      console.log("=== RE-PROCESANDO EXCEL PTYSS ===")
+      console.log("Datos del Excel:", realData)
+      console.log("Rutas disponibles:", routes)
+      
+      // Aplicar matching con las rutas configuradas de PTYSS
+      const matchedData = matchTruckingDataWithPTYSSRoutes(realData, routes)
+      
+      console.log("Datos después del re-matching:", matchedData)
+      
+      // Verificar clientes faltantes antes de mostrar los datos
+      const processedData = await processMissingClients(matchedData)
+      
+      setPreviewData(processedData)
+      
+      // Contar registros con match
+      const matchedCount = processedData.filter(record => record.isMatched).length
+      const unmatchedCount = processedData.length - matchedCount
+      
+      console.log(`Re-procesamiento completado: ${matchedCount}/${processedData.length} con match`)
+      
+      toast({
+        title: "✅ Excel re-procesado",
+        description: `${matchedCount} registros con precio asignado, ${unmatchedCount} sin coincidencia.`,
+      })
+    } catch (error) {
+      console.error('Error al re-procesar archivo:', error)
+      toast({
+        title: "Error al re-procesar archivo",
+        description: "No se pudo re-procesar el archivo Excel.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }, [selectedFile, routesLoading, routes, toast])
+
+  // Debug: Monitorear cuando las rutas PTYSS se cargan
+  useEffect(() => {
+    console.log("=== RUTAS PTYSS CARGADAS ===")
+    console.log("Rutas PTYSS disponibles:", routes)
+    console.log("Número de rutas PTYSS:", routes.length)
+    console.log("Cargando rutas PTYSS:", routesLoading)
+    console.log("Error en rutas PTYSS:", routesError)
+    if (routes.length > 0) {
+      routes.forEach((route, index) => {
+        console.log(`Ruta PTYSS ${index + 1}:`, {
+          name: route.name,
+          from: route.from,
+          to: route.to,
+          containerType: route.containerType,
+          routeType: route.routeType,
+          status: route.status,
+          cliente: route.cliente,
+          routeArea: route.routeArea,
+          price: route.price
+        })
+      })
+    }
+    console.log("")
+  }, [routes, routesLoading, routesError])
+
+  // Re-procesar Excel cuando se actualicen las rutas (después de crear una nueva ruta)
+  useEffect(() => {
+    if (shouldReprocess && !routesLoading && routes.length > 0 && selectedFile) {
+      console.log("=== RE-PROCESANDO EXCEL DESPUÉS DE CREAR RUTA ===")
+      reprocessExcel()
+      setShouldReprocess(false)
+    }
+  }, [shouldReprocess, routesLoading, routes, selectedFile, reprocessExcel])
 
   // Cargar servicios locales fijos al montar el componente
   useEffect(() => {
@@ -335,14 +465,24 @@ export function PTYSSUpload() {
 
   // Función para verificar si un cliente existe por nombre
   const findClientByName = (name: string): Client | null => {
-    return clients.find((client: any) => {
-      if (client.type === 'juridico') {
-        return client.companyName?.toLowerCase() === name.toLowerCase()
-      } else if (client.type === 'natural') {
-        return client.fullName?.toLowerCase() === name.toLowerCase()
-      }
-      return false
+    console.log('🔍 Buscando cliente por nombre:', name)
+    console.log('🔍 Clientes disponibles:', clients.map(c => ({
+      type: c.type,
+      name: c.name,
+      companyName: c.companyName,
+      fullName: c.fullName,
+      sapCode: c.sapCode
+    })))
+    
+    const foundClient = clients.find((client: any) => {
+      // Buscar por el campo 'name' (nombre corto) que es lo que viene del Excel
+      const match = client.name?.toLowerCase() === name.toLowerCase()
+      console.log(`🔍 Comparando name: "${client.name}" vs "${name}" = ${match}`)
+      return match
     }) || null
+    
+    console.log('🔍 Cliente encontrado:', foundClient ? 'SÍ' : 'NO')
+    return foundClient
   }
 
   // Función para crear un cliente temporal con solo el nombre
@@ -385,6 +525,8 @@ export function PTYSSUpload() {
     // Agrupar registros por cliente SOLO para registros que hicieron match
     excelData.forEach(record => {
       const clientName = record.associate?.trim()
+      console.log('🔍 Procesando registro - clientName del Excel:', clientName, 'isMatched:', record.isMatched)
+      console.log('🔍 record.line:', record.line, 'record.associate:', record.associate)
       if (clientName && record.isMatched) {
         if (!missingClientsMap.has(clientName)) {
           missingClientsMap.set(clientName, [])
@@ -485,6 +627,84 @@ export function PTYSSUpload() {
     }
     return true
   }
+
+  // Route creation handlers
+  const handleCreateRouteClick = (record: TruckingExcelData) => {
+    setRecordForRoute(record)
+    
+    // Pre-llenar el formulario con datos del registro
+    const legParts = record.leg?.split('/') || ['', '']
+    const from = legParts[0]?.trim() || ''
+    const to = legParts[1]?.trim() || ''
+    
+    setNewRoute({
+      from: from,
+      to: to,
+      containerType: record.type || "",
+      routeType: record.moveType?.toLowerCase() === 'rt' ? "RT" : "single",
+      price: 0,
+      status: record.fe === "E" || record.fe === "EMPTY" ? "EMPTY" : "FULL",
+      cliente: record.line || "",
+      routeArea: record.route || ""
+    })
+    
+    setShowCreateRouteModal(true)
+  }
+
+  const handleCreateRoute = async () => {
+    if (!newRoute.from || !newRoute.to || !newRoute.containerType || !newRoute.routeType || newRoute.price <= 0 || !newRoute.status || !newRoute.cliente || !newRoute.routeArea) {
+      toast({ title: "Error", description: "Completa todos los campos obligatorios", variant: "destructive" })
+      return
+    }
+    
+    try {
+      await dispatch(createPTYSSRoute(newRoute)).unwrap()
+      
+      // Cerrar modal y limpiar estado
+      setShowCreateRouteModal(false)
+      setRecordForRoute(null)
+      setNewRoute({
+        from: "",
+        to: "",
+        containerType: "",
+        routeType: "single",
+        price: 0,
+        status: "FULL",
+        cliente: "",
+        routeArea: ""
+      })
+      
+      // Activar flag para re-procesar cuando las rutas se actualicen
+      if (selectedFile && previewData.length > 0) {
+        console.log("=== RUTA PTYSS CREADA, ACTIVANDO RE-PROCESAMIENTO ===")
+        setShouldReprocess(true)
+        toast({ 
+          title: "Ruta creada", 
+          description: `La ruta ${newRoute.from}/${newRoute.to} ha sido creada. Re-procesando Excel...` 
+        })
+      } else {
+        toast({ title: "Ruta creada", description: `La ruta ${newRoute.from}/${newRoute.to} ha sido creada exitosamente` })
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Error al crear la ruta", variant: "destructive" })
+    }
+  }
+
+  const handleCancelCreateRoute = () => {
+    setShowCreateRouteModal(false)
+    setRecordForRoute(null)
+    setNewRoute({
+      from: "",
+      to: "",
+      containerType: "",
+      routeType: "single",
+      price: 0,
+      status: "FULL",
+      cliente: "",
+      routeArea: ""
+    })
+  }
+
 
   // Función para manejar la creación/edición de cliente desde el modal
   const handleClientCreated = (client: any) => {
@@ -734,7 +954,7 @@ export function PTYSSUpload() {
   }
 
   // Función para hacer matching de datos de trucking con rutas de PTYSS
-  const matchTruckingDataWithPTYSSRoutes = (truckingData: TruckingExcelData[], ptyssRoutes: Array<{_id: string, name: string, from: string, to: string, containerType: string, routeType: "single" | "RT", price: number}>): TruckingExcelData[] => {
+  const matchTruckingDataWithPTYSSRoutes = (truckingData: TruckingExcelData[], ptyssRoutes: Array<{_id: string, name: string, from: string, to: string, containerType: string, routeType: "single" | "RT", status: string, cliente: string, routeArea: string, price: number}>): TruckingExcelData[] => {
     console.log("=== INICIANDO MATCHING PTYSS CON DATOS TRUCKING ===")
     console.log("Rutas PTYSS disponibles:", ptyssRoutes)
     console.log("")
@@ -744,6 +964,9 @@ export function PTYSSUpload() {
       console.log(`  Leg: "${record.leg}"`)
       console.log(`  MoveType: "${record.moveType}"`)
       console.log(`  Type: "${record.type}"`)
+      console.log(`  Associate: "${record.associate}"`)
+      console.log(`  Line: "${record.line}"`)
+      console.log(`  Route: "${record.route}"`)
       
       // Extraer from y to del campo leg (separado por "/")
       const legParts = record.leg?.split('/').map(part => part.trim()) || [];
@@ -752,11 +975,15 @@ export function PTYSSUpload() {
       
       console.log(`  From extraído: "${from}"`)
       console.log(`  To extraído: "${to}"`)
+      console.log(`  Route Area extraído: "${record.route}"`)
       
       // Buscar coincidencia basada en los criterios de PTYSS:
       // 1. from y to extraídos del leg
       // 2. moveType (routeType de la ruta) - case insensitive
       // 3. type (containerType de la ruta) - mapear tipos
+      // 4. fe (status de la ruta) - FULL/EMPTY
+      // 5. line (cliente de la ruta) - opcional para matching más preciso
+      // 6. route (routeArea de la ruta) - área de ruta
       
       const matchedRoute = ptyssRoutes.find(route => {
         // Matching por from y to extraídos del leg
@@ -775,14 +1002,43 @@ export function PTYSSUpload() {
         const normalizedType = record.type?.trim().toUpperCase() || '';
         const containerTypeMatch = route.containerType?.toUpperCase() === normalizedType;
         
+        // Matching por fe (status de la ruta) - FULL/EMPTY
+        const normalizedFE = record.fe?.trim().toUpperCase() || '';
+        const statusMatch = 
+          !normalizedFE || // Si no hay FE, hacer match con cualquier status
+          route.status?.toUpperCase() === normalizedFE ||
+          (normalizedFE === 'F' && route.status?.toUpperCase() === 'FULL') ||
+          (normalizedFE === 'E' && route.status?.toUpperCase() === 'EMPTY') ||
+          (normalizedFE === 'FULL' && route.status?.toUpperCase() === 'FULL') ||
+          (normalizedFE === 'EMPTY' && route.status?.toUpperCase() === 'EMPTY');
+        
+        // Matching por line (cliente de la ruta) - opcional, si está disponible
+        const normalizedLine = record.line?.trim().toUpperCase() || '';
+        const clienteMatch = 
+          !normalizedLine || // Si no hay line, hacer match con cualquier cliente
+          route.cliente?.toUpperCase() === normalizedLine ||
+          route.cliente?.toUpperCase().includes(normalizedLine) ||
+          normalizedLine.includes(route.cliente?.toUpperCase() || '');
+        
+        // Matching por route (routeArea de la ruta) - área de ruta
+        const normalizedRoute = record.route?.trim().toUpperCase() || '';
+        const routeAreaMatch = 
+          !normalizedRoute || // Si no hay route, hacer match con cualquier área
+          route.routeArea?.toUpperCase() === normalizedRoute ||
+          route.routeArea?.toUpperCase().includes(normalizedRoute) ||
+          normalizedRoute.includes(route.routeArea?.toUpperCase() || '');
+        
         console.log(`  Comparando con ruta PTYSS "${route.name}":`)
         console.log(`    From: "${from}" vs "${route.from}" = ${fromMatch}`)
         console.log(`    To: "${to}" vs "${route.to}" = ${toMatch}`)
         console.log(`    MoveType normalizado: "${normalizedMoveType}" vs "${route.routeType}" = ${moveTypeMatch}`)
         console.log(`    Type normalizado: "${normalizedType}" vs "${route.containerType}" = ${containerTypeMatch}`)
-        console.log(`    Match total: ${fromMatch && toMatch && moveTypeMatch && containerTypeMatch}`)
+        console.log(`    FE normalizado: "${normalizedFE}" vs "${route.status}" = ${statusMatch}`)
+        console.log(`    Line normalizado: "${normalizedLine}" vs "${route.cliente}" = ${clienteMatch}`)
+        console.log(`    Route normalizado: "${normalizedRoute}" vs "${route.routeArea}" = ${routeAreaMatch}`)
+        console.log(`    Match total: ${fromMatch && toMatch && moveTypeMatch && containerTypeMatch && statusMatch && clienteMatch && routeAreaMatch}`)
         
-        return fromMatch && toMatch && moveTypeMatch && containerTypeMatch;
+        return fromMatch && toMatch && moveTypeMatch && containerTypeMatch && statusMatch && clienteMatch && routeAreaMatch;
       });
       
       if (matchedRoute) {
@@ -792,6 +1048,7 @@ export function PTYSSUpload() {
           from: from, // Agregar from extraído del leg
           to: to, // Agregar to extraído del leg
           operationType: 'import', // Siempre import para registros de trasiego
+          associate: record.line || record.associate, // Usar line como cliente principal
           matchedPrice: matchedRoute.price,
           matchedRouteId: matchedRoute._id || '',
           matchedRouteName: matchedRoute.name || '',
@@ -805,6 +1062,7 @@ export function PTYSSUpload() {
           from: from, // Agregar from extraído del leg
           to: to, // Agregar to extraído del leg
           operationType: 'import', // Siempre import para registros de trasiego
+          associate: record.line || record.associate, // Usar line como cliente principal
           matchedPrice: 0,
           isMatched: false,
           sapCode: 'PTYSS001'
@@ -816,17 +1074,28 @@ export function PTYSSUpload() {
   // Función para convertir datos de trucking a PTYSS
   const convertTruckingToPTYSS = (truckingData: TruckingExcelData[]): PTYSSRecordData[] => {
     return truckingData.map(record => {
-      // Para registros de trasiego, siempre usar PTG como cliente
-      const ptgClient = clients.find((c: any) => c.companyName === "PTG")
-      const clientId = ptgClient?._id || ptgClient?.id || ''
+      // Para registros de trasiego, usar el cliente de la columna 'line' del Excel
+      const clienteName = record.line?.trim() || ''
+      const matchedClient = clients.find((c: any) => {
+        if (c.type === "juridico") {
+          return c.name?.toLowerCase() === clienteName.toLowerCase() || 
+                 c.companyName?.toLowerCase() === clienteName.toLowerCase()
+        }
+        if (c.type === "natural") {
+          return c.fullName?.toLowerCase() === clienteName.toLowerCase()
+        }
+        return false
+      })
       
-      console.log(`Convirtiendo registro de trasiego para cliente: ${record.associate}`)
-      console.log(`Cliente PTG encontrado:`, ptgClient)
-      console.log(`ClientId PTG asignado: ${clientId}`)
+      const clientId = matchedClient?._id || matchedClient?.id || ''
+      
+      console.log(`Convirtiendo registro de trasiego para cliente line: "${clienteName}"`)
+      console.log(`Cliente encontrado:`, matchedClient)
+      console.log(`ClientId asignado: ${clientId}`)
       
       return {
-        clientId: clientId, // Siempre PTG para trasiego
-        associate: record.associate || '', // Guardar el nombre del cliente original para referencia
+        clientId: clientId, // Usar cliente de la columna 'line'
+        associate: record.line || '', // Guardar el nombre del cliente de la columna line
         order: record.containerConsecutive || '',
         container: record.container || '',
         naviera: record.route || '',
@@ -936,6 +1205,17 @@ export function PTYSSUpload() {
       return
     }
 
+    // Verificar que todos los registros tengan match antes de continuar
+    const unmatchedRecords = previewData.filter(record => !record.isMatched)
+    if (unmatchedRecords.length > 0) {
+      toast({
+        title: "Registros sin match",
+        description: `No se puede guardar. Hay ${unmatchedRecords.length} registros sin coincidencia. Crea las rutas faltantes o corrige los datos.`,
+        variant: "destructive"
+      })
+      return
+    }
+
     // Verificar que todos los clientes estén completos
     if (!areAllClientsComplete()) {
       const incompleteClients = Array.from(clientCompleteness.entries())
@@ -1030,92 +1310,109 @@ export function PTYSSUpload() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Ship className="h-5 w-5" />
-            Crear Registros Local
+            Crear Registros PTYSS
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex justify-between items-center">
-            <div>
-              <h3 className="text-lg font-medium">Crear Registro Individual</h3>
-              <p className="text-sm text-muted-foreground">
-                Agrega registros marítimos uno por uno para luego generar facturas
-              </p>
-            </div>
-            <Button onClick={() => {
-              setCurrentRecord({
-                ...initialRecordData,
-                localRouteId: "",
-                localRoutePrice: 0
-              })
-              setEditingIndex(null)
-              setIsDialogOpen(true)
-            }}>
-              <Plus className="mr-2 h-4 w-4" />
-              Nuevo Registro
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Crear Registro Trasiego
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="excel-file">Seleccionar archivo Excel</Label>
-            <Input
-              id="excel-file"
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleFileChange}
-              disabled={isLoading || isProcessing || routesLoading}
-            />
-          </div>
-          
-          {/* Estado de carga de rutas */}
-          {routesLoading && (
-            <div className="flex items-center gap-2 text-sm text-blue-600">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-              Cargando rutas configuradas...
-            </div>
-          )}
-          
-          {!routesLoading && routes.length === 0 && (
-            <div className="flex items-center gap-2 text-sm text-orange-600">
-              <AlertCircle className="h-4 w-4" />
-              No hay rutas configuradas. Ve a Configuración para crear rutas.
-            </div>
-          )}
-          
-          {!routesLoading && routes.length > 0 && (
-            <div className="flex items-center gap-2 text-sm text-green-600">
-              <CheckCircle2 className="h-4 w-4" />
-              {routes.length} ruta{routes.length !== 1 ? 's' : ''} configurada{routes.length !== 1 ? 's' : ''} lista{routes.length !== 1 ? 's' : ''}
-            </div>
-          )}
-          
-          {selectedFile && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <FileText className="h-4 w-4" />
-              {selectedFile.name}
-              <Badge variant="secondary">{previewData.length} registros</Badge>
-            </div>
-          )}
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "local" | "trasiego")}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="local" className="flex items-center gap-2">
+                <Database className="h-4 w-4" />
+                Registros Locales
+              </TabsTrigger>
+              <TabsTrigger value="trasiego" className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Registros Trasiego
+              </TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="local" className="space-y-4 mt-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-lg font-medium">Crear Registro Local Individual</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Agrega registros marítimos locales uno por uno para luego generar facturas
+                  </p>
+                </div>
+                <Button onClick={() => {
+                  setCurrentRecord({
+                    ...initialRecordData,
+                    localRouteId: "",
+                    localRoutePrice: 0,
+                    recordType: "local"
+                  })
+                  setEditingIndex(null)
+                  setIsDialogOpen(true)
+                }}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nuevo Registro Local
+                </Button>
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="trasiego" className="space-y-4 mt-6">
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-medium">Crear Registros Trasiego desde Excel</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Importa registros de trasiego desde archivos Excel de trucking
+                  </p>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="excel-file">Seleccionar archivo Excel</Label>
+                  <Input
+                    id="excel-file"
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleFileChange}
+                    disabled={isLoading || isProcessing || routesLoading}
+                  />
+                </div>
+                
+                {/* Estado de carga de rutas */}
+                {routesLoading && (
+                  <div className="flex items-center gap-2 text-sm text-blue-600">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                    Cargando rutas configuradas...
+                  </div>
+                )}
+                
+                {!routesLoading && routes.length === 0 && (
+                  <div className="flex items-center gap-2 text-sm text-orange-600">
+                    <AlertCircle className="h-4 w-4" />
+                    No hay rutas configuradas. Ve a Configuración para crear rutas.
+                  </div>
+                )}
+                
+                {!routesLoading && routes.length > 0 && (
+                  <div className="flex items-center gap-2 text-sm text-green-600">
+                    <CheckCircle2 className="h-4 w-4" />
+                    {routes.length} ruta{routes.length !== 1 ? 's' : ''} configurada{routes.length !== 1 ? 's' : ''} lista{routes.length !== 1 ? 's' : ''}
+                  </div>
+                )}
+                
+                {selectedFile && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <FileText className="h-4 w-4" />
+                    {selectedFile.name}
+                    <Badge variant="secondary">{previewData.length} registros</Badge>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
       {/* Lista de registros */}
-      {records.length > 0 && (
+      {records.filter(r => r.recordType === activeTab).length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <Database className="h-5 w-5" />
-                Registros Creados ({records.length})
+                Registros Creados ({records.filter(r => r.recordType === activeTab).length} {activeTab === "local" ? "locales" : "trasiego"})
               </span>
               <Button 
                 onClick={handleSaveRecords} 
@@ -1153,7 +1450,7 @@ export function PTYSSUpload() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {records.map((record, index) => {
+                  {records.filter(record => record.recordType === activeTab).map((record, index) => {
                     const client = clients.find((c: any) => (c._id || c.id) === record.clientId)
                     const naviera = navieras.find(n => n._id === record.naviera)
                     
@@ -1617,21 +1914,14 @@ export function PTYSSUpload() {
                       <SelectValue placeholder="Seleccionar tipo" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="DV">DV - Dry Van</SelectItem>
-                      <SelectItem value="HC">HC - High Cube</SelectItem>
-                      <SelectItem value="RE">RE - Reefer</SelectItem>
-                      <SelectItem value="TK">TK - Tank</SelectItem>
-                      <SelectItem value="FL">FL - Flat Rack</SelectItem>
-                      <SelectItem value="OS">OS - Open Side</SelectItem>
-                      <SelectItem value="OT">OT - Open Top</SelectItem>
-                      <SelectItem value="HR">HR - Hard Top</SelectItem>
-                      <SelectItem value="PL">PL - Platform</SelectItem>
-                      <SelectItem value="BV">BV - Bulk</SelectItem>
-                      <SelectItem value="VE">VE - Ventilated</SelectItem>
-                      <SelectItem value="PW">PW - Pallet Wide</SelectItem>
-                      <SelectItem value="HT">HT - Hard Top</SelectItem>
-                      <SelectItem value="IS">IS - Insulated</SelectItem>
-                      <SelectItem value="XX">XX - Special</SelectItem>
+                      {containerTypes
+                        .filter((ct: any) => ct.isActive)
+                        .sort((a: any, b: any) => a.code.localeCompare(b.code))
+                        .map((containerType: any) => (
+                          <SelectItem key={containerType.code} value={containerType.code}>
+                            {containerType.code} - {containerType.name}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1824,14 +2114,14 @@ export function PTYSSUpload() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Consecutivo</TableHead>
-                    <TableHead>Contenedor</TableHead>
-                    <TableHead>From/To</TableHead>
-                    <TableHead>Operación</TableHead>
-                    <TableHead>Conductor</TableHead>
+                    <TableHead>Cliente (Line)</TableHead>
+                    <TableHead>Ruta (Leg)</TableHead>
+                    <TableHead>Área (Route)</TableHead>
+                    <TableHead>Tipo Movimiento</TableHead>
+                    <TableHead>Tipo Contenedor</TableHead>
+                    <TableHead>Estado (FE)</TableHead>
                     <TableHead>Precio</TableHead>
-                    <TableHead>Estado</TableHead>
+                    <TableHead>Match</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1842,6 +2132,7 @@ export function PTYSSUpload() {
                     
                     return (
                       <TableRow key={index}>
+                        {/* Cliente (Line) */}
                         <TableCell>
                           <div className="flex items-center space-x-2">
                             <span 
@@ -1867,66 +2158,122 @@ export function PTYSSUpload() {
                             )}
                           </div>
                         </TableCell>
-                      <TableCell className="font-mono text-sm">{record.containerConsecutive || "N/A"}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{record.container}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {record.size}' {record.type}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="text-xs">{record.from}</span>
-                          <span className="text-xs">→ {record.to}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={record.moveType === "import" ? "default" : "secondary"}>
-                          {record.moveType?.toUpperCase() || ''}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{record.driverName}</TableCell>
-                      <TableCell>
-                        {record.isMatched ? (
-                          <span className="font-medium text-green-600">
-                            ${record.matchedPrice?.toFixed(2)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {record.isMatched ? (
-                          <Badge variant="outline" className="text-green-600 border-green-600">
-                            <CheckCircle2 className="h-3 w-3 mr-1" />
-                            Match
+                        
+                        {/* Ruta (Leg) - From/To */}
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium">{record.leg || "N/A"}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {record.from} → {record.to}
+                            </span>
+                          </div>
+                        </TableCell>
+                        
+                        {/* Área (Route) */}
+                        <TableCell>
+                          <Badge variant="outline" className="bg-blue-100 text-blue-800">
+                            {record.route || "N/A"}
                           </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-orange-600 border-orange-600">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            Sin match
+                        </TableCell>
+                        
+                        {/* Tipo Movimiento (MoveType) */}
+                        <TableCell>
+                          <Badge variant={record.moveType === "RT" ? "default" : "secondary"}>
+                            {record.moveType?.toUpperCase() || 'N/A'}
                           </Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
+                        </TableCell>
+                        
+                        {/* Tipo Contenedor (Type) */}
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <Badge variant="outline">{record.type || "N/A"}</Badge>
+                            <span className="text-xs text-muted-foreground mt-1">
+                              {record.size}'
+                            </span>
+                          </div>
+                        </TableCell>
+                        
+                        {/* Estado FE (Full/Empty) */}
+                        <TableCell>
+                          <Badge variant={record.fe === "F" || record.fe === "FULL" ? "default" : "secondary"}>
+                            {record.fe || "N/A"}
+                          </Badge>
+                        </TableCell>
+                        
+                        {/* Precio */}
+                        <TableCell>
+                          {record.isMatched ? (
+                            <span className="font-medium text-green-600">
+                              ${record.matchedPrice?.toFixed(2)}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        
+                        {/* Estado del Match */}
+                        <TableCell>
+                          {record.isMatched ? (
+                            <Badge variant="outline" className="text-green-600 border-green-600">
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              Match
+                            </Badge>
+                          ) : (
+                            <Badge 
+                              variant="outline" 
+                              className="text-orange-600 border-orange-600 cursor-pointer hover:bg-orange-50 hover:border-orange-700"
+                              onClick={() => handleCreateRouteClick(record)}
+                              title="Haz clic para crear una ruta para este registro"
+                            >
+                              <AlertCircle className="h-3 w-3 mr-1" />
+                              Sin match
+                            </Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
                   )})}
                 </TableBody>
               </Table>
             </div>
             
-            <div className="mt-4 flex justify-end space-x-2">
-              {!areAllClientsComplete() && (
-                <div className="flex items-center space-x-2 text-sm text-red-600">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>Completa todos los datos de clientes antes de guardar</span>
-                </div>
-              )}
+            <div className="mt-4 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const unmatchedCount = previewData.filter(record => !record.isMatched).length
+                  if (unmatchedCount > 0) {
+                    return (
+                      <div className="flex items-center space-x-2 text-sm text-red-600">
+                        <AlertCircle className="h-4 w-4" />
+                        <span>
+                          <strong>No se puede guardar:</strong> {unmatchedCount} registros sin match. 
+                          Haz clic en los badges "Sin match" para crear las rutas faltantes.
+                        </span>
+                      </div>
+                    )
+                  }
+                  
+                  if (!areAllClientsComplete()) {
+                    return (
+                      <div className="flex items-center space-x-2 text-sm text-red-600">
+                        <AlertCircle className="h-4 w-4" />
+                        <span>Completa todos los datos de clientes antes de guardar</span>
+                      </div>
+                    )
+                  }
+                  
+                  return (
+                    <div className="flex items-center space-x-2 text-sm text-green-600">
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span>Todos los registros están listos para guardar</span>
+                    </div>
+                  )
+                })()}
+              </div>
+              
               <Button 
                 onClick={handleUpload}
-                disabled={isLoading || isCreatingRecords || !areAllClientsComplete()}
-                className={`${areAllClientsComplete() ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
+                disabled={isLoading || isCreatingRecords || !areAllClientsComplete() || previewData.filter(record => !record.isMatched).length > 0}
+                className={`${areAllClientsComplete() && previewData.filter(record => !record.isMatched).length === 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
               >
                 {isLoading || isCreatingRecords ? (
                   <>
@@ -2056,6 +2403,150 @@ export function PTYSSUpload() {
           })
         }}
       />
+
+      {/* Modal para crear ruta desde registro sin match */}
+      <Dialog open={showCreateRouteModal} onOpenChange={setShowCreateRouteModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Crear Nueva Ruta PTYSS Trasiego
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {recordForRoute && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center space-x-2">
+                  <AlertCircle className="h-5 w-5 text-blue-600" />
+                  <h4 className="font-medium text-blue-800">Registro sin match</h4>
+                </div>
+                <p className="text-sm text-blue-700 mt-2">
+                  Creando ruta para: <strong>{recordForRoute.container}</strong> - {recordForRoute.leg} ({recordForRoute.type})
+                </p>
+              </div>
+            )}
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="route-name">Nombre de la Ruta *</Label>
+                  <Input 
+                    id="route-name"
+                    value={newRoute.from && newRoute.to ? `${newRoute.from}/${newRoute.to}` : ""} 
+                    placeholder="Se genera automáticamente" 
+                    disabled 
+                    className="bg-gray-50" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-from">Origen *</Label>
+                  <Input 
+                    id="route-from" 
+                    value={newRoute.from} 
+                    onChange={(e) => setNewRoute({ ...newRoute, from: e.target.value.toUpperCase() })} 
+                    placeholder="PSA" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-to">Destino *</Label>
+                  <Input 
+                    id="route-to" 
+                    value={newRoute.to} 
+                    onChange={(e) => setNewRoute({ ...newRoute, to: e.target.value.toUpperCase() })} 
+                    placeholder="BLB" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-container-type">Tipo de Contenedor *</Label>
+                  <Select value={newRoute.containerType} onValueChange={(value) => setNewRoute({ ...newRoute, containerType: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {containerTypes
+                        .filter((ct: any) => ct.isActive)
+                        .sort((a: any, b: any) => a.code.localeCompare(b.code))
+                        .map((containerType: any) => (
+                          <SelectItem key={containerType.code} value={containerType.code}>
+                            {containerType.code} - {containerType.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-type">Tipo de Ruta *</Label>
+                  <Select value={newRoute.routeType} onValueChange={(value) => setNewRoute({ ...newRoute, routeType: value as "single" | "RT" })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar tipo de ruta" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="single">Single - Viaje único</SelectItem>
+                      <SelectItem value="RT">RT - Round Trip</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-price">Precio *</Label>
+                  <Input 
+                    id="route-price" 
+                    type="number" 
+                    value={newRoute.price} 
+                    onChange={(e) => setNewRoute({ ...newRoute, price: parseFloat(e.target.value) || 0 })} 
+                    placeholder="250.00" 
+                    min="0" 
+                    step="0.01" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-status">Estado *</Label>
+                  <Select value={newRoute.status} onValueChange={(value) => setNewRoute({ ...newRoute, status: value as "FULL" | "EMPTY" })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FULL">Full</SelectItem>
+                      <SelectItem value="EMPTY">Empty</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-cliente">Cliente *</Label>
+                  <Input 
+                    id="route-cliente" 
+                    value={newRoute.cliente} 
+                    onChange={(e) => setNewRoute({ ...newRoute, cliente: e.target.value })} 
+                    placeholder="Código del cliente" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="route-area">Área de Ruta *</Label>
+                  <Select value={newRoute.routeArea} onValueChange={(value) => setNewRoute({ ...newRoute, routeArea: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar área de ruta" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PACIFIC">PACIFIC</SelectItem>
+                      <SelectItem value="NORTH">NORTH</SelectItem>
+                      <SelectItem value="SOUTH">SOUTH</SelectItem>
+                      <SelectItem value="ATLANTIC">ATLANTIC</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={handleCancelCreateRoute}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleCreateRoute} disabled={routesLoading}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  {routesLoading ? "Creando..." : "Crear Ruta"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 } 

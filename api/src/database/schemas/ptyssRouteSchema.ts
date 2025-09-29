@@ -25,12 +25,44 @@ const ptyssRouteSchema = new mongoose.Schema({
   price: {
     type: Number,
     required: true
+  },
+  status: {
+    type: String,
+    enum: ['FULL', 'EMPTY'],
+    required: true,
+    default: 'FULL'
+  },
+  cliente: {
+    type: String,
+    required: true
+  },
+  routeArea: {
+    type: String,
+    required: true
   }
 }, {
   timestamps: true
 });
 
-// Índice compuesto para validar duplicados: nombre + tipo de contenedor + tipo de ruta
-ptyssRouteSchema.index({ name: 1, containerType: 1, routeType: 1 }, { unique: true });
+// Índices para mejorar el rendimiento de las consultas
+// Índice único basado en campos clave para evitar duplicados de ruta
+ptyssRouteSchema.index({ 
+  name: 1, 
+  from: 1, 
+  to: 1, 
+  containerType: 1, 
+  routeType: 1, 
+  status: 1, 
+  cliente: 1, 
+  routeArea: 1
+}, { unique: true });
+
+// Índices adicionales para consultas frecuentes
+ptyssRouteSchema.index({ cliente: 1 });
+ptyssRouteSchema.index({ routeArea: 1 });
+ptyssRouteSchema.index({ from: 1, to: 1 });
+ptyssRouteSchema.index({ containerType: 1 });
+ptyssRouteSchema.index({ routeType: 1 });
+ptyssRouteSchema.index({ status: 1 });
 
 export default ptyssRouteSchema; 
