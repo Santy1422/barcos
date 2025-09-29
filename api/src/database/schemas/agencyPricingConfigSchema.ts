@@ -10,6 +10,14 @@ export interface IAgencyPricingConfig extends Document {
   minimumPrice: number;          // Precio mínimo absoluto
   baseFee: number;                // Tarifa base fija
   
+  // Tarifas por cantidad de tripulantes (CREW)
+  crewRates: Array<{
+    minCrew: number;              // Desde cantidad de tripulantes (ej: 1)
+    maxCrew: number;              // Hasta cantidad de tripulantes (ej: 3)
+    rateMultiplier: number;       // Multiplicador del precio base (ej: 1.0 para 1-3 personas)
+    description?: string;         // Descripción (ej: "1-3 personas")
+  }>;
+  
   // Tarifas por distancia (escalones)
   distanceRates: Array<{
     minKm: number;                // Desde km
@@ -84,8 +92,12 @@ export interface IAgencyPricingConfig extends Document {
   fixedRoutes?: Array<{
     from: string;
     to: string;
-    price: number;
+    leg?: string;                  // Tramo del viaje
+    price: number;                 // Precio single (solo ida)
+    roundtripPrice?: number;       // Precio para viaje redondo
+    roundtripMultiplier?: number;  // Multiplicador para roundtrip (ej: 1.8)
     sapCode?: string;
+    tauliaCode?: string;           // Código Taulia específico
     conditions?: {
       minPassengers?: number;
       maxPassengers?: number;
@@ -184,6 +196,14 @@ const agencyPricingConfigSchema = new Schema<IAgencyPricingConfig>(
       min: 0,
       default: 25
     },
+    
+    // Tarifas por cantidad de tripulantes
+    crewRates: [{
+      minCrew: { type: Number, required: true, min: 1 },
+      maxCrew: { type: Number, required: true, min: 1 },
+      rateMultiplier: { type: Number, required: true, min: 0 },
+      description: { type: String }
+    }],
     
     // Tarifas por distancia
     distanceRates: [{
@@ -300,8 +320,12 @@ const agencyPricingConfigSchema = new Schema<IAgencyPricingConfig>(
     fixedRoutes: [{
       from: { type: String, required: true, uppercase: true },
       to: { type: String, required: true, uppercase: true },
+      leg: { type: String },
       price: { type: Number, required: true, min: 0 },
+      roundtripPrice: { type: Number, min: 0 },
+      roundtripMultiplier: { type: Number, min: 0, default: 1.8 },
       sapCode: { type: String, uppercase: true },
+      tauliaCode: { type: String, uppercase: true },
       conditions: {
         minPassengers: { type: Number, min: 1 },
         maxPassengers: { type: Number, min: 1 },

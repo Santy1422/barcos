@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/tool
 import { createApiUrl } from '@/lib/api-config';
 
 // Types based on backend schema
-export type CatalogType = 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code';
+export type CatalogType = 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'crew_rank' | 'crew_change_service';
 
 // Interface para catálogo individual
 export interface AgencyCatalog {

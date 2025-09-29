@@ -73,13 +73,25 @@ const agencyServiceSchema = new Schema<IAgencyService>(
       required: true
     },
     
-    // Status management
+    // Status management - NO debe pasar automáticamente a prefactura
     status: {
       type: String,
-      enum: ['pending', 'in_progress', 'completed', 'prefacturado', 'facturado'],
+      enum: ['pending', 'in_progress', 'completed', 'ready_for_invoice', 'prefacturado', 'facturado'],
       default: 'pending',
       required: true
     },
+    
+    // Status de revisión (requerido según documento)
+    reviewStatus: {
+      type: String,
+      enum: ['pending_review', 'reviewed', 'approved', 'rejected'],
+      default: 'pending_review'
+    },
+    
+    // Información de revisión
+    reviewedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    reviewedAt: Date,
+    reviewNotes: String,
     
     // Dates
     serviceDate: {

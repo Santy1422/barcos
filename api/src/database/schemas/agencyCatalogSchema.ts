@@ -1,6 +1,6 @@
 import { Schema, model, Document } from 'mongoose';
 
-export type CatalogType = 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'route_pricing';
+export type CatalogType = 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'route_pricing' | 'crew_rank' | 'crew_change_service';
 
 export interface IAgencyCatalog extends Document {
   type: CatalogType;
