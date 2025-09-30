@@ -22,11 +22,13 @@ import {
   Trash2,
   Edit,
   Save,
-  Loader2
+  Loader2,
+  Check,
+  Send
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
-import { createTruckingRecords, createPTYSSRecords, selectCreatingRecords, selectRecordsError } from "@/lib/features/records/recordsSlice"
+import { createTruckingRecords, createPTYSSRecords, selectCreatingRecords, selectRecordsError, selectRecordsByModule, fetchRecordsByModule, updateRecordAsync, deleteRecordAsync, type ExcelRecord } from "@/lib/features/records/recordsSlice"
 import { 
   selectAllClients,
   createClientAsync,
@@ -121,12 +123,13 @@ export function PTYSSUpload() {
   const dispatch = useAppDispatch()
   const { toast } = useToast()
   
-  const [records, setRecords] = useState<PTYSSRecordData[]>([])
   const [currentRecord, setCurrentRecord] = useState<PTYSSRecordData>(initialRecordData)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<"local" | "trasiego">("local")
+  const [confirmSendDialogOpen, setConfirmSendDialogOpen] = useState(false)
+  const [recordToSend, setRecordToSend] = useState<string | null>(null)
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null)
   
   // Excel upload state
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -155,6 +158,9 @@ export function PTYSSUpload() {
   
   const isCreatingRecords = useAppSelector(selectCreatingRecords)
   const recordsError = useAppSelector(selectRecordsError)
+  
+  // Obtener registros PTYSS desde Redux (para mostrar registros pendientes)
+  const ptyssRecords = useAppSelector((state) => selectRecordsByModule(state, "ptyss"))
 
   // Estado para crear rutas desde registros sin match
   const [showCreateRouteModal, setShowCreateRouteModal] = useState(false)
@@ -200,6 +206,20 @@ export function PTYSSUpload() {
   useEffect(() => {
     dispatch(fetchContainerTypes())
   }, [dispatch])
+
+  // Cargar registros PTYSS al montar el componente
+  useEffect(() => {
+    dispatch(fetchRecordsByModule("ptyss"))
+  }, [dispatch])
+
+  // Filtrar registros locales pendientes
+  const pendingLocalRecords = useMemo(() => {
+    return ptyssRecords.filter((record: ExcelRecord) => {
+      const data = record.data as Record<string, any>
+      // Filtrar solo registros locales (tienen recordType = "local") y con estado pendiente
+      return data.recordType === "local" && record.status === "pendiente" && !record.invoiceId
+    })
+  }, [ptyssRecords])
 
   // Función para re-procesar el Excel (simula el handleFileChange pero sin seleccionar archivo)
   const reprocessExcel = useCallback(async () => {
@@ -298,6 +318,32 @@ export function PTYSSUpload() {
       setShouldReprocess(false)
     }
   }, [shouldReprocess, routesLoading, routes, selectedFile, reprocessExcel])
+
+  // Función helper para formatear fechas correctamente (evitar problema de zona horaria)
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A'
+    
+    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = dateString.split('-').map(Number)
+      const date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+      return date.toLocaleDateString('es-ES')
+    }
+    
+    // Si la fecha está en formato ISO con zona horaria UTC (ej: 2025-09-09T00:00:00.000+00:00)
+    // Extraer solo la parte de la fecha y crear un objeto Date en zona horaria local
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+      const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
+      const [year, month, day] = datePart.split('-').map(Number)
+      const date = new Date(year, month - 1, day) // Crear en zona horaria local
+      return date.toLocaleDateString('es-ES')
+    }
+    
+    // Para otros formatos, usar el método normal
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return 'N/A'
+    return date.toLocaleDateString('es-ES')
+  }
 
   // Cargar servicios locales fijos al montar el componente
   useEffect(() => {
@@ -477,7 +523,7 @@ export function PTYSSUpload() {
   // Función para verificar si un cliente existe por nombre
   const findClientByName = (name: string): Client | null => {
     console.log('🔍 Buscando cliente por nombre:', name)
-    console.log('🔍 Clientes disponibles:', clients.map(c => ({
+    console.log('🔍 Clientes disponibles:', clients.map((c: any) => ({
       type: c.type,
       name: c.name,
       companyName: c.companyName,
@@ -797,7 +843,7 @@ export function PTYSSUpload() {
     }
   }
 
-  const handleAddRecord = () => {
+  const handleAddRecord = async () => {
     // Verificar que el cliente tenga rutas locales asociadas
     const clientRoutes = getLocalRoutesByRealClientId(currentRecord.clientId)
     
@@ -822,29 +868,113 @@ export function PTYSSUpload() {
       return
     }
 
-    if (editingIndex !== null) {
-      // Editar registro existente
-      const updatedRecords = [...records]
-      updatedRecords[editingIndex] = currentRecord
-      setRecords(updatedRecords)
-      setEditingIndex(null)
-      toast({ title: "Registro actualizado", description: "El registro ha sido actualizado exitosamente." })
-    } else {
-      // Agregar nuevo registro
-      const newRecord = {
-        ...currentRecord,
-        totalValue: calculateTotalValue(currentRecord)
-      }
-      setRecords([...records, newRecord])
-      toast({ title: "Registro agregado", description: "El registro ha sido agregado exitosamente." })
-    }
+    setIsSaving(true)
 
+    try {
+      if (editingRecordId) {
+        // Modo edición: actualizar registro existente
+        const updatedRecord = {
+          ...currentRecord,
+          totalValue: calculateTotalValue(currentRecord)
+        }
+        
+        await dispatch(updateRecordAsync({
+          id: editingRecordId,
+          updates: {
+            data: updatedRecord,
+            totalValue: updatedRecord.totalValue || 0
+          }
+        })).unwrap()
+        
+        toast({
+          title: "Registro actualizado",
+          description: "El registro ha sido actualizado exitosamente",
+        })
+      } else {
+        // Modo creación: guardar nuevo registro
+        const tempObjectId = new Date().getTime().toString(16).padStart(24, '0').substring(0, 24)
+        
+        const newRecord = {
+          ...currentRecord,
+          totalValue: calculateTotalValue(currentRecord)
+        }
+        
+        const recordsData = [{
+          data: newRecord,
+          totalValue: newRecord.totalValue || 0
+        }]
+        
+        await dispatch(createPTYSSRecords({
+          excelId: tempObjectId,
+          recordsData
+        })).unwrap()
+        
+        toast({
+          title: "Registro guardado",
+          description: "El registro ha sido guardado exitosamente en la base de datos con estado pendiente",
+        })
+      }
+      
+      // Refrescar los registros para actualizar la lista
+      dispatch(fetchRecordsByModule("ptyss"))
+      
+      // Cerrar el modal y resetear
+      setCurrentRecord({
+        ...initialRecordData,
+        localRouteId: "",
+        localRoutePrice: 0
+      })
+      setIsDialogOpen(false)
+      setEditingRecordId(null)
+      
+    } catch (error) {
+      console.error("Error al guardar:", error)
+      toast({
+        title: "Error",
+        description: "Error al guardar el registro en el sistema",
+        variant: "destructive"
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleEditRecord = (record: ExcelRecord) => {
+    const data = record.data as Record<string, any>
+    
+    // Precargar los datos en el formulario
     setCurrentRecord({
-      ...initialRecordData,
-      localRouteId: "",
-      localRoutePrice: 0
+      clientId: data.clientId || "",
+      associate: data.associate || "",
+      order: data.order || "",
+      container: data.container || "",
+      naviera: data.naviera || "",
+      from: data.from || "",
+      to: data.to || "",
+      operationType: data.operationType || "",
+      containerSize: data.containerSize || "",
+      containerType: data.containerType || "",
+      estadia: data.estadia || "",
+      genset: data.genset || "",
+      retencion: data.retencion || "",
+      pesaje: data.pesaje || "",
+      ti: data.ti || "",
+      matriculaCamion: data.matriculaCamion || "",
+      conductor: data.conductor || "",
+      numeroChasisPlaca: data.numeroChasisPlaca || "",
+      moveDate: data.moveDate || "",
+      notes: data.notes || "",
+      totalValue: data.totalValue || 0,
+      recordType: "local",
+      localRouteId: data.localRouteId || "",
+      localRoutePrice: data.localRoutePrice || 0
     })
-    setIsDialogOpen(false)
+    
+    // Guardar el ID del registro que se está editando
+    setEditingRecordId(record._id || record.id || "")
+    
+    // Abrir el modal
+    setIsDialogOpen(true)
   }
 
   const calculateTotalValue = (record: PTYSSRecordData): number => {
@@ -892,75 +1022,66 @@ export function PTYSSUpload() {
     return total
   }
 
-  const handleEditRecord = (index: number) => {
-    setCurrentRecord(records[index])
-    setEditingIndex(index)
-    setIsDialogOpen(true)
+
+  // Función para abrir el diálogo de confirmación
+  const handleOpenSendConfirmation = (recordId: string) => {
+    setRecordToSend(recordId)
+    setConfirmSendDialogOpen(true)
   }
 
-  const handleDeleteRecord = (index: number) => {
-    const updatedRecords = records.filter((_, i) => i !== index)
-    setRecords(updatedRecords)
-    toast({ title: "Registro eliminado", description: "El registro ha sido eliminado." })
-  }
-
-  const handleSaveRecords = async () => {
-    if (records.length === 0) {
-      toast({
-        title: "Error",
-        description: "No hay registros para guardar",
-        variant: "destructive"
-      })
-      return
-    }
-
-    setIsSaving(true)
+  // Función para cambiar el estado de un registro pendiente a completado
+  const handleMarkAsCompleted = async () => {
+    if (!recordToSend) return
 
     try {
-      console.log("=== INICIANDO GUARDADO PTYSS ===")
-      console.log("Registros a guardar:", records)
-      
-      // Temporary workaround: Use a proper ObjectId format
-      const tempObjectId = new Date().getTime().toString(16).padStart(24, '0').substring(0, 24)
-      
-      console.log("ExcelId:", tempObjectId)
-      
-      // Preparar los datos para el backend
-      const recordsData = records.map((record, index) => ({
-        data: record, // Datos completos del registro
-        totalValue: record.totalValue || 0
-      }))
-      
-      console.log("Records data preparado:", recordsData)
-      console.log("Payload a enviar:", {
-        excelId: tempObjectId,
-        recordsData
-      })
-      
-      const result = await dispatch(createPTYSSRecords({
-        excelId: tempObjectId,
-        recordsData
+      await dispatch(updateRecordAsync({
+        id: recordToSend,
+        updates: {
+          status: "completado"
+        }
       })).unwrap()
       
-      console.log("Resultado del guardado:", result)
-      
       toast({
-        title: "Éxito",
-        description: `${result.length} registros guardados correctamente en el sistema`
+        title: "Registro enviado",
+        description: "El registro ha sido marcado como completado y ahora aparecerá en la lista de prefactura",
       })
       
-      // Limpiar el estado
-      setRecords([])
+      // Refrescar los registros
+      dispatch(fetchRecordsByModule("ptyss"))
       
-    } catch (error) {
-      console.error("Error al guardar:", error)
+      // Cerrar el diálogo
+      setConfirmSendDialogOpen(false)
+      setRecordToSend(null)
+      
+    } catch (error: any) {
+      console.error("Error al actualizar estado:", error)
       toast({
-        title: "Error",
-        description: "Error al guardar los registros en el sistema",
+        title: "Error al enviar",
+        description: error.message || "Error al actualizar el estado del registro",
         variant: "destructive"
       })
-    } finally {
-      setIsSaving(false)
+    }
+  }
+
+  // Función para eliminar un registro pendiente
+  const handleDeletePendingRecord = async (recordId: string) => {
+    try {
+      await dispatch(deleteRecordAsync(recordId)).unwrap()
+      
+      toast({
+        title: "Registro eliminado",
+        description: "El registro ha sido eliminado exitosamente",
+      })
+      
+      // Refrescar los registros
+      dispatch(fetchRecordsByModule("ptyss"))
+      
+    } catch (error: any) {
+      toast({
+        title: "Error al eliminar registro",
+        description: error.message || "Error al eliminar el registro",
+        variant: "destructive"
+      })
     }
   }
 
@@ -1342,13 +1463,13 @@ export function PTYSSUpload() {
                     localRoutePrice: 0,
                     recordType: "local"
                   })
-                  setEditingIndex(null)
                   setIsDialogOpen(true)
                 }}>
                   <Plus className="mr-2 h-4 w-4" />
                   Nuevo Registro Local
                 </Button>
               </div>
+
             </TabsContent>
             
             <TabsContent value="trasiego" className="space-y-4 mt-6">
@@ -1406,105 +1527,115 @@ export function PTYSSUpload() {
         </CardContent>
       </Card>
 
-      {/* Lista de registros */}
-      {records.filter(r => r.recordType === activeTab).length > 0 && (
+      {/* Lista de registros pendientes solo para tab local */}
+      {activeTab === "local" && pendingLocalRecords.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <Database className="h-5 w-5" />
-                Registros Creados ({records.filter(r => r.recordType === activeTab).length} {activeTab === "local" ? "locales" : "trasiego"})
+                Registros Locales Pendientes ({pendingLocalRecords.length})
               </span>
-              <Button 
-                onClick={handleSaveRecords} 
-                disabled={isSaving}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Guardando...
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Guardar Registros
-                  </>
-                )}
-              </Button>
+              <Badge variant="secondary" className="text-sm">
+                Presiona enviar para enviar registro a prefactura
+              </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Orden</TableHead>
-                    <TableHead>Contenedor</TableHead>
-                    <TableHead>Naviera</TableHead>
-                    <TableHead>From/To</TableHead>
-                    <TableHead>Operación</TableHead>
-                    <TableHead>Conductor</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
+                  <TableRow className="bg-slate-50">
+                    <TableHead className="font-semibold">Contenedor</TableHead>
+                    <TableHead className="font-semibold">Cliente</TableHead>
+                    <TableHead className="font-semibold">Orden</TableHead>
+                    <TableHead className="font-semibold">Ruta</TableHead>
+                    <TableHead className="font-semibold">Operación</TableHead>
+                    <TableHead className="font-semibold">Fecha Movimiento</TableHead>
+                    <TableHead className="font-semibold">Monto</TableHead>
+                    <TableHead className="font-semibold">Estado</TableHead>
+                    <TableHead className="font-semibold text-center">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {records.filter(record => record.recordType === activeTab).map((record, index) => {
-                    const client = clients.find((c: any) => (c._id || c.id) === record.clientId)
-                    const naviera = navieras.find(n => n._id === record.naviera)
+                  {pendingLocalRecords.map((record: ExcelRecord) => {
+                    const data = record.data as Record<string, any>
+                    const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
+                    const clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
+                    const naviera = navieras.find((n: any) => n._id === data.naviera)
                     
                     return (
-                      <TableRow key={index}>
+                      <TableRow key={record._id || record.id}>
                         <TableCell>
-                          {client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"}
-                        </TableCell>
-                        <TableCell>{record.order}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{record.container}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {record.containerSize}' {record.containerType}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>{naviera?.name || "N/A"}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="text-xs">{record.from}</span>
-                            <span className="text-xs">→ {record.to}</span>
-                            {(() => {
-                              const selectedRoute = localRoutes.find(route => route._id === record.localRouteId)
-                              return selectedRoute && (
-                                <Badge variant="outline" className="text-xs mt-1">
-                                  {selectedRoute.clientName}
-                                </Badge>
-                              )
-                            })()}
+                          <div className="space-y-1">
+                            <div className="font-medium">{data.container || "N/A"}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {data.containerSize}' {data.containerType}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={record.operationType === "import" ? "default" : "secondary"}>
-                            {record.operationType.toUpperCase()}
+                          <div className="space-y-1">
+                            <div>{clientName}</div>
+                            {naviera && (
+                              <div className="text-xs text-muted-foreground">
+                                {naviera.name} ({naviera.code})
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{data.order || "N/A"}</TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            {data.from} → {data.to}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={data.operationType === "import" ? "default" : "secondary"} className="text-xs">
+                            {data.operationType?.toUpperCase() || "N/A"}
                           </Badge>
                         </TableCell>
-                        <TableCell>{record.conductor}</TableCell>
-                        <TableCell>${record.totalValue.toFixed(2)}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end space-x-2">
+                        <TableCell>
+                          {formatDate(data.moveDate)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-semibold text-blue-600">
+                            ${(data.localRoutePrice || record.totalValue || 0).toFixed(2)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-orange-600 border-orange-600">
+                            Pendiente
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center justify-center gap-2">
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
-                              onClick={() => handleEditRecord(index)}
+                              onClick={() => handleEditRecord(record)}
+                              className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                              title="Editar registro"
                             >
-                              <Edit className="h-4 w-4" />
+                              <Edit className="h-4 w-4 mr-1" />
+                              Editar
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenSendConfirmation(record._id || record.id || "")}
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              title="Enviar a prefactura"
+                            >
+                              <Send className="h-4 w-4 mr-1" />
+                              Enviar
                             </Button>
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleDeleteRecord(index)}
-                              className="text-red-600 hover:text-red-700"
+                              onClick={() => handleDeletePendingRecord(record._id || record.id || "")}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              title="Eliminar registro"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -1521,11 +1652,22 @@ export function PTYSSUpload() {
       )}
 
       {/* Modal para crear/editar registro */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isDialogOpen} onOpenChange={(open) => {
+        setIsDialogOpen(open)
+        if (!open) {
+          // Al cerrar el modal, resetear el modo de edición
+          setEditingRecordId(null)
+          setCurrentRecord({
+            ...initialRecordData,
+            localRouteId: "",
+            localRoutePrice: 0
+          })
+        }
+      }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingIndex !== null ? "Editar Registro Local" : "Crear Nuevo Registro Local"}
+              {editingRecordId ? "Editar Registro Local" : "Crear Nuevo Registro Local"}
             </DialogTitle>
           </DialogHeader>
           
@@ -2073,8 +2215,18 @@ export function PTYSSUpload() {
             <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button type="button" onClick={handleAddRecord}>
-              {editingIndex !== null ? "Actualizar" : "Agregar"} Registro
+            <Button type="button" onClick={handleAddRecord} disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {editingRecordId ? "Actualizando..." : "Guardando..."}
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  {editingRecordId ? "Actualizar Registro" : "Guardar Registro"}
+                </>
+              )}
             </Button>
           </div>
         </DialogContent>
@@ -2565,6 +2717,51 @@ export function PTYSSUpload() {
                 </Button>
               </div>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de confirmación para enviar a prefactura */}
+      <Dialog open={confirmSendDialogOpen} onOpenChange={setConfirmSendDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5 text-blue-600" />
+              Confirmar Envío a Prefactura
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5" />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">
+                  ¿Estás seguro de enviar este registro a prefactura?
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  El registro pasará a estado <span className="font-semibold text-green-600">completado</span> y aparecerá en la lista de prefactura donde podrá ser facturado.
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex justify-end gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setConfirmSendDialogOpen(false)
+                setRecordToSend(null)
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleMarkAsCompleted}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Send className="h-4 w-4 mr-2" />
+              Confirmar Envío
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

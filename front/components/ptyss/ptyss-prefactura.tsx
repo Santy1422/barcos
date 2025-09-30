@@ -266,26 +266,16 @@ export function PTYSSPrefactura() {
       return false
     }
     
-    // Aplicar filtro por tipo de registro
-    if (recordTypeFilter !== "all" && recordType !== recordTypeFilter) {
+    // SOLO INCLUIR registros completados (tanto trasiego como locales)
+    // Para registros de trasiego, siempre están completados
+    // Para registros locales, verificar que status sea "completado"
+    if (recordType === "local" && record.status !== "completado") {
       return false
     }
     
-    // Aplicar filtro por estado
-    if (statusFilter !== "all") {
-      const recordType = getRecordType(record)
-      
-      // Para registros de trasiego, siempre considerarlos como "completado"
-      if (recordType === "trasiego") {
-        if (statusFilter !== "completado") {
-          return false
-        }
-      } else {
-        // Para registros locales, usar el estado real del registro
-        if (record.status !== statusFilter) {
-          return false
-        }
-      }
+    // Aplicar filtro por tipo de registro
+    if (recordTypeFilter !== "all" && recordType !== recordTypeFilter) {
+      return false
     }
     
     // Aplicar filtro por cliente
@@ -394,7 +384,7 @@ export function PTYSSPrefactura() {
   // Resetear página cuando cambien los filtros
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, recordTypeFilter, statusFilter, clientFilter, isUsingPeriodFilter, startDate, endDate, dateFilter])
+  }, [searchTerm, recordTypeFilter, clientFilter, isUsingPeriodFilter, startDate, endDate, dateFilter])
 
   // Cerrar filtro de cliente al hacer clic fuera
   useEffect(() => {
@@ -2086,27 +2076,15 @@ export function PTYSSPrefactura() {
                 </div>
                 <div className="flex gap-4 text-xs">
                   <div className="bg-white/60 px-3 py-1 rounded-md">
-                    <span className="font-medium text-slate-600">Locales:</span>
+                    <span className="font-medium text-slate-600">Locales Completados:</span>
                     <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "local").length}
+                      {ptyssRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "local" && r.status === "completado" && !r.invoiceId).length}
                     </span>
                   </div>
                   <div className="bg-white/60 px-3 py-1 rounded-md">
                     <span className="font-medium text-slate-600">Trasiego:</span>
                     <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "trasiego").length}
-                    </span>
-                  </div>
-                  <div className="bg-white/60 px-3 py-1 rounded-md">
-                    <span className="font-medium text-slate-600">Pendientes:</span>
-                    <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.status === "pendiente").length}
-                    </span>
-                  </div>
-                  <div className="bg-white/60 px-3 py-1 rounded-md">
-                    <span className="font-medium text-slate-600">Completados:</span>
-                    <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.status === "completado").length}
+                      {ptyssRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "trasiego" && !r.invoiceId).length}
                     </span>
                   </div>
                   <div className="bg-white/60 px-3 py-1 rounded-md">
@@ -2133,7 +2111,7 @@ export function PTYSSPrefactura() {
               </div>
               
               {/* Filtros */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Filtro por tipo de registro */}
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold text-slate-700">Filtrar por tipo:</Label>
@@ -2174,13 +2152,12 @@ export function PTYSSPrefactura() {
                   </div>
                   
                   {/* Botón para limpiar todos los filtros - movido aquí para optimizar espacio */}
-                  {(recordTypeFilter !== "all" || statusFilter !== "all" || searchTerm || startDate || endDate) && (
+                  {(recordTypeFilter !== "all" || searchTerm || startDate || endDate) && (
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => {
                         setRecordTypeFilter("all")
-                        setStatusFilter("all")
                         setDateFilter("createdAt")
                         setSearchTerm("")
                         setStartDate("")
@@ -2194,46 +2171,6 @@ export function PTYSSPrefactura() {
                       🗑️ Limpiar todos los filtros
                     </Button>
                   )}
-                </div>
-
-                {/* Filtro por estado */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-semibold text-slate-700">Filtrar por estado:</Label>
-                  <div className="flex gap-2">
-                    <Button
-                      variant={statusFilter === "all" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setStatusFilter("all")
-                        setSelectedRecordIds([])
-                      }}
-                      className="text-xs"
-                    >
-                      Todos
-                    </Button>
-                    <Button
-                      variant={statusFilter === "pendiente" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setStatusFilter("pendiente")
-                        setSelectedRecordIds([])
-                      }}
-                      className="text-xs"
-                    >
-                      Pendiente
-                    </Button>
-                    <Button
-                      variant={statusFilter === "completado" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setStatusFilter("completado")
-                        setSelectedRecordIds([])
-                      }}
-                      className="text-xs"
-                    >
-                      Completado
-                    </Button>
-                  </div>
                 </div>
 
                 {/* Filtro por fecha */}
@@ -2499,7 +2436,6 @@ export function PTYSSPrefactura() {
                         {recordTypeFilter === "trasiego" ? "Subcliente" : "Ruta"}
                       </TableHead>
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Operación</TableHead>
-                      <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Estado</TableHead>
                       <TableHead className="w-12 py-3 px-3 text-sm font-semibold text-gray-700">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -2648,35 +2584,6 @@ export function PTYSSPrefactura() {
                                 return data.operationType?.toUpperCase() || "N/A"
                               })()}
                             </Badge>
-                          </TableCell>
-                          <TableCell className="py-2 px-3">
-                            <div className="space-y-1">
-                              {getRecordType(record) === "trasiego" ? (
-                                // Para registros de trasiego, mostrar solo badge "Completado"
-                                <Badge variant="default" className="text-xs bg-green-600 hover:bg-green-700">
-                                  Completado
-                                </Badge>
-                              ) : (
-                                // Para registros locales, permitir cambiar el estado
-                                <Select 
-                                  value={record.status || "pendiente"} 
-                                  onValueChange={(value: "pendiente" | "completado") => handleStatusChange(record, value)}
-                                >
-                                  <SelectTrigger className="w-32 h-8 text-xs">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="pendiente">Pendiente</SelectItem>
-                                    <SelectItem value="completado">Completado</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              )}
-                              {record.invoiceId && (
-                                <Badge variant="outline" className="text-xs text-green-600 border-green-600">
-                                  Prefacturado
-                                </Badge>
-                              )}
-                            </div>
                           </TableCell>
                           <TableCell className="py-2 px-3">
                             <div className="flex items-center gap-1">
