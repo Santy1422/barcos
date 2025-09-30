@@ -5,7 +5,13 @@ export interface IAgencyService extends Document {
   module: string;
   
   // Status management
-  status: 'pending' | 'in_progress' | 'completed' | 'prefacturado' | 'facturado';
+  status: 'pending' | 'in_progress' | 'completed' | 'ready_for_invoice' | 'prefacturado' | 'facturado';
+  
+  // Review status
+  reviewStatus: 'pending_review' | 'reviewed' | 'approved' | 'rejected';
+  reviewedBy?: Types.ObjectId;
+  reviewedAt?: Date;
+  reviewNotes?: string;
   
   // Dates
   serviceDate: Date;

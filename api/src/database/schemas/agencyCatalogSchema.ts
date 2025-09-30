@@ -17,7 +17,7 @@ const agencyCatalogSchema = new Schema<IAgencyCatalog>(
   {
     type: {
       type: String,
-      enum: ['location', 'nationality', 'rank', 'vessel', 'transport_company', 'driver', 'taulia_code', 'route_pricing'],
+      enum: ['location', 'nationality', 'rank', 'vessel', 'transport_company', 'driver', 'taulia_code', 'route_pricing', 'crew_rank', 'crew_change_service'],
       required: true
     },
     
@@ -223,7 +223,9 @@ agencyCatalogSchema.statics.getAllGroupedByType = async function() {
     transport_company: [],
     driver: [],
     taulia_code: [],
-    route_pricing: []
+    route_pricing: [],
+    crew_rank: [],
+    crew_change_service: []
   };
   
   items.forEach(item => {
@@ -263,7 +265,9 @@ agencyCatalogSchema.virtual('typeLabel').get(function() {
     'transport_company': 'Empresa de Transporte',
     'driver': 'Conductor',
     'taulia_code': 'Código Taulia',
-    'route_pricing': 'Precio de Ruta'
+    'route_pricing': 'Precio de Ruta',
+    'crew_rank': 'Rango de Tripulación',
+    'crew_change_service': 'Servicio de Cambio de Tripulación'
   };
   return labels[this.type] || this.type;
 });

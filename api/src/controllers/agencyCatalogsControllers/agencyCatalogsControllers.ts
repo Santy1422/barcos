@@ -14,7 +14,9 @@ const VALID_CATALOG_TYPES: CatalogType[] = [
   'transport_company',
   'driver',
   'taulia_code',
-  'route_pricing'
+  'route_pricing',
+  'crew_rank',
+  'crew_change_service'
 ];
 
 // Validate metadata based on catalog type
@@ -143,7 +145,9 @@ export const getAllCatalogs = async (req: Request, res: Response) => {
       transport_company: [],
       driver: [],
       taulia_code: [],
-      route_pricing: []
+      route_pricing: [],
+      crew_rank: [],
+      crew_change_service: []
     };
 
     catalogs.forEach(catalog => {
@@ -162,6 +166,8 @@ export const getAllCatalogs = async (req: Request, res: Response) => {
       driver: grouped.driver.length,
       taulia_code: grouped.taulia_code.length,
       route_pricing: grouped.route_pricing.length,
+      crew_rank: grouped.crew_rank.length,
+      crew_change_service: grouped.crew_change_service.length,
       total: catalogs.length
     };
 
