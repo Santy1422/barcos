@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -382,6 +382,17 @@ export function PTYSSUpload() {
   // Estado para servicios locales fijos
   const [localServices, setLocalServices] = useState<any[]>([])
   const [localServicesLoading, setLocalServicesLoading] = useState(false)
+  
+  // Estado para filtro de matching
+  const [matchFilter, setMatchFilter] = useState<'all' | 'matched' | 'unmatched'>('all')
+
+  // Filtrar registros basado en el filtro de matching
+  const filteredPreviewData = useMemo(() => {
+    if (matchFilter === 'all') return previewData
+    if (matchFilter === 'matched') return previewData.filter(record => record.isMatched)
+    if (matchFilter === 'unmatched') return previewData.filter(record => !record.isMatched)
+    return previewData
+  }, [previewData, matchFilter])
 
   // Recargar clientes cuando cambie el estado de completitud
   useEffect(() => {
@@ -644,7 +655,7 @@ export function PTYSSUpload() {
       routeType: record.moveType?.toLowerCase() === 'rt' ? "RT" : "single",
       price: 0,
       status: record.fe === "E" || record.fe === "EMPTY" ? "EMPTY" : "FULL",
-      cliente: record.line || "",
+      cliente: "PTG", // Usar PTG como cliente fijo para registros de trasiego
       routeArea: record.route || ""
     })
     
@@ -1012,13 +1023,11 @@ export function PTYSSUpload() {
           (normalizedFE === 'FULL' && route.status?.toUpperCase() === 'FULL') ||
           (normalizedFE === 'EMPTY' && route.status?.toUpperCase() === 'EMPTY');
         
-        // Matching por line (cliente de la ruta) - opcional, si está disponible
-        const normalizedLine = record.line?.trim().toUpperCase() || '';
+        // Matching por cliente PTG - todos los registros de trasiego usan PTG
         const clienteMatch = 
-          !normalizedLine || // Si no hay line, hacer match con cualquier cliente
-          route.cliente?.toUpperCase() === normalizedLine ||
-          route.cliente?.toUpperCase().includes(normalizedLine) ||
-          normalizedLine.includes(route.cliente?.toUpperCase() || '');
+          route.cliente?.toUpperCase() === 'PTG' ||
+          route.cliente?.toUpperCase().includes('PTG') ||
+          'PTG'.includes(route.cliente?.toUpperCase() || '');
         
         // Matching por route (routeArea de la ruta) - área de ruta
         const normalizedRoute = record.route?.trim().toUpperCase() || '';
@@ -1034,7 +1043,7 @@ export function PTYSSUpload() {
         console.log(`    MoveType normalizado: "${normalizedMoveType}" vs "${route.routeType}" = ${moveTypeMatch}`)
         console.log(`    Type normalizado: "${normalizedType}" vs "${route.containerType}" = ${containerTypeMatch}`)
         console.log(`    FE normalizado: "${normalizedFE}" vs "${route.status}" = ${statusMatch}`)
-        console.log(`    Line normalizado: "${normalizedLine}" vs "${route.cliente}" = ${clienteMatch}`)
+        console.log(`    Cliente PTG vs "${route.cliente}" = ${clienteMatch}`)
         console.log(`    Route normalizado: "${normalizedRoute}" vs "${route.routeArea}" = ${routeAreaMatch}`)
         console.log(`    Match total: ${fromMatch && toMatch && moveTypeMatch && containerTypeMatch && statusMatch && clienteMatch && routeAreaMatch}`)
         
@@ -1074,28 +1083,20 @@ export function PTYSSUpload() {
   // Función para convertir datos de trucking a PTYSS
   const convertTruckingToPTYSS = (truckingData: TruckingExcelData[]): PTYSSRecordData[] => {
     return truckingData.map(record => {
-      // Para registros de trasiego, usar el cliente de la columna 'line' del Excel
-      const clienteName = record.line?.trim() || ''
-      const matchedClient = clients.find((c: any) => {
-        if (c.type === "juridico") {
-          return c.name?.toLowerCase() === clienteName.toLowerCase() || 
-                 c.companyName?.toLowerCase() === clienteName.toLowerCase()
-        }
-        if (c.type === "natural") {
-          return c.fullName?.toLowerCase() === clienteName.toLowerCase()
-        }
-        return false
+      // Para registros de trasiego, buscar el cliente PTG por el campo 'name'
+      const ptgClient = clients.find((c: any) => {
+        return c.name?.toLowerCase() === 'ptg'
       })
       
-      const clientId = matchedClient?._id || matchedClient?.id || ''
+      const clientId = ptgClient?._id || ptgClient?.id || ''
       
-      console.log(`Convirtiendo registro de trasiego para cliente line: "${clienteName}"`)
-      console.log(`Cliente encontrado:`, matchedClient)
-      console.log(`ClientId asignado: ${clientId}`)
+      console.log(`Convirtiendo registro de trasiego - Cliente PTG buscado:`, ptgClient)
+      console.log(`ClientId PTG asignado: ${clientId}`)
+      console.log(`Cliente original del Excel (line): "${record.line}"`)
       
       return {
-        clientId: clientId, // Usar cliente de la columna 'line'
-        associate: record.line || '', // Guardar el nombre del cliente de la columna line
+        clientId: clientId, // Usar cliente PTG para todos los registros de trasiego
+        associate: record.line || '', // Guardar el nombre del cliente original de la columna line
         order: record.containerConsecutive || '',
         container: record.container || '',
         naviera: record.route || '',
@@ -2108,13 +2109,44 @@ export function PTYSSUpload() {
                 Total: ${previewData.reduce((sum, record) => sum + (record.matchedPrice || 0), 0).toFixed(2)}
               </span>
             </div>
+            
+            {/* Filtro de matching */}
+            <div className="flex items-center gap-4 mt-6 mb-4 p-4 bg-slate-50 rounded-lg border">
+              <Label htmlFor="match-filter" className="text-sm font-medium">Filtrar por matching:</Label>
+              <Select value={matchFilter} onValueChange={(value) => setMatchFilter(value as 'all' | 'matched' | 'unmatched')}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Seleccionar filtro" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    Todos ({previewData.length})
+                  </SelectItem>
+                  <SelectItem value="matched">
+                    Con Match ({previewData.filter(record => record.isMatched).length})
+                  </SelectItem>
+                  <SelectItem value="unmatched">
+                    Sin Match ({previewData.filter(record => !record.isMatched).length})
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {matchFilter !== 'all' && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setMatchFilter('all')}
+                  className="text-xs"
+                >
+                  Limpiar Filtro
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border max-h-96 overflow-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Cliente (Line)</TableHead>
+                    <TableHead>Cliente PTG</TableHead>
                     <TableHead>Ruta (Leg)</TableHead>
                     <TableHead>Área (Route)</TableHead>
                     <TableHead>Tipo Movimiento</TableHead>
@@ -2125,37 +2157,26 @@ export function PTYSSUpload() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {previewData.map((record, index) => {
+                  {filteredPreviewData.map((record, index) => {
                     const clientName = record.associate?.trim()
                     const clientStatus = clientName ? clientCompleteness.get(clientName) : null
                     const isClickable = record.isMatched && clientStatus && !clientStatus.isComplete
                     
                     return (
                       <TableRow key={index}>
-                        {/* Cliente (Line) */}
+                        {/* Cliente PTG */}
                         <TableCell>
                           <div className="flex items-center space-x-2">
-                            <span 
-                              className={isClickable ? "cursor-pointer text-blue-600 hover:text-blue-800 underline" : ""}
-                              onClick={isClickable ? () => handleClientClick(clientName!) : undefined}
-                            >
-                              {record.associate}
+                            <span className="font-medium text-blue-700">
+                              PTG
                             </span>
-                            {record.isMatched && clientStatus && (
-                              <div className="flex items-center">
-                                {clientStatus.isComplete ? (
-                                  <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
-                                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                                    Completo
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="outline" className="text-red-600 border-red-600 text-xs cursor-pointer" onClick={() => handleClientClick(clientName!)}>
-                                    <AlertCircle className="h-3 w-3 mr-1" />
-                                    Incompleto
-                                  </Badge>
-                                )}
-                              </div>
-                            )}
+                            <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              Cliente Final
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Line: {record.associate}
                           </div>
                         </TableCell>
                         

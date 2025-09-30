@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Ship, DollarSign, FileText, Search, Calendar, Clock, Database, Loader2, Download, Eye, ArrowRight, ArrowLeft, CheckCircle, Info, Trash2, Plus, Edit, ChevronUp, ChevronDown, X } from "lucide-react"
+import { Ship, DollarSign, FileText, Search, Calendar, Clock, Database, Loader2, Download, Eye, ArrowRight, ArrowLeft, CheckCircle, Info, Trash2, Plus, Edit, ChevronUp, ChevronDown, X, Filter } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import jsPDF from "jspdf"
@@ -72,6 +72,8 @@ export function PTYSSPrefactura() {
   const [searchTerm, setSearchTerm] = useState("")
   const [recordTypeFilter, setRecordTypeFilter] = useState<"all" | "local" | "trasiego">("all")
   const [statusFilter, setStatusFilter] = useState<"all" | "pendiente" | "completado">("all")
+  const [clientFilter, setClientFilter] = useState<string>('all')
+  const [showClientFilter, setShowClientFilter] = useState(false)
   const [dateFilter, setDateFilter] = useState<"createdAt" | "moveDate">("createdAt")
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
@@ -105,6 +107,10 @@ export function PTYSSPrefactura() {
   // Estado para servicios locales fijos
   const [fixedLocalServices, setFixedLocalServices] = useState<any[]>([])
   const [fixedLocalServicesLoading, setFixedLocalServicesLoading] = useState(false)
+  
+  // Estados de paginación para la tabla de registros (Paso 1)
+  const [currentPage, setCurrentPage] = useState(1)
+  const recordsPerPage = 10
 
 
 
@@ -282,6 +288,25 @@ export function PTYSSPrefactura() {
       }
     }
     
+    // Aplicar filtro por cliente
+    if (clientFilter !== 'all') {
+      const recordType = getRecordType(record)
+      let clientName = ""
+      
+      if (recordType === "trasiego") {
+        // Para registros de trasiego, siempre es "PTG"
+        clientName = "PTG"
+      } else {
+        // Para registros locales, buscar por clientId
+        const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
+        clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
+      }
+      
+      if (clientName !== clientFilter) {
+        return false
+      }
+    }
+    
     // Aplicar filtro por fecha
     if (startDate || endDate) {
       let dateToCheck: string = ""
@@ -332,6 +357,60 @@ export function PTYSSPrefactura() {
     return dateB.getTime() - dateA.getTime()
   })
 
+  // Obtener clientes únicos de los registros filtrados
+  const uniqueClients = useMemo(() => {
+    const clientNames = new Set<string>()
+    
+    filteredRecords.forEach((record: IndividualExcelRecord) => {
+      const data = record.data as Record<string, any>
+      const recordType = getRecordType(record)
+      let clientName = ""
+      
+      if (recordType === "trasiego") {
+        // Para registros de trasiego, siempre es "PTG"
+        clientName = "PTG"
+      } else {
+        // Para registros locales, buscar por clientId
+        const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
+        clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
+      }
+      
+      if (clientName) {
+        clientNames.add(clientName)
+      }
+    })
+    
+    return Array.from(clientNames).sort()
+  }, [filteredRecords, clients])
+
+  // Lógica de paginación
+  const totalPages = Math.ceil(filteredRecords.length / recordsPerPage)
+  const paginatedRecords = useMemo(() => {
+    const start = (currentPage - 1) * recordsPerPage
+    const end = start + recordsPerPage
+    return filteredRecords.slice(start, end)
+  }, [filteredRecords, currentPage, recordsPerPage])
+
+  // Resetear página cuando cambien los filtros
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, recordTypeFilter, statusFilter, clientFilter, isUsingPeriodFilter, startDate, endDate, dateFilter])
+
+  // Cerrar filtro de cliente al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (showClientFilter && !target.closest('[data-client-filter]')) {
+        setShowClientFilter(false)
+      }
+    }
+
+    if (showClientFilter) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showClientFilter])
+
   // Obtener registros seleccionados
     const selectedRecords = ptyssRecords.filter((record: IndividualExcelRecord) =>
     selectedRecordIds.includes(getRecordId(record))
@@ -347,22 +426,22 @@ export function PTYSSPrefactura() {
     
     // Si clientId está vacío, intentar buscar por nombre (para registros antiguos)
     if (!clientId || clientId.trim() === '') {
-      // Para registros de trasiego, buscar por el nombre del cliente en el campo associate
+      // Para registros de trasiego, buscar específicamente por "PTG"
       const recordType = getRecordType(record)
-      if (recordType === 'trasiego' && data?.associate) {
-        console.log('🔍 getRecordClient - Buscando por associate:', data.associate)
-        const clientByName = clients.find((c: any) => {
+      if (recordType === 'trasiego') {
+        console.log('🔍 getRecordClient - Buscando cliente PTG para registro de trasiego')
+        const ptgClient = clients.find((c: any) => {
           if (c.type === 'juridico') {
-            return c.companyName?.toLowerCase() === data.associate.toLowerCase()
+            return c.companyName?.toLowerCase() === 'ptg'
           } else if (c.type === 'natural') {
-            return c.fullName?.toLowerCase() === data.associate.toLowerCase()
+            return c.fullName?.toLowerCase() === 'ptg'
           }
           return false
         })
-        console.log('🔍 getRecordClient - Cliente encontrado por nombre:', clientByName?.companyName || clientByName?.fullName)
-        return clientByName
+        console.log('🔍 getRecordClient - Cliente PTG encontrado:', ptgClient?.companyName || ptgClient?.fullName)
+        return ptgClient
       }
-      console.log('🔍 getRecordClient - No es registro de trasiego o no tiene associate. RecordType:', recordType, 'Associate:', data?.associate)
+      console.log('🔍 getRecordClient - No es registro de trasiego. RecordType:', recordType)
       return null
     }
     
@@ -1245,56 +1324,122 @@ export function PTYSSPrefactura() {
     doc.text('PRICE', 140, startY + 5)
     doc.text('TOTAL', 170, startY + 5)
     
-    // Generar items de la prefactura agrupados
+    // Generar items de la prefactura agrupados (similar a trucking prefactura)
     const items: string[][] = []
     let itemIndex = 1
     
-    // Agrupar y sumar items por tipo
-    const groupedItems: { [key: string]: { total: number, count: number } } = {}
+    // Agrupar registros por características similares (como en trucking)
+    const groupedRecords = new Map<string, { records: any[], price: number, count: number }>()
+    
+    console.log("=== DEBUG: Agrupando registros PTYSS para PDF ===")
+    console.log("Total registros seleccionados:", selectedRecords.length)
     
     selectedRecords.forEach((record, index) => {
       const data = record.data as Record<string, any>
       
-      // Agrupar Flete
-      const fleteKey = 'Flete'
-      if (!groupedItems[fleteKey]) {
-        groupedItems[fleteKey] = { total: 0, count: 0 }
-      }
-      // Para registros locales, usar el precio de la ruta local
-      if (data.recordType === 'local' && data.localRoutePrice) {
-        groupedItems[fleteKey].total += data.localRoutePrice
-      } else {
-        groupedItems[fleteKey].total += (record.totalValue || 0)
-      }
-      groupedItems[fleteKey].count += 1
+      console.log(`🔍 DEBUG PDF - Registro ${index + 1}:`, {
+        recordType: data.recordType,
+        associate: data.associate,
+        from: data.from,
+        to: data.to,
+        containerSize: data.containerSize,
+        containerType: data.containerType,
+        totalValue: record.totalValue,
+        line: data.line,
+        matchedPrice: data.matchedPrice
+      })
       
-
-    })
-    
-    // Convertir items agrupados a array
-    Object.entries(groupedItems).forEach(([description, itemData]) => {
-      // Para Flete, mostrar el precio individual de la ruta local si es un registro local
-      let individualPrice = itemData.total / itemData.count
+      // Identificar registros de trasiego: tienen line, matchedPrice, y no tienen localRouteId
+      const isTrasiego = data.line && data.matchedPrice && !data.localRouteId
       
-      // Si es Flete y hay registros locales, usar el precio de la ruta local
-      if (description === 'Flete') {
-        const localRecords = selectedRecords.filter(record => {
-          const data = record.data as Record<string, any>
-          return data.recordType === 'local' && data.localRoutePrice
-        })
-        if (localRecords.length > 0) {
-          // Usar el precio de la primera ruta local como referencia
-          const firstLocalRecord = localRecords[0]
-          const data = firstLocalRecord.data as Record<string, any>
-          individualPrice = data.localRoutePrice
+      if (isTrasiego) {
+        console.log(`🔍 DEBUG PDF - Procesando como TRASIEGO`)
+        // Los registros de trasiego en PTYSS tienen estos campos:
+        // - line: cliente original del Excel
+        // - from/to: origen y destino
+        // - size: tamaño del contenedor
+        // - type: tipo de contenedor
+        // - route: ruta/área
+        // - matchedPrice: precio total
+        const line = data.line || ''
+        const from = data.from || ''
+        const to = data.to || ''
+        const size = data.size || ''
+        const type = data.type || ''
+        const route = data.route || ''
+        const fe = data.fe ? (data.fe.toString().toUpperCase().trim() === 'F' ? 'FULL' : 'EMPTY') : 'FULL'
+        const price = (data.matchedPrice || record.totalValue || 0)
+        
+        // Crear clave única para agrupar por características similares
+        const groupKey = `TRASIEGO|${line}|${from}|${to}|${size}|${type}|${fe}|${route}|${price}`
+        
+        if (!groupedRecords.has(groupKey)) {
+          groupedRecords.set(groupKey, {
+            records: [],
+            price: price,
+            count: 0
+          })
         }
+        
+        const group = groupedRecords.get(groupKey)!
+        group.records.push(record)
+        group.count += 1
+      } else {
+        console.log(`🔍 DEBUG PDF - Procesando como LOCAL`)
+        // Para registros locales, agrupar por ruta local
+        const localRouteId = data.localRouteId || ''
+        const localRoutePrice = data.localRoutePrice || 0
+        const containerSize = data.containerSize || ''
+        const containerType = data.containerType || ''
+        const from = data.from || ''
+        const to = data.to || ''
+        
+        const groupKey = `LOCAL|${localRouteId}|${containerSize}|${containerType}|${from}|${to}|${localRoutePrice}`
+        
+        if (!groupedRecords.has(groupKey)) {
+          groupedRecords.set(groupKey, {
+            records: [],
+            price: localRoutePrice,
+            count: 0
+          })
+        }
+        
+        const group = groupedRecords.get(groupKey)!
+        group.records.push(record)
+        group.count += 1
+      }
+    })
+
+    console.log("Grupos PTYSS creados:", groupedRecords.size)
+    Array.from(groupedRecords.entries()).forEach(([key, group], index) => {
+      const parts = key.split('|')
+      console.log(`Grupo PTYSS ${index + 1}: ${parts[0]} - Cantidad: ${group.count} - Precio: $${group.price}`)
+    })
+
+    // Crear filas agrupadas para el PDF
+    Array.from(groupedRecords.entries()).forEach(([groupKey, group]) => {
+      const parts = groupKey.split('|')
+      const totalPrice = group.price * group.count
+      
+      let description = ''
+      if (parts[0] === 'LOCAL') {
+        // Para registros locales: LOCAL - FROM/TO/SIZE/TYPE
+        const [_, localRouteId, containerSize, containerType, from, to, price] = parts
+        description = `LOCAL - ${from}/${to}/${containerSize}'${containerType}`
+      } else if (parts[0] === 'TRASIEGO') {
+        // Para registros de trasiego: ROUTE_AREA - FROM/TO/SIZE/TYPE/FE (CLIENTE)
+        const [_, line, from, to, size, type, fe, route, price] = parts
+        description = `${route} - ${from}/${to}/${size}'${type}/${fe} (${line})`
+      } else {
+        // Fallback para otros tipos
+        description = `SERVICIO - ${parts.join('/')}`
       }
       
       items.push([
-        itemData.count.toString(), // Cantidad en lugar de enumeración
+        group.count.toString(),
         description,
-        `$${individualPrice.toFixed(2)}`, // Precio individual
-        `$${itemData.total.toFixed(2)}` // Total del item
+        `$${group.price.toFixed(2)}`,
+        `$${totalPrice.toFixed(2)}`
       ])
     })
     
@@ -1399,31 +1544,9 @@ export function PTYSSPrefactura() {
       }
     })
     
-    // Información de contenedores después de la tabla
-    const tableEndY = (doc as any).lastAutoTable.finalY + 5
-    
-    doc.setFontSize(8)
-    doc.setTextColor(100, 100, 100)
-    doc.setFont(undefined, 'bold')
-    doc.text('Detalles de Contenedores:', 15, tableEndY)
-    
-    let containerY = tableEndY + 3
-    selectedRecords.forEach((record, index) => {
-      const data = record.data as Record<string, any>
-      
-      doc.setFontSize(7)
-      doc.setFont(undefined, 'normal')
-      doc.text(`Contenedor ${index + 1}:`, 15, containerY)
-      doc.text(`  CTN: ${data.container || 'N/A'}`, 25, containerY + 3)
-      doc.text(`  DESDE: ${data.from || 'N/A'}`, 25, containerY + 6)
-      doc.text(`  HACIA: ${data.to || 'N/A'}`, 25, containerY + 9)
-      doc.text(`  EMBARQUE: ${data.order || 'N/A'}`, 25, containerY + 12)
-      
-      containerY += 18
-    })
-    
     // Totales
-    const finalY = containerY + 3
+    const tableEndY = (doc as any).lastAutoTable.finalY + 5
+    const finalY = tableEndY + 10
     const totalX = 120
     const amountX = 170
     // Mostrar solo el total, sin fondo
@@ -2314,7 +2437,63 @@ export function PTYSSPrefactura() {
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Contenedor</TableHead>
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Fecha Movimiento</TableHead>
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Tipo</TableHead>
-                      <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Cliente</TableHead>
+                      <TableHead>
+                        <div className="flex items-center justify-between relative" data-client-filter>
+                          <span className="text-sm font-semibold text-gray-700">Cliente</span>
+                          <div className="flex items-center gap-1">
+                            {clientFilter !== 'all' && (
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => setClientFilter('all')}
+                                className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                title="Limpiar filtro"
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            )}
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => setShowClientFilter(!showClientFilter)}
+                              className={`h-6 w-6 p-0 ${clientFilter !== 'all' ? 'text-blue-600' : 'text-gray-500'}`}
+                              title="Filtrar por cliente"
+                            >
+                              <Filter className="h-3 w-3" />
+                            </Button>
+                          </div>
+                          {showClientFilter && (
+                            <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-md shadow-lg p-3 min-w-64">
+                              <div className="space-y-2">
+                                <div className="text-xs font-medium text-gray-700 mb-2">Filtrar por cliente:</div>
+                                <div className="max-h-48 overflow-y-auto space-y-1">
+                                  <div 
+                                    className={`px-2 py-1 text-xs cursor-pointer rounded hover:bg-gray-100 ${clientFilter === 'all' ? 'bg-blue-100 text-blue-800 font-medium' : ''}`}
+                                    onClick={() => {
+                                      setClientFilter('all')
+                                      setShowClientFilter(false)
+                                    }}
+                                  >
+                                    Todos los clientes
+                                  </div>
+                                  {uniqueClients.map((clientName) => (
+                                    <div 
+                                      key={clientName}
+                                      className={`px-2 py-1 text-xs cursor-pointer rounded hover:bg-gray-100 ${clientFilter === clientName ? 'bg-blue-100 text-blue-800 font-medium' : ''}`}
+                                      onClick={() => {
+                                        setClientFilter(clientName)
+                                        setShowClientFilter(false)
+                                      }}
+                                    >
+                                      {clientName}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </TableHead>
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Orden</TableHead>
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">
                         {recordTypeFilter === "trasiego" ? "Subcliente" : "Ruta"}
@@ -2325,7 +2504,7 @@ export function PTYSSPrefactura() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredRecords.map((record: IndividualExcelRecord) => {
+                    {paginatedRecords.map((record: IndividualExcelRecord) => {
                       const data = record.data as Record<string, any>
                       const { date, time } = formatDateTime(record.createdAt)
                       const recordId = getRecordId(record)
@@ -2415,9 +2594,9 @@ export function PTYSSPrefactura() {
                           <TableCell className="py-2 px-3">
                             <div className="text-sm">
                               {(() => {
-                                // Para registros de trasiego, el cliente está en el campo associate
+                                // Para registros de trasiego, mostrar siempre "PTG"
                                 if (getRecordType(record) === "trasiego") {
-                                  return data.associate || "N/A"
+                                  return "PTG"
                                 }
                                 // Para registros locales, buscar por clientId
                                 const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
@@ -2528,6 +2707,36 @@ export function PTYSSPrefactura() {
                     })}
                   </TableBody>
                 </Table>
+                
+                {/* Controles de paginación */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-6 px-4 py-3 bg-slate-50 border-t">
+                    <div className="text-sm text-slate-600">
+                      Mostrando {((currentPage - 1) * recordsPerPage) + 1} a {Math.min(currentPage * recordsPerPage, filteredRecords.length)} de {filteredRecords.length} registros
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                        disabled={currentPage === 1}
+                      >
+                        Anterior
+                      </Button>
+                      <span className="text-xs mx-2 text-slate-600">
+                        Página {currentPage} de {totalPages}
+                      </span>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+                        disabled={currentPage === totalPages}
+                      >
+                        Siguiente
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">
