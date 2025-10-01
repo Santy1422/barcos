@@ -26,144 +26,261 @@ export function PTYSSPdfViewer({ open, onOpenChange, invoice, clients, allRecord
     return record.id || record._id || 'unknown';
   };
 
-  // Función para generar el PDF (idéntica a la del paso 2, pero con título dinámico)
+  // Helper para determinar el tipo de registro
+  const getRecordType = (record: any): "local" | "trasiego" => {
+    const data = record.data as Record<string, any>
+    
+    if (data.recordType) {
+      return data.recordType
+    }
+    
+    // Los registros de trasiego tienen line, matchedPrice y no tienen localRouteId
+    if (data.line && data.matchedPrice && !data.localRouteId) {
+      return "trasiego"
+    }
+    
+    return "local"
+  }
+
+  // Función para generar el PDF (idéntica a la del paso 2 de prefactura)
   const generatePTYSSPrefacturaPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string) => {
+    console.log('🔍 PDF Viewer - Generating PDF')
+    console.log('🔍 PDF Viewer - selectedRecords:', selectedRecords)
+    console.log('🔍 PDF Viewer - invoiceData:', invoiceData)
+    
     const doc = new jsPDF();
-    const lightBlue = [59, 130, 246];
+    
+    // Configuración de colores
+    const primaryBlue = [15, 23, 42] // slate-900
+    const lightBlue = [59, 130, 246] // blue-500
+    const lightGray = [241, 245, 249] // slate-50
+    
     // Encabezado con logo
-    doc.setFillColor(...lightBlue);
-    doc.rect(15, 15, 30, 15, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(12);
-    doc.setFont(undefined, 'bold');
-    doc.text('PTYSS', 30, 25, { align: 'center' });
-    // Número de prefactura/factura y fecha
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(14);
-    doc.setFont(undefined, 'bold');
-    doc.text(`${pdfTitle} No. ${invoiceData.invoiceNumber}`, 195, 20, { align: 'right' });
-    // Fecha - usar la fecha de la factura en lugar de la fecha actual
-    // Aplicar la misma lógica de corrección de zona horaria que en trucking-records.tsx
+    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+    doc.rect(15, 15, 30, 15, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(12)
+    doc.setFont(undefined, 'bold')
+    doc.text('PTYSS', 30, 25, { align: 'center' })
+    
+    // Número de prefactura y fecha
+    doc.setTextColor(0, 0, 0)
+    doc.setFontSize(14)
+    doc.setFont(undefined, 'bold')
+    doc.text(`${pdfTitle} No. ${invoiceData.invoiceNumber}`, 195, 20, { align: 'right' })
+    
+    // Fecha
     const formatInvoiceDate = (dateString: string) => {
       if (!dateString) return new Date()
 
-      // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
       if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
         const [year, month, day] = dateString.split('-').map(Number)
-        return new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+        return new Date(year, month - 1, day)
       }
 
-      // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
       if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-        const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
+        const datePart = dateString.split('T')[0]
         const [year, month, day] = datePart.split('-').map(Number)
-        return new Date(year, month - 1, day) // Crear en zona horaria local
+        return new Date(year, month - 1, day)
       }
 
-      // Para otros formatos, usar el método normal
       return new Date(dateString)
     }
 
     const invoiceDate = formatInvoiceDate(invoiceData.issueDate)
-    const day = invoiceDate.getDate().toString().padStart(2, '0');
-    const month = (invoiceDate.getMonth() + 1).toString().padStart(2, '0');
-    const year = invoiceDate.getFullYear();
-    doc.setFontSize(10);
-    doc.text('DATE:', 195, 30, { align: 'right' });
-    doc.setFontSize(12);
-    doc.text(`${day} ${month} ${year}`, 195, 35, { align: 'right' });
-    doc.setFontSize(8);
-    doc.text('DAY MO YR', 195, 40, { align: 'right' });
-    // Empresa
-    doc.setFontSize(9);
-    doc.setFont(undefined, 'bold');
-    doc.text('PTY SHIP SUPPLIERS, S.A.', 15, 50);
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'normal');
-    doc.text('RUC: 155600922-2-2015 D.V. 69', 15, 54);
-    doc.text('PANAMA PACIFICO, INTERNATIONAL BUSINESS PARK', 15, 58);
-    doc.text('BUILDING 3855, FLOOR 2', 15, 62);
-    doc.text('PANAMA, REPUBLICA DE PANAMA', 15, 66);
-    doc.text('T. (507) 838-9806', 15, 70);
-    doc.text('C. (507) 6349-1326', 15, 74);
-    // Cliente
-    doc.setFontSize(9);
-    doc.setFont(undefined, 'bold');
-    doc.text('CUSTOMER:', 15, 82);
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'normal');
-    const firstRecord = selectedRecords[0];
-    const firstRecordData = firstRecord?.data as Record<string, any>;
-    const client = clients.find((c: any) => (c._id || c.id) === firstRecordData?.clientId);
-    const clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : invoiceData.clientName || "Cliente PTYSS";
-    const clientRuc = client ? (client.type === "natural" ? client.documentNumber : client.ruc) : invoiceData.clientRuc || "N/A";
-    const clientAddress = client ? (client.type === "natural"
-      ? (typeof client.address === "string" ? client.address : `${client.address?.district || ""}, ${client.address?.province || ""}`)
-      : (typeof client.fiscalAddress === "string" ? client.fiscalAddress : `${client.fiscalAddress?.district || ""}, ${client.fiscalAddress?.province || ""}`)
-    ) : "N/A";
-    const clientPhone = client?.phone || "N/A";
-    doc.text(clientName, 15, 86);
-    doc.text(`RUC: ${clientRuc}`, 15, 90);
-    doc.text(`ADDRESS: ${clientAddress}`, 15, 94);
-    doc.text(`TELEPHONE: ${clientPhone}`, 15, 98);
+    const day = invoiceDate.getDate().toString().padStart(2, '0')
+    const month = (invoiceDate.getMonth() + 1).toString().padStart(2, '0')
+    const year = invoiceDate.getFullYear()
+    
+    doc.setFontSize(10)
+    doc.text('DATE:', 195, 30, { align: 'right' })
+    doc.setFontSize(12)
+    doc.text(`${day} ${month} ${year}`, 195, 35, { align: 'right' })
+    doc.setFontSize(8)
+    doc.text('DAY MO YR', 195, 40, { align: 'right' })
+    
+    // Información de la empresa (PTY SHIP SUPPLIERS, S.A.)
+    doc.setFontSize(9)
+    doc.setFont(undefined, 'bold')
+    doc.text('PTY SHIP SUPPLIERS, S.A.', 15, 50)
+    doc.setFontSize(8)
+    doc.setFont(undefined, 'normal')
+    doc.text('RUC: 155600922-2-2015 D.V. 69', 15, 54)
+    doc.text('PANAMA PACIFICO, INTERNATIONAL BUSINESS PARK', 15, 58)
+    doc.text('BUILDING 3855, FLOOR 2', 15, 62)
+    doc.text('PANAMA, REPUBLICA DE PANAMA', 15, 66)
+    doc.text('T. (507) 838-9806', 15, 70)
+    doc.text('C. (507) 6349-1326', 15, 74)
+    
+    // Información del cliente
+    doc.setFontSize(9)
+    doc.setFont(undefined, 'bold')
+    doc.text('CUSTOMER:', 15, 82)
+    doc.setFontSize(8)
+    doc.setFont(undefined, 'normal')
+    
+    // Extraer información del cliente
+    const firstRecord = selectedRecords[0]
+    if (!firstRecord) {
+      console.log('🔍 PDF Viewer - No hay registros seleccionados')
+      return doc
+    }
+    
+    const firstRecordData = firstRecord.data as Record<string, any>
+    const recordType = getRecordType(firstRecord)
+    
+    // Para trasiego, siempre es PTG
+    let client = null
+    if (recordType === 'trasiego') {
+      client = clients.find((c: any) => {
+        const name = c.name?.toLowerCase().trim() || ''
+        const companyName = c.companyName?.toLowerCase().trim() || ''
+        const fullName = c.fullName?.toLowerCase().trim() || ''
+        return name === 'ptg' || companyName === 'ptg' || fullName === 'ptg'
+      })
+    } else {
+      // Para locales, buscar por clientId
+      client = clients.find((c: any) => (c._id || c.id) === firstRecordData?.clientId)
+    }
+    
+    console.log('🔍 PDF Viewer - Cliente encontrado:', client)
+    console.log('🔍 PDF Viewer - Tipo de registro:', recordType)
+    
+    const clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : invoiceData.clientName || "Cliente PTYSS"
+    const clientRuc = client ? (client.type === "natural" ? client.documentNumber : client.ruc) : invoiceData.clientRuc || "N/A"
+    const clientAddress = client ? 
+      (typeof client.address === "string" ? client.address : `${client.address?.district || ""}, ${client.address?.province || ""}`) 
+      : "N/A"
+    const clientPhone = client?.phone || "N/A"
+    
+    doc.text(clientName, 15, 86)
+    doc.text(`RUC: ${clientRuc}`, 15, 90)
+    doc.text(`ADDRESS: ${clientAddress}`, 15, 94)
+    doc.text(`TELEPHONE: ${clientPhone}`, 15, 98)
+    
     // Tabla de items
-    const startY = 115;
-    const tableWidth = 180;
-    const tableX = 15;
-    doc.setFillColor(...lightBlue);
-    doc.rect(tableX, startY, tableWidth, 8, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'bold');
-    doc.text('ITEM', 25, startY + 5);
-    doc.text('DESCRIPTION', 60, startY + 5);
-    doc.text('PRICE', 140, startY + 5);
-    doc.text('TOTAL', 170, startY + 5);
-    // Items
-    const items: string[][] = [];
-    let itemIndex = 1;
-    selectedRecords.forEach((record) => {
-      const data = record.data as Record<string, any>;
-      // Flete
+    const startY = 115
+    const tableWidth = 180
+    const tableX = 15
+    
+    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+    doc.rect(tableX, startY, tableWidth, 8, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(10)
+    doc.setFont(undefined, 'bold')
+    doc.text('QTY', 25, startY + 5)
+    doc.text('DESCRIPTION', 60, startY + 5)
+    doc.text('PRICE', 140, startY + 5)
+    doc.text('TOTAL', 170, startY + 5)
+    
+    // Generar items de la prefactura agrupados
+    const items: string[][] = []
+    
+    // Agrupar registros por características similares
+    const groupedRecords = new Map<string, { records: any[], price: number, count: number }>()
+    
+    console.log("=== DEBUG PDF Viewer: Agrupando registros ===")
+    
+    selectedRecords.forEach((record: any, index: number) => {
+      const data = record.data as Record<string, any>
+      
+      console.log(`🔍 DEBUG PDF Viewer - Registro ${index + 1}:`, {
+        recordType: data.recordType,
+        line: data.line,
+        matchedPrice: data.matchedPrice,
+        localRouteId: data.localRouteId
+      })
+      
+      // Identificar registros de trasiego
+      const isTrasiego = data.line && data.matchedPrice && !data.localRouteId
+      
+      if (isTrasiego) {
+        console.log(`🔍 DEBUG PDF Viewer - Procesando como TRASIEGO`)
+        const line = data.line || ''
+        const from = data.from || ''
+        const to = data.to || ''
+        const size = data.size || ''
+        const type = data.type || ''
+        const route = data.route || ''
+        const fe = data.fe ? (data.fe.toString().toUpperCase().trim() === 'F' ? 'FULL' : 'EMPTY') : 'FULL'
+        const price = (data.matchedPrice || record.totalValue || 0)
+        
+        const groupKey = `TRASIEGO|${line}|${from}|${to}|${size}|${type}|${fe}|${route}|${price}`
+        
+        if (!groupedRecords.has(groupKey)) {
+          groupedRecords.set(groupKey, {
+            records: [],
+            price: price,
+            count: 0
+          })
+        }
+        
+        const group = groupedRecords.get(groupKey)!
+        group.records.push(record)
+        group.count += 1
+      } else {
+        console.log(`🔍 DEBUG PDF Viewer - Procesando como LOCAL`)
+        const localRouteId = data.localRouteId || ''
+        const localRoutePrice = data.localRoutePrice || 0
+        const containerSize = data.containerSize || ''
+        const containerType = data.containerType || ''
+        const from = data.from || ''
+        const to = data.to || ''
+        
+        const groupKey = `LOCAL|${localRouteId}|${containerSize}|${containerType}|${from}|${to}|${localRoutePrice}`
+        
+        if (!groupedRecords.has(groupKey)) {
+          groupedRecords.set(groupKey, {
+            records: [],
+            price: localRoutePrice,
+            count: 0
+          })
+        }
+        
+        const group = groupedRecords.get(groupKey)!
+        group.records.push(record)
+        group.count += 1
+      }
+    })
+
+    console.log("Grupos creados:", groupedRecords.size)
+    
+    // Crear filas agrupadas para el PDF
+    Array.from(groupedRecords.entries()).forEach(([groupKey, group]) => {
+      const parts = groupKey.split('|')
+      const totalPrice = group.price * group.count
+      
+      let description = ''
+      if (parts[0] === 'LOCAL') {
+        const [_, localRouteId, containerSize, containerType, from, to, price] = parts
+        description = `LOCAL - ${from}/${to}/${containerSize}'${containerType}`
+      } else if (parts[0] === 'TRASIEGO') {
+        const [_, line, from, to, size, type, fe, route, price] = parts
+        description = `${route} - ${from}/${to}/${size}'${type}/${fe} (${line})`
+      } else {
+        description = `SERVICIO - ${parts.join('/')}`
+      }
+      
       items.push([
-        itemIndex.toString(),
-        'Flete',
-        `$${(record.totalValue || 0).toFixed(2)}`,
-        `$${(record.totalValue || 0).toFixed(2)}`
-      ]);
-      itemIndex++;
-      // TI
-      if (data.ti === 'si') {
-        items.push([
-          itemIndex.toString(),
-          'TI',
-          '$10.00',
-          '$10.00'
-        ]);
-        itemIndex++;
-      }
-      // Gen set
-      if (data.genset && data.genset !== '0') {
-        items.push([
-          itemIndex.toString(),
-          'Gen set',
-          `$${data.genset}.00`,
-          `$${data.genset}.00`
-        ]);
-        itemIndex++;
-      }
-    });
-    // Servicios adicionales
-    const additionalServices = invoiceData.details?.additionalServices || [];
+        group.count.toString(),
+        description,
+        `$${group.price.toFixed(2)}`,
+        `$${totalPrice.toFixed(2)}`
+      ])
+    })
+    
+    // Agregar servicios adicionales
+    const additionalServices = invoiceData.details?.additionalServices || []
     additionalServices.forEach((service: any) => {
       items.push([
-        itemIndex.toString(),
+        '1',
         service.name,
         `$${service.amount.toFixed(2)}`,
         `$${service.amount.toFixed(2)}`
-      ]);
-      itemIndex++;
-    });
+      ])
+    })
+    
+    // Crear tabla con autoTable
     autoTable(doc, {
       startY: startY + 10,
       head: [],
@@ -186,59 +303,48 @@ export function PTYSSPdfViewer({ open, onOpenChange, invoice, clients, allRecord
       alternateRowStyles: {
         fillColor: [248, 250, 252]
       }
-    });
-    // Detalles de contenedores
-    const tableEndY = (doc as any).lastAutoTable.finalY + 5;
-    doc.setFontSize(8);
-    doc.setTextColor(100, 100, 100);
-    doc.setFont(undefined, 'bold');
-    doc.text('Detalles de Contenedores:', 15, tableEndY);
-    let containerY = tableEndY + 3;
-    selectedRecords.forEach((record, index) => {
-      const data = record.data as Record<string, any>;
-      doc.setFontSize(7);
-      doc.setFont(undefined, 'normal');
-      doc.text(`Contenedor ${index + 1}:`, 15, containerY);
-      doc.text(`  CTN: ${data.container || 'N/A'}`, 25, containerY + 3);
-      doc.text(`  DESDE: ${data.from || 'N/A'}`, 25, containerY + 6);
-      doc.text(`  HACIA: ${data.to || 'N/A'}`, 25, containerY + 9);
-      doc.text(`  EMBARQUE: ${data.order || 'N/A'}`, 25, containerY + 12);
-      containerY += 18;
-    });
+    })
+    
     // Totales
-    const finalY = containerY + 3;
-    const totalX = 120;
-    const amountX = 170;
-    doc.setFontSize(14);
-    doc.setFont(undefined, 'bold');
-    doc.setTextColor(0, 0, 0);
-    doc.text('TOTAL:', totalX, finalY);
-    doc.text(`$${invoiceData.totalAmount.toFixed(2)}`, amountX, finalY, { align: 'right' });
+    const tableEndY = (doc as any).lastAutoTable.finalY + 5
+    const finalY = tableEndY + 10
+    const totalX = 120
+    const amountX = 170
+    
+    doc.setFontSize(14)
+    doc.setFont(undefined, 'bold')
+    doc.setTextColor(0, 0, 0)
+    doc.text('TOTAL:', totalX, finalY)
+    doc.text(`$${invoiceData.totalAmount.toFixed(2)}`, amountX, finalY, { align: 'right' })
+    
     // Términos y condiciones
-    let termsY = finalY + 15;
-    const pageHeight = doc.internal.pageSize.getHeight();
+    let termsY = finalY + 15
+    const pageHeight = doc.internal.pageSize.getHeight()
     if (termsY + 35 > pageHeight) {
-      doc.addPage();
-      termsY = 20;
+      doc.addPage()
+      termsY = 20
     }
-    doc.setFillColor(...lightBlue);
-    doc.rect(15, termsY, 180, 5, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(9);
-    doc.setFont(undefined, 'bold');
-    doc.text('TERMS AND CONDITIONS', 20, termsY + 3);
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'normal');
-    doc.text('Make check payments payable to: PTY SHIP SUPPLIERS, S.A.', 15, termsY + 10);
-    doc.text('Money transfer to: Banco General - Checking Account', 15, termsY + 13);
-    doc.text('Account No. 03-72-01-124081-1', 15, termsY + 16);
+    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+    doc.rect(15, termsY, 180, 5, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(9)
+    doc.setFont(undefined, 'bold')
+    doc.text('TERMS AND CONDITIONS', 20, termsY + 3)
+    
+    doc.setTextColor(0, 0, 0)
+    doc.setFontSize(8)
+    doc.setFont(undefined, 'normal')
+    doc.text('Make check payments payable to: PTY SHIP SUPPLIERS, S.A.', 15, termsY + 10)
+    doc.text('Money transfer to: Banco General - Checking Account', 15, termsY + 13)
+    doc.text('Account No. 03-72-01-124081-1', 15, termsY + 16)
+    
     // Confirmación
-    const confirmY = termsY + 22;
-    doc.setFontSize(8);
-    doc.text('I Confirmed that I have received the original prefactura and documents.', 15, confirmY);
-    doc.text('Received by: ___________        Date: ___________', 15, confirmY + 4);
-    return new Blob([doc.output('blob')], { type: 'application/pdf' });
+    const confirmY = termsY + 22
+    doc.setFontSize(8)
+    doc.text('I Confirmed that I have received the original prefactura and documents.', 15, confirmY)
+    doc.text('Received by: ___________        Date: ___________', 15, confirmY + 4)
+    
+    return new Blob([doc.output('blob')], { type: 'application/pdf' })
   };
 
   useEffect(() => {

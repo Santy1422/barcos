@@ -143,35 +143,61 @@ export function PTYSSFacturacionModal({
       let client = null
       
       // Determinar si es trasiego basado en múltiples indicadores
+      // Para PTYSS, los registros de trasiego son los que tienen:
+      // 1. recordType === 'trasiego' (establecido en ptyss-upload)
+      // 2. Tienen line (subcliente del Excel) pero el cliente real es PTG
+      // 3. Tienen matchedPrice y matchedRouteId (fueron matcheados con rutas)
       const isTrasiego = recordType === 'trasiego' || 
-                        (associate && associate === 'PTG') ||
-                        (data?.operationType && data.operationType.toLowerCase().includes('trasiego')) ||
-                        (data?.from && data.from.toLowerCase().includes('trasiego')) ||
-                        (data?.to && data.to.toLowerCase().includes('trasiego'))
+                        (data?.line && data?.matchedPrice && !data?.localRouteId) ||
+                        (invoice.clientName && invoice.clientName.toLowerCase() === 'ptg')
       
       console.log('🔍 generateXMLForInvoice - isTrasiego:', isTrasiego)
-      console.log('🔍 generateXMLForInvoice - recordType === "trasiego":', recordType === 'trasiego')
-      console.log('🔍 generateXMLForInvoice - associate === "PTG":', associate === 'PTG')
+      console.log('🔍 generateXMLForInvoice - recordType:', recordType)
+      console.log('🔍 generateXMLForInvoice - data.line:', data?.line)
+      console.log('🔍 generateXMLForInvoice - data.matchedPrice:', data?.matchedPrice)
+      console.log('🔍 generateXMLForInvoice - data.localRouteId:', data?.localRouteId)
+      console.log('🔍 generateXMLForInvoice - invoice.clientName:', invoice.clientName)
       
       if (isTrasiego) {
         console.log('🔍 generateXMLForInvoice - Buscando cliente PTG para trasiego')
-        console.log('🔍 generateXMLForInvoice - Clientes disponibles:', clients.map((c: any) => c.companyName))
+        console.log('🔍 generateXMLForInvoice - Clientes disponibles:', clients.map((c: any) => ({
+          type: c.type,
+          companyName: c.companyName,
+          fullName: c.fullName,
+          name: c.name,
+          sapCode: c.sapCode
+        })))
         
         // Verificar que los clientes estén cargados y que PTG exista
         if (clients.length === 0) {
           throw new Error("Los clientes aún no han sido cargados. Por favor, espere un momento y vuelva a intentar.")
         }
         
-        const ptgExists = clients.some((c: any) => c.companyName === "PTG")
-        if (!ptgExists) {
-          throw new Error("El cliente PTG no está disponible en la lista de clientes. Por favor, verifique que el cliente PTG esté configurado en el sistema.")
-        }
+        // Buscar PTG por el campo name (así está guardado en la DB)
+        // Intentar múltiples variaciones para asegurar que lo encontramos
+        client = clients.find((c: any) => {
+          const name = c.name?.toLowerCase().trim() || ''
+          const companyName = c.companyName?.toLowerCase().trim() || ''
+          const fullName = c.fullName?.toLowerCase().trim() || ''
+          
+          return name === 'ptg' || companyName === 'ptg' || fullName === 'ptg'
+        })
         
-        client = clients.find((c: any) => c.companyName === "PTG")
-        console.log('🔍 generateXMLForInvoice - Cliente PTG encontrado:', client?.companyName)
+        console.log('🔍 generateXMLForInvoice - Cliente PTG encontrado:', client)
+        
         if (!client) {
           console.log('❌ generateXMLForInvoice - NO SE ENCONTRÓ PTG en la lista de clientes')
-          console.log('🔍 generateXMLForInvoice - Todos los clientes:', clients)
+          console.log('🔍 generateXMLForInvoice - Total clientes cargados:', clients.length)
+          console.log('🔍 generateXMLForInvoice - Nombres de clientes:', clients.map((c: any) => ({
+            name: c.name,
+            companyName: c.companyName,
+            fullName: c.fullName,
+            type: c.type
+          })))
+          
+          // Mostrar un mensaje de error más descriptivo con la lista de clientes disponibles
+          const clientNames = clients.map((c: any) => c.name || c.companyName || c.fullName).filter(Boolean).slice(0, 10).join(', ')
+          throw new Error(`No se encontró el cliente PTG en la lista de ${clients.length} clientes. Clientes disponibles: ${clientNames}${clients.length > 10 ? '...' : ''}. Por favor, verifique que el cliente PTG esté configurado en el sistema.`)
         }
       } else {
         // Para registros locales, buscar por ID
