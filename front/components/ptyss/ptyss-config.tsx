@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -71,7 +71,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
-import { Loader2, Search, Upload } from "lucide-react"
+import { Loader2, Search, Upload, RefreshCw } from "lucide-react"
 import { PTYSSPriceImporter } from "./ptyss-price-importer"
 import { Pagination } from "@/components/ui/pagination"
 
@@ -124,6 +124,10 @@ export function PTYSSConfig() {
     cliente: "",
     routeArea: ""
   })
+  
+  // Paginación local para la tabla de rutas (renderizado en frontend)
+  const [routesCurrentPage, setRoutesCurrentPage] = useState(1)
+  const routesPerPage = 50 // Mostrar 50 rutas por página en la tabla
 
   // Estado para servicios adicionales
   const [showAddServiceForm, setShowAddServiceForm] = useState(false)
@@ -168,16 +172,17 @@ export function PTYSSConfig() {
     dispatch(fetchNavieras())
   }, [dispatch])
 
-  // Cargar rutas al montar el componente
+  // Cargar rutas al montar el componente con límite aumentado para manejar hasta 5000 rutas
   useEffect(() => {
-    dispatch(fetchPTYSSRoutes({ page: 1, limit: 50 }))
+    console.log('🔄 PTYSS Config - Cargando rutas al montar componente')
+    dispatch(fetchPTYSSRoutes({ page: 1, limit: 5000 })) // Aumentado para manejar hasta 5000 rutas
   }, [dispatch])
 
   // Cargar rutas cuando cambien los filtros
   useEffect(() => {
     dispatch(fetchPTYSSRoutes({ 
       page: 1, 
-      limit: 50,
+      limit: 5000, // Aumentado para manejar hasta 5000 rutas
       ...routesFilters
     }))
   }, [dispatch, routesFilters])
@@ -788,6 +793,20 @@ export function PTYSSConfig() {
     dispatch(fetchContainerTypes())
   }
 
+  // Calcular rutas paginadas para la tabla (paginación en frontend)
+  const paginatedRoutes = useMemo(() => {
+    const startIndex = (routesCurrentPage - 1) * routesPerPage
+    const endIndex = startIndex + routesPerPage
+    return routes.slice(startIndex, endIndex)
+  }, [routes, routesCurrentPage, routesPerPage])
+
+  const totalRoutesPages = Math.ceil(routes.length / routesPerPage)
+
+  // Resetear página cuando cambien los filtros o las rutas
+  useEffect(() => {
+    setRoutesCurrentPage(1)
+  }, [routesFilters, routes.length])
+
   // Handlers para filtros de rutas
   const handleRouteFilterChange = (newFilters: Partial<typeof routesFilters>) => {
     dispatch(setFilters(newFilters))
@@ -797,9 +816,21 @@ export function PTYSSConfig() {
     dispatch(setPage(page))
     dispatch(fetchPTYSSRoutes({ 
       page, 
-      limit: 50,
+      limit: 5000, // Aumentado para manejar hasta 5000 rutas
       ...routesFilters
     }))
+  }
+
+  const handleRefreshRoutes = () => {
+    dispatch(fetchPTYSSRoutes({ 
+      page: 1, 
+      limit: 5000, // Aumentado para manejar hasta 5000 rutas
+      ...routesFilters
+    }))
+    toast({
+      title: "Rutas actualizadas",
+      description: "La lista de rutas ha sido actualizada correctamente",
+    })
   }
 
   // Handler para importación de precios
@@ -1075,6 +1106,10 @@ export function PTYSSConfig() {
             <div className="flex items-center justify-between">
               <CardTitle>Gestión de Rutas Trasiego PTYSS</CardTitle>
               <div className="flex gap-2">
+                <Button variant="outline" onClick={handleRefreshRoutes} disabled={routesLoading}>
+                  <RefreshCw className={`h-4 w-4 mr-2 ${routesLoading ? 'animate-spin' : ''}`} />
+                  Refrescar
+                </Button>
                 <Button variant="outline" onClick={() => setShowPriceImporter(true)}>
                   <Upload className="h-4 w-4 mr-2" />
                   Importar Precios
@@ -1427,7 +1462,7 @@ export function PTYSSConfig() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    routes.map((route) => (
+                    paginatedRoutes.map((route: PTYSSRoute) => (
                       <TableRow key={route._id}>
                         <TableCell className="font-medium">{route.name}</TableCell>
                         <TableCell>{route.from}</TableCell>
@@ -1476,18 +1511,35 @@ export function PTYSSConfig() {
                 </TableBody>
               </Table>
               
-              {/* Paginación */}
-              {routesPagination && routesPagination.totalPages > 1 && (
+              {/* Paginación local (frontend) */}
+              {totalRoutesPages > 1 && (
                 <div className="border-t p-4">
-                  <Pagination
-                    currentPage={routesPagination.currentPage}
-                    totalPages={routesPagination.totalPages}
-                    onPageChange={handleRoutePageChange}
-                    hasNextPage={routesPagination.hasNextPage}
-                    hasPrevPage={routesPagination.hasPrevPage}
-                    totalItems={routesPagination.totalItems}
-                    itemsPerPage={routesPagination.itemsPerPage}
-                  />
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-muted-foreground">
+                      Mostrando {((routesCurrentPage - 1) * routesPerPage) + 1} a {Math.min(routesCurrentPage * routesPerPage, routes.length)} de {routes.length} rutas
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setRoutesCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={routesCurrentPage === 1}
+                      >
+                        Anterior
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        Página {routesCurrentPage} de {totalRoutesPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setRoutesCurrentPage(p => Math.min(totalRoutesPages, p + 1))}
+                        disabled={routesCurrentPage === totalRoutesPages}
+                      >
+                        Siguiente
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

@@ -279,9 +279,13 @@ export const createPTYSSRecords = createAsyncThunk(
       console.log("data.payload:", data.payload);
       console.log("data.payload.records:", data.payload?.records);
       console.log("data.payload.records length:", data.payload?.records?.length);
-      const result = data.payload?.records || [];
+      
+      // Retornar toda la respuesta del backend para que el frontend pueda acceder a duplicates, count, etc.
+      const result = data.payload || {};
       console.log("Resultado final a retornar PTYSS:", result);
-      console.log("Resultado final length PTYSS:", result.length);
+      console.log("Resultado final (records length):", result.records?.length || 0);
+      console.log("Resultado final (count):", result.count);
+      console.log("Resultado final (duplicates):", result.duplicates);
       return result
     } catch (error) {
                                        //@ts-ignore
@@ -1020,7 +1024,11 @@ const recordsSlice = createSlice({
       })
       .addCase(createPTYSSRecords.fulfilled, (state, action) => {
         state.creatingRecords = false
-        state.individualRecords.push(...action.payload)
+        // action.payload ahora es un objeto con { count, duplicates, records, totalProcessed, message }
+        // Solo agregar los records al estado
+        if (action.payload.records && Array.isArray(action.payload.records)) {
+          state.individualRecords.push(...action.payload.records)
+        }
       })
       .addCase(createPTYSSRecords.rejected, (state, action) => {
         state.creatingRecords = false

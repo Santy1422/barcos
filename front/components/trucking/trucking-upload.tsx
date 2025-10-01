@@ -133,6 +133,17 @@ export function TruckingUpload() {
   })
   const [shouldReprocess, setShouldReprocess] = useState(false)
 
+  // Estado para filtro de matching
+  const [matchFilter, setMatchFilter] = useState<'all' | 'matched' | 'unmatched'>('all')
+
+  // Filtrar registros basado en el filtro de matching
+  const filteredPreviewData = useMemo(() => {
+    if (matchFilter === 'all') return previewData
+    if (matchFilter === 'matched') return previewData.filter(record => record.isMatched)
+    if (matchFilter === 'unmatched') return previewData.filter(record => !record.isMatched)
+    return previewData
+  }, [previewData, matchFilter])
+
   // Cargar rutas al montar el componente - cargar todas las rutas para matching
   useEffect(() => {
     dispatch(fetchTruckingRoutes({ page: 1, limit: 10000 })) // Cargar hasta 10,000 rutas para matching
@@ -831,6 +842,8 @@ export function TruckingUpload() {
       // Limpiar el estado
       setPreviewData([])
       setSelectedFile(null)
+      setMatchFilter('all')
+      setClientCompleteness(new Map())
       // Refrescar listas del módulo para reflejar estados/completados en Prefactura
       try {
         // Evitar importar aquí fetchers del slice para no aumentar dependencias del upload
@@ -1083,6 +1096,37 @@ export function TruckingUpload() {
                 </>
               )}
             </div>
+            
+            {/* Filtro de matching */}
+            <div className="flex items-center gap-4 mt-6 mb-4 p-4 bg-slate-50 rounded-lg border">
+              <Label htmlFor="match-filter" className="text-sm font-medium">Filtrar por matching:</Label>
+              <Select value={matchFilter} onValueChange={(value) => setMatchFilter(value as 'all' | 'matched' | 'unmatched')}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Seleccionar filtro" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    Todos ({previewData.length})
+                  </SelectItem>
+                  <SelectItem value="matched">
+                    Con Match ({previewData.filter(record => record.isMatched).length})
+                  </SelectItem>
+                  <SelectItem value="unmatched">
+                    Sin Match ({previewData.filter(record => !record.isMatched).length})
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {matchFilter !== 'all' && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setMatchFilter('all')}
+                  className="text-xs"
+                >
+                  Limpiar Filtro
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {/* Headers fijos fuera de la tabla */}
@@ -1112,7 +1156,7 @@ export function TruckingUpload() {
             <div className="rounded-md border-t-0 border max-h-96 overflow-auto">
               <Table className="w-full table-fixed">
                 <TableBody>
-                  {previewData.map((record, index) => {
+                  {filteredPreviewData.map((record, index) => {
                     const clientName = record.line?.trim()
                     const clientStatus = clientName ? clientCompleteness.get(clientName) : null
                     const isClickable = record.isMatched && clientName && (clientStatus ? !clientStatus.isComplete : true)

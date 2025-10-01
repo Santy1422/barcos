@@ -7,6 +7,7 @@ const PTYSSRoute = mongoose.model('PTYSSRoute', ptyssRouteSchema);
 
 const getAllPTYSSRoutes = async (req: Request, res: Response) => {
   try {
+    console.log('🔧 [BACKEND] getAllPTYSSRoutes - Query params:', req.query);
     const {
       page = 1,
       limit = 50,
@@ -52,20 +53,29 @@ const getAllPTYSSRoutes = async (req: Request, res: Response) => {
       filters.routeArea = routeArea;
     }
 
+    console.log('🔧 [BACKEND] getAllPTYSSRoutes - Filtros aplicados:', JSON.stringify(filters, null, 2));
+
     // Calcular paginación
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
+    console.log('🔧 [BACKEND] getAllPTYSSRoutes - Paginación: page', pageNum, 'limit', limitNum, 'skip', skip);
+
     // Obtener total de documentos
     const totalItems = await PTYSSRoute.countDocuments(filters);
     const totalPages = Math.ceil(totalItems / limitNum);
+
+    console.log('🔧 [BACKEND] getAllPTYSSRoutes - Total items en DB:', totalItems);
 
     // Obtener rutas con filtros y paginación
     const routes = await PTYSSRoute.find(filters)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limitNum);
+
+    console.log('✅ [BACKEND] getAllPTYSSRoutes - Rutas recuperadas:', routes.length);
+    console.log('✅ [BACKEND] getAllPTYSSRoutes - Primeros 3 IDs:', routes.slice(0, 3).map(r => r._id));
 
     const pagination = {
       currentPage: pageNum,
@@ -81,7 +91,8 @@ const getAllPTYSSRoutes = async (req: Request, res: Response) => {
       pagination
     });
   } catch (error) {
-    console.error('Error obteniendo rutas de PTYSS:', error);
+    console.error('❌ [BACKEND] Error obteniendo rutas de PTYSS:', error);
+    console.error('❌ [BACKEND] Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
     return response(res, 500, { 
       message: 'Error interno del servidor al obtener rutas de PTYSS',
       error: error instanceof Error ? error.message : 'Error desconocido'

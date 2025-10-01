@@ -128,12 +128,14 @@ export const createPTYSSRoute = createAsyncThunk(
   'ptyssRoutes/createRoute',
   async (routeData: PTYSSRouteInput, { rejectWithValue }) => {
     try {
+      console.log('🔧 createPTYSSRoute - Datos a enviar:', routeData)
       const token = localStorage.getItem('token')
       
       if (!token) {
         throw new Error('No se encontró token de autenticación')
       }
       
+      console.log('🔧 createPTYSSRoute - Enviando request a /api/ptyss-routes')
       const response = await fetch('/api/ptyss-routes', {
         method: 'POST',
         headers: {
@@ -143,15 +145,21 @@ export const createPTYSSRoute = createAsyncThunk(
         body: JSON.stringify(routeData)
       })
       
+      console.log('🔧 createPTYSSRoute - Response status:', response.status)
+      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
+        console.error('❌ createPTYSSRoute - Error response:', errorData)
         throw new Error(errorData.payload?.message || `Error ${response.status}: ${response.statusText}`)
       }
       
       const data = await response.json()
-      return data.payload?.data || data.payload
+      console.log('✅ createPTYSSRoute - Response data:', data)
+      const createdRoute = data.payload?.data || data.payload
+      console.log('✅ createPTYSSRoute - Ruta creada:', createdRoute)
+      return createdRoute
     } catch (error) {
-      console.error('Error en createPTYSSRoute:', error)
+      console.error('❌ Error en createPTYSSRoute:', error)
       return rejectWithValue(error instanceof Error ? error.message : 'Error desconocido')
     }
   }
@@ -298,10 +306,13 @@ const ptyssRoutesSlice = createSlice({
         state.error = null
       })
       .addCase(createPTYSSRoute.fulfilled, (state, action) => {
+        console.log('✅ createPTYSSRoute.fulfilled - Agregando ruta al estado:', action.payload)
         state.loading = false
         state.routes.push(action.payload)
+        console.log('✅ createPTYSSRoute.fulfilled - Total rutas en estado:', state.routes.length)
       })
       .addCase(createPTYSSRoute.rejected, (state, action) => {
+        console.error('❌ createPTYSSRoute.rejected - Error:', action.payload)
         state.loading = false
         state.error = action.payload as string
       })

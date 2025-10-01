@@ -440,6 +440,22 @@ export function PTYSSUpload() {
     return previewData
   }, [previewData, matchFilter])
 
+  // Verificar duplicados dentro del Excel por containerConsecutive
+  const duplicateContainerConsecutives = useMemo(() => {
+    const containerConsecutives = previewData
+      .filter(record => record.isMatched)
+      .map(record => record.containerConsecutive)
+      .filter(Boolean)
+    
+    const duplicates = containerConsecutives.filter((item, index) => 
+      containerConsecutives.indexOf(item) !== index
+    )
+    
+    return [...new Set(duplicates)] // Eliminar duplicados de la lista de duplicados
+  }, [previewData])
+
+  const hasDuplicateContainerConsecutives = duplicateContainerConsecutives.length > 0
+
   // Recargar clientes cuando cambie el estado de completitud
   useEffect(() => {
     if (clientCompleteness.size > 0) {
@@ -715,7 +731,10 @@ export function PTYSSUpload() {
     }
     
     try {
-      await dispatch(createPTYSSRoute(newRoute)).unwrap()
+      console.log("🔧 Intentando crear ruta PTYSS:", newRoute)
+      const result = await dispatch(createPTYSSRoute(newRoute)).unwrap()
+      console.log("✅ Ruta PTYSS creada exitosamente:", result)
+      console.log("✅ ID de la ruta creada:", result._id || result.id)
       
       // Cerrar modal y limpiar estado
       setShowCreateRouteModal(false)
@@ -743,6 +762,8 @@ export function PTYSSUpload() {
         toast({ title: "Ruta creada", description: `La ruta ${newRoute.from}/${newRoute.to} ha sido creada exitosamente` })
       }
     } catch (error: any) {
+      console.error("❌ Error al crear ruta PTYSS:", error)
+      console.error("❌ Detalles del error:", error.message, error.stack)
       toast({ title: "Error", description: error.message || "Error al crear la ruta", variant: "destructive" })
     }
   }
@@ -1378,6 +1399,24 @@ export function PTYSSUpload() {
         return
       }
       
+      // Contar duplicados en el Excel para informar al usuario
+      const seenInExcel = new Set<string>()
+      let duplicatesInExcel = 0
+      
+      matchedRecords.forEach(record => {
+        if (record.containerConsecutive) {
+          if (seenInExcel.has(record.containerConsecutive)) {
+            duplicatesInExcel++
+          } else {
+            seenInExcel.add(record.containerConsecutive)
+          }
+        }
+      })
+      
+      console.log(`🔍 Duplicados en Excel detectados: ${duplicatesInExcel}`)
+      
+      // Enviar TODOS los registros con match al backend
+      // El backend se encargará de filtrar los duplicados que ya existen en la DB
       const recordsData = matchedRecords.map((record, index) => ({
         data: record, // Datos completos del Excel incluyendo matchedPrice, matchedRouteId, etc.
         totalValue: record.matchedPrice || 0 // Usar el precio de la ruta si está disponible
@@ -1398,25 +1437,91 @@ export function PTYSSUpload() {
         recordsData
       })).unwrap()
       
-      console.log("Resultado del guardado:", result)
-      console.log("Result length:", result.length)
-      console.log("Result type:", typeof result)
-      console.log("Result is array:", Array.isArray(result))
+      console.log("=== RESULTADO DEL GUARDADO ===")
+      console.log("Result:", result)
+      console.log("Result.count:", result.count)
+      console.log("Result.duplicates:", result.duplicates)
+      console.log("Result.records:", result.records)
+      console.log("Result.totalProcessed:", result.totalProcessed)
+      console.log("Result completo (JSON):", JSON.stringify(result, null, 2))
+      
+      // Manejar respuesta con información de duplicados (igual que Trucking)
+      let successMessage = ""
+      
+      // Obtener el conteo de registros creados de diferentes formas posibles
+      let recordsCreated = 0
+      if (typeof result.count === 'number') {
+        recordsCreated = result.count
+      } else if (Array.isArray(result.records)) {
+        recordsCreated = result.records.length
+      } else if (Array.isArray(result)) {
+        recordsCreated = result.length
+      }
+      
+      console.log("=== PROCESANDO MENSAJE ===")
+      console.log("recordsCreated:", recordsCreated)
+      console.log("result.duplicates:", result.duplicates)
+      console.log("result.duplicates?.count:", result.duplicates?.count)
+      console.log("previewData.length:", previewData.length)
+      console.log("matchedRecords.length:", matchedRecords.length)
+      
+      // Manejar diferentes casos de respuesta
+      if (result.duplicates && result.duplicates.count > 0) {
+        // Caso con duplicados (puede haber 0 o más registros nuevos guardados)
+        if (recordsCreated === 0) {
+          // Todos eran duplicados
+          successMessage = `Todos los registros ya existen en la base de datos. 0 registros nuevos guardados, ${result.duplicates.count} duplicados omitidos.`
+          console.log("Caso 1: Todos duplicados - Mensaje:", successMessage)
+        } else {
+          // Algunos duplicados, algunos nuevos
+          successMessage = `${recordsCreated} registros nuevos guardados. ${result.duplicates.count} registros duplicados omitidos (ya existían en DB).`
+          console.log("Caso 2: Parcialmente duplicados - Mensaje:", successMessage)
+        }
+        if (result.duplicates.containerConsecutives) {
+          console.log("ContainerConsecutives duplicados:", result.duplicates.containerConsecutives)
+        }
+      } else if (recordsCreated > 0) {
+        // Sin duplicados, registros guardados exitosamente
+        const omittedCount = previewData.length - matchedRecords.length
+        if (omittedCount > 0) {
+          successMessage = `${recordsCreated} registros guardados correctamente (${omittedCount} sin match omitidos)`
+        } else {
+          successMessage = `${recordsCreated} registros guardados correctamente`
+        }
+        console.log("Caso 3: Sin duplicados - Mensaje:", successMessage)
+      } else {
+        // No se guardó nada y no hay información de duplicados
+        successMessage = "No se guardaron registros. Verifica la consola para más detalles."
+        console.log("Caso 4: Sin guardar y sin info de duplicados - Mensaje:", successMessage)
+      }
+      
+      console.log("Mensaje final:", successMessage)
+      
+      // Determinar el título del toast según el resultado
+      const toastTitle = recordsCreated > 0 ? "Éxito" : "Información"
+      const toastVariant = recordsCreated === 0 && result.duplicates ? "default" : undefined
       
       toast({
-        title: "Éxito",
-        description: `${result.length} registros con match guardados correctamente en el sistema (${previewData.length - matchedRecords.length} registros sin match fueron omitidos)`
+        title: toastTitle,
+        description: successMessage,
+        variant: toastVariant
       })
       
       // Limpiar el estado
       setPreviewData([])
       setSelectedFile(null)
+      setMatchFilter('all')
+      setClientCompleteness(new Map())
       
-    } catch (error) {
-      console.error("Error al guardar:", error)
+    } catch (error: any) {
+      console.error("❌ Error al guardar registros PTYSS:", error)
+      console.error("❌ Error completo:", JSON.stringify(error, null, 2))
+      console.error("❌ Error.message:", error?.message)
+      console.error("❌ recordsError:", recordsError)
+      
       toast({
-        title: "Error",
-        description: recordsError || "Error al guardar los registros",
+        title: "Error al guardar",
+        description: error?.message || recordsError || "Error al guardar los registros. Revisa la consola para más detalles.",
         variant: "destructive"
       })
     } finally {
@@ -1483,31 +1588,65 @@ export function PTYSSUpload() {
                 
                 <div className="space-y-2">
                   <Label htmlFor="excel-file">Seleccionar archivo Excel</Label>
-                  <Input
-                    id="excel-file"
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleFileChange}
-                    disabled={isLoading || isProcessing || routesLoading}
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="excel-file"
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={handleFileChange}
+                      disabled={isLoading || isProcessing || routesLoading}
+                      className="flex-1"
+                    />
+                    {selectedFile && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedFile(null)
+                          setPreviewData([])
+                          setMatchFilter('all')
+                          // Reset del input file
+                          const fileInput = document.getElementById('excel-file') as HTMLInputElement
+                          if (fileInput) {
+                            fileInput.value = ''
+                          }
+                        }}
+                        disabled={isLoading || isProcessing}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Quitar Archivo
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 
+                {/* Indicador de procesamiento del Excel */}
+                {isLoading && (
+                  <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-blue-900">Procesando archivo Excel...</p>
+                      <p className="text-xs text-blue-700">Aplicando matching con rutas configuradas</p>
+                    </div>
+                  </div>
+                )}
+                
                 {/* Estado de carga de rutas */}
-                {routesLoading && (
+                {routesLoading && !isLoading && (
                   <div className="flex items-center gap-2 text-sm text-blue-600">
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
                     Cargando rutas configuradas...
                   </div>
                 )}
                 
-                {!routesLoading && routes.length === 0 && (
+                {!routesLoading && !isLoading && routes.length === 0 && (
                   <div className="flex items-center gap-2 text-sm text-orange-600">
                     <AlertCircle className="h-4 w-4" />
                     No hay rutas configuradas. Ve a Configuración para crear rutas.
                   </div>
                 )}
                 
-                {!routesLoading && routes.length > 0 && (
+                {!routesLoading && !isLoading && routes.length > 0 && !selectedFile && (
                   <div className="flex items-center gap-2 text-sm text-green-600">
                     <CheckCircle2 className="h-4 w-4" />
                     {routes.length} ruta{routes.length !== 1 ? 's' : ''} configurada{routes.length !== 1 ? 's' : ''} lista{routes.length !== 1 ? 's' : ''}
@@ -2247,6 +2386,11 @@ export function PTYSSUpload() {
                   {previewData.filter(record => !record.isMatched).length} sin coincidencia
                 </Badge>
               )}
+              {hasDuplicateContainerConsecutives && (
+                <Badge variant="outline" className="text-red-600 border-red-600">
+                  ⚠️ {duplicateContainerConsecutives.length} containerConsecutive duplicados
+                </Badge>
+              )}
               {clientCompleteness.size > 0 && (
                 <>
                   <Badge variant="outline" className="text-green-600 border-green-600">
@@ -2314,8 +2458,14 @@ export function PTYSSUpload() {
                     const clientStatus = clientName ? clientCompleteness.get(clientName) : null
                     const isClickable = record.isMatched && clientStatus && !clientStatus.isComplete
                     
+                    // Verificar si este containerConsecutive está duplicado en el Excel
+                    const isDuplicate = record.containerConsecutive && duplicateContainerConsecutives.includes(record.containerConsecutive)
+                    
                     return (
-                      <TableRow key={index}>
+                      <TableRow 
+                        key={index}
+                        className={isDuplicate ? 'bg-red-50' : ''}
+                      >
                         {/* Cliente PTG */}
                         <TableCell>
                           <div className="flex items-center space-x-2">
@@ -2386,22 +2536,29 @@ export function PTYSSUpload() {
                         
                         {/* Estado del Match */}
                         <TableCell>
-                          {record.isMatched ? (
-                            <Badge variant="outline" className="text-green-600 border-green-600">
-                              <CheckCircle2 className="h-3 w-3 mr-1" />
-                              Match
-                            </Badge>
-                          ) : (
-                            <Badge 
-                              variant="outline" 
-                              className="text-orange-600 border-orange-600 cursor-pointer hover:bg-orange-50 hover:border-orange-700"
-                              onClick={() => handleCreateRouteClick(record)}
-                              title="Haz clic para crear una ruta para este registro"
-                            >
-                              <AlertCircle className="h-3 w-3 mr-1" />
-                              Sin match
-                            </Badge>
-                          )}
+                          <div className="flex flex-col gap-1">
+                            {record.isMatched ? (
+                              <Badge variant="outline" className="text-green-600 border-green-600">
+                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                                Match
+                              </Badge>
+                            ) : (
+                              <Badge 
+                                variant="outline" 
+                                className="text-orange-600 border-orange-600 cursor-pointer hover:bg-orange-50 hover:border-orange-700"
+                                onClick={() => handleCreateRouteClick(record)}
+                                title="Haz clic para crear una ruta para este registro"
+                              >
+                                <AlertCircle className="h-3 w-3 mr-1" />
+                                Sin match
+                              </Badge>
+                            )}
+                            {isDuplicate && (
+                              <Badge variant="outline" className="text-red-600 border-red-600 text-xs">
+                                ⚠️ DUPLICADO
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                   )})}
@@ -2430,6 +2587,18 @@ export function PTYSSUpload() {
                       <div className="flex items-center space-x-2 text-sm text-red-600">
                         <AlertCircle className="h-4 w-4" />
                         <span>Completa todos los datos de clientes antes de guardar</span>
+                      </div>
+                    )
+                  }
+                  
+                  if (hasDuplicateContainerConsecutives) {
+                    return (
+                      <div className="flex items-center space-x-2 text-sm text-orange-600">
+                        <AlertCircle className="h-4 w-4" />
+                        <span>
+                          ⚠️ Se detectaron {duplicateContainerConsecutives.length} containerConsecutive duplicados en el Excel. 
+                          Los duplicados serán filtrados automáticamente al guardar.
+                        </span>
                       </div>
                     )
                   }
