@@ -16,7 +16,7 @@ Successfully builds with Next.js 14.2.16
    - Modified files:
      - agencyServicesSlice.ts
      - agencyCatalogsSlice.ts  
-     - agencyPricingConfigSlice.ts
+     - agencyPricingConfigSlice.ts 
    - Now all API calls use the same endpoint configuration as other modules 
    - Supports both local (localhost:8080) and production (Railway) environments
 
