@@ -425,7 +425,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
               unit: 'VIAJE',
               // Campos adicionales requeridos
               IncomeRebateCode: 'N',
-              AmntTransacCur: customsTotal,
+              AmntTransacCur: -customsTotal,
               ProfitCenter: 'PTG',
               Activity: 'TRUCKING',
               Pillar: 'LOGISTICS',
@@ -452,7 +452,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
               unit: 'VIAJE',
               // Campos adicionales requeridos
               IncomeRebateCode: 'N',
-              AmntTransacCur: adminFeeTotal,
+              AmntTransacCur: -adminFeeTotal,
               ProfitCenter: 'PTG',
               Activity: 'TRUCKING',
               Pillar: 'LOGISTICS',
@@ -490,7 +490,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
               unit: 'VIAJE',
               // Campos adicionales requeridos
               IncomeRebateCode: 'N',
-              AmntTransacCur: (additionalService.amount || 0).toFixed(3),
+              AmntTransacCur: (-(additionalService.amount || 0)).toFixed(3),
               ProfitCenter: 'PTG',
               Activity: 'TRUCKING',
               Pillar: 'LOGISTICS',

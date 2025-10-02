@@ -68,7 +68,7 @@ export const generateSapXml = catchedAsync(async (req: Request, res: Response) =
       // Line Items - cada servicio de Agency
       OtherItems: services.map((service: any) => ({
         IncomeRebateCode: 'I', // Income
-        AmntTransacCur: (service.price || 0).toFixed(3),
+        AmntTransacCur: (-(service.price || 0)).toFixed(3),
         ProfitCenter: 'SAP',
         Service: service.serviceCode || 'SHP243', // Usar serviceCode del servicio
         Activity: 'CLG',

@@ -263,6 +263,14 @@ router.get('/',
   catchedAsync(getAllCatalogs)
 );
 
+// GET /api/agency/catalogs/grouped - Get all catalogs grouped by type (alias for main endpoint)
+router.get('/grouped',
+  requireAdminOrOperations,
+  queryValidation,
+  catchedAsync(getAllCatalogs)
+);
+
+
 // GET /api/agency/catalogs/search - Search across all catalog types
 router.get('/search',
   requireAdminOrOperations,

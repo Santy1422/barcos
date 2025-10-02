@@ -157,7 +157,7 @@ export const useAgencyCatalogs = () => {
     // Obtener catálogos por tipo
     getCatalogsByType: (type: CatalogType, activeOnly = true): AgencyCatalog[] => {
       return catalogs.filter(catalog => 
-        catalog.type === type && (!activeOnly || catalog.isActive)
+        catalog.type && catalog.type === type && (!activeOnly || catalog.isActive)
       );
     },
     
@@ -165,7 +165,7 @@ export const useAgencyCatalogs = () => {
     findCatalogByName: (type: CatalogType, name: string): AgencyCatalog | undefined => {
       const normalizedName = name.trim().toLowerCase();
       return catalogs.find(catalog => 
-        catalog.type === type && 
+        catalog.type && catalog.type === type && 
         catalog.name.toLowerCase() === normalizedName &&
         catalog.isActive
       );
@@ -240,6 +240,11 @@ export const useAgencyCatalogs = () => {
       };
       
       catalogs.forEach(catalog => {
+        // Skip catalogs without a valid type
+        if (!catalog.type || !stats[catalog.type]) {
+          return;
+        }
+        
         stats[catalog.type].total++;
         if (catalog.isActive) {
           stats[catalog.type].active++;

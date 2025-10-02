@@ -212,10 +212,16 @@ export const createCatalogEntry = async (req: Request, res: Response) => {
       });
     }
 
+    // Normalize name based on type (consistent with schema)
+    let normalizedName = name.trim();
+    if (type === 'location' || type === 'vessel' || type === 'nationality') {
+      normalizedName = normalizedName.toUpperCase();
+    }
+
     // Check if name already exists for this type
     const existing = await AgencyCatalog.findOne({
       type,
-      name: name.trim().toUpperCase()
+      name: normalizedName
     });
 
     if (existing) {
@@ -237,7 +243,7 @@ export const createCatalogEntry = async (req: Request, res: Response) => {
     // Create new catalog entry
     const newEntry = new AgencyCatalog({
       type,
-      name: name.trim(),
+      name: normalizedName,
       code,
       description,
       metadata: metadata || {},

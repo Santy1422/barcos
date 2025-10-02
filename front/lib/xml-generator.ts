@@ -561,7 +561,7 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 
                 const otherItem: any = {
                   "IncomeRebateCode": TRUCKING_DEFAULTS.incomeRebateCode,
-                  "AmntTransacCur": group.totalPrice.toFixed(3),
+                  "AmntTransacCur": (-group.totalPrice).toFixed(3),
                   "BaseUnitMeasure": isAuthTaxService ? "EA" : "CTR", // EA para impuestos AUTH, CTR para contenedores
                   "Qty": group.count.toString(),
                   "ProfitCenter": "PAPANB110",
@@ -638,7 +638,7 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 
                 const otherItem: any = {
                   "IncomeRebateCode": taxItem.IncomeRebateCode || "N",
-                  "AmntTransacCur": group.totalPrice.toFixed(3),
+                  "AmntTransacCur": (-group.totalPrice).toFixed(3),
                   "BaseUnitMeasure": "EA", // Unidad de medida para impuestos y servicios
                   "Qty": group.count.toString(),
                   "ProfitCenter": "PAPANB110",
@@ -791,7 +791,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
             const serviceCode = isTrasiego ? 'TRK002' : 'TRK001'
             return {
               "IncomeRebateCode": "I",
-              "AmntTransacCur": record.totalValue.toFixed(3),
+              "AmntTransacCur": (-record.totalValue).toFixed(3),
               "BaseUnitMeasure": "CTR",
               "Qty": "1.00",
               "ProfitCenter": "PAPANB110",

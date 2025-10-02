@@ -163,7 +163,7 @@ export const fetchAgencyCatalogs = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data.data as CatalogsResponse;
+      return data.payload as CatalogsResponse;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -189,7 +189,7 @@ export const fetchGroupedCatalogs = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data.data as GroupedCatalogs;
+      return data.payload.catalogs as GroupedCatalogs;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -216,7 +216,7 @@ export const createAgencyCatalog = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data.catalog as AgencyCatalog;
+      return data.payload.catalog as AgencyCatalog;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -243,7 +243,7 @@ export const updateAgencyCatalog = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data.catalog as AgencyCatalog;
+      return data.payload.catalog as AgencyCatalog;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -269,7 +269,7 @@ export const deactivateAgencyCatalog = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data.catalog as AgencyCatalog;
+      return data.payload.catalog as AgencyCatalog;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -295,7 +295,7 @@ export const reactivateAgencyCatalog = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data.catalog as AgencyCatalog;
+      return data.payload.catalog as AgencyCatalog;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -321,7 +321,7 @@ export const fetchCatalogById = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data.catalog as AgencyCatalog;
+      return data.payload.catalog as AgencyCatalog;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -347,7 +347,7 @@ export const searchCatalogs = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data.catalogs as AgencyCatalog[];
+      return data.payload.catalogs as AgencyCatalog[];
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -804,7 +804,7 @@ export const selectCatalogByTypeAndName = (type: CatalogType, name: string) =>
   (state: { agencyCatalogs: AgencyCatalogsState }) => {
     const catalogs = state.agencyCatalogs?.catalogs || [];
     return catalogs.find(catalog => 
-      catalog.type === type && 
+      catalog.type && catalog.type === type && 
       catalog.name.toLowerCase() === name.toLowerCase() &&
       catalog.isActive
     ) || null;
