@@ -405,6 +405,7 @@ export const updateServiceStatus = createAsyncThunk(
   'agencyServices/updateServiceStatus',
   async ({ id, status }: UpdateStatusParams, { rejectWithValue }) => {
     try {
+      console.log('Updating service status:', { id, status });
       const response = await fetch(createApiUrl(`/api/agency/services/${id}/status`), {
         method: 'PUT',
         headers: {
@@ -416,12 +417,15 @@ export const updateServiceStatus = createAsyncThunk(
       
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('Status update failed:', errorData);
         throw new Error(errorData.message || 'Failed to update service status');
       }
       
       const data = await response.json();
-      return data.service as AgencyService;
+      console.log('Status update response:', data);
+      return data.payload?.service || data.service as AgencyService;
     } catch (error) {
+      console.error('Status update error:', error);
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
   }
@@ -517,6 +521,7 @@ export const fetchAgencyStatistics = createAsyncThunk(
 export interface PriceCalculationRequest {
   pickupLocation: string;
   dropoffLocation: string;
+  routeType?: 'single' | 'roundtrip';
   serviceCode?: string;
   waitingTime?: number;
   passengerCount?: number;
@@ -526,10 +531,10 @@ export interface PriceCalculationResponse {
   success: boolean;
   pricing: {
     basePrice: number;
-    waitingTimeCharge: number;
-    passengerSurcharge: number;
+    waitingTimeCharge?: number;
+    passengerSurcharge?: number;
     totalPrice: number;
-    description: string;
+    description?: string;
     routeFound: boolean;
     breakdown: {
       baseRate: number;
@@ -539,27 +544,47 @@ export interface PriceCalculationResponse {
   };
 }
 
-// Calcular precio automático para un servicio
+// Calcular precio automático para un servicio usando rutas
 export const calculateServicePrice = createAsyncThunk(
   'agencyServices/calculateServicePrice',
   async (priceData: PriceCalculationRequest, { rejectWithValue }) => {
     try {
-      const response = await fetch(createApiUrl('/api/agency/catalogs/pricing/calculate'), {
+      const response = await fetch(createApiUrl('/api/agency/routes/calculate-price'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify(priceData)
+        body: JSON.stringify({
+          pickupLocation: priceData.pickupLocation,
+          dropoffLocation: priceData.dropoffLocation,
+          routeType: priceData.routeType || 'single',
+          passengerCount: priceData.passengerCount || 1,
+          waitingTimeHours: priceData.waitingTime || 0
+        })
       });
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to calculate service price');
+        throw new Error(errorData.message || 'Failed to calculate service price');
       }
       
       const data = await response.json();
-      return data as PriceCalculationResponse;
+      
+      // Transform response to match expected format
+      return {
+        success: data.success,
+        pricing: {
+          basePrice: data.payload?.price || 0,
+          totalPrice: data.payload?.price || 0,
+          routeFound: data.payload?.found || false,
+          breakdown: {
+            baseRate: data.payload?.breakdown?.basePrice || 0,
+            waitingTime: data.payload?.breakdown?.waitingTime || 0,
+            extraPassengers: data.payload?.breakdown?.extraPassengers || 0
+          }
+        }
+      } as PriceCalculationResponse;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }

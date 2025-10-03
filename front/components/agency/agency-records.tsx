@@ -84,17 +84,29 @@ export function AgencyRecords() {
 
   const handleStatusChange = async (serviceId: string, newStatus: string) => {
     try {
+      console.log('Changing status:', { serviceId, newStatus })
       await updateStatus({ id: serviceId, status: newStatus as any })
       toast({
         title: "Success",
         description: "Service status updated successfully",
       })
+      closeModals()
+      fetchServices({ page: currentPage, limit: 20, filters })
     } catch (error) {
+      console.error('Status change error:', error)
       toast({
         title: "Error",
-        description: "Failed to update service status",
+        description: error instanceof Error ? error.message : "Failed to update service status",
         variant: "destructive",
       })
+    }
+  }
+
+  const handleOpenStatusModal = (serviceId: string) => {
+    const service = services.find(s => s._id === serviceId)
+    if (service) {
+      setSelectedService(serviceId)
+      openStatusModal(serviceId)
     }
   }
 
@@ -236,8 +248,6 @@ export function AgencyRecords() {
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="in_progress">In Progress</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="prefacturado">Pre-invoiced</SelectItem>
-                <SelectItem value="facturado">Invoiced</SelectItem>
               </SelectContent>
             </Select>
 
@@ -308,16 +318,41 @@ export function AgencyRecords() {
                       
                       <TableCell>
                         <div>
-                          <div className="font-medium">{service.crewName}</div>
-                          {service.crewRank && (
-                            <div className="text-sm text-muted-foreground">
-                              {service.crewRank}
-                            </div>
-                          )}
-                          {service.nationality && (
-                            <div className="text-xs text-muted-foreground">
-                              {service.nationality}
-                            </div>
+                          {service.crewMembers && service.crewMembers.length > 0 ? (
+                            <>
+                              <div className="font-medium">
+                                {service.crewMembers[0].name}
+                                {service.crewMembers.length > 1 && (
+                                  <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                                    +{service.crewMembers.length - 1} más
+                                  </span>
+                                )}
+                              </div>
+                              {service.crewMembers[0].crewRank && (
+                                <div className="text-sm text-muted-foreground">
+                                  {service.crewMembers[0].crewRank}
+                                </div>
+                              )}
+                              {service.crewMembers[0].nationality && (
+                                <div className="text-xs text-muted-foreground">
+                                  {service.crewMembers[0].nationality}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <div className="font-medium">{service.crewName || '-'}</div>
+                              {service.crewRank && (
+                                <div className="text-sm text-muted-foreground">
+                                  {service.crewRank}
+                                </div>
+                              )}
+                              {service.nationality && (
+                                <div className="text-xs text-muted-foreground">
+                                  {service.nationality}
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       </TableCell>
@@ -384,7 +419,8 @@ export function AgencyRecords() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => openStatusModal(service._id)}
+                            onClick={() => handleOpenStatusModal(service._id)}
+                            title="Change Status"
                           >
                             <RefreshCw className="h-3 w-3" />
                           </Button>
@@ -451,6 +487,72 @@ export function AgencyRecords() {
           </CardContent>
         </Card>
       )}
+
+      {/* Status Change Modal */}
+      <Dialog open={modals?.showStatusModal} onOpenChange={closeModals}>
+        <DialogContent className="sm:max-w-md" aria-describedby="status-dialog-description">
+          <DialogHeader>
+            <DialogTitle>Change Service Status</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p id="status-dialog-description" className="text-sm text-muted-foreground">
+              Select the new status for this service
+            </p>
+            
+            <div className="space-y-2">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => {
+                  if (selectedService) {
+                    handleStatusChange(selectedService, 'pending')
+                  }
+                }}
+              >
+                <Badge className="bg-yellow-100 text-yellow-800 mr-2">
+                  Pending
+                </Badge>
+                Set as Pending
+              </Button>
+              
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => {
+                  if (selectedService) {
+                    handleStatusChange(selectedService, 'in_progress')
+                  }
+                }}
+              >
+                <Badge className="bg-blue-100 text-blue-800 mr-2">
+                  In Progress
+                </Badge>
+                Set as In Progress
+              </Button>
+              
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => {
+                  if (selectedService) {
+                    handleStatusChange(selectedService, 'completed')
+                  }
+                }}
+              >
+                <Badge className="bg-green-100 text-green-800 mr-2">
+                  Completed
+                </Badge>
+                Set as Completed
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeModals}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

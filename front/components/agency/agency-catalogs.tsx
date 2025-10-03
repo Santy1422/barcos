@@ -12,11 +12,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea"
 import { 
   MapPin, Flag, Users, Ship, Building, User, Code, Plus, Edit, 
-  Trash2, Download, Search, AlertCircle, Save, X, RotateCcw 
+  Trash2, Download, Search, AlertCircle, Save, X, RotateCcw, Route, DollarSign
 } from "lucide-react"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
 import { useToast } from "@/hooks/use-toast"
 import type { CatalogType, AgencyCatalog } from "@/lib/features/agencyServices/agencyCatalogsSlice"
+import { AgencyRoutesManagement } from "./agency-routes-management"
 
 interface CatalogTypeConfig {
   key: CatalogType
@@ -59,11 +60,8 @@ const catalogTypes: CatalogTypeConfig[] = [
     icon: Users,
     description: 'Crew member ranks and positions',
     fields: {
-      name: 'Rank Name',
-      metadata: [
-        { key: 'company', label: 'Company', type: 'text' },
-        { key: 'level', label: 'Level', type: 'number' }
-      ]
+      name: 'Crew Rank',
+      code: true
     }
   },
   {
@@ -72,7 +70,10 @@ const catalogTypes: CatalogTypeConfig[] = [
     icon: Ship,
     description: 'Ships and vessels',
     fields: {
-      name: 'Vessel Name'
+      name: 'Vessel Name',
+      metadata: [
+        { key: 'shippingLine', label: 'Shipping Line', type: 'text' }
+      ]
     }
   },
   {
@@ -92,7 +93,8 @@ const catalogTypes: CatalogTypeConfig[] = [
     fields: {
       name: 'Driver Name',
       metadata: [
-        { key: 'phone', label: 'Phone Number', type: 'text' }
+        { key: 'phone', label: 'Phone Number', type: 'text' },
+        { key: 'company', label: 'Company', type: 'text' }
       ]
     }
   },
@@ -397,13 +399,17 @@ export function AgencyCatalogs() {
 
       {/* Catalog Tabs */}
       <Tabs value={selectedCatalogType} onValueChange={(value) => setSelectedCatalogType(value as CatalogType)}>
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-cols-8">
           {catalogTypes.map((type) => (
             <TabsTrigger key={type.key} value={type.key} className="text-xs">
               <type.icon className="h-3 w-3 mr-1" />
               {type.label}
             </TabsTrigger>
           ))}
+          <TabsTrigger value="routes" className="text-xs">
+            <Route className="h-3 w-3 mr-1" />
+            Routes
+          </TabsTrigger>
         </TabsList>
 
         {catalogTypes.map((type) => (
@@ -432,7 +438,11 @@ export function AgencyCatalogs() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Name</TableHead>
-                        {type.fields.code && <TableHead>Code</TableHead>}
+                        {type.fields.code && (
+                          <TableHead>
+                            {type.key === 'rank' ? 'Taulia Code' : 'Code'}
+                          </TableHead>
+                        )}
                         {type.fields.description && <TableHead>Description</TableHead>}
                         {type.fields.metadata && <TableHead>Details</TableHead>}
                         <TableHead>Status</TableHead>
@@ -512,6 +522,11 @@ export function AgencyCatalogs() {
             </Card>
           </TabsContent>
         ))}
+
+        {/* Routes Tab - Special handling */}
+        <TabsContent value="routes">
+          <AgencyRoutesManagement />
+        </TabsContent>
       </Tabs>
 
       {/* Create Modal */}
@@ -544,13 +559,15 @@ export function AgencyCatalogs() {
 
             {getCurrentTypeConfig().fields.code && (
               <div className="space-y-2">
-                <Label htmlFor="code">Code *</Label>
+                <Label htmlFor="code">
+                  {selectedCatalogType === 'rank' ? 'Taulia Code *' : 'Code *'}
+                </Label>
                 <Input
                   id="code"
                   value={formData.code}
                   onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
                   className={formErrors.code ? 'border-red-500' : ''}
-                  placeholder="Enter code"
+                  placeholder={selectedCatalogType === 'rank' ? 'Enter Taulia code' : 'Enter code'}
                 />
                 {formErrors.code && (
                   <p className="text-xs text-red-500 flex items-center gap-1">
@@ -633,12 +650,15 @@ export function AgencyCatalogs() {
 
             {getCurrentTypeConfig().fields.code && (
               <div className="space-y-2">
-                <Label htmlFor="edit-code">Code *</Label>
+                <Label htmlFor="edit-code">
+                  {selectedCatalogType === 'rank' ? 'Taulia Code *' : 'Code *'}
+                </Label>
                 <Input
                   id="edit-code"
                   value={formData.code}
                   onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
                   className={formErrors.code ? 'border-red-500' : ''}
+                  placeholder={selectedCatalogType === 'rank' ? 'Enter Taulia code' : 'Enter code'}
                 />
                 {formErrors.code && (
                   <p className="text-xs text-red-500 flex items-center gap-1">

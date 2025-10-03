@@ -231,7 +231,8 @@ export const createCatalogEntry = async (req: Request, res: Response) => {
     }
 
     // Check if code already exists (if provided)
-    if (code) {
+    // Note: For 'rank' type, multiple ranks can share the same Taulia code
+    if (code && type !== 'rank') {
       const existingCode = await AgencyCatalog.findOne({ code });
       if (existingCode) {
         return response(res, 409, {
@@ -303,7 +304,8 @@ export const updateCatalogEntry = async (req: Request, res: Response) => {
     }
 
     // If code is being changed, check for duplicates
-    if (code && code !== entry.code) {
+    // Note: For 'rank' type, multiple ranks can share the same Taulia code
+    if (code && code !== entry.code && entry.type !== 'rank') {
       const existingCode = await AgencyCatalog.findOne({
         code,
         _id: { $ne: id }

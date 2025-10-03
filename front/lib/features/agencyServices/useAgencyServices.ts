@@ -264,6 +264,9 @@ export const useAgencyServices = () => {
       };
       
       services.forEach(service => {
+        // Skip if service is undefined or null
+        if (!service) return;
+        
         switch (service.status) {
           case 'pending':
             stats.pending++;

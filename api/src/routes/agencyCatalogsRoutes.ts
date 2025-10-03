@@ -40,7 +40,9 @@ const VALID_CATALOG_TYPES = [
   'transport_company',
   'driver',
   'taulia_code',
-  'route_pricing'
+  'route_pricing',
+  'crew_rank',
+  'crew_change_service'
 ];
 
 // Rate limiting

@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/tool
 import { createApiUrl } from '@/lib/api-config';
 
 // Types based on backend schema
-export type CatalogType = 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'crew_rank' | 'crew_change_service';
+export type CatalogType = 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'crew_rank' | 'crew_change_service' | 'route';
 
 // Interface para catálogo individual
 export interface AgencyCatalog {
@@ -32,15 +32,7 @@ export interface AgencyCatalogInput {
 }
 
 // Interface para catálogos agrupados por tipo
-export interface GroupedCatalogs {
-  location: AgencyCatalog[];
-  nationality: AgencyCatalog[];
-  rank: AgencyCatalog[];
-  vessel: AgencyCatalog[];
-  transport_company: AgencyCatalog[];
-  driver: AgencyCatalog[];
-  taulia_code: AgencyCatalog[];
-}
+export type GroupedCatalogs = Partial<Record<CatalogType, AgencyCatalog[]>>
 
 // Interface para filtros de búsqueda
 export interface CatalogFilters {

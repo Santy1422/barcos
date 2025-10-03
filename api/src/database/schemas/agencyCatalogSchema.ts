@@ -1,6 +1,17 @@
-import { Schema, model, Document } from 'mongoose';
+import { Schema, model, Document, Model } from 'mongoose';
 
 export type CatalogType = 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'route_pricing' | 'crew_rank' | 'crew_change_service';
+
+// Interface para métodos estáticos del modelo
+interface IAgencyCatalogModel extends Model<IAgencyCatalog> {
+  findByType(type: CatalogType): Promise<IAgencyCatalog[]>;
+  findActiveByName(type: CatalogType, name: string): Promise<IAgencyCatalog | null>;
+  deactivate(id: string): Promise<IAgencyCatalog | null>;
+  reactivate(id: string): Promise<IAgencyCatalog | null>;
+  findOrCreate(type: CatalogType, name: string, additionalData?: Partial<IAgencyCatalog>): Promise<IAgencyCatalog>;
+  getAllGroupedByType(): Promise<Record<CatalogType, IAgencyCatalog[]>>;
+  searchAll(searchTerm: string): Promise<IAgencyCatalog[]>;
+}
 
 export interface IAgencyCatalog extends Document {
   type: CatalogType;
@@ -272,6 +283,6 @@ agencyCatalogSchema.virtual('typeLabel').get(function() {
   return labels[this.type] || this.type;
 });
 
-const AgencyCatalog = model<IAgencyCatalog>('AgencyCatalog', agencyCatalogSchema);
+const AgencyCatalog = model<IAgencyCatalog, IAgencyCatalogModel>('AgencyCatalog', agencyCatalogSchema);
 
 export default AgencyCatalog;

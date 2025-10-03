@@ -97,33 +97,53 @@ export const createAgencyService = async (req: Request, res: Response) => {
       pickupLocation,
       dropoffLocation,
       vessel,
-      crewName,
+      voyage,
+      moveType,
+      transportCompany,
+      driver,
+      approve,
+      comments,
+      crewMembers,
+      waitingTime,
+      price,
+      currency,
+      passengerCount,
       clientId,
+      // Legacy fields
+      crewName,
       crewRank,
       nationality,
-      transportCompany,
       driverName,
       flightInfo,
-      waitingTime,
-      comments,
-      serviceCode,
-      voyage
+      serviceCode
     } = req.body;
 
     // Validate required fields
-    if (!pickupDate || !pickupTime || !pickupLocation || !dropoffLocation || !vessel || !crewName || !clientId) {
+    if (!pickupDate || !pickupTime || !pickupLocation || !dropoffLocation || !vessel) {
       return response(res, 400, {
-        message: 'Required fields: pickupDate, pickupTime, pickupLocation, dropoffLocation, vessel, crewName, clientId'
+        message: 'Required fields: pickupDate, pickupTime, pickupLocation, dropoffLocation, vessel'
       });
     }
 
-    // Validate client exists and is active
-    const client = await clients.findById(clientId);
-    if (!client) {
-      return response(res, 404, { message: 'Client not found' });
+    // Validate crew information (either crewMembers array or legacy crewName)
+    if (!crewMembers || crewMembers.length === 0) {
+      if (!crewName) {
+        return response(res, 400, {
+          message: 'At least one crew member is required (crewMembers array or crewName)'
+        });
+      }
     }
-    if ((client as any).status !== 'active') {
-      return response(res, 400, { message: 'Client is not active' });
+
+    // Validate client if provided
+    let clientData = null;
+    if (clientId) {
+      clientData = await clients.findById(clientId);
+      if (!clientData) {
+        return response(res, 404, { message: 'Client not found' });
+      }
+      if ((clientData as any).status !== 'active') {
+        return response(res, 400, { message: 'Client is not active' });
+      }
     }
 
     // Validate locations exist in catalogs
@@ -137,12 +157,12 @@ export const createAgencyService = async (req: Request, res: Response) => {
       return response(res, 400, { message: `Dropoff location "${dropoffLocation}" not found in catalog` });
     }
 
-    // Calculate price if service code is present
-    let price = 0;
-    if (serviceCode) {
+    // Calculate price if service code is present (legacy)
+    let calculatedPrice = price || 0;
+    if (!calculatedPrice && serviceCode) {
       const tauliaCode = await (AgencyCatalog as any).findActiveByName('taulia_code', serviceCode);
       if (tauliaCode && tauliaCode.metadata?.price) {
-        price = tauliaCode.metadata.price;
+        calculatedPrice = tauliaCode.metadata.price;
       }
     }
 
@@ -157,20 +177,37 @@ export const createAgencyService = async (req: Request, res: Response) => {
       dropoffLocation: dropoffLocation.toUpperCase(),
       vessel: vessel.toUpperCase(),
       voyage,
+      
+      // New fields
+      crewMembers: crewMembers || [],
+      moveType: moveType || 'SINGLE',
+      passengerCount: passengerCount || (crewMembers ? crewMembers.length : 1),
+      approve: approve || false,
+      driver,
+      
+      // Legacy fields (mantener para compatibilidad)
       crewName,
       crewRank,
       nationality: nationality?.toUpperCase(),
-      transportCompany,
-      driverName,
+      driverName: driver || driverName,
       flightInfo,
+      
+      // Service details
+      transportCompany,
       waitingTime: waitingTime || 0,
       comments,
       notes: comments, // Auto-map
       serviceCode,
-      price,
-      currency: 'USD',
-      clientId,
-      clientName: (client as any).name,
+      
+      // Pricing
+      price: calculatedPrice,
+      currency: currency || 'USD',
+      
+      // Client (opcional)
+      clientId: clientId || undefined,
+      clientName: clientData ? (clientData as any).name : undefined,
+      
+      // Audit
       createdBy: (req as any).user?._id
     });
 

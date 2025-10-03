@@ -10,10 +10,11 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { 
   Plus, Save, Send, 
-  MapPin, Ship, User, Calendar, Clock, Plane, Users, DollarSign
+  MapPin, Ship, User, Calendar, Clock, Plane, Users, DollarSign, X
 } from "lucide-react"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
+import { useAgencyRoutes } from "@/lib/features/agencyServices/useAgencyRoutes"
 import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 
@@ -34,16 +35,13 @@ interface ServiceFormData {
   dropoffLocation: string
   vessel: string
   voyage: string
-  taulia: string
   moveType: 'RT' | 'SINGLE'
   transportCompany: string
   driver: string
-  totalWaitingTime: number
   approve: boolean
   comments: string
   crewMembers: CrewMember[]
-  serviceCode?: string    // Para matcheo con códigos SAP/Taulia
-  waitingTime?: number    // Horas de espera para cálculo de precio
+  waitingTime?: number    // Minutos de espera para cálculo de precio
   price?: number          // Precio calculado automáticamente
   currency?: string       // Moneda (USD por defecto)
   passengerCount?: number // Número de pasajeros para cálculo
@@ -56,16 +54,13 @@ const initialFormData: ServiceFormData = {
   dropoffLocation: '',
   vessel: '',
   voyage: '',
-  taulia: '',
   moveType: 'SINGLE',
   transportCompany: '',
   driver: '',
-  totalWaitingTime: 0,
   approve: false,
   comments: '',
   crewMembers: [],
-  serviceCode: 'ECR000669',  // Código SAP por defecto
-  waitingTime: 0,             // Tiempo de espera inicial
+  waitingTime: 0,             // Tiempo de espera inicial en minutos
   price: 0,                   // Precio inicial
   currency: 'USD',            // Moneda por defecto
   passengerCount: 1           // Un pasajero por defecto
@@ -109,9 +104,14 @@ export function AgencyServices() {
     vessels,
     transportCompanies,
     drivers,
-    tauliaCodes,
     fetchGroupedCatalogs
   } = useAgencyCatalogs()
+
+  const {
+    routes,
+    fetchActiveRoutes,
+    findRouteByLocations
+  } = useAgencyRoutes()
 
   // Form state
   const [formData, setFormData] = useState<ServiceFormData>(initialFormData)
@@ -120,29 +120,80 @@ export function AgencyServices() {
   // Load data on mount
   useEffect(() => {
     fetchGroupedCatalogs()
+    fetchActiveRoutes()
     fetchServices({ page: 1, limit: 10 })
-  }, [fetchGroupedCatalogs, fetchServices])
+  }, [fetchGroupedCatalogs, fetchActiveRoutes, fetchServices])
 
-  // Auto-calculate pricing when locations, service code, waiting time or passenger count change
+  // Get valid dropoff locations based on selected pickup
+  const getValidDropoffLocations = () => {
+    if (!formData.pickupLocation) {
+      return locations
+    }
+    
+    const validRoutes = routes.filter(
+      route => route.pickupLocation.toUpperCase() === formData.pickupLocation.toUpperCase() && route.isActive
+    )
+    
+    const validDropoffNames = validRoutes.map(route => route.dropoffLocation.toUpperCase())
+    
+    return locations.filter(loc => 
+      validDropoffNames.includes(loc.name.toUpperCase())
+    )
+  }
+
+  // Get valid pickup locations based on selected dropoff
+  const getValidPickupLocations = () => {
+    if (!formData.dropoffLocation) {
+      return locations
+    }
+    
+    const validRoutes = routes.filter(
+      route => route.dropoffLocation.toUpperCase() === formData.dropoffLocation.toUpperCase() && route.isActive
+    )
+    
+    const validPickupNames = validRoutes.map(route => route.pickupLocation.toUpperCase())
+    
+    return locations.filter(loc => 
+      validPickupNames.includes(loc.name.toUpperCase())
+    )
+  }
+
+  // Auto-calculate pricing when locations, waiting time, move type or crew members change
   useEffect(() => {
-    if (formData.pickupLocation && formData.dropoffLocation) {
+    if (formData.pickupLocation && formData.dropoffLocation && formData.crewMembers.length > 0) {
+      const passengerCount = formData.crewMembers.length;
+      const routeType = formData.moveType === 'RT' ? 'roundtrip' : 'single';
+      
+      console.log('Calculating price with:', {
+        pickupLocation: formData.pickupLocation,
+        dropoffLocation: formData.dropoffLocation,
+        routeType: routeType,
+        waitingTime: (formData.waitingTime || 0) / 60,
+        passengerCount: passengerCount
+      });
+      
       calculateServicePrice({
         pickupLocation: formData.pickupLocation,
         dropoffLocation: formData.dropoffLocation,
-        serviceCode: formData.serviceCode || undefined,
-        waitingTime: formData.waitingTime || 0,
-        passengerCount: formData.passengerCount || 1
+        routeType: routeType,
+        waitingTime: (formData.waitingTime || 0) / 60, // Convertir minutos a horas
+        passengerCount: passengerCount
       });
     } else {
-      // Clear pricing when locations are not set
+      // Clear pricing when locations are not set or no crew members
+      console.log('Clearing pricing - conditions not met:', {
+        hasPickup: !!formData.pickupLocation,
+        hasDropoff: !!formData.dropoffLocation,
+        crewMembersCount: formData.crewMembers.length
+      });
       clearPricingState();
     }
   }, [
     formData.pickupLocation, 
     formData.dropoffLocation, 
-    formData.serviceCode,
+    formData.moveType,
     formData.waitingTime,
-    formData.passengerCount,
+    formData.crewMembers.length,
     calculateServicePrice,
     clearPricingState
   ])
@@ -155,7 +206,27 @@ export function AgencyServices() {
   }, [currentPrice, formData.price])
 
   const handleInputChange = (field: keyof ServiceFormData, value: string | number | boolean) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value }
+      
+      // If changing pickup, clear dropoff if the combination is not valid
+      if (field === 'pickupLocation' && prev.dropoffLocation) {
+        const route = findRouteByLocations(value as string, prev.dropoffLocation)
+        if (!route) {
+          newData.dropoffLocation = ''
+        }
+      }
+      
+      // If changing dropoff, clear pickup if the combination is not valid
+      if (field === 'dropoffLocation' && prev.pickupLocation) {
+        const route = findRouteByLocations(prev.pickupLocation, value as string)
+        if (!route) {
+          newData.pickupLocation = ''
+        }
+      }
+      
+      return newData
+    })
     
     // Clear error when user starts typing
     if (formErrors[field]) {
@@ -190,6 +261,22 @@ export function AgencyServices() {
     }))
   }
 
+  // Check if form is complete (all required fields filled)
+  const isFormComplete = (): boolean => {
+    return !!(
+      formData.pickupDate &&
+      formData.pickupTime &&
+      formData.pickupLocation &&
+      formData.dropoffLocation &&
+      formData.vessel &&
+      formData.transportCompany &&
+      formData.driver &&
+      formData.crewMembers.length > 0 &&
+      formData.pickupLocation !== formData.dropoffLocation &&
+      findRouteByLocations(formData.pickupLocation, formData.dropoffLocation)
+    )
+  }
+
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {}
 
@@ -199,7 +286,6 @@ export function AgencyServices() {
     if (!formData.pickupLocation) errors.pickupLocation = 'Pickup location is required'
     if (!formData.dropoffLocation) errors.dropoffLocation = 'Drop-off location is required'
     if (!formData.vessel) errors.vessel = 'Vessel is required'
-    if (!formData.taulia) errors.taulia = 'Taulia is required'
     if (!formData.transportCompany) errors.transportCompany = 'Transport company is required'
     if (!formData.driver) errors.driver = 'Driver is required'
 
@@ -208,8 +294,12 @@ export function AgencyServices() {
       errors.dropoffLocation = 'Drop-off location must be different from pickup location'
     }
 
-    if (formData.totalWaitingTime && formData.totalWaitingTime < 0) {
-      errors.totalWaitingTime = 'Waiting time cannot be negative'
+    // Validate that the pickup/dropoff combination exists in routes
+    if (formData.pickupLocation && formData.dropoffLocation) {
+      const route = findRouteByLocations(formData.pickupLocation, formData.dropoffLocation)
+      if (!route) {
+        errors.dropoffLocation = 'No existe una ruta para esta combinación de pickup y dropoff. Por favor, cree la ruta en Agency Catalogs > Routes primero.'
+      }
     }
 
     if (formData.crewMembers.length === 0) {
@@ -233,6 +323,7 @@ export function AgencyServices() {
     }
 
     try {
+      const passengerCount = formData.crewMembers.length || 1;
       await createService({
         pickupDate: formData.pickupDate,
         pickupTime: formData.pickupTime,
@@ -240,20 +331,17 @@ export function AgencyServices() {
         dropoffLocation: formData.dropoffLocation,
         vessel: formData.vessel,
         voyage: formData.voyage,
-        taulia: formData.taulia,
         moveType: formData.moveType,
         transportCompany: formData.transportCompany,
         driver: formData.driver,
-        totalWaitingTime: formData.totalWaitingTime,
         approve: formData.approve,
         comments: formData.comments,
         crewMembers: formData.crewMembers,
-        // Incluir campos de pricing y SAP
-        serviceCode: formData.serviceCode || 'ECR000669',
-        waitingTime: formData.waitingTime || 0,
+        // Incluir campos de pricing (convertir minutos a horas para el backend)
+        waitingTime: (formData.waitingTime || 0) / 60,
         price: pricing?.currentPrice || formData.price || 0,
         currency: formData.currency || 'USD',
-        passengerCount: formData.passengerCount || 1
+        passengerCount: passengerCount
       })
 
       toast({
@@ -283,6 +371,20 @@ export function AgencyServices() {
     setFormErrors({})
   }
 
+  const handleClearLocations = () => {
+    setFormData(prev => ({
+      ...prev,
+      pickupLocation: '',
+      dropoffLocation: ''
+    }))
+    setFormErrors(prev => ({
+      ...prev,
+      pickupLocation: '',
+      dropoffLocation: ''
+    }))
+    clearPricingState()
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -298,16 +400,16 @@ export function AgencyServices() {
         <div className="flex gap-2">
           <Button 
             onClick={(e) => handleSubmit(e, 'create')}
-            disabled={isCreating || loading}
-            className="bg-blue-600 hover:bg-blue-700"
+            disabled={isCreating || loading || !isFormComplete()}
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Save className="mr-2 h-4 w-4" />
             Create
           </Button>
           <Button 
             onClick={(e) => handleSubmit(e, 'createAndSend')}
-            disabled={isCreating || loading}
-            className="bg-green-600 hover:bg-green-700"
+            disabled={isCreating || loading || !isFormComplete()}
+            className="bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="mr-2 h-4 w-4" />
             Create & Send
@@ -375,21 +477,32 @@ export function AgencyServices() {
                     onValueChange={(value) => handleInputChange('pickupLocation', value)}
                   >
                     <SelectTrigger className={formErrors.pickupLocation ? 'border-red-500' : ''}>
-                      <SelectValue placeholder="del catálogo / selección dinámica" />
+                      <SelectValue placeholder="Seleccione pickup location" />
                     </SelectTrigger>
                     <SelectContent>
-                      {locations.map((location) => (
-                        <SelectItem key={location._id} value={location.name}>
-                          <div className="flex items-center gap-2">
-                            <MapPin className="h-3 w-3" />
-                            {location.name}
-                          </div>
-                        </SelectItem>
-                      ))}
+                      {getValidPickupLocations().length === 0 ? (
+                        <div className="p-2 text-sm text-gray-500">
+                          No hay rutas disponibles para este dropoff
+                        </div>
+                      ) : (
+                        getValidPickupLocations().map((location) => (
+                          <SelectItem key={location._id} value={location.name}>
+                            <div className="flex items-center gap-2">
+                              <MapPin className="h-3 w-3" />
+                              {location.name}
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                   {formErrors.pickupLocation && (
                     <p className="text-xs text-red-500">{formErrors.pickupLocation}</p>
+                  )}
+                  {formData.dropoffLocation && getValidPickupLocations().length > 0 && (
+                    <p className="text-xs text-blue-600">
+                      {getValidPickupLocations().length} ubicación(es) disponible(s) para este dropoff
+                    </p>
                   )}
                 </div>
 
@@ -403,94 +516,79 @@ export function AgencyServices() {
                     onValueChange={(value) => handleInputChange('dropoffLocation', value)}
                   >
                     <SelectTrigger className={formErrors.dropoffLocation ? 'border-red-500' : ''}>
-                      <SelectValue placeholder="del catálogo / selección dinámica" />
+                      <SelectValue placeholder="Seleccione dropoff location" />
                     </SelectTrigger>
                     <SelectContent>
-                      {locations.map((location) => (
-                        <SelectItem key={location._id} value={location.name}>
-                          <div className="flex items-center gap-2">
-                            <MapPin className="h-3 w-3" />
-                            {location.name}
-                          </div>
-                        </SelectItem>
-                      ))}
+                      {getValidDropoffLocations().length === 0 ? (
+                        <div className="p-2 text-sm text-gray-500">
+                          No hay rutas disponibles para este pickup
+                        </div>
+                      ) : (
+                        getValidDropoffLocations().map((location) => (
+                          <SelectItem key={location._id} value={location.name}>
+                            <div className="flex items-center gap-2">
+                              <MapPin className="h-3 w-3" />
+                              {location.name}
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                   {formErrors.dropoffLocation && (
                     <p className="text-xs text-red-500">{formErrors.dropoffLocation}</p>
                   )}
+                  {formData.pickupLocation && getValidDropoffLocations().length > 0 && (
+                    <p className="text-xs text-blue-600">
+                      {getValidDropoffLocations().length} ubicación(es) disponible(s) para este pickup
+                    </p>
+                  )}
                 </div>
 
-                {/* Automatic Price Display */}
-                {pricing && pricing.currentPrice > 0 && formData.pickupLocation && formData.dropoffLocation && (
-                  <Card className="bg-green-50 border-green-200">
-                    <CardContent className="pt-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <DollarSign className="h-4 w-4 text-green-600" />
-                        <span className="font-medium text-green-800">Precio Calculado Automáticamente</span>
-                      </div>
-                      <div className="text-2xl font-bold text-green-700">
-                        ${pricing.currentPrice || formData.price || 0} {formData.currency || 'USD'}
-                      </div>
-                      {pricing.priceBreakdown && (
-                        <div className="text-sm text-green-600 mt-2 space-y-1">
-                          <div>Tarifa Base: ${pricing.priceBreakdown.baseRate || 0}</div>
-                          <div>Tiempo de Espera: ${pricing.priceBreakdown.waitingTime || 0}</div>
-                          <div>Pasajeros Extra: ${pricing.priceBreakdown.extraPassengers || 0}</div>
-                        </div>
-                      )}
-                      <div className="text-xs text-green-600 mt-2">
-                        {pricing.routeFound ? '✅ Precio basado en ruta específica' : '⚠️ Precio por defecto aplicado'}
-                      </div>
-                    </CardContent>
-                  </Card>
+                {/* Clear Locations Button */}
+                {(formData.pickupLocation || formData.dropoffLocation) && (
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleClearLocations}
+                      className="text-xs bg-gray-700 hover:bg-gray-800 text-white"
+                    >
+                      <X className="h-3 w-3 mr-1" />
+                      Limpiar Ubicaciones
+                    </Button>
+                  </div>
                 )}
 
-                {/* Service Code (SAP/Taulia) */}
+                {/* Waiting Time */}
                 <div className="space-y-2">
-                  <Label htmlFor="serviceCode" className="text-sm font-medium">
-                    Código de Servicio (SAP)
+                  <Label htmlFor="waitingTime" className="text-sm font-medium">
+                    Tiempo de Espera (minutos)
                   </Label>
                   <Input
-                    id="serviceCode"
-                    value={formData.serviceCode || 'ECR000669'}
-                    onChange={(e) => handleInputChange('serviceCode', e.target.value)}
-                    placeholder="ECR000669"
+                    id="waitingTime"
+                    type="number"
+                    min="0"
+                    max="1440"
+                    step="5"
+                    value={formData.waitingTime || 0}
+                    onChange={(e) => handleInputChange('waitingTime', parseInt(e.target.value) || 0)}
+                    className="w-full"
                   />
-                  <p className="text-xs text-muted-foreground">Código SAP/Taulia para facturación</p>
                 </div>
 
-                {/* Waiting Time */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="waitingTime" className="text-sm font-medium">
-                      Tiempo de Espera (horas)
-                    </Label>
-                    <Input
-                      id="waitingTime"
-                      type="number"
-                      min="0"
-                      max="24"
-                      step="0.5"
-                      value={formData.waitingTime || 0}
-                      onChange={(e) => handleInputChange('waitingTime', parseFloat(e.target.value) || 0)}
-                      className="w-full"
+                {/* Approval */}
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="approve"
+                      checked={formData.approve}
+                      onCheckedChange={(checked) => handleInputChange('approve', checked as boolean)}
                     />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="passengerCount" className="text-sm font-medium">
-                      Número de Pasajeros
+                    <Label htmlFor="approve" className="text-sm font-medium">
+                      Approve
                     </Label>
-                    <Input
-                      id="passengerCount"
-                      type="number"
-                      min="1"
-                      max="50"
-                      value={formData.passengerCount || 1}
-                      onChange={(e) => handleInputChange('passengerCount', parseInt(e.target.value) || 1)}
-                      className="w-full"
-                    />
                   </div>
                 </div>
 
@@ -553,38 +651,6 @@ export function AgencyServices() {
                     placeholder="alfanumérico"
                   />
                   <p className="text-xs text-yellow-600">Voyage puede quedar en blanco.</p>
-                </div>
-
-                {/* Taulia */}
-                <div className="space-y-2">
-                  <Label htmlFor="taulia" className="text-sm font-medium">
-                    TAULIA <span className="text-red-500">*</span>
-                  </Label>
-                  <Select
-                    value={formData.taulia}
-                    onValueChange={(value) => handleInputChange('taulia', value)}
-                  >
-                    <SelectTrigger className={formErrors.taulia ? 'border-red-500' : ''}>
-                      <SelectValue placeholder="del catálogo / selección dinámica" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {tauliaCodes.map((code) => (
-                        <SelectItem key={code._id} value={code.code || code.name}>
-                          <div>
-                            <div>{code.name}</div>
-                            {code.code && (
-                              <div className="text-xs text-muted-foreground">
-                                {code.code}
-                              </div>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {formErrors.taulia && (
-                    <p className="text-xs text-red-500">{formErrors.taulia}</p>
-                  )}
                 </div>
 
                 {/* Move Type */}
@@ -662,44 +728,56 @@ export function AgencyServices() {
                     <p className="text-xs text-red-500">{formErrors.driver}</p>
                   )}
                 </div>
-              </div>
-            </div>
 
-            {/* Waiting Time & Approval */}
-            <div className="grid gap-4 md:grid-cols-2 pt-4 border-t">
-              <div className="space-y-2">
-                <Label htmlFor="totalWaitingTime" className="text-sm font-medium">
-                  Total Waiting Time
-                </Label>
-                <Input
-                  id="totalWaitingTime"
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={formData.totalWaitingTime}
-                  onChange={(e) => handleInputChange('totalWaitingTime', parseFloat(e.target.value) || 0)}
-                  placeholder="Numérico"
-                />
-                {formErrors.totalWaitingTime && (
-                  <p className="text-xs text-red-500">{formErrors.totalWaitingTime}</p>
+                {/* Automatic Price Display */}
+                {formData.pickupLocation && formData.dropoffLocation && (
+                  <>
+                    {pricing && pricing.currentPrice > 0 && formData.crewMembers.length > 0 ? (
+                      <Card className="bg-green-50 border-green-200">
+                        <CardContent className="pt-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <DollarSign className="h-4 w-4 text-green-600" />
+                            <span className="font-medium text-green-800">Precio Calculado Automáticamente</span>
+                          </div>
+                          <div className="text-2xl font-bold text-green-700">
+                            ${pricing.currentPrice || formData.price || 0} {formData.currency || 'USD'}
+                          </div>
+                          <div className="text-sm text-green-600 mt-2">
+                            <div className="flex items-center gap-2">
+                              <Users className="h-3 w-3" />
+                              <span>{formData.crewMembers.length} pasajero{formData.crewMembers.length !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div className="text-xs mt-1">
+                              Tipo: {formData.moveType === 'RT' ? 'Round Trip' : 'Single'}
+                            </div>
+                          </div>
+                          {pricing.priceBreakdown && (
+                            <div className="text-sm text-green-600 mt-2 space-y-1">
+                              <div>Tarifa Base: ${pricing.priceBreakdown.baseRate || 0}</div>
+                              <div>Tiempo de Espera: ${pricing.priceBreakdown.waitingTime || 0}</div>
+                              <div>Pasajeros Extra: ${pricing.priceBreakdown.extraPassengers || 0}</div>
+                            </div>
+                          )}
+                          <div className="text-xs text-green-600 mt-2">
+                            {pricing.routeFound ? '✅ Precio basado en ruta específica' : '⚠️ Precio por defecto aplicado'}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ) : formData.crewMembers.length === 0 ? (
+                      <Card className="bg-blue-50 border-blue-200">
+                        <CardContent className="pt-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Users className="h-4 w-4 text-blue-600" />
+                            <span className="font-medium text-blue-800">Agregue Crew Members</span>
+                          </div>
+                          <p className="text-sm text-blue-600">
+                            Debe agregar al menos un crew member para calcular el precio de la ruta.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : null}
+                  </>
                 )}
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="approve"
-                    checked={formData.approve}
-                    onCheckedChange={(checked) => handleInputChange('approve', checked as boolean)}
-                  />
-                  <Label htmlFor="approve" className="text-sm font-medium">
-                    Approve
-                  </Label>
-                </div>
-                <div className="bg-yellow-50 p-3 rounded-lg text-xs text-gray-700">
-                  Total del tiempo considerando más de 1:20 entre pickup y onroute y/o arrived y completed. 
-                  Si hubo waiting time en el pickup y el dropoff, se sumariza todo. Debe poder editarse.
-                </div>
               </div>
             </div>
           </form>
@@ -709,10 +787,17 @@ export function AgencyServices() {
       {/* Crew Members Table */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Crew Members
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Crew Members
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">
+                {formData.crewMembers.length} {formData.crewMembers.length === 1 ? 'Pasajero' : 'Pasajeros'}
+              </div>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -722,8 +807,18 @@ export function AgencyServices() {
               </div>
             ) : (
               <div className="space-y-2">
+                {/* Column Headers */}
+                <div className="grid gap-4 items-center px-3 pb-2 border-b" style={{ gridTemplateColumns: '50px 2fr 1fr 1fr 1fr 1fr' }}>
+                  <div className="text-xs font-semibold text-gray-600"></div>
+                  <div className="text-xs font-semibold text-gray-600">Name</div>
+                  <div className="text-xs font-semibold text-gray-600">Nationality</div>
+                  <div className="text-xs font-semibold text-gray-600">Crew Rank</div>
+                  <div className="text-xs font-semibold text-gray-600">Status</div>
+                  <div className="text-xs font-semibold text-gray-600">Flight</div>
+                </div>
+                
                 {formData.crewMembers.map((member, index) => (
-                  <div key={member.id} className="grid grid-cols-6 gap-4 items-center p-3 border rounded-lg">
+                  <div key={member.id} className="grid gap-4 items-center p-3 border rounded-lg" style={{ gridTemplateColumns: '50px 2fr 1fr 1fr 1fr 1fr' }}>
                     <Button
                       type="button"
                       variant="ghost"
@@ -823,17 +918,6 @@ export function AgencyServices() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Workflow Note */}
-      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
-        <div className="flex">
-          <div className="ml-3">
-            <p className="text-sm text-yellow-700">
-              <strong>Nota:</strong> Que se marque en rojo el SR. Será necesaria la aprobación para envío de factura.
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

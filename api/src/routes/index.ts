@@ -20,6 +20,7 @@ import agencyCatalogsRoutes from './agencyCatalogsRoutes';
 import agencyFileRoutes from './agencyFileRoutes';
 import agencySapRoutes from './agencySapRoutes';
 import agencyPricingConfigRoutes from './agencyPricingConfigRoutes';
+import agencyRouteRoutes from './agencyRouteRoutes';
 
 router.use('/api/user', user);
 router.use('/api/clients', clients);
@@ -43,5 +44,6 @@ router.use('/api/agency/catalogs', agencyCatalogsRoutes);
 router.use('/api/agency/files', agencyFileRoutes);
 router.use('/api/agency/sap', agencySapRoutes);
 router.use('/api/agency/pricing-config', agencyPricingConfigRoutes);
+router.use('/api/agency/routes', agencyRouteRoutes);
 
 export default router;

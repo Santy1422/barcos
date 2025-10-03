@@ -1,5 +1,16 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
+// Crew Member interface
+export interface ICrewMember {
+  id: string;
+  name: string;
+  nationality: string;
+  crewRank: string;
+  crewCategory: string;
+  status: 'Visit' | 'On Signer';
+  flight: string;
+}
+
 export interface IAgencyService extends Document {
   // Module identification
   module: string;
@@ -26,13 +37,26 @@ export interface IAgencyService extends Document {
   vessel: string;
   voyage?: string;
   
-  // Crew information
-  crewName: string;
+  // Crew information (Legacy - mantener para compatibilidad)
+  crewName?: string;
   crewRank?: string;
   nationality?: string;
   
+  // Crew members (Nuevo - array de crew members)
+  crewMembers: ICrewMember[];
+  
+  // Move type
+  moveType?: 'RT' | 'SINGLE';
+  
+  // Passenger count
+  passengerCount?: number;
+  
+  // Approval flag
+  approve?: boolean;
+  
   // Transport information
   transportCompany?: string;
+  driver?: string;
   driverName?: string;
   flightInfo?: string;
   
@@ -46,8 +70,8 @@ export interface IAgencyService extends Document {
   price?: number;
   currency: string;
   
-  // Client information
-  clientId: Types.ObjectId;
+  // Client information (Opcional - se asigna al facturar)
+  clientId?: Types.ObjectId;
   clientName?: string;
   
   // References
@@ -144,10 +168,9 @@ const agencyServiceSchema = new Schema<IAgencyService>(
       trim: true
     },
     
-    // Crew information
+    // Crew information (Legacy - para compatibilidad con datos antiguos)
     crewName: {
       type: String,
-      required: true,
       trim: true
     },
     
@@ -162,8 +185,70 @@ const agencyServiceSchema = new Schema<IAgencyService>(
       uppercase: true
     },
     
+    // Crew members (Nuevo - array de crew members)
+    crewMembers: [{
+      id: {
+        type: String,
+        required: true
+      },
+      name: {
+        type: String,
+        required: true,
+        trim: true
+      },
+      nationality: {
+        type: String,
+        required: true,
+        trim: true
+      },
+      crewRank: {
+        type: String,
+        required: true,
+        trim: true
+      },
+      crewCategory: {
+        type: String,
+        required: true,
+        trim: true
+      },
+      status: {
+        type: String,
+        enum: ['Visit', 'On Signer'],
+        required: true
+      },
+      flight: {
+        type: String,
+        trim: true,
+        default: ''
+      }
+    }],
+    
+    // Move type
+    moveType: {
+      type: String,
+      enum: ['RT', 'SINGLE'],
+      trim: true
+    },
+    
+    // Passenger count
+    passengerCount: {
+      type: Number,
+      min: 0
+    },
+    
+    // Approval flag
+    approve: {
+      type: Boolean,
+      default: false
+    },
+    
     // Transport information
     transportCompany: {
+      type: String,
+      trim: true
+    },
+    
+    driver: {
       type: String,
       trim: true
     },
@@ -214,11 +299,10 @@ const agencyServiceSchema = new Schema<IAgencyService>(
       uppercase: true
     },
     
-    // Client information
+    // Client information (Opcional - se asigna al facturar)
     clientId: {
       type: Schema.Types.ObjectId,
-      ref: 'Client',
-      required: true
+      ref: 'Client'
     },
     
     clientName: {

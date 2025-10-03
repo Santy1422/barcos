@@ -46,8 +46,14 @@ const validateServiceData = [
   body('pickupLocation').notEmpty().trim().withMessage('Pickup location is required'),
   body('dropoffLocation').notEmpty().trim().withMessage('Dropoff location is required'),
   body('vessel').notEmpty().trim().withMessage('Vessel is required'),
-  body('crewName').notEmpty().trim().withMessage('Crew name is required'),
-  body('clientId').notEmpty().isMongoId().withMessage('Valid client ID is required'),
+  // crewMembers o crewName es requerido (validado en el controlador)
+  body('crewMembers').optional().isArray().withMessage('Crew members must be an array'),
+  body('crewName').optional().trim(),
+  // clientId es opcional (se asigna al facturar)
+  body('clientId').optional().isMongoId().withMessage('Valid client ID required'),
+  body('moveType').optional().isIn(['RT', 'SINGLE']).withMessage('Move type must be RT or SINGLE'),
+  body('approve').optional().isBoolean().withMessage('Approve must be boolean'),
+  body('passengerCount').optional().isInt({ min: 1 }).withMessage('Passenger count must be positive integer'),
   body('waitingTime').optional().isNumeric().withMessage('Waiting time must be numeric'),
   body('price').optional().isNumeric().withMessage('Price must be numeric'),
   handleValidationErrors
