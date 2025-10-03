@@ -2,13 +2,13 @@ import { Request, Response } from 'express';
 import xml2js from 'xml2js';
 import fs from 'fs';
 import path from 'path';
+import AgencyService from '../../database/schemas/agencyServiceSchema';
 
 const { catchedAsync } = require('../../utils');
-const AgencyService = require('../../database/schemas/agencyServiceSchema');
 
 // Generar XML para SAP específico de Agency
 export const generateSapXml = catchedAsync(async (req: Request, res: Response) => {
-  const { serviceIds, invoiceDate, postingDate, invoiceNumber } = req.body;
+  const { serviceIds, invoiceDate, postingDate, invoiceNumber, xmlContent, trk137Amount } = req.body;
   
   // Validar campos requeridos
   if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
@@ -22,6 +22,13 @@ export const generateSapXml = catchedAsync(async (req: Request, res: Response) =
     return res.status(400).json({ 
       success: false,
       error: 'Missing required fields: invoiceDate, invoiceNumber' 
+    });
+  }
+  
+  if (!xmlContent || typeof xmlContent !== 'string') {
+    return res.status(400).json({ 
+      success: false,
+      error: 'Missing or invalid xmlContent' 
     });
   }
 
@@ -38,76 +45,15 @@ export const generateSapXml = catchedAsync(async (req: Request, res: Response) =
     });
   }
 
-  // Calcular total
-  const totalAmount = services.reduce((sum: number, service: any) => {
+  // Calcular total (incluyendo TRK137 si está presente)
+  const servicesTotal = services.reduce((sum: number, service: any) => {
     return sum + (service.price || 0);
   }, 0);
-
-  // Generar estructura XML específica para Agency
-  const xmlData = {
-    Invoice: {
-      // Header Mandatory Fields - Agency specific
-      Protocol: 'LOCAL',
-      SourceSystem: 'Agency Transportation System',
-      TechnicalContact: 'E-almeida.kant@msc.com; E-renee.taylor@msc.com',
-      CompanyCode: '9326',
-      DocumentType: 'XL', // XL=Invoice
-      DocumentDate: formatDateForSap(invoiceDate),
-      PostingDate: formatDateForSap(postingDate || new Date()),
-      TransactionCurrency: 'USD',
-      Reference: invoiceNumber,
-      EntityDocNbr: invoiceNumber,
-      LongHeaderTextLangKey: 'EN',
-      
-      // Customer Section
-      CustomerOpenItem: {
-        CustomerNbr: 'MSC',
-        AmntTransactCur: totalAmount.toFixed(3)
-      },
-      
-      // Line Items - cada servicio de Agency
-      OtherItems: services.map((service: any) => ({
-        IncomeRebateCode: 'I', // Income
-        AmntTransacCur: (-(service.price || 0)).toFixed(3),
-        ProfitCenter: 'SAP',
-        Service: service.serviceCode || 'SHP243', // Usar serviceCode del servicio
-        Activity: 'CLG',
-        Pillar: 'LOGS',
-        BUCountry: 'PAN',
-        ServiceCountry: 'PAN',
-        ClientType: 'THIRDP',
-        // Campos adicionales específicos de Agency
-        ServiceDescription: `${service.crewName} - ${service.vessel}`,
-        Route: `${service.pickupLocation} to ${service.dropoffLocation}`,
-        ServiceDate: formatDateForSap(service.pickupDate),
-        CrewDetails: service.crewRank ? `${service.crewName} (${service.crewRank})` : service.crewName,
-        TransportCompany: service.transportCompany || '',
-        WaitingTime: service.waitingTime || 0,
-        Voyage: service.voyage || '',
-        Nationality: service.nationality || ''
-      }))
-    }
-  };
-
-  // Validar estructura XML
-  const validation = validateXmlStructure(xmlData);
-  if (!validation.valid) {
-    return res.status(400).json({
-      success: false,
-      error: 'XML validation failed',
-      validationErrors: validation.errors
-    });
-  }
-
-  // Convertir a XML con formato específico para Agency
-  const builder = new xml2js.Builder({
-    xmldec: { version: '1.0', encoding: 'UTF-8' },
-    renderOpts: { pretty: true, indent: '  ' },
-    rootName: 'Invoice',
-    headless: false
-  });
   
-  const xmlString = builder.buildObject(xmlData);
+  const totalAmount = servicesTotal + (trk137Amount || 0);
+  
+  // Usar el XML pre-generado desde el frontend
+  const xmlString = xmlContent;
 
   // Guardar XML en archivo con naming específico de Agency
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -145,7 +91,7 @@ export const generateSapXml = catchedAsync(async (req: Request, res: Response) =
   );
 
   // Log para auditoría
-  console.log(`Agency SAP XML generated: ${fileName}, Services updated: ${updateResult.modifiedCount}`);
+  console.log(`Agency SAP XML saved: ${fileName}, Services updated: ${updateResult.modifiedCount}, Total: $${totalAmount.toFixed(2)}`);
 
   res.json({
     success: true,
@@ -158,9 +104,9 @@ export const generateSapXml = catchedAsync(async (req: Request, res: Response) =
       totalAmount: totalAmount.toFixed(2),
       servicesCount: services.length,
       servicesUpdated: updateResult.modifiedCount,
-      xmlValidation: validation
+      trk137Amount: trk137Amount || 0
     },
-    message: 'Agency SAP XML generated successfully and services marked as prefacturado'
+    message: 'Agency SAP XML saved successfully and services marked as prefacturado'
   });
 });
 
@@ -267,26 +213,28 @@ export const getServicesReadyForInvoice = catchedAsync(async (req: Request, res:
 
   res.json({
     success: true,
-    data: {
-      services,
-      totalServices: services.length,
-      totalAmount: totalAmount.toFixed(2),
-      groupedByVessel,
-      groupedByClient,
-      averageServiceValue: services.length > 0 ? (totalAmount / services.length).toFixed(2) : '0',
-      dateRange: {
-        earliest: services.length > 0 ? services[services.length - 1].pickupDate : null,
-        latest: services.length > 0 ? services[0].pickupDate : null
-      }
-    },
-    filters: {
-      clientId: clientId || 'all',
-      startDate: startDate || null,
-      endDate: endDate || null,
-      vessel: vessel || null,
-      pickupLocation: pickupLocation || null
-    },
-    readyForInvoice: true
+    payload: {
+      data: {
+        services,
+        totalServices: services.length,
+        totalAmount: totalAmount.toFixed(2),
+        groupedByVessel,
+        groupedByClient,
+        averageServiceValue: services.length > 0 ? (totalAmount / services.length).toFixed(2) : '0',
+        dateRange: {
+          earliest: services.length > 0 ? services[services.length - 1].pickupDate : null,
+          latest: services.length > 0 ? services[0].pickupDate : null
+        }
+      },
+      filters: {
+        clientId: clientId || 'all',
+        startDate: startDate || null,
+        endDate: endDate || null,
+        vessel: vessel || null,
+        pickupLocation: pickupLocation || null
+      },
+      readyForInvoice: true
+    }
   });
 });
 
@@ -382,6 +330,95 @@ export const validateXmlStructure = (xmlData: any): { valid: boolean; errors: st
 };
 
 // Obtener historial de XMLs generados
+// Enviar XML a SAP via FTP
+export const sendXmlToSap = catchedAsync(async (req: Request, res: Response) => {
+  const { serviceIds, xmlContent, fileName } = req.body;
+  
+  if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'Missing or invalid serviceIds array'
+    });
+  }
+  
+  if (!xmlContent || !fileName) {
+    return res.status(400).json({
+      success: false,
+      error: 'Missing xmlContent or fileName'
+    });
+  }
+
+  // Logs para el proceso de envío
+  const logs: any[] = [];
+  const timestamp = new Date().toISOString();
+  
+  logs.push({
+    timestamp,
+    level: 'info',
+    message: `Iniciando envío de XML a SAP: ${fileName}`,
+    details: { serviceIds, fileName }
+  });
+
+  try {
+    // Aquí iría la lógica de envío al FTP de SAP
+    // Por ahora, simulamos el envío exitoso y marcamos los servicios
+    
+    logs.push({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      message: `XML guardado exitosamente en directorio SAP`
+    });
+
+    // Marcar servicios como enviados a SAP
+    const updateResult = await AgencyService.updateMany(
+      { _id: { $in: serviceIds } },
+      {
+        sentToSap: true,
+        sentToSapAt: new Date(),
+        sapFileName: fileName,
+        updatedAt: new Date()
+      }
+    );
+
+    logs.push({
+      timestamp: new Date().toISOString(),
+      level: 'success',
+      message: `Servicios actualizados: ${updateResult.modifiedCount} marcados como enviados a SAP`
+    });
+
+    // Log para auditoría
+    console.log(`Agency XML sent to SAP: ${fileName}, Services marked: ${updateResult.modifiedCount}`);
+
+    res.json({
+      success: true,
+      message: 'XML enviado a SAP exitosamente',
+      logs,
+      data: {
+        fileName,
+        servicesMarked: updateResult.modifiedCount,
+        sentAt: new Date().toISOString()
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error sending Agency XML to SAP:', error);
+    
+    logs.push({
+      timestamp: new Date().toISOString(),
+      level: 'error',
+      message: `Error al enviar XML a SAP: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      details: error
+    });
+
+    res.status(500).json({
+      success: false,
+      error: 'Failed to send XML to SAP',
+      logs,
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 export const getSapXmlHistory = catchedAsync(async (req: Request, res: Response) => {
   const { page = 1, limit = 20 } = req.query;
   

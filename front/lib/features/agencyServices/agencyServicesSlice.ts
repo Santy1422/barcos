@@ -162,6 +162,8 @@ export interface SapXmlGenerationRequest {
   invoiceNumber: string;
   invoiceDate: string;
   postingDate?: string;
+  xmlContent: string; // XML pre-generado desde el frontend
+  trk137Amount: number; // Monto para el servicio TRK137
 }
 
 export interface SapXmlGenerationResponse {
@@ -1089,10 +1091,10 @@ const agencyServicesSlice = createSlice({
       .addCase(generateSapXml.fulfilled, (state, action) => {
         state.sapIntegration.sapLoading = false;
         state.sapIntegration.xmlGenerated = true;
-        state.sapIntegration.xmlContent = action.payload.payload.data.xmlContent;
-        state.sapIntegration.fileName = action.payload.payload.data.fileName;
-        state.sapIntegration.totalAmount = parseFloat(action.payload.payload.data.totalAmount);
-        state.sapIntegration.lastInvoiceNumber = action.payload.payload.data.invoiceNumber;
+        state.sapIntegration.xmlContent = action.payload.data.xmlContent;
+        state.sapIntegration.fileName = action.payload.data.fileName;
+        state.sapIntegration.totalAmount = parseFloat(action.payload.data.totalAmount);
+        state.sapIntegration.lastInvoiceNumber = action.payload.data.invoiceNumber;
         state.sapIntegration.sapError = null;
         
         // Actualizar servicios de completed a prefacturado

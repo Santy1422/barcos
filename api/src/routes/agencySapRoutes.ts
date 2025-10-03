@@ -5,7 +5,8 @@ import {
   downloadSapXml,
   getServicesReadyForInvoice,
   getSapXmlHistory,
-  validateXmlStructure
+  validateXmlStructure,
+  sendXmlToSap
 } from '../controllers/agencyControllers/agencySapControllers';
 import { jwtUtils } from "../middlewares/jwtUtils";
 import { requireAdminOrOperations } from '../middlewares/authorization';
@@ -89,6 +90,17 @@ const xmlGenerationValidation = [
     .optional()
     .isISO8601()
     .withMessage('Posting date must be a valid ISO 8601 date'),
+  
+  body('xmlContent')
+    .notEmpty()
+    .isString()
+    .withMessage('xmlContent is required and must be a string'),
+  
+  body('trk137Amount')
+    .isNumeric()
+    .withMessage('trk137Amount must be a number')
+    .custom((value) => value >= 0)
+    .withMessage('trk137Amount must be a positive number'),
     
   handleValidationErrors
 ];
@@ -165,7 +177,7 @@ const fileNameValidation = [
 // Middleware de autorización específico para operaciones SAP críticas
 const requireSapPermissions = (req: Request, res: Response, next: NextFunction) => {
   const user = (req as any).user;
-  const allowedRoles = ['admin', 'operations', 'finance'];
+  const allowedRoles = ['admin', 'administrador', 'operations', 'finance'];
   
   if (!user || !allowedRoles.includes(user.role)) {
     return res.status(403).json({
@@ -197,6 +209,28 @@ router.post('/generate-xml',
   xmlGenerationValidation,
   logSapOperation('GENERATE_XML'),
   catchedAsync(generateSapXml)
+);
+
+// POST /api/agency/sap/send-to-sap - Enviar XML generado a SAP
+router.post('/send-to-sap',
+  requireSapPermissions,
+  sapGenerationLimiter,
+  [
+    body('serviceIds')
+      .isArray({ min: 1 })
+      .withMessage('serviceIds must be a non-empty array'),
+    body('xmlContent')
+      .notEmpty()
+      .isString()
+      .withMessage('xmlContent is required'),
+    body('fileName')
+      .notEmpty()
+      .isString()
+      .withMessage('fileName is required'),
+    handleValidationErrors
+  ],
+  logSapOperation('SEND_TO_SAP'),
+  catchedAsync(sendXmlToSap)
 );
 
 // GET /api/agency/sap/download/:fileName - Descargar XML generado

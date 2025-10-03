@@ -1022,6 +1022,133 @@ export function generateTestXML(): string {
   return generateInvoiceXML(testInvoice)
 }
 
+// Interfaces para Agency XML
+export interface AgencyServiceForXml {
+  _id: string
+  pickupDate: string
+  vessel: string
+  crewMembers: Array<{
+    name: string
+    nationality: string
+    crewRank: string
+  }>
+  pickupLocation: string
+  dropoffLocation: string
+  moveType: 'RT' | 'SINGLE'
+  price: number
+  currency: string
+}
+
+export interface AgencyInvoiceForXml {
+  invoiceNumber: string
+  invoiceDate: string
+  clientSapNumber: string
+  services: AgencyServiceForXml[]
+  additionalService?: {
+    amount: number
+    description: string
+  }
+}
+
+// Función para generar XML de Agency (Crew)
+export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
+  // Validar datos requeridos
+  if (!invoice.invoiceNumber || !invoice.clientSapNumber || !invoice.invoiceDate) {
+    throw new Error("Datos requeridos faltantes para generar XML de Agency")
+  }
+
+  // Calcular el total de los servicios (SHP242)
+  const ship242Total = invoice.services.reduce((sum, service) => sum + (service.price || 0), 0)
+  
+  // Obtener el monto del servicio adicional (TRK137)
+  const trk137Total = invoice.additionalService?.amount || 0
+  
+  // El total de la factura debe ser la suma de ambos
+  const totalAmount = ship242Total + trk137Total
+  
+  console.log('=== DEBUG: generateAgencyInvoiceXML ===')
+  console.log('SHP242 Total:', ship242Total)
+  console.log('TRK137 Total:', trk137Total)
+  console.log('Total Amount:', totalAmount)
+
+  const xmlObject = {
+    "ns1:LogisticARInvoices": {
+      _attributes: {
+        "xmlns:ns1": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00"
+      },
+      "CustomerInvoice": {
+        // Protocol Section - específico para CREW
+        "Protocol": {
+          "SourceSystem": "CREW",
+          "TechnicalContact": "E-almeida.kant@msc.com;E-renee.taylor@msc.com"
+        },
+        // Header Section
+        "Header": {
+          "CompanyCode": "9326",
+          "DocumentType": "XL",
+          "DocumentDate": formatDateForXML(invoice.invoiceDate),
+          "PostingDate": formatDateForXML(invoice.invoiceDate),
+          "TransactionCurrency": "USD",
+          "Reference": invoice.invoiceNumber,
+          "EntityDocNbr": invoice.invoiceNumber
+        },
+        // AdditionalTexts Section
+        "AdditionalTexts": {
+          "LongHeaderTextLangKey": "EN"
+        },
+        // CustomerOpenItem Section - monto en POSITIVO
+        "CustomerOpenItem": {
+          "CustomerNbr": invoice.clientSapNumber,
+          "AmntTransacCur": totalAmount.toFixed(2),
+          "BaselineDate": formatDateForXML(invoice.invoiceDate),
+          "DueDate": calculateDueDate(invoice.invoiceDate)
+        },
+        // OtherItems Section - siempre 2 items en NEGATIVO
+        "OtherItems": {
+          "OtherItem": [
+            // Primer OtherItem: SHP242 - Crew Transportation
+            {
+              "IncomeRebateCode": "I",
+              "AmntTransacCur": (-ship242Total).toFixed(2),
+              "BaseUnitMeasure": "EA",
+              "Qty": "1.00",
+              "ProfitCenter": "PAPANA110",
+              "ReferencePeriod": formatReferencePeriod(invoice.invoiceDate),
+              "Service": "SHP242",
+              "Activity": "SHP",
+              "Pillar": "NOPS",
+              "BUCountry": "PA",
+              "ServiceCountry": "PA",
+              "ClientType": "MSCGVA"
+            },
+            // Segundo OtherItem: TRK137 - Transportation
+            {
+              "IncomeRebateCode": "I",
+              "AmntTransacCur": (-trk137Total).toFixed(2),
+              "BaseUnitMeasure": "EA",
+              "Qty": "1.00",
+              "ProfitCenter": "PAPANA110",
+              "ReferencePeriod": formatReferencePeriod(invoice.invoiceDate),
+              "Service": "TRK137",
+              "Activity": "TRK",
+              "Pillar": "TRSP",
+              "BUCountry": "PA",
+              "ServiceCountry": "PA",
+              "ClientType": "MSCGVA",
+              "FullEmpty": "FULL"
+            }
+          ]
+        }
+      }
+    }
+  }
+
+  const xmlContent = js2xml(xmlObject, { compact: true, spaces: 2 })
+  
+  // Agregar la declaración XML al principio
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' + xmlContent
+}
+
 // Función para probar conexión SFTP
 export async function testSftpConnection() {
   try {

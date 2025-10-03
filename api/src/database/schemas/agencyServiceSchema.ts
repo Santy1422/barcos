@@ -79,6 +79,15 @@ export interface IAgencyService extends Document {
   invoiceId?: Types.ObjectId;
   sapDocumentNumber?: string;
   
+  // SAP Integration fields
+  invoiceNumber?: string;
+  invoiceDate?: Date;
+  xmlFilePath?: string;
+  sapProcessedAt?: Date;
+  sentToSap?: boolean;
+  sentToSapAt?: Date;
+  sapFileName?: string;
+  
   // Attachments
   attachments: Array<{
     fileName: string;
@@ -325,6 +334,40 @@ const agencyServiceSchema = new Schema<IAgencyService>(
       type: String,
       trim: true,
       uppercase: true
+    },
+    
+    // SAP Integration fields
+    invoiceNumber: {
+      type: String,
+      trim: true,
+      uppercase: true
+    },
+    
+    invoiceDate: {
+      type: Date
+    },
+    
+    xmlFilePath: {
+      type: String,
+      trim: true
+    },
+    
+    sapProcessedAt: {
+      type: Date
+    },
+    
+    sentToSap: {
+      type: Boolean,
+      default: false
+    },
+    
+    sentToSapAt: {
+      type: Date
+    },
+    
+    sapFileName: {
+      type: String,
+      trim: true
     },
     
     // Attachments array

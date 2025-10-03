@@ -3,6 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useAgencyServices } from '@/lib/features/agencyServices/useAgencyServices';
 import { useAgencyCatalogs } from '@/lib/features/agencyServices/useAgencyCatalogs';
+import { generateAgencyInvoiceXML, type AgencyInvoiceForXml } from '@/lib/xml-generator';
+import { useAppDispatch, useAppSelector } from '@/lib/hooks';
+import { fetchClients, selectAllClients } from '@/lib/features/clients/clientsSlice';
+import { createApiUrl } from '@/lib/api-config';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,12 +34,18 @@ import {
   Loader2,
   Eye,
   History,
-  Package
+  Package,
+  ScrollText,
+  Copy,
+  Info
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
 export const AgencySapInvoice: React.FC = () => {
+  const dispatch = useAppDispatch();
+  const clients = useAppSelector(selectAllClients);
+  
   const { 
     readyForInvoice,
     sapIntegration,
@@ -77,16 +87,25 @@ export const AgencySapInvoice: React.FC = () => {
     invoiceNumber: '',
     invoiceDate: new Date().toISOString().split('T')[0],
     postingDate: new Date().toISOString().split('T')[0],
-    notes: ''
+    notes: '',
+    trk137Amount: 0, // Monto para el servicio TRK137
+    trk137Description: 'Transportation Service',
+    clientId: '' // Cliente seleccionado
   });
 
   // Estados de carga
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [isSendingToSap, setIsSendingToSap] = useState(false);
+  const [sentToSap, setSentToSap] = useState(false);
+  const [sentToSapAt, setSentToSapAt] = useState<string | null>(null);
+  const [sapLogs, setSapLogs] = useState<any[]>([]);
+  const [showSapLogs, setShowSapLogs] = useState(false);
 
   useEffect(() => {
     // Cargar datos iniciales
     fetchGroupedCatalogs();
     handleFetchServices();
+    dispatch(fetchClients());
   }, []);
 
   useEffect(() => {
@@ -159,6 +178,16 @@ export const AgencySapInvoice: React.FC = () => {
       return;
     }
 
+    if (invoiceData.trk137Amount <= 0) {
+      toast.error('Please enter a valid TRK137 amount');
+      return;
+    }
+
+    if (!invoiceData.clientId) {
+      toast.error('Please select a client');
+      return;
+    }
+
     // Validar formato de número de factura
     const invoiceNumberPattern = /^[A-Z0-9-_]+$/;
     if (!invoiceNumberPattern.test(invoiceData.invoiceNumber)) {
@@ -167,11 +196,56 @@ export const AgencySapInvoice: React.FC = () => {
     }
 
     try {
+      // Obtener los servicios seleccionados con sus datos completos
+      const selectedServicesData = readyForInvoice.filter(service => 
+        selectedServices.includes(service._id)
+      );
+
+      // Obtener el cliente seleccionado
+      const selectedClient = clients.find(c => (c._id || c.id) === invoiceData.clientId);
+      if (!selectedClient || !selectedClient.sapCode) {
+        toast.error('Selected client does not have a SAP code');
+        return;
+      }
+      
+      const clientSapNumber = selectedClient.sapCode;
+
+      // Crear el payload para generar el XML
+      const xmlPayload: AgencyInvoiceForXml = {
+        invoiceNumber: invoiceData.invoiceNumber,
+        invoiceDate: invoiceData.invoiceDate,
+        clientSapNumber: clientSapNumber,
+        services: selectedServicesData.map(service => ({
+          _id: service._id,
+          pickupDate: service.pickupDate,
+          vessel: service.vessel,
+          crewMembers: service.crewMembers || [],
+          pickupLocation: service.pickupLocation,
+          dropoffLocation: service.dropoffLocation,
+          moveType: service.moveType,
+          price: service.price || 0,
+          currency: service.currency || 'USD'
+        })),
+        additionalService: {
+          amount: invoiceData.trk137Amount,
+          description: invoiceData.trk137Description
+        }
+      };
+
+      // Generar el XML
+      const xmlContent = generateAgencyInvoiceXML(xmlPayload);
+
+      console.log('XML Generated:', xmlContent);
+
+      // Aquí podrías guardar el XML en el backend o descargarlo directamente
+      // Por ahora, lo guardamos en el estado
       await generateSapXml({
         serviceIds: selectedServices,
         invoiceNumber: invoiceData.invoiceNumber,
         invoiceDate: invoiceData.invoiceDate,
         postingDate: invoiceData.postingDate || invoiceData.invoiceDate,
+        xmlContent: xmlContent, // Pasar el XML generado
+        trk137Amount: invoiceData.trk137Amount
       });
       
       toast.success(`SAP XML generated successfully! Invoice: ${invoiceData.invoiceNumber}`);
@@ -184,7 +258,8 @@ export const AgencySapInvoice: React.FC = () => {
       setActiveTab('result');
       
     } catch (error) {
-      toast.error('Error generating SAP XML');
+      console.error('Error generating XML:', error);
+      toast.error(error instanceof Error ? error.message : 'Error generating SAP XML');
     }
   };
 
@@ -192,6 +267,59 @@ export const AgencySapInvoice: React.FC = () => {
     if (xmlFileName) {
       downloadSapXml(xmlFileName);
       toast.success('XML download initiated');
+    }
+  };
+
+  const handleSendToSap = async () => {
+    if (!xmlContent || !xmlFileName || selectedServices.length === 0) {
+      toast.error('Missing XML content or service IDs');
+      return;
+    }
+
+    setIsSendingToSap(true);
+    setShowSapLogs(true);
+    setSapLogs([]);
+
+    try {
+      const response = await fetch(createApiUrl('/api/agency/sap/send-to-sap'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          serviceIds: selectedServices,
+          xmlContent,
+          fileName: xmlFileName
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to send XML to SAP');
+      }
+
+      setSapLogs(result.logs || []);
+      setSentToSap(true);
+      setSentToSapAt(result.data.sentAt);
+      
+      toast.success(`XML enviado exitosamente a SAP: ${xmlFileName}`);
+      
+      // Refrescar servicios
+      handleFetchServices();
+      
+    } catch (error) {
+      console.error('Error sending to SAP:', error);
+      setSapLogs(prev => [...prev, {
+        timestamp: new Date().toISOString(),
+        level: 'error',
+        message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        details: error
+      }]);
+      toast.error(error instanceof Error ? error.message : 'Error sending to SAP');
+    } finally {
+      setIsSendingToSap(false);
     }
   };
 
@@ -291,7 +419,7 @@ export const AgencySapInvoice: React.FC = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div>
                   <Label htmlFor="invoiceNumber">Invoice Number *</Label>
                   <div className="flex gap-2">
@@ -323,21 +451,52 @@ export const AgencySapInvoice: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="postingDate">Posting Date</Label>
-                  <Input
-                    id="postingDate"
-                    type="date"
-                    value={invoiceData.postingDate}
-                    onChange={(e) => setInvoiceData({...invoiceData, postingDate: e.target.value})}
-                  />
+                  <Label htmlFor="client">Client (SAP) *</Label>
+                  <Select 
+                    value={invoiceData.clientId} 
+                    onValueChange={(value) => setInvoiceData({...invoiceData, clientId: value})}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select client" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients.filter(c => c.isActive && c.sapCode).map((client) => (
+                        <SelectItem key={client._id || client.id} value={client._id || client.id || ''}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {client.type === 'natural' ? client.fullName : client.companyName}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              SAP: {client.sapCode}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
-                  <Label>Selected Services</Label>
+                  <Label htmlFor="trk137Amount">TRK137 Amount (USD) *</Label>
+                  <Input
+                    id="trk137Amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={invoiceData.trk137Amount}
+                    onChange={(e) => setInvoiceData({...invoiceData, trk137Amount: parseFloat(e.target.value) || 0})}
+                    placeholder="0.00"
+                  />
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Transportation Service
+                  </div>
+                </div>
+                <div>
+                  <Label>Total Amount</Label>
                   <div className="text-2xl font-bold text-blue-600">
-                    {selectedServices.length}
+                    ${(calculateSelectedTotal() + invoiceData.trk137Amount).toLocaleString()}
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    Total: ${calculateSelectedTotal().toLocaleString()}
+                    {selectedServices.length} services selected
                   </div>
                 </div>
               </div>
@@ -538,12 +697,33 @@ export const AgencySapInvoice: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           <div>
-                            <div className="font-medium">{service.crewName}</div>
-                            {service.crewRank && (
-                              <div className="text-sm text-muted-foreground">{service.crewRank}</div>
-                            )}
-                            {service.nationality && (
-                              <div className="text-xs text-muted-foreground">{service.nationality}</div>
+                            {service.crewMembers && service.crewMembers.length > 0 ? (
+                              <>
+                                <div className="font-medium">
+                                  {service.crewMembers[0].name}
+                                  {service.crewMembers.length > 1 && (
+                                    <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                                      +{service.crewMembers.length - 1} más
+                                    </span>
+                                  )}
+                                </div>
+                                {service.crewMembers[0].crewRank && (
+                                  <div className="text-sm text-muted-foreground">{service.crewMembers[0].crewRank}</div>
+                                )}
+                                {service.crewMembers[0].nationality && (
+                                  <div className="text-xs text-muted-foreground">{service.crewMembers[0].nationality}</div>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <div className="font-medium">{service.crewName || '-'}</div>
+                                {service.crewRank && (
+                                  <div className="text-sm text-muted-foreground">{service.crewRank}</div>
+                                )}
+                                {service.nationality && (
+                                  <div className="text-xs text-muted-foreground">{service.nationality}</div>
+                                )}
+                              </>
                             )}
                           </div>
                         </TableCell>
@@ -592,12 +772,18 @@ export const AgencySapInvoice: React.FC = () => {
                     Ready to generate SAP XML for {selectedServices.length} service{selectedServices.length !== 1 ? 's' : ''}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    Total amount: ${calculateSelectedTotal().toLocaleString()} USD
+                    SHP242 Services: ${calculateSelectedTotal().toLocaleString()} USD
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    TRK137 Transportation: ${invoiceData.trk137Amount.toLocaleString()} USD
+                  </p>
+                  <p className="text-sm font-semibold text-foreground">
+                    Total: ${(calculateSelectedTotal() + invoiceData.trk137Amount).toLocaleString()} USD
                   </p>
                 </div>
                 <Button 
                   onClick={handleGenerateXml}
-                  disabled={sapLoading || selectedServices.length === 0 || !invoiceData.invoiceNumber.trim()}
+                  disabled={sapLoading || selectedServices.length === 0 || !invoiceData.invoiceNumber.trim() || invoiceData.trk137Amount <= 0 || !invoiceData.clientId}
                   size="lg"
                   className="flex items-center gap-2"
                 >
@@ -661,9 +847,43 @@ export const AgencySapInvoice: React.FC = () => {
                 </CardContent>
               </Card>
 
+              {/* Status Badge */}
+              {sentToSap && (
+                <Alert className="border border-green-200 bg-green-50">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-800">
+                    <strong>XML enviado a SAP exitosamente</strong>
+                    <br />
+                    Enviado: {sentToSapAt ? format(new Date(sentToSapAt), 'PPpp') : 'N/A'}
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {/* Actions */}
               <div className="flex gap-4">
-                <Button onClick={handleDownloadXml} className="flex items-center gap-2">
+                <Button 
+                  onClick={handleSendToSap}
+                  disabled={isSendingToSap || sentToSap}
+                  className={`flex items-center gap-2 ${sentToSap ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                >
+                  {isSendingToSap ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Enviando...
+                    </>
+                  ) : sentToSap ? (
+                    <>
+                      <CheckCircle className="h-4 w-4" />
+                      Enviado a SAP
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      Enviar a SAP
+                    </>
+                  )}
+                </Button>
+                <Button onClick={handleDownloadXml} variant="outline" className="flex items-center gap-2">
                   <Download className="h-4 w-4" />
                   Download XML
                 </Button>
@@ -676,6 +896,54 @@ export const AgencySapInvoice: React.FC = () => {
                   Generate Another
                 </Button>
               </div>
+
+              {/* SAP Logs */}
+              {showSapLogs && sapLogs.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <ScrollText className="h-5 w-5" />
+                      Logs de envío a SAP
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="max-h-60 overflow-y-auto space-y-2">
+                      {sapLogs.map((log, index) => (
+                        <div 
+                          key={index} 
+                          className={`text-xs p-2 rounded ${
+                            log.level === 'error' ? 'bg-red-100 text-red-800' : 
+                            log.level === 'success' ? 'bg-green-100 text-green-800' : 
+                            'bg-blue-100 text-blue-800'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start gap-2">
+                            <span className="font-mono text-xs opacity-75">
+                              {format(new Date(log.timestamp), 'PPpp')}
+                            </span>
+                            <span className={`text-xs px-1 rounded ${
+                              log.level === 'error' ? 'bg-red-200' : 
+                              log.level === 'success' ? 'bg-green-200' : 
+                              'bg-blue-200'
+                            }`}>
+                              {(log.level || 'info').toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="mt-1">{log.message}</div>
+                          {log.details && (
+                            <details className="mt-1">
+                              <summary className="cursor-pointer text-xs opacity-75">Ver detalles</summary>
+                              <pre className="mt-1 text-xs overflow-x-auto bg-white p-2 rounded">
+                                {JSON.stringify(log.details, null, 2)}
+                              </pre>
+                            </details>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* XML Preview */}
               {xmlContent && (
