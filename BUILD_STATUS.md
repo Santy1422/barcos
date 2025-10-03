@@ -21,7 +21,7 @@ Successfully builds with Next.js 14.2.16
    - Supports both local (localhost:8080) and production (Railway) environments
 
 ### API Configuration:
-```typescript
+```typescript 
 // All Agency API calls now use:
 import { createApiUrl } from '@/lib/api-config';
 
