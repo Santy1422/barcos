@@ -24,7 +24,7 @@ Successfully builds with Next.js 14.2.16
 ```typescript 
 // All Agency API calls now use:
 import { createApiUrl } from '@/lib/api-config';
-
+ 
 // Example:
 fetch(createApiUrl('/api/agency/services'), {
   // ... request config
