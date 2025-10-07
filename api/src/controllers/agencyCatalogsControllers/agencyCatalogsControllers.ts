@@ -7,6 +7,7 @@ const { response } = require('../../utils');
 
 // Valid catalog types
 const VALID_CATALOG_TYPES: CatalogType[] = [
+  'site_type',
   'location',
   'nationality',
   'rank',
@@ -138,6 +139,7 @@ export const getAllCatalogs = async (req: Request, res: Response) => {
     
     // Group by type
     const grouped: Record<CatalogType, any[]> = {
+      site_type: [],
       location: [],
       nationality: [],
       rank: [],
@@ -158,6 +160,7 @@ export const getAllCatalogs = async (req: Request, res: Response) => {
 
     // Get counts
     const counts = {
+      site_type: grouped.site_type.length,
       location: grouped.location.length,
       nationality: grouped.nationality.length,
       rank: grouped.rank.length,
@@ -214,7 +217,7 @@ export const createCatalogEntry = async (req: Request, res: Response) => {
 
     // Normalize name based on type (consistent with schema)
     let normalizedName = name.trim();
-    if (type === 'location' || type === 'vessel' || type === 'nationality') {
+    if (type === 'site_type' || type === 'location' || type === 'vessel' || type === 'nationality') {
       normalizedName = normalizedName.toUpperCase();
     }
 

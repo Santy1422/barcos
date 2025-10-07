@@ -96,6 +96,7 @@ export const createAgencyService = async (req: Request, res: Response) => {
       pickupTime,
       pickupLocation,
       dropoffLocation,
+      returnDropoffLocation, // For Round Trip services
       vessel,
       voyage,
       moveType,
@@ -122,6 +123,13 @@ export const createAgencyService = async (req: Request, res: Response) => {
     if (!pickupDate || !pickupTime || !pickupLocation || !dropoffLocation || !vessel) {
       return response(res, 400, {
         message: 'Required fields: pickupDate, pickupTime, pickupLocation, dropoffLocation, vessel'
+      });
+    }
+
+    // Validate returnDropoffLocation for Round Trip
+    if (moveType === 'RT' && !returnDropoffLocation) {
+      return response(res, 400, {
+        message: 'Return dropoff location is required for Round Trip services'
       });
     }
 
@@ -175,6 +183,7 @@ export const createAgencyService = async (req: Request, res: Response) => {
       pickupTime,
       pickupLocation: pickupLocation.toUpperCase(),
       dropoffLocation: dropoffLocation.toUpperCase(),
+      returnDropoffLocation: returnDropoffLocation ? returnDropoffLocation.toUpperCase() : undefined,
       vessel: vessel.toUpperCase(),
       voyage,
       

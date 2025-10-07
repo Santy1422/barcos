@@ -438,7 +438,8 @@ export const deleteAgencyService = createAsyncThunk(
   'agencyServices/deleteAgencyService',
   async (id: string, { rejectWithValue }) => {
     try {
-      const response = await fetch(createApiUrl(`/api/agency/services/${id}`), {
+      // Agregar parámetro hardDelete=true para eliminación permanente
+      const response = await fetch(createApiUrl(`/api/agency/services/${id}?hardDelete=true`), {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -523,6 +524,7 @@ export const fetchAgencyStatistics = createAsyncThunk(
 export interface PriceCalculationRequest {
   pickupLocation: string;
   dropoffLocation: string;
+  returnDropoffLocation?: string; // For Round Trip
   routeType?: 'single' | 'roundtrip';
   serviceCode?: string;
   waitingTime?: number;
@@ -560,6 +562,7 @@ export const calculateServicePrice = createAsyncThunk(
         body: JSON.stringify({
           pickupLocation: priceData.pickupLocation,
           dropoffLocation: priceData.dropoffLocation,
+          returnDropoffLocation: priceData.returnDropoffLocation, // Add return location for Round Trip
           routeType: priceData.routeType || 'single',
           passengerCount: priceData.passengerCount || 1,
           waitingTimeHours: priceData.waitingTime || 0
@@ -666,23 +669,42 @@ export const downloadSapXml = createAsyncThunk(
   'agencyServices/downloadSapXml',
   async (fileName: string, { rejectWithValue }) => {
     try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      console.log('Downloading XML:', fileName, 'with token:', token ? 'exists' : 'missing');
+      
       const response = await fetch(createApiUrl(`/api/agency/sap/download/${fileName}`), {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         }
       });
       
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('Download error:', errorData);
         throw new Error(errorData.error || 'Failed to download SAP XML');
       }
       
-      // Para downloads, simplemente abrimos el archivo
-      window.open(`/api/agency/sap/download/${fileName}`, '_blank');
+      // Obtener el blob del archivo
+      const blob = await response.blob();
+      
+      // Crear un enlace de descarga
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
       
       return { fileName, downloaded: true };
     } catch (error) {
+      console.error('Download XML error:', error);
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
   }

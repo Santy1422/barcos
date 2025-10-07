@@ -9,6 +9,7 @@ import {
   updateAgencyRoute,
   deactivateAgencyRoute,
   reactivateAgencyRoute,
+  deleteAgencyRoute,
   calculateRoutePrice,
   fetchRouteStatistics,
   setFilters,
@@ -87,6 +88,7 @@ export const useAgencyRoutes = () => {
     updateRoute: (params: UpdateRouteParams) => dispatch(updateAgencyRoute(params)),
     deactivateRoute: (id: string) => dispatch(deactivateAgencyRoute(id)),
     reactivateRoute: (id: string) => dispatch(reactivateAgencyRoute(id)),
+    deleteRoute: (id: string) => dispatch(deleteAgencyRoute(id)),
     calculatePrice: (params: CalculatePriceParams) => dispatch(calculateRoutePrice(params)),
     fetchStatistics: () => dispatch(fetchRouteStatistics()),
     setFilters: (filters: RouteFilters) => dispatch(setFilters(filters)),
@@ -128,11 +130,17 @@ export const useAgencyRoutes = () => {
     findRouteByLocations: (pickupLocation: string, dropoffLocation: string): AgencyRoute | undefined => {
       const normalizedPickup = pickupLocation.toUpperCase();
       const normalizedDropoff = dropoffLocation.toUpperCase();
-      return routes.find(route => 
-        route.pickupLocation.toUpperCase() === normalizedPickup &&
-        route.dropoffLocation.toUpperCase() === normalizedDropoff &&
-        route.isActive
-      );
+      return routes.find(route => {
+        // Buscar por site types (método nuevo)
+        const matchesSiteTypes = route.pickupSiteType?.toUpperCase() === normalizedPickup &&
+                                 route.dropoffSiteType?.toUpperCase() === normalizedDropoff;
+        
+        // Buscar por locations (método legacy para compatibilidad)
+        const matchesLocations = route.pickupLocation?.toUpperCase() === normalizedPickup &&
+                                 route.dropoffLocation?.toUpperCase() === normalizedDropoff;
+        
+        return (matchesSiteTypes || matchesLocations) && route.isActive;
+      });
     },
     
     getPriceForRoute: (

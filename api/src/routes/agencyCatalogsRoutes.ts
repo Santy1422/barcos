@@ -33,6 +33,7 @@ const router = Router();
 
 // Valid catalog types
 const VALID_CATALOG_TYPES = [
+  'site_type',
   'location',
   'nationality', 
   'rank',

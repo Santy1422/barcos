@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/tool
 import { createApiUrl } from '@/lib/api-config';
 
 // Types based on backend schema
-export type CatalogType = 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'crew_rank' | 'crew_change_service' | 'route';
+export type CatalogType = 'site_type' | 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'crew_rank' | 'crew_change_service' | 'route';
 
 // Interface para catálogo individual
 export interface AgencyCatalog {
@@ -288,6 +288,32 @@ export const reactivateAgencyCatalog = createAsyncThunk(
       
       const data = await response.json();
       return data.payload.catalog as AgencyCatalog;
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+);
+
+// Eliminar catálogo permanentemente (hard delete)
+export const deleteAgencyCatalog = createAsyncThunk(
+  'agencyCatalogs/deleteAgencyCatalog',
+  async (id: string, { rejectWithValue }) => {
+    try {
+      // Agregar parámetro force=true para eliminación permanente
+      const response = await fetch(createApiUrl(`/api/agency/catalogs/${id}?force=true`), {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete catalog');
+      }
+      
+      return id; // Return the ID of the deleted catalog
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -649,6 +675,27 @@ const agencyCatalogsSlice = createSlice({
       .addCase(reactivateAgencyCatalog.rejected, (state, action) => {
         state.isUpdating = false;
         state.error = action.payload as string;
+      })
+      
+      // Delete catalog
+      .addCase(deleteAgencyCatalog.fulfilled, (state, action) => {
+        const catalogId = action.payload;
+        const catalogToDelete = state.catalogs.find(c => c._id === catalogId);
+        
+        // Remove from main catalogs array
+        state.catalogs = state.catalogs.filter(c => c._id !== catalogId);
+        state.totalCatalogs = Math.max(0, state.totalCatalogs - 1);
+        
+        // Clear current catalog if it was deleted
+        if (state.currentCatalog?._id === catalogId) {
+          state.currentCatalog = null;
+        }
+        
+        // Remove from grouped catalogs
+        if (catalogToDelete && state.groupedCatalogs && state.groupedCatalogs[catalogToDelete.type]) {
+          state.groupedCatalogs[catalogToDelete.type] = state.groupedCatalogs[catalogToDelete.type]
+            .filter(c => c._id !== catalogId);
+        }
       })
       
       // Fetch catalog by ID

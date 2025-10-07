@@ -4,13 +4,15 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { 
   Car, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, 
-  User, Loader2, Trash2, Edit, RefreshCw, MapPin, ArrowRight, Paperclip 
+  User, Loader2, Trash2, Edit, RefreshCw, MapPin, ArrowRight, Paperclip, 
+  Clock, Save, X, Ship, Users, Plane, Building 
 } from "lucide-react"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
 import { useToast } from "@/hooks/use-toast"
@@ -46,11 +48,25 @@ export function AgencyRecords() {
   const [clientFilter, setClientFilter] = useState("all")
   const [vesselFilter, setVesselFilter] = useState("")
   const [selectedService, setSelectedService] = useState<any>(null)
+  
+  // Edit modal state
+  const [editFormData, setEditFormData] = useState({
+    waitingTime: 0
+  })
 
   // Load services on component mount
   useEffect(() => {
     fetchServices({ page: 1, limit: 20 })
   }, [fetchServices])
+
+  // Load service data when edit modal opens
+  useEffect(() => {
+    if (modals?.showEditModal && selectedService) {
+      setEditFormData({
+        waitingTime: selectedService.waitingTime || 0
+      })
+    }
+  }, [modals?.showEditModal, selectedService])
 
   // Apply filters
   useEffect(() => {
@@ -102,6 +118,22 @@ export function AgencyRecords() {
     }
   }
 
+  const handleOpenViewModal = (serviceId: string) => {
+    const service = services.find(s => s._id === serviceId)
+    if (service) {
+      setSelectedService(service)
+      openViewModal(serviceId)
+    }
+  }
+
+  const handleOpenEditModal = (serviceId: string) => {
+    const service = services.find(s => s._id === serviceId)
+    if (service) {
+      setSelectedService(service)
+      openEditModal(serviceId)
+    }
+  }
+
   const handleOpenStatusModal = (serviceId: string) => {
     const service = services.find(s => s._id === serviceId)
     if (service) {
@@ -123,6 +155,33 @@ export function AgencyRecords() {
       toast({
         title: "Error",
         description: "Failed to delete service",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleEditService = async () => {
+    if (!selectedService) return
+    
+    try {
+      await updateService({
+        id: selectedService._id,
+        updateData: {
+          waitingTime: editFormData.waitingTime / 60 // Convert minutes to hours for backend
+        }
+      })
+      
+      toast({
+        title: "Success",
+        description: "Service updated successfully",
+      })
+      
+      closeModals()
+      fetchServices({ page: currentPage, limit: 20, filters })
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update service",
         variant: "destructive",
       })
     }
@@ -159,6 +218,27 @@ export function AgencyRecords() {
         return 'Invoiced'
       default:
         return status
+    }
+  }
+
+  const formatSafeDate = (dateValue: any) => {
+    if (!dateValue) return 'N/A'
+    
+    try {
+      // Si ya es una fecha válida
+      if (dateValue instanceof Date && !isNaN(dateValue.getTime())) {
+        return format(dateValue, 'MMM dd, yyyy')
+      }
+      
+      // Si es string, intentar parsearlo
+      const date = new Date(dateValue)
+      if (isNaN(date.getTime())) {
+        return 'Invalid Date'
+      }
+      
+      return format(date, 'MMM dd, yyyy')
+    } catch (error) {
+      return 'Invalid Date'
     }
   }
 
@@ -308,10 +388,10 @@ export function AgencyRecords() {
                       <TableCell>
                         <div>
                           <div className="font-medium">
-                            {format(new Date(service.pickupDate), 'MMM dd, yyyy')}
+                            {formatSafeDate(service.pickupDate)}
                           </div>
                           <div className="text-sm text-muted-foreground">
-                            {service.pickupTime}
+                            {service.pickupTime || 'N/A'}
                           </div>
                         </div>
                       </TableCell>
@@ -367,11 +447,32 @@ export function AgencyRecords() {
                       </TableCell>
                       
                       <TableCell>
-                        <div className="flex items-center text-sm">
-                          <MapPin className="h-3 w-3 mr-1" />
-                          {service.pickupLocation}
-                          <ArrowRight className="h-3 w-3 mx-2" />
-                          {service.dropoffLocation}
+                        <div className="text-sm">
+                          {/* First leg */}
+                          <div className="flex items-center">
+                            <MapPin className="h-3 w-3 mr-1" />
+                            {service.pickupLocation}
+                            <ArrowRight className="h-3 w-3 mx-2" />
+                            {service.dropoffLocation}
+                          </div>
+                          {/* Second leg for Round Trip */}
+                          {service.moveType === 'RT' && service.returnDropoffLocation && (
+                            <div className="flex items-center mt-1 text-xs text-muted-foreground">
+                              <MapPin className="h-3 w-3 mr-1" />
+                              {service.dropoffLocation}
+                              <ArrowRight className="h-3 w-3 mx-2" />
+                              {service.returnDropoffLocation}
+                              <span className="ml-2 text-blue-600 font-medium">(Return)</span>
+                            </div>
+                          )}
+                          {/* Move type indicator */}
+                          <div className="text-xs text-blue-600 font-medium mt-1">
+                            {service.moveType === 'RT' ? 'Round Trip' :
+                             service.moveType === 'SINGLE' ? 'Single' :
+                             service.moveType === 'INTERNAL' ? 'Internal' :
+                             service.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
+                             service.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}
+                          </div>
                         </div>
                         {service.transportCompany && (
                           <div className="text-xs text-muted-foreground mt-1">
@@ -402,7 +503,8 @@ export function AgencyRecords() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => openViewModal(service._id)}
+                            onClick={() => handleOpenViewModal(service._id)}
+                            title="View Service Details"
                           >
                             <Eye className="h-3 w-3" />
                           </Button>
@@ -410,7 +512,7 @@ export function AgencyRecords() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => openEditModal(service._id)}
+                            onClick={() => handleOpenEditModal(service._id)}
                             disabled={!['pending', 'in_progress'].includes(service.status)}
                           >
                             <Edit className="h-3 w-3" />
@@ -549,6 +651,285 @@ export function AgencyRecords() {
           <DialogFooter>
             <Button variant="outline" onClick={closeModals}>
               Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Service Modal */}
+      <Dialog open={modals?.showEditModal} onOpenChange={closeModals}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Service</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {selectedService && (
+              <>
+                <div className="text-sm text-muted-foreground">
+                  <p><strong>Service ID:</strong> {selectedService._id}</p>
+                  <p><strong>Date:</strong> {formatSafeDate(selectedService.pickupDate)}</p>
+                  <p><strong>Time:</strong> {selectedService.pickupTime || 'N/A'}</p>
+                  <p><strong>Route:</strong> {selectedService.pickupLocation} → {selectedService.dropoffLocation}</p>
+                  {selectedService.moveType === 'RT' && selectedService.returnDropoffLocation && (
+                    <p><strong>Return:</strong> {selectedService.dropoffLocation} → {selectedService.returnDropoffLocation}</p>
+                  )}
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="waitingTime" className="text-sm font-medium">
+                    Tiempo de Espera (minutos)
+                  </Label>
+                  <div className="relative">
+                    <Clock className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="waitingTime"
+                      type="number"
+                      min="0"
+                      max="1440"
+                      step="5"
+                      value={editFormData.waitingTime}
+                      onChange={(e) => setEditFormData(prev => ({ 
+                        ...prev, 
+                        waitingTime: parseInt(e.target.value) || 0 
+                      }))}
+                      className="pl-8"
+                      placeholder="Enter waiting time in minutes"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Current waiting time: {selectedService.waitingTime ? `${selectedService.waitingTime * 60} minutes` : 'Not set'}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeModals}>
+              <X className="mr-2 h-4 w-4" />
+              Cancel
+            </Button>
+            <Button onClick={handleEditService} disabled={!selectedService}>
+              <Save className="mr-2 h-4 w-4" />
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Service Modal */}
+      <Dialog open={modals?.showViewModal} onOpenChange={closeModals}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Service Details</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6">
+            {selectedService && (
+              <>
+                {/* Service Overview */}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Card>
+                    <CardContent className="pt-4">
+                      <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        Service Information
+                      </h3>
+                      <div className="space-y-2 text-sm">
+                        <div><strong>Service ID:</strong> {selectedService._id}</div>
+                        <div><strong>Date:</strong> {formatSafeDate(selectedService.pickupDate)}</div>
+                        <div><strong>Time:</strong> {selectedService.pickupTime || 'N/A'}</div>
+                        <div><strong>Status:</strong> 
+                          <Badge className={`ml-2 ${getStatusColor(selectedService.status)}`}>
+                            {getStatusLabel(selectedService.status)}
+                          </Badge>
+                        </div>
+                        <div><strong>Move Type:</strong> 
+                          {selectedService.moveType === 'RT' ? 'Round Trip' :
+                           selectedService.moveType === 'SINGLE' ? 'Single' :
+                           selectedService.moveType === 'INTERNAL' ? 'Internal' :
+                           selectedService.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
+                           selectedService.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="pt-4">
+                      <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <DollarSign className="h-4 w-4" />
+                        Pricing Information
+                      </h3>
+                      <div className="space-y-2 text-sm">
+                        <div><strong>Price:</strong> 
+                          {selectedService.price ? 
+                            `${selectedService.currency === 'USD' ? '$' : selectedService.currency} ${selectedService.price}` : 
+                            'Not set'
+                          }
+                        </div>
+                        <div><strong>Passengers:</strong> {selectedService.passengerCount || 'N/A'}</div>
+                        <div><strong>Waiting Time:</strong> 
+                          {selectedService.waitingTime ? 
+                            `${selectedService.waitingTime * 60} minutes` : 
+                            'Not set'
+                          }
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Route Information */}
+                <Card>
+                  <CardContent className="pt-4">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                      <MapPin className="h-4 w-4" />
+                      Route Information
+                    </h3>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-blue-500" />
+                        <span className="font-medium">Pickup:</span>
+                        <span>{selectedService.pickupLocation}</span>
+                      </div>
+                      <div className="flex items-center gap-2 ml-6">
+                        <ArrowRight className="h-4 w-4 text-gray-400" />
+                        <MapPin className="h-4 w-4 text-green-500" />
+                        <span className="font-medium">Drop-off:</span>
+                        <span>{selectedService.dropoffLocation}</span>
+                      </div>
+                      
+                      {/* Return route for Round Trip */}
+                      {selectedService.moveType === 'RT' && selectedService.returnDropoffLocation && (
+                        <>
+                          <div className="flex items-center gap-2 ml-6">
+                            <ArrowRight className="h-4 w-4 text-gray-400" />
+                            <MapPin className="h-4 w-4 text-orange-500" />
+                            <span className="font-medium">Return Drop-off:</span>
+                            <span>{selectedService.returnDropoffLocation}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Vessel & Transport Information */}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Card>
+                    <CardContent className="pt-4">
+                      <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <Ship className="h-4 w-4" />
+                        Vessel Information
+                      </h3>
+                      <div className="space-y-2 text-sm">
+                        <div><strong>Vessel:</strong> {selectedService.vessel || 'N/A'}</div>
+                        <div><strong>Voyage:</strong> {selectedService.voyage || 'N/A'}</div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="pt-4">
+                      <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <Building className="h-4 w-4" />
+                        Transport Information
+                      </h3>
+                      <div className="space-y-2 text-sm">
+                        <div><strong>Company:</strong> {selectedService.transportCompany || 'N/A'}</div>
+                        <div><strong>Driver:</strong> {selectedService.driver || 'N/A'}</div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Crew Members */}
+                {selectedService.crewMembers && selectedService.crewMembers.length > 0 && (
+                  <Card>
+                    <CardContent className="pt-4">
+                      <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <Users className="h-4 w-4" />
+                        Crew Members ({selectedService.crewMembers.length})
+                      </h3>
+                      <div className="space-y-3">
+                        {selectedService.crewMembers.map((member, index) => (
+                          <div key={member.id || index} className="border rounded-lg p-3 bg-gray-50">
+                            <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3 text-sm">
+                              <div><strong>Name:</strong> {member.name || 'N/A'}</div>
+                              <div><strong>Nationality:</strong> {member.nationality || 'N/A'}</div>
+                              <div><strong>Rank:</strong> {member.crewRank || 'N/A'}</div>
+                              <div><strong>Category:</strong> {member.crewCategory || 'N/A'}</div>
+                              <div><strong>Status:</strong> {member.status || 'N/A'}</div>
+                              <div><strong>Flight:</strong> {member.flight || 'N/A'}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Legacy Crew Information (if no crew members array) */}
+                {(!selectedService.crewMembers || selectedService.crewMembers.length === 0) && 
+                 (selectedService.crewName || selectedService.crewRank || selectedService.nationality) && (
+                  <Card>
+                    <CardContent className="pt-4">
+                      <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <User className="h-4 w-4" />
+                        Crew Information (Legacy)
+                      </h3>
+                      <div className="space-y-2 text-sm">
+                        <div><strong>Name:</strong> {selectedService.crewName || 'N/A'}</div>
+                        <div><strong>Rank:</strong> {selectedService.crewRank || 'N/A'}</div>
+                        <div><strong>Nationality:</strong> {selectedService.nationality || 'N/A'}</div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Comments */}
+                {selectedService.comments && (
+                  <Card>
+                    <CardContent className="pt-4">
+                      <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        Comments
+                      </h3>
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                        {selectedService.comments}
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Attachments */}
+                {selectedService.attachments && selectedService.attachments.length > 0 && (
+                  <Card>
+                    <CardContent className="pt-4">
+                      <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <Paperclip className="h-4 w-4" />
+                        Attachments ({selectedService.attachments.length})
+                      </h3>
+                      <div className="space-y-2">
+                        {selectedService.attachments.map((attachment, index) => (
+                          <div key={index} className="flex items-center gap-2 text-sm">
+                            <Paperclip className="h-3 w-3" />
+                            <span>{attachment.fileName}</span>
+                            <span className="text-muted-foreground">
+                              ({formatSafeDate(attachment.uploadDate)})
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeModals}>
+              <X className="mr-2 h-4 w-4" />
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

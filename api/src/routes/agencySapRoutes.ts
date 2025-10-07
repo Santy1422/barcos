@@ -204,6 +204,7 @@ router.get('/ready-for-invoice',
 
 // POST /api/agency/sap/generate-xml - Generar XML para SAP
 router.post('/generate-xml',
+  jwtUtils,
   requireSapPermissions,
   sapGenerationLimiter,
   xmlGenerationValidation,
@@ -213,6 +214,7 @@ router.post('/generate-xml',
 
 // POST /api/agency/sap/send-to-sap - Enviar XML generado a SAP
 router.post('/send-to-sap',
+  jwtUtils,
   requireSapPermissions,
   sapGenerationLimiter,
   [
@@ -235,6 +237,7 @@ router.post('/send-to-sap',
 
 // GET /api/agency/sap/download/:fileName - Descargar XML generado
 router.get('/download/:fileName',
+  jwtUtils,
   requireAdminOrOperations,
   downloadLimiter,
   fileNameValidation,
@@ -244,6 +247,7 @@ router.get('/download/:fileName',
 
 // GET /api/agency/sap/history - Historial de XMLs generados
 router.get('/history',
+  jwtUtils,
   requireAdminOrOperations,
   historyValidation,
   logSapOperation('QUERY_HISTORY'),
@@ -252,6 +256,7 @@ router.get('/history',
 
 // POST /api/agency/sap/validate-xml - Validar estructura XML (endpoint de testing)
 router.post('/validate-xml',
+  jwtUtils,
   requireSapPermissions,
   [
     body('xmlData')

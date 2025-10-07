@@ -9,6 +9,7 @@ import {
   updateAgencyCatalog,
   deactivateAgencyCatalog,
   reactivateAgencyCatalog,
+  deleteAgencyCatalog,
   fetchCatalogById,
   searchCatalogs,
   fetchCatalogStatistics,
@@ -98,6 +99,7 @@ export const useAgencyCatalogs = () => {
   const statisticsLoading = useSelector((state: AgencyCatalogsState) => state.agencyCatalogs.statisticsLoading);
   
   // Specific catalog selectors
+  const siteTypes = useSelector(selectActiveCatalogsByType('site_type'));
   const locations = useSelector(selectActiveLocations);
   const nationalities = useSelector(selectActiveNationalities);
   const ranks = useSelector(selectActiveRanks);
@@ -115,6 +117,7 @@ export const useAgencyCatalogs = () => {
     updateCatalog: (params: UpdateCatalogParams) => dispatch(updateAgencyCatalog(params)),
     deactivateCatalog: (id: string) => dispatch(deactivateAgencyCatalog(id)),
     reactivateCatalog: (id: string) => dispatch(reactivateAgencyCatalog(id)),
+    deleteCatalog: (id: string) => dispatch(deleteAgencyCatalog(id)),
     fetchCatalogById: (id: string) => dispatch(fetchCatalogById(id)),
     searchCatalogs: (searchTerm: string) => dispatch(searchCatalogs(searchTerm)),
     fetchStatistics: () => dispatch(fetchCatalogStatistics()),
@@ -193,7 +196,8 @@ export const useAgencyCatalogs = () => {
     
     // Obtener etiqueta del tipo de catálogo
     getTypeLabel: (type: CatalogType): string => {
-      const typeLabels: Record<CatalogType, string> = {
+      const typeLabels: Record<string, string> = {
+        'site_type': 'Tipo de Sitio',
         'location': 'Ubicación',
         'nationality': 'Nacionalidad',
         'rank': 'Rango',
@@ -207,7 +211,8 @@ export const useAgencyCatalogs = () => {
     
     // Obtener icono para el tipo de catálogo
     getTypeIcon: (type: CatalogType): string => {
-      const typeIcons: Record<CatalogType, string> = {
+      const typeIcons: Record<string, string> = {
+        'site_type': '🏢',
         'location': '📍',
         'nationality': '🌍',
         'rank': '⚓',
@@ -229,7 +234,8 @@ export const useAgencyCatalogs = () => {
     
     // Obtener estadísticas rápidas por tipo
     getQuickStatsByType: () => {
-      const stats: Record<CatalogType, { total: number; active: number; inactive: number }> = {
+      const stats: Record<string, { total: number; active: number; inactive: number }> = {
+        site_type: { total: 0, active: 0, inactive: 0 },
         location: { total: 0, active: 0, inactive: 0 },
         nationality: { total: 0, active: 0, inactive: 0 },
         rank: { total: 0, active: 0, inactive: 0 },
@@ -346,6 +352,7 @@ export const useAgencyCatalogs = () => {
     statisticsLoading,
     
     // Specific catalog types
+    siteTypes,
     locations,
     nationalities,
     ranks,

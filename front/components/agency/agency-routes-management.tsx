@@ -22,7 +22,10 @@ import type { AgencyRouteInput, PassengerPriceRange, RoutePricing } from "@/lib/
 // Tipos de ruta
 const ROUTE_TYPES = [
   { value: 'single', label: 'Single (Solo Ida)' },
-  { value: 'roundtrip', label: 'Round Trip (Ida y Vuelta)' }
+  { value: 'roundtrip', label: 'Round Trip (Ida y Vuelta)' },
+  { value: 'internal', label: 'Internal (Interno)' },
+  { value: 'bags_claim', label: 'Bags Claim (Reclamo de Equipaje)' },
+  { value: 'documentation', label: 'Documentation (Documentación)' }
 ] as const
 
 // Plantilla de rangos de pasajeros por defecto
@@ -45,12 +48,13 @@ export function AgencyRoutesManagement() {
     updateRoute,
     deactivateRoute,
     reactivateRoute,
+    deleteRoute,
     statistics,
     fetchStatistics
   } = useAgencyRoutes()
 
   const {
-    locations,
+    siteTypes,
     fetchGroupedCatalogs
   } = useAgencyCatalogs()
 
@@ -62,8 +66,8 @@ export function AgencyRoutesManagement() {
 
   // Form state
   const [formData, setFormData] = useState<{
-    pickupLocation: string
-    dropoffLocation: string
+    pickupSiteType: string
+    dropoffSiteType: string
     pricing: RoutePricing[]
     currency: string
     waitingTimeRate: number
@@ -73,8 +77,8 @@ export function AgencyRoutesManagement() {
     distance: number | undefined
     estimatedDuration: number | undefined
   }>({
-    pickupLocation: '',
-    dropoffLocation: '',
+    pickupSiteType: '',
+    dropoffSiteType: '',
     pricing: [
       {
         routeType: 'single',
@@ -82,6 +86,18 @@ export function AgencyRoutesManagement() {
       },
       {
         routeType: 'roundtrip',
+        passengerRanges: JSON.parse(JSON.stringify(DEFAULT_PASSENGER_RANGES))
+      },
+      {
+        routeType: 'internal',
+        passengerRanges: JSON.parse(JSON.stringify(DEFAULT_PASSENGER_RANGES))
+      },
+      {
+        routeType: 'bags_claim',
+        passengerRanges: JSON.parse(JSON.stringify(DEFAULT_PASSENGER_RANGES))
+      },
+      {
+        routeType: 'documentation',
         passengerRanges: JSON.parse(JSON.stringify(DEFAULT_PASSENGER_RANGES))
       }
     ],
@@ -109,8 +125,8 @@ export function AgencyRoutesManagement() {
 
   const handleOpenCreateModal = () => {
     setFormData({
-      pickupLocation: '',
-      dropoffLocation: '',
+      pickupSiteType: '',
+      dropoffSiteType: '',
       pricing: [
         {
           routeType: 'single',
@@ -118,6 +134,18 @@ export function AgencyRoutesManagement() {
         },
         {
           routeType: 'roundtrip',
+          passengerRanges: JSON.parse(JSON.stringify(DEFAULT_PASSENGER_RANGES))
+        },
+        {
+          routeType: 'internal',
+          passengerRanges: JSON.parse(JSON.stringify(DEFAULT_PASSENGER_RANGES))
+        },
+        {
+          routeType: 'bags_claim',
+          passengerRanges: JSON.parse(JSON.stringify(DEFAULT_PASSENGER_RANGES))
+        },
+        {
+          routeType: 'documentation',
           passengerRanges: JSON.parse(JSON.stringify(DEFAULT_PASSENGER_RANGES))
         }
       ],
@@ -136,8 +164,8 @@ export function AgencyRoutesManagement() {
   const handleOpenEditModal = (route: any) => {
     setSelectedRoute(route)
     setFormData({
-      pickupLocation: route.pickupLocation,
-      dropoffLocation: route.dropoffLocation,
+      pickupSiteType: route.pickupSiteType || route.pickupLocation || '',
+      dropoffSiteType: route.dropoffSiteType || route.dropoffLocation || '',
       pricing: route.pricing,
       currency: route.currency || 'USD',
       waitingTimeRate: route.waitingTimeRate || 10,
@@ -184,10 +212,10 @@ export function AgencyRoutesManagement() {
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {}
 
-    if (!formData.pickupLocation) errors.pickupLocation = 'Pickup location is required'
-    if (!formData.dropoffLocation) errors.dropoffLocation = 'Dropoff location is required'
-    if (formData.pickupLocation === formData.dropoffLocation) {
-      errors.dropoffLocation = 'Dropoff location must be different from pickup location'
+    if (!formData.pickupSiteType) errors.pickupSiteType = 'Pickup site type is required'
+    if (!formData.dropoffSiteType) errors.dropoffSiteType = 'Dropoff site type is required'
+    if (formData.pickupSiteType === formData.dropoffSiteType) {
+      errors.dropoffSiteType = 'Dropoff site type must be different from pickup site type'
     }
 
     // Validate pricing
@@ -206,7 +234,10 @@ export function AgencyRoutesManagement() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    console.log('🔧 [FRONTEND] handleSubmit - Form data:', formData)
+    
     if (!validateForm()) {
+      console.log('❌ [FRONTEND] Validation failed:', formErrors)
       toast({
         title: "Validation Error",
         description: "Please fix the errors and try again",
@@ -217,8 +248,8 @@ export function AgencyRoutesManagement() {
 
     try {
       const routeData: AgencyRouteInput = {
-        pickupLocation: formData.pickupLocation,
-        dropoffLocation: formData.dropoffLocation,
+        pickupSiteType: formData.pickupSiteType,
+        dropoffSiteType: formData.dropoffSiteType,
         pricing: formData.pricing,
         currency: formData.currency,
         waitingTimeRate: formData.waitingTimeRate,
@@ -228,6 +259,8 @@ export function AgencyRoutesManagement() {
         distance: formData.distance,
         estimatedDuration: formData.estimatedDuration
       }
+
+      console.log('🔧 [FRONTEND] Sending route data:', routeData)
 
       if (selectedRoute) {
         await updateRoute({
@@ -240,7 +273,7 @@ export function AgencyRoutesManagement() {
         })
       } else {
         const result = await createRoute(routeData)
-        console.log('Route created:', result)
+        console.log('✅ [FRONTEND] Route created successfully:', result)
         toast({
           title: "Success",
           description: "Route created successfully",
@@ -289,11 +322,38 @@ export function AgencyRoutesManagement() {
     }
   }
 
-  const filteredRoutes = routes.filter(route =>
-    route.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    route.pickupLocation.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    route.dropoffLocation.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const handleDeleteRoute = async (route: any) => {
+    if (!confirm(`¿Está seguro que desea eliminar permanentemente la ruta "${route.name}"?\n\nEsta acción no se puede deshacer.`)) {
+      return
+    }
+
+    try {
+      await deleteRoute(route._id)
+      toast({
+        title: "Success",
+        description: "Route deleted successfully",
+      })
+      fetchRoutes({ page: 1, limit: 100 })
+      fetchStatistics()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete route",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const filteredRoutes = routes.filter(route => {
+    const searchLower = searchTerm.toLowerCase()
+    return (
+      route.name.toLowerCase().includes(searchLower) ||
+      (route.pickupSiteType && route.pickupSiteType.toLowerCase().includes(searchLower)) ||
+      (route.dropoffSiteType && route.dropoffSiteType.toLowerCase().includes(searchLower)) ||
+      (route.pickupLocation && route.pickupLocation.toLowerCase().includes(searchLower)) ||
+      (route.dropoffLocation && route.dropoffLocation.toLowerCase().includes(searchLower))
+    )
+  })
 
   // Debug: log routes
   useEffect(() => {
@@ -383,26 +443,19 @@ export function AgencyRoutesManagement() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Route Name</TableHead>
-                  <TableHead>Pickup</TableHead>
-                  <TableHead>Dropoff</TableHead>
-                  <TableHead>Single Price Range</TableHead>
-                  <TableHead>Roundtrip Price Range</TableHead>
+                  <TableHead>Pickup Site Type</TableHead>
+                  <TableHead>Dropoff Site Type</TableHead>
+                  <TableHead>Price Range</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredRoutes.map((route) => {
-                  const singlePricing = route.pricing.find(p => p.routeType === 'single')
-                  const roundtripPricing = route.pricing.find(p => p.routeType === 'roundtrip')
-                  
-                  const singlePrices = singlePricing?.passengerRanges.map(r => r.price) || []
-                  const roundtripPrices = roundtripPricing?.passengerRanges.map(r => r.price) || []
-                  
-                  const minSingle = Math.min(...singlePrices)
-                  const maxSingle = Math.max(...singlePrices)
-                  const minRoundtrip = Math.min(...roundtripPrices)
-                  const maxRoundtrip = Math.max(...roundtripPrices)
+                  // Get all pricing info
+                  const allPrices = route.pricing.flatMap(p => p.passengerRanges.map(r => r.price))
+                  const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0
+                  const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 0
                   
                   return (
                     <TableRow key={route._id}>
@@ -410,25 +463,22 @@ export function AgencyRoutesManagement() {
                       <TableCell>
                         <div className="flex items-center gap-1">
                           <MapPin className="h-3 w-3 text-blue-500" />
-                          {route.pickupLocation}
+                          {route.pickupSiteType || route.pickupLocation}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
                           <MapPin className="h-3 w-3 text-green-500" />
-                          {route.dropoffLocation}
+                          {route.dropoffSiteType || route.dropoffLocation}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
                           <DollarSign className="h-3 w-3" />
-                          ${minSingle} - ${maxSingle}
+                          ${minPrice} - ${maxPrice}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <DollarSign className="h-3 w-3" />
-                          ${minRoundtrip} - ${maxRoundtrip}
+                        <div className="text-xs text-muted-foreground">
+                          {route.pricing.length} tipo(s) de ruta
                         </div>
                       </TableCell>
                       <TableCell>
@@ -442,6 +492,7 @@ export function AgencyRoutesManagement() {
                             size="sm"
                             variant="ghost"
                             onClick={() => handleOpenViewModal(route)}
+                            title="View details"
                           >
                             <Eye className="h-3 w-3" />
                           </Button>
@@ -449,6 +500,7 @@ export function AgencyRoutesManagement() {
                             size="sm"
                             variant="ghost"
                             onClick={() => handleOpenEditModal(route)}
+                            title="Edit route"
                           >
                             <Edit className="h-3 w-3" />
                           </Button>
@@ -456,8 +508,18 @@ export function AgencyRoutesManagement() {
                             size="sm"
                             variant="ghost"
                             onClick={() => handleToggleActive(route)}
+                            title={route.isActive ? "Deactivate route" : "Reactivate route"}
                           >
                             <RefreshCw className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDeleteRoute(route)}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            title="Delete route permanently"
+                          >
+                            <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
                       </TableCell>
@@ -467,7 +529,7 @@ export function AgencyRoutesManagement() {
                 
                 {filteredRoutes.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={6} className="h-24 text-center">
                       No routes found
                     </TableCell>
                   </TableRow>
@@ -487,64 +549,69 @@ export function AgencyRoutesManagement() {
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Locations */}
+            {/* Site Types */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="pickupLocation">
-                  Pickup Location * <MapPin className="inline h-3 w-3 text-blue-500" />
+                <Label htmlFor="pickupSiteType">
+                  Pickup Site Type * <MapPin className="inline h-3 w-3 text-blue-500" />
                 </Label>
                 <Select
-                  value={formData.pickupLocation}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, pickupLocation: value }))}
+                  value={formData.pickupSiteType}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, pickupSiteType: value }))}
                   disabled={!!selectedRoute}
                 >
-                  <SelectTrigger className={formErrors.pickupLocation ? 'border-red-500' : ''}>
-                    <SelectValue placeholder="Select pickup location" />
+                  <SelectTrigger className={formErrors.pickupSiteType ? 'border-red-500' : ''}>
+                    <SelectValue placeholder="Select pickup site type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {locations.map((location) => (
-                      <SelectItem key={location._id} value={location.name}>
-                        {location.name}
+                    {siteTypes.map((siteType) => (
+                      <SelectItem key={siteType._id} value={siteType.name}>
+                        {siteType.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {formErrors.pickupLocation && (
-                  <p className="text-xs text-red-500">{formErrors.pickupLocation}</p>
+                {formErrors.pickupSiteType && (
+                  <p className="text-xs text-red-500">{formErrors.pickupSiteType}</p>
+                )}
+                {siteTypes.length === 0 && (
+                  <p className="text-xs text-yellow-600">
+                    No site types available. Create site types first in Catalogs.
+                  </p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="dropoffLocation">
-                  Dropoff Location * <MapPin className="inline h-3 w-3 text-green-500" />
+                <Label htmlFor="dropoffSiteType">
+                  Dropoff Site Type * <MapPin className="inline h-3 w-3 text-green-500" />
                 </Label>
                 <Select
-                  value={formData.dropoffLocation}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, dropoffLocation: value }))}
+                  value={formData.dropoffSiteType}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, dropoffSiteType: value }))}
                   disabled={!!selectedRoute}
                 >
-                  <SelectTrigger className={formErrors.dropoffLocation ? 'border-red-500' : ''}>
-                    <SelectValue placeholder="Select dropoff location" />
+                  <SelectTrigger className={formErrors.dropoffSiteType ? 'border-red-500' : ''}>
+                    <SelectValue placeholder="Select dropoff site type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {locations.map((location) => (
-                      <SelectItem key={location._id} value={location.name}>
-                        {location.name}
+                    {siteTypes.map((siteType) => (
+                      <SelectItem key={siteType._id} value={siteType.name}>
+                        {siteType.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {formErrors.dropoffLocation && (
-                  <p className="text-xs text-red-500">{formErrors.dropoffLocation}</p>
+                {formErrors.dropoffSiteType && (
+                  <p className="text-xs text-red-500">{formErrors.dropoffSiteType}</p>
                 )}
               </div>
             </div>
 
             {/* Route Name Preview */}
-            {formData.pickupLocation && formData.dropoffLocation && (
+            {formData.pickupSiteType && formData.dropoffSiteType && (
               <div className="p-3 bg-blue-50 rounded-lg">
                 <p className="text-sm font-medium text-blue-900">
-                  Route Name: {formData.pickupLocation} / {formData.dropoffLocation}
+                  Route Name: {formData.pickupSiteType} / {formData.dropoffSiteType}
                 </p>
               </div>
             )}
@@ -554,12 +621,15 @@ export function AgencyRoutesManagement() {
               <Label className="text-lg font-semibold">Pricing Configuration</Label>
               
               <Tabs defaultValue="single" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="single">Single (Solo Ida)</TabsTrigger>
-                  <TabsTrigger value="roundtrip">Round Trip (Ida y Vuelta)</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-5">
+                  <TabsTrigger value="single">Single</TabsTrigger>
+                  <TabsTrigger value="roundtrip">Roundtrip</TabsTrigger>
+                  <TabsTrigger value="internal">Internal</TabsTrigger>
+                  <TabsTrigger value="bags_claim">Bags Claim</TabsTrigger>
+                  <TabsTrigger value="documentation">Documentation</TabsTrigger>
                 </TabsList>
 
-                {(['single', 'roundtrip'] as const).map((routeType) => {
+                {(['single', 'roundtrip', 'internal', 'bags_claim', 'documentation'] as const).map((routeType) => {
                   const pricing = formData.pricing.find(p => p.routeType === routeType)
                   if (!pricing) return null
 
@@ -615,7 +685,7 @@ export function AgencyRoutesManagement() {
 
             {/* Additional Configuration */}
             <div className="space-y-2">
-              <Label>Waiting Time Rate (per hour)</Label>
+              <Label>Waiting Time Rate (per minute)</Label>
               <Input
                 type="number"
                 min="0"
@@ -623,7 +693,7 @@ export function AgencyRoutesManagement() {
                 value={formData.waitingTimeRate}
                 onChange={(e) => setFormData(prev => ({ ...prev, waitingTimeRate: parseFloat(e.target.value) || 0 }))}
               />
-              <p className="text-xs text-muted-foreground">Precio por hora de espera</p>
+              <p className="text-xs text-muted-foreground">Precio por minuto de espera</p>
             </div>
 
             <DialogFooter>
@@ -651,22 +721,25 @@ export function AgencyRoutesManagement() {
               <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                 <div className="flex items-center gap-2">
                   <MapPin className="h-4 w-4 text-blue-500" />
-                  <span className="font-medium">{selectedRoute.pickupLocation}</span>
+                  <span className="font-medium">{selectedRoute.pickupSiteType || selectedRoute.pickupLocation}</span>
                 </div>
                 <ArrowRight className="h-5 w-5 text-gray-400" />
                 <div className="flex items-center gap-2">
                   <MapPin className="h-4 w-4 text-green-500" />
-                  <span className="font-medium">{selectedRoute.dropoffLocation}</span>
+                  <span className="font-medium">{selectedRoute.dropoffSiteType || selectedRoute.dropoffLocation}</span>
                 </div>
               </div>
 
               <Tabs defaultValue="single" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="single">Single Pricing</TabsTrigger>
-                  <TabsTrigger value="roundtrip">Roundtrip Pricing</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-5">
+                  <TabsTrigger value="single">Single</TabsTrigger>
+                  <TabsTrigger value="roundtrip">Roundtrip</TabsTrigger>
+                  <TabsTrigger value="internal">Internal</TabsTrigger>
+                  <TabsTrigger value="bags_claim">Bags Claim</TabsTrigger>
+                  <TabsTrigger value="documentation">Documentation</TabsTrigger>
                 </TabsList>
 
-                {(['single', 'roundtrip'] as const).map((routeType) => {
+                {(['single', 'roundtrip', 'internal', 'bags_claim', 'documentation'] as const).map((routeType) => {
                   const pricing = selectedRoute.pricing.find((p: any) => p.routeType === routeType)
                   if (!pricing) return null
 

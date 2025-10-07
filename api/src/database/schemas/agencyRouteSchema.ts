@@ -1,7 +1,7 @@
 import { Schema, model, Document, Types, Model } from 'mongoose';
 
 // Tipos de ruta
-export type RouteType = 'single' | 'roundtrip';
+export type RouteType = 'single' | 'roundtrip' | 'internal' | 'bags_claim' | 'documentation';
 
 // Interface para intervalos de precios por pasajeros
 export interface PassengerPriceRange {
@@ -33,6 +33,8 @@ export interface IAgencyRoute extends Document {
   name: string;                     // "LOCATION1 / LOCATION2"
   pickupLocation: string;           // Nombre de la ubicación de recogida
   dropoffLocation: string;          // Nombre de la ubicación de entrega
+  pickupSiteType?: string;          // Site type de recogida (nuevo)
+  dropoffSiteType?: string;         // Site type de entrega (nuevo)
   pickupLocationId?: Types.ObjectId; // Referencia al catálogo de ubicación
   dropoffLocationId?: Types.ObjectId; // Referencia al catálogo de ubicación
   
@@ -94,7 +96,7 @@ const passengerPriceRangeSchema = new Schema<PassengerPriceRange>({
 const routePricingSchema = new Schema<RoutePricing>({
   routeType: {
     type: String,
-    enum: ['single', 'roundtrip'],
+    enum: ['single', 'roundtrip', 'internal', 'bags_claim', 'documentation'],
     required: true
   },
   passengerRanges: {
@@ -128,6 +130,18 @@ const agencyRouteSchema = new Schema<IAgencyRoute>(
     dropoffLocation: {
       type: String,
       required: true,
+      trim: true,
+      uppercase: true
+    },
+    
+    pickupSiteType: {
+      type: String,
+      trim: true,
+      uppercase: true
+    },
+    
+    dropoffSiteType: {
+      type: String,
       trim: true,
       uppercase: true
     },
@@ -225,6 +239,7 @@ const agencyRouteSchema = new Schema<IAgencyRoute>(
 // Índices
 agencyRouteSchema.index({ name: 1 }, { unique: true });
 agencyRouteSchema.index({ pickupLocation: 1, dropoffLocation: 1 });
+agencyRouteSchema.index({ pickupSiteType: 1, dropoffSiteType: 1 });
 agencyRouteSchema.index({ isActive: 1 });
 agencyRouteSchema.index({ pickupLocationId: 1, dropoffLocationId: 1 });
 
@@ -232,28 +247,53 @@ agencyRouteSchema.index({ pickupLocationId: 1, dropoffLocationId: 1 });
 agencyRouteSchema.pre('save', function(next) {
   // Generar nombre si no existe
   if (!this.name || this.name.trim() === '') {
-    this.name = `${this.pickupLocation} / ${this.dropoffLocation}`.toUpperCase();
+    // Usar site types si están disponibles, sino usar locations
+    const pickupValue = this.pickupSiteType || this.pickupLocation;
+    const dropoffValue = this.dropoffSiteType || this.dropoffLocation;
+    this.name = `${pickupValue} / ${dropoffValue}`.toUpperCase();
   }
   
-  // Normalizar ubicaciones a mayúsculas
-  this.pickupLocation = this.pickupLocation.toUpperCase();
-  this.dropoffLocation = this.dropoffLocation.toUpperCase();
+  // Normalizar ubicaciones y site types a mayúsculas
+  if (this.pickupLocation) {
+    this.pickupLocation = this.pickupLocation.toUpperCase();
+  }
+  if (this.dropoffLocation) {
+    this.dropoffLocation = this.dropoffLocation.toUpperCase();
+  }
+  if (this.pickupSiteType) {
+    this.pickupSiteType = this.pickupSiteType.toUpperCase();
+  }
+  if (this.dropoffSiteType) {
+    this.dropoffSiteType = this.dropoffSiteType.toUpperCase();
+  }
   
   next();
 });
 
 // Validación: pickup y dropoff deben ser diferentes
 agencyRouteSchema.pre('save', function(next) {
-  if (this.pickupLocation.toUpperCase() === this.dropoffLocation.toUpperCase()) {
-    next(new Error('Pickup location and dropoff location must be different'));
-  } else {
-    next();
+  // Si usamos site types, validar que sean diferentes
+  if (this.pickupSiteType && this.dropoffSiteType) {
+    if (this.pickupSiteType.toUpperCase() === this.dropoffSiteType.toUpperCase()) {
+      next(new Error('Pickup site type and dropoff site type must be different'));
+      return;
+    }
   }
+  
+  // Si usamos locations, validar que sean diferentes
+  if (this.pickupLocation && this.dropoffLocation) {
+    if (this.pickupLocation.toUpperCase() === this.dropoffLocation.toUpperCase()) {
+      next(new Error('Pickup location and dropoff location must be different'));
+      return;
+    }
+  }
+  
+  next();
 });
 
 // Static methods
 
-// Buscar ruta por ubicaciones
+// Buscar ruta por ubicaciones o site types
 agencyRouteSchema.statics.findByLocations = function(
   this: IAgencyRouteModel,
   pickupLocation: string, 
@@ -261,8 +301,18 @@ agencyRouteSchema.statics.findByLocations = function(
   activeOnly = true
 ) {
   const query: any = {
-    pickupLocation: pickupLocation.toUpperCase(),
-    dropoffLocation: dropoffLocation.toUpperCase()
+    $or: [
+      // Buscar por locations (método legacy)
+      {
+        pickupLocation: pickupLocation.toUpperCase(),
+        dropoffLocation: dropoffLocation.toUpperCase()
+      },
+      // Buscar por site types (método nuevo)
+      {
+        pickupSiteType: pickupLocation.toUpperCase(),
+        dropoffSiteType: dropoffLocation.toUpperCase()
+      }
+    ]
   };
   
   if (activeOnly) {
@@ -370,6 +420,21 @@ agencyRouteSchema.virtual('hasRoundtripPricing').get(function() {
 // Virtual para verificar si tiene precios de single
 agencyRouteSchema.virtual('hasSinglePricing').get(function() {
   return this.pricing && this.pricing.some((p: RoutePricing) => p.routeType === 'single');
+});
+
+// Virtual para verificar si tiene precios de internal
+agencyRouteSchema.virtual('hasInternalPricing').get(function() {
+  return this.pricing && this.pricing.some((p: RoutePricing) => p.routeType === 'internal');
+});
+
+// Virtual para verificar si tiene precios de bags_claim
+agencyRouteSchema.virtual('hasBagsClaimPricing').get(function() {
+  return this.pricing && this.pricing.some((p: RoutePricing) => p.routeType === 'bags_claim');
+});
+
+// Virtual para verificar si tiene precios de documentation
+agencyRouteSchema.virtual('hasDocumentationPricing').get(function() {
+  return this.pricing && this.pricing.some((p: RoutePricing) => p.routeType === 'documentation');
 });
 
 // Método de instancia para calcular precio

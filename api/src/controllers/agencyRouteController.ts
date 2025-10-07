@@ -198,6 +198,7 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
     const { 
       pickupLocation, 
       dropoffLocation, 
+      returnDropoffLocation, // For Round Trip
       routeType = 'single', 
       passengerCount = 1,
       waitingTimeHours = 0
@@ -210,16 +211,25 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
       });
     }
 
-    const route = await AgencyRoute.findByLocations(
+    // For Round Trip, we need returnDropoffLocation
+    if (routeType === 'roundtrip' && !returnDropoffLocation) {
+      return res.status(400).json({
+        success: false,
+        message: 'Return dropoff location is required for Round Trip'
+      });
+    }
+
+    // Find first route (pickup -> dropoff)
+    const firstRoute = await AgencyRoute.findByLocations(
       pickupLocation,
       dropoffLocation,
       true
     );
 
-    if (!route) {
+    if (!firstRoute) {
       return res.status(404).json({
         success: false,
-        message: 'Route not found',
+        message: 'First route not found',
         payload: {
           found: false,
           price: null
@@ -227,46 +237,138 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
       });
     }
 
-    const price = route.calculatePrice(
-      routeType as RouteType,
-      passengerCount,
-      waitingTimeHours
-    );
+    let totalPrice = 0;
+    let totalBreakdown = null;
+    let routes = [firstRoute];
 
-    if (price === null) {
-      return res.status(400).json({
-        success: false,
-        message: 'Could not calculate price. Check route type and passenger count.',
-        payload: {
-          found: true,
-          price: null
-        }
-      });
+    // For Round Trip, sum the roundtrip prices of both routes
+    if (routeType === 'roundtrip') {
+      // Calculate price for first route using roundtrip pricing
+      const firstRoutePrice = firstRoute.calculatePrice(
+        'roundtrip' as RouteType,
+        passengerCount,
+        waitingTimeHours / 2 // Split waiting time between routes
+      );
+
+      if (firstRoutePrice === null) {
+        return res.status(400).json({
+          success: false,
+          message: 'Could not calculate roundtrip price for first route. Check passenger count and roundtrip pricing configuration.',
+          payload: {
+            found: true,
+            price: null
+          }
+        });
+      }
+
+      totalPrice += firstRoutePrice;
+      totalBreakdown = firstRoute.getPriceBreakdown(
+        'roundtrip' as RouteType,
+        passengerCount,
+        waitingTimeHours / 2
+      );
+
+      // Find and calculate second route (dropoff -> returnDropoff)
+      const secondRoute = await AgencyRoute.findByLocations(
+        dropoffLocation,
+        returnDropoffLocation,
+        true
+      );
+
+      if (!secondRoute) {
+        return res.status(404).json({
+          success: false,
+          message: 'Return route not found',
+          payload: {
+            found: true,
+            firstRoutePrice,
+            price: null
+          }
+        });
+      }
+
+      // Calculate price for second route using roundtrip pricing
+      const secondRoutePrice = secondRoute.calculatePrice(
+        'roundtrip' as RouteType,
+        passengerCount,
+        waitingTimeHours / 2 // Split waiting time between routes
+      );
+
+      if (secondRoutePrice === null) {
+        return res.status(400).json({
+          success: false,
+          message: 'Could not calculate roundtrip price for return route. Check passenger count and roundtrip pricing configuration.',
+          payload: {
+            found: true,
+            firstRoutePrice,
+            price: null
+          }
+        });
+      }
+
+      totalPrice += secondRoutePrice;
+      routes.push(secondRoute);
+
+      // Combine breakdowns
+      const secondBreakdown = secondRoute.getPriceBreakdown(
+        'roundtrip' as RouteType,
+        passengerCount,
+        waitingTimeHours / 2
+      );
+
+      if (totalBreakdown && secondBreakdown) {
+        totalBreakdown = {
+          basePrice: totalBreakdown.basePrice + secondBreakdown.basePrice,
+          waitingTime: totalBreakdown.waitingTime + secondBreakdown.waitingTime,
+          extraPassengers: totalBreakdown.extraPassengers + secondBreakdown.extraPassengers,
+          total: totalBreakdown.total + secondBreakdown.total
+        };
+      }
+    } else {
+      // For other route types (single, internal, etc.), calculate normally
+      const routePrice = firstRoute.calculatePrice(
+        routeType as RouteType,
+        passengerCount,
+        waitingTimeHours
+      );
+
+      if (routePrice === null) {
+        return res.status(400).json({
+          success: false,
+          message: 'Could not calculate price for this route type. Check passenger count.',
+          payload: {
+            found: true,
+            price: null
+          }
+        });
+      }
+
+      totalPrice = routePrice;
+      totalBreakdown = firstRoute.getPriceBreakdown(
+        routeType as RouteType,
+        passengerCount,
+        waitingTimeHours
+      );
     }
-
-    const breakdown = route.getPriceBreakdown(
-      routeType as RouteType,
-      passengerCount,
-      waitingTimeHours
-    );
 
     return res.status(200).json({
       success: true,
       payload: {
         found: true,
-        price,
-        breakdown,
-        route: {
+        price: totalPrice,
+        breakdown: totalBreakdown,
+        routes: routes.map(route => ({
           id: route._id,
           name: route.name,
-          pickupLocation: route.pickupLocation,
-          dropoffLocation: route.dropoffLocation,
+          pickupLocation: route.pickupLocation || route.pickupSiteType,
+          dropoffLocation: route.dropoffLocation || route.dropoffSiteType,
           currency: route.currency
-        },
+        })),
         calculation: {
           routeType,
           passengerCount,
-          waitingTimeHours
+          waitingTimeHours,
+          isRoundTrip: routeType === 'roundtrip'
         }
       }
     });
@@ -287,9 +389,13 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
  */
 export const createRoute = async (req: Request, res: Response) => {
   try {
+    console.log('🔧 [BACKEND] createRoute - Request body:', req.body);
+    
     const {
       pickupLocation,
       dropoffLocation,
+      pickupSiteType,
+      dropoffSiteType,
       pricing,
       currency = 'USD',
       waitingTimeRate = 10,
@@ -300,56 +406,79 @@ export const createRoute = async (req: Request, res: Response) => {
       estimatedDuration
     } = req.body;
 
-    // Validaciones
-    if (!pickupLocation || !dropoffLocation) {
+    // Validaciones - aceptar tanto site types como locations para compatibilidad
+    const pickupValue = pickupSiteType || pickupLocation;
+    const dropoffValue = dropoffSiteType || dropoffLocation;
+    
+    console.log('🔧 [BACKEND] createRoute - Values:', { pickupValue, dropoffValue, pickupSiteType, dropoffSiteType });
+    
+    if (!pickupValue || !dropoffValue) {
+      console.log('❌ [BACKEND] createRoute - Missing required fields');
       return res.status(400).json({
         success: false,
-        message: 'Pickup and dropoff locations are required'
+        message: 'Pickup and dropoff locations (or site types) are required'
       });
     }
 
     if (!pricing || pricing.length === 0) {
+      console.log('❌ [BACKEND] createRoute - No pricing configuration');
       return res.status(400).json({
         success: false,
         message: 'At least one pricing configuration is required'
       });
     }
 
-    // Verificar que las ubicaciones existen en el catálogo
-    const pickupLocationCatalog = await AgencyCatalog.findActiveByName('location', pickupLocation);
-    const dropoffLocationCatalog = await AgencyCatalog.findActiveByName('location', dropoffLocation);
+    // Verificar que las ubicaciones o site types existen en el catálogo
+    let pickupLocationCatalog = null;
+    let dropoffLocationCatalog = null;
+    
+    if (pickupSiteType) {
+      pickupLocationCatalog = await AgencyCatalog.findActiveByName('site_type', pickupSiteType);
+    } else {
+      pickupLocationCatalog = await AgencyCatalog.findActiveByName('location', pickupLocation);
+    }
+    
+    if (dropoffSiteType) {
+      dropoffLocationCatalog = await AgencyCatalog.findActiveByName('site_type', dropoffSiteType);
+    } else {
+      dropoffLocationCatalog = await AgencyCatalog.findActiveByName('location', dropoffLocation);
+    }
 
     if (!pickupLocationCatalog) {
+      console.log(`❌ [BACKEND] createRoute - Pickup ${pickupSiteType ? 'site type' : 'location'} "${pickupValue}" not found in catalog`);
       return res.status(400).json({
         success: false,
-        message: `Pickup location "${pickupLocation}" not found in catalog`
+        message: `Pickup ${pickupSiteType ? 'site type' : 'location'} "${pickupValue}" not found in catalog`
       });
     }
 
     if (!dropoffLocationCatalog) {
+      console.log(`❌ [BACKEND] createRoute - Dropoff ${dropoffSiteType ? 'site type' : 'location'} "${dropoffValue}" not found in catalog`);
       return res.status(400).json({
         success: false,
-        message: `Dropoff location "${dropoffLocation}" not found in catalog`
+        message: `Dropoff ${dropoffSiteType ? 'site type' : 'location'} "${dropoffValue}" not found in catalog`
       });
     }
 
-    // Verificar que no exista una ruta con estas ubicaciones
-    const existingRoute = await AgencyRoute.findByLocations(pickupLocation, dropoffLocation, false);
+    // Verificar que no exista una ruta con estas ubicaciones/site types
+    const existingRoute = await AgencyRoute.findByLocations(pickupValue, dropoffValue, false);
     if (existingRoute) {
       return res.status(400).json({
         success: false,
-        message: 'A route with these locations already exists'
+        message: 'A route with these locations/site types already exists'
       });
     }
 
     // Generar el nombre de la ruta
-    const routeName = `${pickupLocation.toUpperCase()} / ${dropoffLocation.toUpperCase()}`;
+    const routeName = `${pickupValue.toUpperCase()} / ${dropoffValue.toUpperCase()}`;
 
     // Crear la ruta
     const route = new AgencyRoute({
       name: routeName,
-      pickupLocation,
-      dropoffLocation,
+      pickupLocation: pickupValue,
+      dropoffLocation: dropoffValue,
+      pickupSiteType: pickupSiteType || undefined,
+      dropoffSiteType: dropoffSiteType || undefined,
       pickupLocationId: pickupLocationCatalog._id,
       dropoffLocationId: dropoffLocationCatalog._id,
       pricing,
@@ -365,6 +494,7 @@ export const createRoute = async (req: Request, res: Response) => {
     });
 
     await route.save();
+    console.log('✅ [BACKEND] createRoute - Route saved successfully:', route._id);
 
     return res.status(201).json({
       success: true,
@@ -374,7 +504,7 @@ export const createRoute = async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    console.error('Error creating route:', error);
+    console.error('❌ [BACKEND] createRoute - Error:', error);
     return res.status(500).json({
       success: false,
       message: 'Error creating route',

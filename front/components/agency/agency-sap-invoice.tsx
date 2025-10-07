@@ -89,7 +89,7 @@ export const AgencySapInvoice: React.FC = () => {
     postingDate: new Date().toISOString().split('T')[0],
     notes: '',
     trk137Amount: 0, // Monto para el servicio TRK137
-    trk137Description: 'Transportation Service',
+    trk137Description: 'Tiempo de Espera',
     clientId: '' // Cliente seleccionado
   });
 
@@ -109,9 +109,11 @@ export const AgencySapInvoice: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Limpiar selección cuando cambian los servicios
-    setSelectedServices([]);
-  }, [readyForInvoice]);
+    // Solo limpiar selección cuando cambian los servicios SI no hay XML generado
+    if (!xmlGenerated) {
+      setSelectedServices([]);
+    }
+  }, [readyForInvoice, xmlGenerated]);
 
   const handleFetchServices = () => {
     fetchServicesReadyForInvoice(filters);
@@ -249,7 +251,8 @@ export const AgencySapInvoice: React.FC = () => {
       });
       
       toast.success(`SAP XML generated successfully! Invoice: ${invoiceData.invoiceNumber}`);
-      setSelectedServices([]);
+      
+      // No limpiar selectedServices aquí - los necesitamos para enviar a SAP
       
       // Refrescar servicios listos para facturar
       handleFetchServices();
@@ -265,27 +268,56 @@ export const AgencySapInvoice: React.FC = () => {
 
   const handleDownloadXml = () => {
     if (xmlFileName) {
+      // Verificar que el token existe antes de hacer la descarga
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error('No authentication token found. Please log in again.');
+        return;
+      }
+      
+      console.log('Downloading XML with token:', token ? 'Token exists' : 'No token');
       downloadSapXml(xmlFileName);
       toast.success('XML download initiated');
     }
   };
 
   const handleSendToSap = async () => {
+    console.log('🚀 handleSendToSap called!');
+    
     if (!xmlContent || !xmlFileName || selectedServices.length === 0) {
+      console.log('❌ Missing required data:', {
+        xmlContent: !!xmlContent,
+        xmlFileName: !!xmlFileName,
+        selectedServices: selectedServices.length
+      });
       toast.error('Missing XML content or service IDs');
       return;
     }
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      toast.error('No authentication token found. Please log in again.');
+      return;
+    }
+
+    console.log('Sending to SAP:', {
+      fileName: xmlFileName,
+      serviceIds: selectedServices,
+      hasXmlContent: !!xmlContent,
+      hasToken: !!token
+    });
 
     setIsSendingToSap(true);
     setShowSapLogs(true);
     setSapLogs([]);
 
     try {
+      console.log('📤 Making request to SAP endpoint...');
       const response = await fetch(createApiUrl('/api/agency/sap/send-to-sap'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           serviceIds: selectedServices,
@@ -293,6 +325,8 @@ export const AgencySapInvoice: React.FC = () => {
           fileName: xmlFileName
         })
       });
+      
+      console.log('📥 Response received:', response.status, response.statusText);
 
       const result = await response.json();
 
@@ -339,11 +373,18 @@ export const AgencySapInvoice: React.FC = () => {
   const handleClearSapState = () => {
     clearSapState();
     setSelectedServices([]);
+    setSentToSap(false);
+    setSentToSapAt(null);
+    setSapLogs([]);
+    setShowSapLogs(false);
     setInvoiceData({
       invoiceNumber: '',
       invoiceDate: new Date().toISOString().split('T')[0],
       postingDate: new Date().toISOString().split('T')[0],
-      notes: ''
+      notes: '',
+      trk137Amount: 0,
+      trk137Description: 'Tiempo de Espera',
+      clientId: ''
     });
     toast.success('SAP state cleared');
   };
@@ -487,7 +528,7 @@ export const AgencySapInvoice: React.FC = () => {
                     placeholder="0.00"
                   />
                   <div className="text-xs text-muted-foreground mt-1">
-                    Transportation Service
+                    Tiempo de Espera
                   </div>
                 </div>
                 <div>
@@ -775,7 +816,7 @@ export const AgencySapInvoice: React.FC = () => {
                     SHP242 Services: ${calculateSelectedTotal().toLocaleString()} USD
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    TRK137 Transportation: ${invoiceData.trk137Amount.toLocaleString()} USD
+                    TRK137 Tiempo de Espera: ${invoiceData.trk137Amount.toLocaleString()} USD
                   </p>
                   <p className="text-sm font-semibold text-foreground">
                     Total: ${(calculateSelectedTotal() + invoiceData.trk137Amount).toLocaleString()} USD
@@ -862,7 +903,14 @@ export const AgencySapInvoice: React.FC = () => {
               {/* Actions */}
               <div className="flex gap-4">
                 <Button 
-                  onClick={handleSendToSap}
+                  onClick={() => {
+                    console.log('🔘 Send to SAP button clicked!', {
+                      isSendingToSap,
+                      sentToSap,
+                      disabled: isSendingToSap || sentToSap
+                    });
+                    handleSendToSap();
+                  }}
                   disabled={isSendingToSap || sentToSap}
                   className={`flex items-center gap-2 ${sentToSap ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
                 >
@@ -886,14 +934,6 @@ export const AgencySapInvoice: React.FC = () => {
                 <Button onClick={handleDownloadXml} variant="outline" className="flex items-center gap-2">
                   <Download className="h-4 w-4" />
                   Download XML
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => setActiveTab('generate')}
-                  className="flex items-center gap-2"
-                >
-                  <FileText className="h-4 w-4" />
-                  Generate Another
                 </Button>
               </div>
 

@@ -32,6 +32,7 @@ export interface IAgencyService extends Document {
   // Locations
   pickupLocation: string;
   dropoffLocation: string;
+  returnDropoffLocation?: string; // For Round Trip services
   
   // Vessel information
   vessel: string;
@@ -160,6 +161,12 @@ const agencyServiceSchema = new Schema<IAgencyService>(
     dropoffLocation: {
       type: String,
       required: true,
+      trim: true,
+      uppercase: true
+    },
+    
+    returnDropoffLocation: {
+      type: String,
       trim: true,
       uppercase: true
     },

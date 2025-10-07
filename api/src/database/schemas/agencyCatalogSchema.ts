@@ -1,6 +1,6 @@
 import { Schema, model, Document, Model } from 'mongoose';
 
-export type CatalogType = 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'route_pricing' | 'crew_rank' | 'crew_change_service';
+export type CatalogType = 'site_type' | 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'route_pricing' | 'crew_rank' | 'crew_change_service';
 
 // Interface para métodos estáticos del modelo
 interface IAgencyCatalogModel extends Model<IAgencyCatalog> {
@@ -28,7 +28,7 @@ const agencyCatalogSchema = new Schema<IAgencyCatalog>(
   {
     type: {
       type: String,
-      enum: ['location', 'nationality', 'rank', 'vessel', 'transport_company', 'driver', 'taulia_code', 'route_pricing', 'crew_rank', 'crew_change_service'],
+      enum: ['site_type', 'location', 'nationality', 'rank', 'vessel', 'transport_company', 'driver', 'taulia_code', 'route_pricing', 'crew_rank', 'crew_change_service'],
       required: true
     },
     
@@ -178,7 +178,7 @@ agencyCatalogSchema.statics.findByType = function(type: CatalogType) {
 agencyCatalogSchema.statics.findActiveByName = function(type: CatalogType, name: string) {
   // Normalize name based on type
   let searchName = name.trim();
-  if (type === 'location' || type === 'vessel' || type === 'nationality') {
+  if (type === 'site_type' || type === 'location' || type === 'vessel' || type === 'nationality') {
     searchName = searchName.toUpperCase();
   }
   
@@ -227,6 +227,7 @@ agencyCatalogSchema.statics.getAllGroupedByType = async function() {
   const items = await this.find({ isActive: true }).sort({ type: 1, name: 1 });
   
   const grouped: Record<CatalogType, IAgencyCatalog[]> = {
+    site_type: [],
     location: [],
     nationality: [],
     rank: [],
@@ -269,6 +270,7 @@ agencyCatalogSchema.virtual('displayName').get(function() {
 // Virtual for type label
 agencyCatalogSchema.virtual('typeLabel').get(function() {
   const labels: Record<CatalogType, string> = {
+    'site_type': 'Tipo de Sitio',
     'location': 'Ubicación',
     'nationality': 'Nacionalidad',
     'rank': 'Rango',

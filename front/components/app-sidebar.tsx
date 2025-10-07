@@ -117,9 +117,9 @@ export function AppSidebar() {
         { title: "SAP Invoice", href: "/agency/sap-invoice", icon: FileText },
         { title: "Facturas", href: "/agency/invoice", icon: FilePlus2 },
         { title: "Historial", href: "/agency/historial", icon: History },
-        { title: "Reportes", href: "/agency/reports", icon: BarChart3 },
+        // { title: "Reportes", href: "/agency/reports", icon: BarChart3 },
         { title: "Catálogos", href: "/agency/catalogs", icon: BookOpen },
-        { title: "Configuración", href: "/agency/config", icon: Settings2 },
+        // { title: "Configuración", href: "/agency/config", icon: Settings2 },
       ],
     },
     {

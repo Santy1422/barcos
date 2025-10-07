@@ -332,9 +332,17 @@ export const validateXmlStructure = (xmlData: any): { valid: boolean; errors: st
 // Obtener historial de XMLs generados
 // Enviar XML a SAP via FTP
 export const sendXmlToSap = catchedAsync(async (req: Request, res: Response) => {
+  console.log('🚀 sendXmlToSap controller called');
+  console.log('📋 Request body:', {
+    serviceIds: req.body.serviceIds,
+    hasXmlContent: !!req.body.xmlContent,
+    fileName: req.body.fileName
+  });
+  
   const { serviceIds, xmlContent, fileName } = req.body;
   
   if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
+    console.log('❌ Invalid serviceIds:', serviceIds);
     return res.status(400).json({
       success: false,
       error: 'Missing or invalid serviceIds array'
@@ -342,6 +350,7 @@ export const sendXmlToSap = catchedAsync(async (req: Request, res: Response) => 
   }
   
   if (!xmlContent || !fileName) {
+    console.log('❌ Missing xmlContent or fileName:', { xmlContent: !!xmlContent, fileName });
     return res.status(400).json({
       success: false,
       error: 'Missing xmlContent or fileName'
@@ -389,6 +398,7 @@ export const sendXmlToSap = catchedAsync(async (req: Request, res: Response) => 
     // Log para auditoría
     console.log(`Agency XML sent to SAP: ${fileName}, Services marked: ${updateResult.modifiedCount}`);
 
+    console.log('✅ Sending success response');
     res.json({
       success: true,
       message: 'XML enviado a SAP exitosamente',

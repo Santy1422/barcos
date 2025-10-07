@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/tool
 import { createApiUrl } from '@/lib/api-config';
 
 // Types
-export type RouteType = 'single' | 'roundtrip';
+export type RouteType = 'single' | 'roundtrip' | 'internal' | 'bags_claim' | 'documentation';
 
 export interface PassengerPriceRange {
   minPassengers: number;
@@ -19,8 +19,13 @@ export interface RoutePricing {
 export interface AgencyRoute {
   _id: string;
   name: string;
-  pickupLocation: string;
-  dropoffLocation: string;
+  pickupSiteType: string;  // Ahora usa site types en lugar de locations
+  dropoffSiteType: string; // Ahora usa site types en lugar de locations
+  pickupSiteTypeId?: string;
+  dropoffSiteTypeId?: string;
+  // Mantener para compatibilidad
+  pickupLocation?: string;
+  dropoffLocation?: string;
   pickupLocationId?: string;
   dropoffLocationId?: string;
   pricing: RoutePricing[];
@@ -39,8 +44,8 @@ export interface AgencyRoute {
 }
 
 export interface AgencyRouteInput {
-  pickupLocation: string;
-  dropoffLocation: string;
+  pickupSiteType: string;  // Ahora usa site types
+  dropoffSiteType: string; // Ahora usa site types
   pricing: RoutePricing[];
   currency?: string;
   waitingTimeRate?: number;
@@ -53,8 +58,10 @@ export interface AgencyRouteInput {
 
 export interface RouteFilters {
   isActive?: boolean;
-  pickupLocation?: string;
-  dropoffLocation?: string;
+  pickupSiteType?: string;
+  dropoffSiteType?: string;
+  pickupLocation?: string;  // Mantener para compatibilidad
+  dropoffLocation?: string; // Mantener para compatibilidad
   search?: string;
 }
 
@@ -78,8 +85,8 @@ export interface UpdateRouteParams {
 }
 
 export interface CalculatePriceParams {
-  pickupLocation: string;
-  dropoffLocation: string;
+  pickupLocation: string;  // Esto se mantiene porque el servicio usa locations
+  dropoffLocation: string; // Esto se mantiene porque el servicio usa locations
   routeType: RouteType;
   passengerCount: number;
   waitingTimeHours?: number;
@@ -97,8 +104,10 @@ export interface PriceCalculationResult {
   route?: {
     id: string;
     name: string;
-    pickupLocation: string;
-    dropoffLocation: string;
+    pickupSiteType: string;
+    dropoffSiteType: string;
+    pickupLocation?: string;  // Para compatibilidad
+    dropoffLocation?: string; // Para compatibilidad
     currency: string;
   };
   calculation?: {
@@ -256,11 +265,15 @@ export const createAgencyRoute = createAsyncThunk(
   'agencyRoutes/createAgencyRoute',
   async (routeData: AgencyRouteInput, { rejectWithValue }) => {
     try {
+      const token = localStorage.getItem('token');
+      console.log('🔧 [REDUX] Token exists:', !!token);
+      console.log('🔧 [REDUX] Token length:', token?.length);
+      
       const response = await fetch(createApiUrl('/api/agency/routes'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(routeData)
       });
@@ -351,6 +364,31 @@ export const reactivateAgencyRoute = createAsyncThunk(
       
       const data = await response.json();
       return data.payload.route as AgencyRoute;
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+);
+
+// Delete route (permanent deletion)
+export const deleteAgencyRoute = createAsyncThunk(
+  'agencyRoutes/deleteAgencyRoute',
+  async (id: string, { rejectWithValue }) => {
+    try {
+      const response = await fetch(createApiUrl(`/api/agency/routes/${id}`), {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete route');
+      }
+      
+      return id; // Return the ID of the deleted route
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -535,6 +573,15 @@ const agencyRoutesSlice = createSlice({
         const index = state.routes.findIndex(r => r._id === action.payload._id);
         if (index !== -1) {
           state.routes[index] = action.payload;
+        }
+      })
+      
+      // Delete route
+      .addCase(deleteAgencyRoute.fulfilled, (state, action) => {
+        state.routes = state.routes.filter(r => r._id !== action.payload);
+        state.totalRoutes = Math.max(0, state.totalRoutes - 1);
+        if (state.currentRoute?._id === action.payload) {
+          state.currentRoute = null;
         }
       })
       

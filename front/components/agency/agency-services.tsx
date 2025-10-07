@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
 import { 
   Plus, Save, Send, 
   MapPin, Ship, User, Calendar, Clock, Plane, Users, DollarSign, X
@@ -33,9 +32,10 @@ interface ServiceFormData {
   pickupTime: string
   pickupLocation: string
   dropoffLocation: string
+  returnDropoffLocation: string  // Solo para Round Trip
   vessel: string
   voyage: string
-  moveType: 'RT' | 'SINGLE'
+  moveType: 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION'
   transportCompany: string
   driver: string
   approve: boolean
@@ -52,15 +52,16 @@ const initialFormData: ServiceFormData = {
   pickupTime: '',
   pickupLocation: '',
   dropoffLocation: '',
+  returnDropoffLocation: '',   // Solo para Round Trip
   vessel: '',
   voyage: '',
   moveType: 'SINGLE',
   transportCompany: '',
   driver: '',
-  approve: false,
+  approve: false,              // No se muestra en formulario
   comments: '',
   crewMembers: [],
-  waitingTime: 0,             // Tiempo de espera inicial en minutos
+  waitingTime: 0,             // Tiempo de espera inicial en minutos (no se muestra en formulario)
   price: 0,                   // Precio inicial
   currency: 'USD',            // Moneda por defecto
   passengerCount: 1           // Un pasajero por defecto
@@ -124,75 +125,198 @@ export function AgencyServices() {
     fetchServices({ page: 1, limit: 10 })
   }, [fetchGroupedCatalogs, fetchActiveRoutes, fetchServices])
 
+  // Get locations with site types only
+  const getLocationsWithSiteType = () => {
+    return locations.filter(loc => 
+      loc.metadata?.siteTypeId && loc.metadata?.siteTypeName
+    )
+  }
+
   // Get valid dropoff locations based on selected pickup
   const getValidDropoffLocations = () => {
+    const locationsWithSiteType = getLocationsWithSiteType()
+    
     if (!formData.pickupLocation) {
-      return locations
+      return locationsWithSiteType
     }
     
+    // Find the selected pickup location's site type
+    const pickupLocation = locations.find(loc => loc.name === formData.pickupLocation)
+    if (!pickupLocation || !pickupLocation.metadata?.siteTypeName) {
+      return []
+    }
+    
+    const pickupSiteType = pickupLocation.metadata.siteTypeName
+    
+    // Find routes that start with this site type
     const validRoutes = routes.filter(
-      route => route.pickupLocation.toUpperCase() === formData.pickupLocation.toUpperCase() && route.isActive
+      route => (route.pickupSiteType || route.pickupLocation)?.toUpperCase() === pickupSiteType.toUpperCase() && route.isActive
     )
     
-    const validDropoffNames = validRoutes.map(route => route.dropoffLocation.toUpperCase())
+    // Get valid dropoff site types from routes
+    const validDropoffSiteTypes = validRoutes.map(route => 
+      (route.dropoffSiteType || route.dropoffLocation)?.toUpperCase()
+    )
     
-    return locations.filter(loc => 
-      validDropoffNames.includes(loc.name.toUpperCase())
+    // Return locations whose site type matches valid dropoff site types
+    return locationsWithSiteType.filter(loc =>
+      loc.metadata?.siteTypeName && 
+      validDropoffSiteTypes.includes(loc.metadata.siteTypeName.toUpperCase())
     )
   }
 
   // Get valid pickup locations based on selected dropoff
   const getValidPickupLocations = () => {
+    const locationsWithSiteType = getLocationsWithSiteType()
+    
     if (!formData.dropoffLocation) {
-      return locations
+      return locationsWithSiteType
     }
     
+    // Find the selected dropoff location's site type
+    const dropoffLocation = locations.find(loc => loc.name === formData.dropoffLocation)
+    if (!dropoffLocation || !dropoffLocation.metadata?.siteTypeName) {
+      return []
+    }
+    
+    const dropoffSiteType = dropoffLocation.metadata.siteTypeName
+    
+    // Find routes that end with this site type
     const validRoutes = routes.filter(
-      route => route.dropoffLocation.toUpperCase() === formData.dropoffLocation.toUpperCase() && route.isActive
+      route => (route.dropoffSiteType || route.dropoffLocation)?.toUpperCase() === dropoffSiteType.toUpperCase() && route.isActive
     )
     
-    const validPickupNames = validRoutes.map(route => route.pickupLocation.toUpperCase())
+    // Get valid pickup site types from routes
+    const validPickupSiteTypes = validRoutes.map(route => 
+      (route.pickupSiteType || route.pickupLocation)?.toUpperCase()
+    )
     
-    return locations.filter(loc => 
-      validPickupNames.includes(loc.name.toUpperCase())
+    // Return locations whose site type matches valid pickup site types
+    return locationsWithSiteType.filter(loc =>
+      loc.metadata?.siteTypeName && 
+      validPickupSiteTypes.includes(loc.metadata.siteTypeName.toUpperCase())
+    )
+  }
+
+  // Get valid return dropoff locations for Round Trip (based on first dropoff location)
+  const getValidReturnDropoffLocations = () => {
+    const locationsWithSiteType = getLocationsWithSiteType()
+    
+    if (!formData.dropoffLocation) {
+      return locationsWithSiteType
+    }
+    
+    // Find the selected dropoff location's site type (this becomes the pickup for return trip)
+    const dropoffLocation = locations.find(loc => loc.name === formData.dropoffLocation)
+    if (!dropoffLocation || !dropoffLocation.metadata?.siteTypeName) {
+      return []
+    }
+    
+    const dropoffSiteType = dropoffLocation.metadata.siteTypeName
+    
+    // Find routes that start with this site type (for return trip)
+    const validRoutes = routes.filter(
+      route => (route.pickupSiteType || route.pickupLocation)?.toUpperCase() === dropoffSiteType.toUpperCase() && route.isActive
+    )
+    
+    // Get valid dropoff site types from routes
+    const validDropoffSiteTypes = validRoutes.map(route => 
+      (route.dropoffSiteType || route.dropoffLocation)?.toUpperCase()
+    )
+    
+    // Return locations whose site type matches valid dropoff site types
+    return locationsWithSiteType.filter(loc =>
+      loc.metadata?.siteTypeName && 
+      validDropoffSiteTypes.includes(loc.metadata.siteTypeName.toUpperCase())
     )
   }
 
   // Auto-calculate pricing when locations, waiting time, move type or crew members change
   useEffect(() => {
-    if (formData.pickupLocation && formData.dropoffLocation && formData.crewMembers.length > 0) {
-      const passengerCount = formData.crewMembers.length;
-      const routeType = formData.moveType === 'RT' ? 'roundtrip' : 'single';
-      
-      console.log('Calculating price with:', {
-        pickupLocation: formData.pickupLocation,
-        dropoffLocation: formData.dropoffLocation,
-        routeType: routeType,
-        waitingTime: (formData.waitingTime || 0) / 60,
-        passengerCount: passengerCount
-      });
-      
-      calculateServicePrice({
-        pickupLocation: formData.pickupLocation,
-        dropoffLocation: formData.dropoffLocation,
-        routeType: routeType,
-        waitingTime: (formData.waitingTime || 0) / 60, // Convertir minutos a horas
-        passengerCount: passengerCount
-      });
+    const passengerCount = formData.crewMembers.length;
+    
+    // Clear pricing state first to avoid conflicts
+    clearPricingState();
+    
+    // For Round Trip, we need both routes
+    if (formData.moveType === 'RT') {
+      if (formData.pickupLocation && formData.dropoffLocation && formData.returnDropoffLocation && passengerCount > 0) {
+        // Obtener los site types de las locations seleccionadas
+        const pickupLoc = locations.find(loc => loc.name === formData.pickupLocation)
+        const dropoffLoc = locations.find(loc => loc.name === formData.dropoffLocation)
+        const returnDropoffLoc = locations.find(loc => loc.name === formData.returnDropoffLocation)
+        
+        if (pickupLoc?.metadata?.siteTypeName && dropoffLoc?.metadata?.siteTypeName && returnDropoffLoc?.metadata?.siteTypeName) {
+          console.log('Calculating Round Trip price with:', {
+            firstRoute: `${pickupLoc.metadata.siteTypeName} → ${dropoffLoc.metadata.siteTypeName}`,
+            secondRoute: `${dropoffLoc.metadata.siteTypeName} → ${returnDropoffLoc.metadata.siteTypeName}`,
+            routeType: 'roundtrip',
+            waitingTime: (formData.waitingTime || 0) / 60,
+            passengerCount: passengerCount
+          });
+          
+          // For Round Trip, we'll calculate the combined price
+          // The backend should handle this by summing both routes
+          calculateServicePrice({
+            pickupLocation: pickupLoc.metadata.siteTypeName,
+            dropoffLocation: dropoffLoc.metadata.siteTypeName,
+            returnDropoffLocation: returnDropoffLoc.metadata.siteTypeName, // Add return location for Round Trip
+            routeType: 'roundtrip',
+            waitingTime: 0, // No waiting time in creation form
+            passengerCount: passengerCount
+          });
+        }
+      } else {
+        console.log('Clearing Round Trip pricing - conditions not met:', {
+          hasPickup: !!formData.pickupLocation,
+          hasDropoff: !!formData.dropoffLocation,
+          hasReturnDropoff: !!formData.returnDropoffLocation,
+          crewMembersCount: passengerCount
+        });
+      }
     } else {
-      // Clear pricing when locations are not set or no crew members
-      console.log('Clearing pricing - conditions not met:', {
-        hasPickup: !!formData.pickupLocation,
-        hasDropoff: !!formData.dropoffLocation,
-        crewMembersCount: formData.crewMembers.length
-      });
-      clearPricingState();
+      // For other move types (Single, Internal, etc.)
+      if (formData.pickupLocation && formData.dropoffLocation && passengerCount > 0) {
+        const routeType = formData.moveType === 'SINGLE' ? 'single' :
+                         formData.moveType === 'INTERNAL' ? 'internal' :
+                         formData.moveType === 'BAGS_CLAIM' ? 'bags_claim' :
+                         formData.moveType === 'DOCUMENTATION' ? 'documentation' : 'single';
+        
+        console.log('Calculating price with:', {
+          pickupLocation: formData.pickupLocation,
+          dropoffLocation: formData.dropoffLocation,
+          routeType: routeType,
+          waitingTime: (formData.waitingTime || 0) / 60,
+          passengerCount: passengerCount
+        });
+        
+        // Obtener los site types de las locations seleccionadas
+        const pickupLoc = locations.find(loc => loc.name === formData.pickupLocation)
+        const dropoffLoc = locations.find(loc => loc.name === formData.dropoffLocation)
+        
+        if (pickupLoc?.metadata?.siteTypeName && dropoffLoc?.metadata?.siteTypeName) {
+          calculateServicePrice({
+            pickupLocation: pickupLoc.metadata.siteTypeName,
+            dropoffLocation: dropoffLoc.metadata.siteTypeName,
+            routeType: routeType,
+            waitingTime: 0, // No waiting time in creation form
+            passengerCount: passengerCount
+          });
+        }
+      } else {
+        // Clear pricing when locations are not set or no crew members
+        console.log('Clearing pricing - conditions not met:', {
+          hasPickup: !!formData.pickupLocation,
+          hasDropoff: !!formData.dropoffLocation,
+          crewMembersCount: passengerCount
+        });
+      }
     }
   }, [
     formData.pickupLocation, 
     formData.dropoffLocation, 
+    formData.returnDropoffLocation, // Add return dropoff to dependencies
     formData.moveType,
-    formData.waitingTime,
     formData.crewMembers.length,
     calculateServicePrice,
     clearPricingState
@@ -211,17 +335,27 @@ export function AgencyServices() {
       
       // If changing pickup, clear dropoff if the combination is not valid
       if (field === 'pickupLocation' && prev.dropoffLocation) {
-        const route = findRouteByLocations(value as string, prev.dropoffLocation)
-        if (!route) {
-          newData.dropoffLocation = ''
+        const pickupLoc = locations.find(loc => loc.name === value as string)
+        const dropoffLoc = locations.find(loc => loc.name === prev.dropoffLocation)
+        
+        if (pickupLoc?.metadata?.siteTypeName && dropoffLoc?.metadata?.siteTypeName) {
+          const route = findRouteByLocations(pickupLoc.metadata.siteTypeName, dropoffLoc.metadata.siteTypeName)
+          if (!route) {
+            newData.dropoffLocation = ''
+          }
         }
       }
       
       // If changing dropoff, clear pickup if the combination is not valid
       if (field === 'dropoffLocation' && prev.pickupLocation) {
-        const route = findRouteByLocations(prev.pickupLocation, value as string)
-        if (!route) {
-          newData.pickupLocation = ''
+        const pickupLoc = locations.find(loc => loc.name === prev.pickupLocation)
+        const dropoffLoc = locations.find(loc => loc.name === value as string)
+        
+        if (pickupLoc?.metadata?.siteTypeName && dropoffLoc?.metadata?.siteTypeName) {
+          const route = findRouteByLocations(pickupLoc.metadata.siteTypeName, dropoffLoc.metadata.siteTypeName)
+          if (!route) {
+            newData.pickupLocation = ''
+          }
         }
       }
       
@@ -252,6 +386,15 @@ export function AgencyServices() {
         member.id === id ? { ...member, [field]: value } : member
       )
     }))
+    
+    // Clear crew member specific errors when user starts typing
+    const memberIndex = formData.crewMembers.findIndex(member => member.id === id)
+    if (memberIndex !== -1) {
+      const errorKey = `crewMember_${memberIndex}_${field}`
+      if (formErrors[errorKey]) {
+        setFormErrors(prev => ({ ...prev, [errorKey]: '' }))
+      }
+    }
   }
 
   const removeCrewMember = (id: string) => {
@@ -263,7 +406,21 @@ export function AgencyServices() {
 
   // Check if form is complete (all required fields filled)
   const isFormComplete = (): boolean => {
-    return !!(
+    const pickupLoc = locations.find(loc => loc.name === formData.pickupLocation)
+    const dropoffLoc = locations.find(loc => loc.name === formData.dropoffLocation)
+    const returnDropoffLoc = locations.find(loc => loc.name === formData.returnDropoffLocation)
+    
+    // Check if all crew members have complete data
+    const allCrewMembersComplete = formData.crewMembers.length > 0 && 
+      formData.crewMembers.every(member => 
+        member.name.trim() && 
+        member.nationality && 
+        member.crewRank && 
+        member.crewCategory && 
+        member.flight.trim()
+      )
+    
+    const baseValidation = !!(
       formData.pickupDate &&
       formData.pickupTime &&
       formData.pickupLocation &&
@@ -271,10 +428,23 @@ export function AgencyServices() {
       formData.vessel &&
       formData.transportCompany &&
       formData.driver &&
-      formData.crewMembers.length > 0 &&
+      allCrewMembersComplete &&
       formData.pickupLocation !== formData.dropoffLocation &&
-      findRouteByLocations(formData.pickupLocation, formData.dropoffLocation)
+      pickupLoc?.metadata?.siteTypeName &&
+      dropoffLoc?.metadata?.siteTypeName &&
+      findRouteByLocations(pickupLoc.metadata.siteTypeName, dropoffLoc.metadata.siteTypeName)
     )
+
+    // For Round Trip, also validate return dropoff location
+    if (formData.moveType === 'RT') {
+      return baseValidation && !!(
+        formData.returnDropoffLocation &&
+        returnDropoffLoc?.metadata?.siteTypeName &&
+        findRouteByLocations(dropoffLoc.metadata.siteTypeName, returnDropoffLoc.metadata.siteTypeName)
+      )
+    }
+
+    return baseValidation
   }
 
   const validateForm = (): boolean => {
@@ -289,21 +459,93 @@ export function AgencyServices() {
     if (!formData.transportCompany) errors.transportCompany = 'Transport company is required'
     if (!formData.driver) errors.driver = 'Driver is required'
 
+    // For Round Trip, return dropoff location is required
+    if (formData.moveType === 'RT' && !formData.returnDropoffLocation) {
+      errors.returnDropoffLocation = 'Return drop-off location is required for Round Trip'
+    }
+
     // Validation rules
     if (formData.pickupLocation === formData.dropoffLocation) {
       errors.dropoffLocation = 'Drop-off location must be different from pickup location'
     }
 
-    // Validate that the pickup/dropoff combination exists in routes
-    if (formData.pickupLocation && formData.dropoffLocation) {
-      const route = findRouteByLocations(formData.pickupLocation, formData.dropoffLocation)
-      if (!route) {
-        errors.dropoffLocation = 'No existe una ruta para esta combinación de pickup y dropoff. Por favor, cree la ruta en Agency Catalogs > Routes primero.'
+    // For Round Trip, return dropoff can be the same as pickup (round trip)
+    // No validation needed - it's valid for return dropoff to equal pickup location
+
+    // Validate that the pickup/dropoff locations have site types
+    const pickupLoc = locations.find(loc => loc.name === formData.pickupLocation)
+    const dropoffLoc = locations.find(loc => loc.name === formData.dropoffLocation)
+    const returnDropoffLoc = locations.find(loc => loc.name === formData.returnDropoffLocation)
+    
+    if (pickupLoc && !pickupLoc.metadata?.siteTypeId) {
+      errors.pickupLocation = 'Esta ubicación no tiene un Site Type asociado. Por favor, edítela en Agency Catalogs > Locations.'
+    }
+    
+    if (dropoffLoc && !dropoffLoc.metadata?.siteTypeId) {
+      errors.dropoffLocation = 'Esta ubicación no tiene un Site Type asociado. Por favor, edítela en Agency Catalogs > Locations.'
+    }
+
+    if (formData.moveType === 'RT' && returnDropoffLoc && !returnDropoffLoc.metadata?.siteTypeId) {
+      errors.returnDropoffLocation = 'Esta ubicación no tiene un Site Type asociado. Por favor, edítela en Agency Catalogs > Locations.'
+    }
+    
+    // Validate that the pickup/dropoff site types combination exists in routes
+    if (formData.pickupLocation && formData.dropoffLocation && pickupLoc && dropoffLoc) {
+      const pickupSiteType = pickupLoc.metadata?.siteTypeName
+      const dropoffSiteType = dropoffLoc.metadata?.siteTypeName
+      
+      if (pickupSiteType && dropoffSiteType) {
+        const route = routes.find(r => 
+          r.isActive && 
+          (r.pickupSiteType || r.pickupLocation)?.toUpperCase() === pickupSiteType.toUpperCase() &&
+          (r.dropoffSiteType || r.dropoffLocation)?.toUpperCase() === dropoffSiteType.toUpperCase()
+        )
+        
+        if (!route) {
+          errors.dropoffLocation = `No existe una ruta para la combinación de Site Types: ${pickupSiteType} → ${dropoffSiteType}. Por favor, cree la ruta en Agency Catalogs > Routes primero.`
+        }
+      }
+    }
+
+    // Validate return trip route for Round Trip
+    if (formData.moveType === 'RT' && formData.dropoffLocation && formData.returnDropoffLocation && dropoffLoc && returnDropoffLoc) {
+      const dropoffSiteType = dropoffLoc.metadata?.siteTypeName
+      const returnDropoffSiteType = returnDropoffLoc.metadata?.siteTypeName
+      
+      if (dropoffSiteType && returnDropoffSiteType) {
+        const route = routes.find(r => 
+          r.isActive && 
+          (r.pickupSiteType || r.pickupLocation)?.toUpperCase() === dropoffSiteType.toUpperCase() &&
+          (r.dropoffSiteType || r.dropoffLocation)?.toUpperCase() === returnDropoffSiteType.toUpperCase()
+        )
+        
+        if (!route) {
+          errors.returnDropoffLocation = `No existe una ruta para el return trip: ${dropoffSiteType} → ${returnDropoffSiteType}. Por favor, cree la ruta en Agency Catalogs > Routes primero.`
+        }
       }
     }
 
     if (formData.crewMembers.length === 0) {
       errors.crewMembers = 'At least one crew member is required'
+    } else {
+      // Validate each crew member has all required fields
+      formData.crewMembers.forEach((member, index) => {
+        if (!member.name.trim()) {
+          errors[`crewMember_${index}_name`] = `Crew member ${index + 1} name is required`
+        }
+        if (!member.nationality) {
+          errors[`crewMember_${index}_nationality`] = `Crew member ${index + 1} nationality is required`
+        }
+        if (!member.crewRank) {
+          errors[`crewMember_${index}_crewRank`] = `Crew member ${index + 1} crew rank is required`
+        }
+        if (!member.crewCategory) {
+          errors[`crewMember_${index}_crewCategory`] = `Crew member ${index + 1} crew category is required`
+        }
+        if (!member.flight.trim()) {
+          errors[`crewMember_${index}_flight`] = `Crew member ${index + 1} flight is required`
+        }
+      })
     }
 
     setFormErrors(errors)
@@ -329,16 +571,17 @@ export function AgencyServices() {
         pickupTime: formData.pickupTime,
         pickupLocation: formData.pickupLocation,
         dropoffLocation: formData.dropoffLocation,
+        returnDropoffLocation: formData.returnDropoffLocation || undefined, // Only for Round Trip
         vessel: formData.vessel,
         voyage: formData.voyage,
         moveType: formData.moveType,
         transportCompany: formData.transportCompany,
         driver: formData.driver,
-        approve: formData.approve,
+        approve: false, // Always false in creation
         comments: formData.comments,
         crewMembers: formData.crewMembers,
-        // Incluir campos de pricing (convertir minutos a horas para el backend)
-        waitingTime: (formData.waitingTime || 0) / 60,
+        // Incluir campos de pricing (no waiting time in creation)
+        waitingTime: 0, // No waiting time in creation form
         price: pricing?.currentPrice || formData.price || 0,
         currency: formData.currency || 'USD',
         passengerCount: passengerCount
@@ -375,12 +618,14 @@ export function AgencyServices() {
     setFormData(prev => ({
       ...prev,
       pickupLocation: '',
-      dropoffLocation: ''
+      dropoffLocation: '',
+      returnDropoffLocation: ''
     }))
     setFormErrors(prev => ({
       ...prev,
       pickupLocation: '',
-      dropoffLocation: ''
+      dropoffLocation: '',
+      returnDropoffLocation: ''
     }))
     clearPricingState()
   }
@@ -406,14 +651,14 @@ export function AgencyServices() {
             <Save className="mr-2 h-4 w-4" />
             Create
           </Button>
-          <Button 
+          {/* <Button 
             onClick={(e) => handleSubmit(e, 'createAndSend')}
             disabled={isCreating || loading || !isFormComplete()}
             className="bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="mr-2 h-4 w-4" />
             Create & Send
-          </Button>
+          </Button> */}
         </div>
       </div>
 
@@ -482,14 +727,24 @@ export function AgencyServices() {
                     <SelectContent>
                       {getValidPickupLocations().length === 0 ? (
                         <div className="p-2 text-sm text-gray-500">
-                          No hay rutas disponibles para este dropoff
+                          {formData.dropoffLocation 
+                            ? 'No hay rutas disponibles para el site type de este dropoff'
+                            : 'No hay locations con site types asignados'
+                          }
                         </div>
                       ) : (
                         getValidPickupLocations().map((location) => (
                           <SelectItem key={location._id} value={location.name}>
-                            <div className="flex items-center gap-2">
-                              <MapPin className="h-3 w-3" />
-                              {location.name}
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <MapPin className="h-3 w-3" />
+                                {location.name}
+                              </div>
+                              {location.metadata?.siteTypeName && (
+                                <div className="text-xs text-muted-foreground ml-5">
+                                  Site Type: {location.metadata.siteTypeName}
+                                </div>
+                              )}
                             </div>
                           </SelectItem>
                         ))
@@ -501,7 +756,12 @@ export function AgencyServices() {
                   )}
                   {formData.dropoffLocation && getValidPickupLocations().length > 0 && (
                     <p className="text-xs text-blue-600">
-                      {getValidPickupLocations().length} ubicación(es) disponible(s) para este dropoff
+                      {getValidPickupLocations().length} ubicación(es) disponible(s) para este dropoff site type
+                    </p>
+                  )}
+                  {formData.dropoffLocation && getValidPickupLocations().length === 0 && (
+                    <p className="text-xs text-yellow-600">
+                      No hay ubicaciones de pickup disponibles para el site type de este dropoff
                     </p>
                   )}
                 </div>
@@ -521,14 +781,24 @@ export function AgencyServices() {
                     <SelectContent>
                       {getValidDropoffLocations().length === 0 ? (
                         <div className="p-2 text-sm text-gray-500">
-                          No hay rutas disponibles para este pickup
+                          {formData.pickupLocation 
+                            ? 'No hay rutas disponibles para el site type de este pickup'
+                            : 'No hay locations con site types asignados'
+                          }
                         </div>
                       ) : (
                         getValidDropoffLocations().map((location) => (
                           <SelectItem key={location._id} value={location.name}>
-                            <div className="flex items-center gap-2">
-                              <MapPin className="h-3 w-3" />
-                              {location.name}
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <MapPin className="h-3 w-3" />
+                                {location.name}
+                              </div>
+                              {location.metadata?.siteTypeName && (
+                                <div className="text-xs text-muted-foreground ml-5">
+                                  Site Type: {location.metadata.siteTypeName}
+                                </div>
+                              )}
                             </div>
                           </SelectItem>
                         ))
@@ -540,13 +810,74 @@ export function AgencyServices() {
                   )}
                   {formData.pickupLocation && getValidDropoffLocations().length > 0 && (
                     <p className="text-xs text-blue-600">
-                      {getValidDropoffLocations().length} ubicación(es) disponible(s) para este pickup
+                      {getValidDropoffLocations().length} ubicación(es) disponible(s) para este pickup site type
+                    </p>
+                  )}
+                  {formData.pickupLocation && getValidDropoffLocations().length === 0 && (
+                    <p className="text-xs text-yellow-600">
+                      No hay ubicaciones de dropoff disponibles para el site type de este pickup
                     </p>
                   )}
                 </div>
 
+                {/* Return Drop-off Location - Only for Round Trip */}
+                {formData.moveType === 'RT' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="returnDropoffLocation" className="text-sm font-medium">
+                      RETURN DROP-OFF Location <span className="text-red-500">*</span>
+                    </Label>
+                    <Select
+                      value={formData.returnDropoffLocation}
+                      onValueChange={(value) => handleInputChange('returnDropoffLocation', value)}
+                    >
+                      <SelectTrigger className={formErrors.returnDropoffLocation ? 'border-red-500' : ''}>
+                        <SelectValue placeholder="Seleccione return dropoff location" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getValidReturnDropoffLocations().length === 0 ? (
+                          <div className="p-2 text-sm text-gray-500">
+                            {formData.dropoffLocation 
+                              ? 'No hay rutas disponibles para el return trip desde este dropoff'
+                              : 'Primero seleccione el dropoff del primer viaje'
+                            }
+                          </div>
+                        ) : (
+                          getValidReturnDropoffLocations().map((location) => (
+                            <SelectItem key={location._id} value={location.name}>
+                              <div className="flex flex-col">
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-3 w-3" />
+                                  {location.name}
+                                </div>
+                                {location.metadata?.siteTypeName && (
+                                  <div className="text-xs text-muted-foreground ml-5">
+                                    Site Type: {location.metadata.siteTypeName}
+                                  </div>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {formErrors.returnDropoffLocation && (
+                      <p className="text-xs text-red-500">{formErrors.returnDropoffLocation}</p>
+                    )}
+                    {formData.dropoffLocation && getValidReturnDropoffLocations().length > 0 && (
+                      <p className="text-xs text-blue-600">
+                        {getValidReturnDropoffLocations().length} ubicación(es) disponible(s) para el return trip
+                      </p>
+                    )}
+                    {formData.dropoffLocation && getValidReturnDropoffLocations().length === 0 && (
+                      <p className="text-xs text-yellow-600">
+                        No hay ubicaciones disponibles para el return trip desde este dropoff
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Clear Locations Button */}
-                {(formData.pickupLocation || formData.dropoffLocation) && (
+                {(formData.pickupLocation || formData.dropoffLocation || formData.returnDropoffLocation) && (
                   <div className="flex justify-end">
                     <Button
                       type="button"
@@ -561,36 +892,7 @@ export function AgencyServices() {
                   </div>
                 )}
 
-                {/* Waiting Time */}
-                <div className="space-y-2">
-                  <Label htmlFor="waitingTime" className="text-sm font-medium">
-                    Tiempo de Espera (minutos)
-                  </Label>
-                  <Input
-                    id="waitingTime"
-                    type="number"
-                    min="0"
-                    max="1440"
-                    step="5"
-                    value={formData.waitingTime || 0}
-                    onChange={(e) => handleInputChange('waitingTime', parseInt(e.target.value) || 0)}
-                    className="w-full"
-                  />
-                </div>
 
-                {/* Approval */}
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="approve"
-                      checked={formData.approve}
-                      onCheckedChange={(checked) => handleInputChange('approve', checked as boolean)}
-                    />
-                    <Label htmlFor="approve" className="text-sm font-medium">
-                      Approve
-                    </Label>
-                  </div>
-                </div>
 
                 {/* Comments */}
                 <div className="space-y-2">
@@ -660,14 +962,17 @@ export function AgencyServices() {
                   </Label>
                   <Select
                     value={formData.moveType}
-                    onValueChange={(value) => handleInputChange('moveType', value as 'RT' | 'SINGLE')}
+                    onValueChange={(value) => handleInputChange('moveType', value as 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION')}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="RT o SINGLE" />
+                      <SelectValue placeholder="Seleccione tipo de movimiento" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="RT">RT</SelectItem>
-                      <SelectItem value="SINGLE">SINGLE</SelectItem>
+                      <SelectItem value="SINGLE">Single</SelectItem>
+                      <SelectItem value="RT">Round Trip</SelectItem>
+                      <SelectItem value="INTERNAL">Internal</SelectItem>
+                      <SelectItem value="BAGS_CLAIM">Bags Claim</SelectItem>
+                      <SelectItem value="DOCUMENTATION">Documentation</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -732,7 +1037,19 @@ export function AgencyServices() {
                 {/* Automatic Price Display */}
                 {formData.pickupLocation && formData.dropoffLocation && (
                   <>
-                    {pricing && pricing.currentPrice > 0 && formData.crewMembers.length > 0 ? (
+                    {formData.crewMembers.length === 0 ? (
+                      <Card className="bg-blue-50 border-blue-200">
+                        <CardContent className="pt-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Users className="h-4 w-4 text-blue-600" />
+                            <span className="font-medium text-blue-800">Agregue Crew Members</span>
+                          </div>
+                          <p className="text-sm text-blue-600">
+                            Debe agregar al menos un crew member para calcular el precio de la ruta.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : pricing && pricing.currentPrice > 0 ? (
                       <Card className="bg-green-50 border-green-200">
                         <CardContent className="pt-4">
                           <div className="flex items-center gap-2 mb-2">
@@ -748,7 +1065,11 @@ export function AgencyServices() {
                               <span>{formData.crewMembers.length} pasajero{formData.crewMembers.length !== 1 ? 's' : ''}</span>
                             </div>
                             <div className="text-xs mt-1">
-                              Tipo: {formData.moveType === 'RT' ? 'Round Trip' : 'Single'}
+                              Tipo: {formData.moveType === 'RT' ? 'Round Trip' : 
+                                     formData.moveType === 'SINGLE' ? 'Single' :
+                                     formData.moveType === 'INTERNAL' ? 'Internal' :
+                                     formData.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
+                                     formData.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}
                             </div>
                           </div>
                           {pricing.priceBreakdown && (
@@ -763,15 +1084,43 @@ export function AgencyServices() {
                           </div>
                         </CardContent>
                       </Card>
-                    ) : formData.crewMembers.length === 0 ? (
-                      <Card className="bg-blue-50 border-blue-200">
+                    ) : pricing && pricing.error ? (
+                      <Card className="bg-red-50 border-red-200">
                         <CardContent className="pt-4">
                           <div className="flex items-center gap-2 mb-2">
-                            <Users className="h-4 w-4 text-blue-600" />
-                            <span className="font-medium text-blue-800">Agregue Crew Members</span>
+                            <DollarSign className="h-4 w-4 text-red-600" />
+                            <span className="font-medium text-red-800">Error al Calcular Precio</span>
                           </div>
-                          <p className="text-sm text-blue-600">
-                            Debe agregar al menos un crew member para calcular el precio de la ruta.
+                          <p className="text-sm text-red-600">
+                            {pricing.error}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : formData.crewMembers.length > 0 ? (
+                      <Card className="bg-yellow-50 border-yellow-200">
+                        <CardContent className="pt-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <DollarSign className="h-4 w-4 text-yellow-600" />
+                            <span className="font-medium text-yellow-800">Precio No Disponible</span>
+                          </div>
+                          <p className="text-sm text-yellow-600">
+                            No existe precio configurado para esta combinación:
+                          </p>
+                          <div className="text-sm text-yellow-600 mt-2 space-y-1">
+                            <div>• {formData.crewMembers.length} pasajero{formData.crewMembers.length !== 1 ? 's' : ''}</div>
+                            <div>• Tipo: {formData.moveType === 'RT' ? 'Round Trip' : 
+                                           formData.moveType === 'SINGLE' ? 'Single' :
+                                           formData.moveType === 'INTERNAL' ? 'Internal' :
+                                           formData.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
+                                           formData.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}</div>
+                            <div>• Ruta: {(() => {
+                              const pickupLoc = locations.find(loc => loc.name === formData.pickupLocation);
+                              const dropoffLoc = locations.find(loc => loc.name === formData.dropoffLocation);
+                              return `${pickupLoc?.metadata?.siteTypeName || 'N/A'} → ${dropoffLoc?.metadata?.siteTypeName || 'N/A'}`;
+                            })()}</div>
+                          </div>
+                          <p className="text-xs text-yellow-600 mt-2">
+                            Contacte al administrador para configurar el precio de esta combinación.
                           </p>
                         </CardContent>
                       </Card>
@@ -834,8 +1183,11 @@ export function AgencyServices() {
                         placeholder="Alfabético"
                         value={member.name}
                         onChange={(e) => updateCrewMember(member.id, 'name', e.target.value)}
-                        className="text-sm"
+                        className={`text-sm ${formErrors[`crewMember_${index}_name`] ? 'border-red-500' : ''}`}
                       />
+                      {formErrors[`crewMember_${index}_name`] && (
+                        <p className="text-xs text-red-500 mt-1">{formErrors[`crewMember_${index}_name`]}</p>
+                      )}
                     </div>
                     
                     <div>
@@ -843,7 +1195,7 @@ export function AgencyServices() {
                         value={member.nationality}
                         onValueChange={(value) => updateCrewMember(member.id, 'nationality', value)}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className={formErrors[`crewMember_${index}_nationality`] ? 'border-red-500' : ''}>
                           <SelectValue placeholder="Nacionalidad" />
                         </SelectTrigger>
                         <SelectContent>
@@ -854,6 +1206,9 @@ export function AgencyServices() {
                           ))}
                         </SelectContent>
                       </Select>
+                      {formErrors[`crewMember_${index}_nationality`] && (
+                        <p className="text-xs text-red-500 mt-1">{formErrors[`crewMember_${index}_nationality`]}</p>
+                      )}
                     </div>
                     
                     <div>
@@ -861,7 +1216,7 @@ export function AgencyServices() {
                         value={member.crewRank}
                         onValueChange={(value) => updateCrewMember(member.id, 'crewRank', value)}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className={formErrors[`crewMember_${index}_crewRank`] ? 'border-red-500' : ''}>
                           <SelectValue placeholder="Rango" />
                         </SelectTrigger>
                         <SelectContent>
@@ -872,6 +1227,9 @@ export function AgencyServices() {
                           ))}
                         </SelectContent>
                       </Select>
+                      {formErrors[`crewMember_${index}_crewRank`] && (
+                        <p className="text-xs text-red-500 mt-1">{formErrors[`crewMember_${index}_crewRank`]}</p>
+                      )}
                     </div>
                     
                     <div>
@@ -879,7 +1237,7 @@ export function AgencyServices() {
                         value={member.crewCategory}
                         onValueChange={(value) => updateCrewMember(member.id, 'crewCategory', value)}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className={formErrors[`crewMember_${index}_crewCategory`] ? 'border-red-500' : ''}>
                           <SelectValue placeholder="Categoría" />
                         </SelectTrigger>
                         <SelectContent>
@@ -887,6 +1245,9 @@ export function AgencyServices() {
                           <SelectItem value="On Signer">On Signer</SelectItem>
                         </SelectContent>
                       </Select>
+                      {formErrors[`crewMember_${index}_crewCategory`] && (
+                        <p className="text-xs text-red-500 mt-1">{formErrors[`crewMember_${index}_crewCategory`]}</p>
+                      )}
                     </div>
                     
                     <div>
@@ -894,8 +1255,11 @@ export function AgencyServices() {
                         placeholder="alfanumérico"
                         value={member.flight}
                         onChange={(e) => updateCrewMember(member.id, 'flight', e.target.value)}
-                        className="text-sm"
+                        className={`text-sm ${formErrors[`crewMember_${index}_flight`] ? 'border-red-500' : ''}`}
                       />
+                      {formErrors[`crewMember_${index}_flight`] && (
+                        <p className="text-xs text-red-500 mt-1">{formErrors[`crewMember_${index}_flight`]}</p>
+                      )}
                     </div>
                   </div>
                 ))}

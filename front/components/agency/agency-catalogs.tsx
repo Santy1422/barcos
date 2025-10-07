@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -12,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea"
 import { 
   MapPin, Flag, Users, Ship, Building, User, Code, Plus, Edit, 
-  Trash2, Download, Search, AlertCircle, Save, X, RotateCcw, Route, DollarSign
+  Trash2, Download, Search, AlertCircle, Save, X, RotateCcw, Route, DollarSign, Building2
 } from "lucide-react"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
 import { useToast } from "@/hooks/use-toast"
@@ -34,14 +35,25 @@ interface CatalogTypeConfig {
 
 const catalogTypes: CatalogTypeConfig[] = [
   {
+    key: 'site_type',
+    label: 'Site Types',
+    icon: Building2,
+    description: 'Location site types for routing (Airport, Hotel, Port, etc)',
+    fields: {
+      name: 'Site Type Name',
+      description: true
+    }
+  },
+  {
     key: 'location',
     label: 'Locations',
     icon: MapPin,
-    description: 'Pickup and drop-off locations',
+    description: 'Pickup and drop-off locations associated with site types',
     fields: {
       name: 'Location Name',
       metadata: [
-        { key: 'siteType', label: 'Site Type', type: 'text' }
+        { key: 'siteTypeId', label: 'Site Type', type: 'text' },
+        { key: 'siteTypeName', label: 'Site Type Name', type: 'text' }
       ]
     }
   },
@@ -129,7 +141,9 @@ export function AgencyCatalogs() {
     updateCatalog,
     deactivateCatalog,
     reactivateCatalog,
-    quickStats
+    deleteCatalog,
+    quickStats,
+    siteTypes
   } = useAgencyCatalogs()
 
   // Modal states
@@ -258,7 +272,7 @@ export function AgencyCatalogs() {
     }
   }
 
-  const handleDelete = async (catalog: AgencyCatalog) => {
+  const handleToggleActive = async (catalog: AgencyCatalog) => {
     if (!confirm(`Are you sure you want to ${catalog.isActive ? 'deactivate' : 'reactivate'} "${catalog.name}"?`)) return
 
     try {
@@ -281,6 +295,28 @@ export function AgencyCatalogs() {
       toast({
         title: "Error",
         description: "Failed to update catalog entry",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleDeletePermanently = async (catalog: AgencyCatalog) => {
+    const typeLabel = getCurrentTypeConfig().label.slice(0, -1) // Remove 's' from plural
+    if (!confirm(`¿Está seguro que desea eliminar permanentemente "${catalog.name}" de ${typeLabel}?\n\nEsta acción no se puede deshacer.`)) {
+      return
+    }
+
+    try {
+      await deleteCatalog(catalog._id)
+      toast({
+        title: "Success",
+        description: `${typeLabel} deleted successfully`,
+      })
+      fetchGroupedCatalogs()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: `Failed to delete ${typeLabel.toLowerCase()}`,
         variant: "destructive",
       })
     }
@@ -364,7 +400,7 @@ export function AgencyCatalogs() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid gap-4 md:grid-cols-7">
+      <div className="grid gap-4 md:grid-cols-8">
         {catalogTypes.map((type) => (
           <Card key={type.key}>
             <CardContent className="p-4">
@@ -399,7 +435,7 @@ export function AgencyCatalogs() {
 
       {/* Catalog Tabs */}
       <Tabs value={selectedCatalogType} onValueChange={(value) => setSelectedCatalogType(value as CatalogType)}>
-        <TabsList className="grid w-full grid-cols-8">
+        <TabsList className="grid w-full grid-cols-9">
           {catalogTypes.map((type) => (
             <TabsTrigger key={type.key} value={type.key} className="text-xs">
               <type.icon className="h-3 w-3 mr-1" />
@@ -490,13 +526,24 @@ export function AgencyCatalogs() {
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => handleEditCatalog(catalog)}
+                                title="Edit"
                               >
                                 <Edit className="h-3 w-3" />
                               </Button>
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => handleDelete(catalog)}
+                                onClick={() => handleToggleActive(catalog)}
+                                title={catalog.isActive ? "Deactivate" : "Reactivate"}
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDeletePermanently(catalog)}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                title="Delete permanently"
                               >
                                 <Trash2 className="h-3 w-3" />
                               </Button>
@@ -591,21 +638,65 @@ export function AgencyCatalogs() {
               </div>
             )}
 
-            {getCurrentTypeConfig().fields.metadata?.map((metaField) => (
-              <div key={metaField.key} className="space-y-2">
-                <Label htmlFor={metaField.key}>{metaField.label}</Label>
-                <Input
-                  id={metaField.key}
-                  type={metaField.type}
-                  value={formData.metadata[metaField.key] || ''}
-                  onChange={(e) => handleMetadataChange(
-                    metaField.key, 
-                    metaField.type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value
-                  )}
-                  placeholder={`Enter ${metaField.label.toLowerCase()}`}
-                />
-              </div>
-            ))}
+            {getCurrentTypeConfig().fields.metadata?.map((metaField) => {
+              // Special handling for Site Type selection in Location catalog
+              if (selectedCatalogType === 'location' && metaField.key === 'siteTypeId') {
+                return (
+                  <div key={metaField.key} className="space-y-2">
+                    <Label htmlFor={metaField.key}>
+                      {metaField.label} *
+                    </Label>
+                    <Select
+                      value={formData.metadata[metaField.key] || ''}
+                      onValueChange={(value) => {
+                        const selectedSiteType = siteTypes.find(st => st._id === value)
+                        handleMetadataChange('siteTypeId', value)
+                        if (selectedSiteType) {
+                          handleMetadataChange('siteTypeName', selectedSiteType.name)
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select site type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {siteTypes.map((siteType) => (
+                          <SelectItem key={siteType._id} value={siteType._id}>
+                            {siteType.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {siteTypes.length === 0 && (
+                      <p className="text-xs text-yellow-600">
+                        No site types available. Please create site types first.
+                      </p>
+                    )}
+                  </div>
+                )
+              }
+              
+              // Skip siteTypeName as it's auto-populated
+              if (selectedCatalogType === 'location' && metaField.key === 'siteTypeName') {
+                return null
+              }
+              
+              return (
+                <div key={metaField.key} className="space-y-2">
+                  <Label htmlFor={metaField.key}>{metaField.label}</Label>
+                  <Input
+                    id={metaField.key}
+                    type={metaField.type}
+                    value={formData.metadata[metaField.key] || ''}
+                    onChange={(e) => handleMetadataChange(
+                      metaField.key, 
+                      metaField.type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value
+                    )}
+                    placeholder={`Enter ${metaField.label.toLowerCase()}`}
+                  />
+                </div>
+              )
+            })}
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleCloseModals}>
@@ -681,20 +772,59 @@ export function AgencyCatalogs() {
               </div>
             )}
 
-            {getCurrentTypeConfig().fields.metadata?.map((metaField) => (
-              <div key={metaField.key} className="space-y-2">
-                <Label htmlFor={`edit-${metaField.key}`}>{metaField.label}</Label>
-                <Input
-                  id={`edit-${metaField.key}`}
-                  type={metaField.type}
-                  value={formData.metadata[metaField.key] || ''}
-                  onChange={(e) => handleMetadataChange(
-                    metaField.key, 
-                    metaField.type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value
-                  )}
-                />
-              </div>
-            ))}
+            {getCurrentTypeConfig().fields.metadata?.map((metaField) => {
+              // Special handling for Site Type selection in Location catalog
+              if (selectedCatalogType === 'location' && metaField.key === 'siteTypeId') {
+                return (
+                  <div key={metaField.key} className="space-y-2">
+                    <Label htmlFor={`edit-${metaField.key}`}>
+                      {metaField.label} *
+                    </Label>
+                    <Select
+                      value={formData.metadata[metaField.key] || ''}
+                      onValueChange={(value) => {
+                        const selectedSiteType = siteTypes.find(st => st._id === value)
+                        handleMetadataChange('siteTypeId', value)
+                        if (selectedSiteType) {
+                          handleMetadataChange('siteTypeName', selectedSiteType.name)
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select site type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {siteTypes.map((siteType) => (
+                          <SelectItem key={siteType._id} value={siteType._id}>
+                            {siteType.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )
+              }
+              
+              // Skip siteTypeName as it's auto-populated
+              if (selectedCatalogType === 'location' && metaField.key === 'siteTypeName') {
+                return null
+              }
+              
+              return (
+                <div key={metaField.key} className="space-y-2">
+                  <Label htmlFor={`edit-${metaField.key}`}>{metaField.label}</Label>
+                  <Input
+                    id={`edit-${metaField.key}`}
+                    type={metaField.type}
+                    value={formData.metadata[metaField.key] || ''}
+                    onChange={(e) => handleMetadataChange(
+                      metaField.key, 
+                      metaField.type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value
+                    )}
+                  />
+                </div>
+              )
+            })}
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleCloseModals}>
