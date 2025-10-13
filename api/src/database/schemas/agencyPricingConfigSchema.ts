@@ -294,7 +294,7 @@ const agencyPricingConfigSchema = new Schema<IAgencyPricingConfig>(
         discountPercentage: { type: Number, required: true, min: 0, max: 100 }
       }],
       clientDiscounts: [{
-        clientId: { type: Schema.Types.ObjectId, ref: 'Client', required: true },
+        clientId: { type: Schema.Types.ObjectId, ref: 'clients', required: true },
         discountPercentage: { type: Number, required: true, min: 0, max: 100 }
       }],
       promotionalDiscounts: [{
@@ -413,12 +413,12 @@ const agencyPricingConfigSchema = new Schema<IAgencyPricingConfig>(
     
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User'
+      ref: 'users'
     },
     
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User'
+      ref: 'users'
     },
     
     version: {

@@ -44,6 +44,15 @@ import {
   setReadyForInvoice,
   setSapXmlGenerated,
   
+  // Invoice Actions
+  fetchAgencyInvoices,
+  createAgencyInvoice,
+  updateAgencyInvoice,
+  deleteAgencyInvoice,
+  facturarAgencyInvoice,
+  setCurrentInvoice,
+  clearInvoicesError,
+  
   // Types
   type AgencyService,
   type AgencyServiceInput,
@@ -79,6 +88,11 @@ interface AgencyServicesState {
     statisticsLoading: boolean;
     pricing: PricingState;
     sapIntegration: SapIntegrationState;
+    invoices: any[];
+    currentInvoice: any | null;
+    invoicesLoading: boolean;
+    invoicesError: string | null;
+    invoicesPagination: any | null;
   };
 }
 
@@ -90,52 +104,52 @@ export const useAgencyServices = () => {
   const dispatch = useDispatch<AppDispatch>();
   
   // Selectors
-  const services = useSelector((state: AgencyServicesState) => state.agencyServices.services);
-  const currentService = useSelector((state: AgencyServicesState) => state.agencyServices.currentService);
-  const totalPages = useSelector((state: AgencyServicesState) => state.agencyServices.totalPages);
-  const currentPage = useSelector((state: AgencyServicesState) => state.agencyServices.currentPage);
-  const totalServices = useSelector((state: AgencyServicesState) => state.agencyServices.totalServices);
-  const filters = useSelector((state: AgencyServicesState) => state.agencyServices.filters);
-  const loading = useSelector((state: AgencyServicesState) => state.agencyServices.loading);
-  const error = useSelector((state: AgencyServicesState) => state.agencyServices.error);
-  const isCreating = useSelector((state: AgencyServicesState) => state.agencyServices.isCreating);
-  const isUpdating = useSelector((state: AgencyServicesState) => state.agencyServices.isUpdating);
-  const showViewModal = useSelector((state: AgencyServicesState) => state.agencyServices.showViewModal);
-  const showEditModal = useSelector((state: AgencyServicesState) => state.agencyServices.showEditModal);
-  const showStatusModal = useSelector((state: AgencyServicesState) => state.agencyServices.showStatusModal);
-  const selectedServiceId = useSelector((state: AgencyServicesState) => state.agencyServices.selectedServiceId);
-  const statistics = useSelector((state: AgencyServicesState) => state.agencyServices.statistics);
-  const statisticsLoading = useSelector((state: AgencyServicesState) => state.agencyServices.statisticsLoading);
+  const services = useSelector((state: AgencyServicesState) => state.agencyServices?.services || []);
+  const currentService = useSelector((state: AgencyServicesState) => state.agencyServices?.currentService);
+  const totalPages = useSelector((state: AgencyServicesState) => state.agencyServices?.totalPages || 0);
+  const currentPage = useSelector((state: AgencyServicesState) => state.agencyServices?.currentPage || 1);
+  const totalServices = useSelector((state: AgencyServicesState) => state.agencyServices?.totalServices || 0);
+  const filters = useSelector((state: AgencyServicesState) => state.agencyServices?.filters || {});
+  const loading = useSelector((state: AgencyServicesState) => state.agencyServices?.loading || false);
+  const error = useSelector((state: AgencyServicesState) => state.agencyServices?.error);
+  const isCreating = useSelector((state: AgencyServicesState) => state.agencyServices?.isCreating || false);
+  const isUpdating = useSelector((state: AgencyServicesState) => state.agencyServices?.isUpdating || false);
+  const showViewModal = useSelector((state: AgencyServicesState) => state.agencyServices?.showViewModal || false);
+  const showEditModal = useSelector((state: AgencyServicesState) => state.agencyServices?.showEditModal || false);
+  const showStatusModal = useSelector((state: AgencyServicesState) => state.agencyServices?.showStatusModal || false);
+  const selectedServiceId = useSelector((state: AgencyServicesState) => state.agencyServices?.selectedServiceId);
+  const statistics = useSelector((state: AgencyServicesState) => state.agencyServices?.statistics);
+  const statisticsLoading = useSelector((state: AgencyServicesState) => state.agencyServices?.statisticsLoading || false);
   
   // Pricing Selectors
-  const pricing = useSelector((state: AgencyServicesState) => state.agencyServices.pricing);
-  const pricingLoading = useSelector((state: AgencyServicesState) => state.agencyServices.pricing.isCalculating);
-  const pricingError = useSelector((state: AgencyServicesState) => state.agencyServices.pricing.error);
-  const currentPrice = useSelector((state: AgencyServicesState) => state.agencyServices.pricing.currentPrice);
-  const priceBreakdown = useSelector((state: AgencyServicesState) => state.agencyServices.pricing.priceBreakdown);
-  const routeFound = useSelector((state: AgencyServicesState) => state.agencyServices.pricing.routeFound);
+  const pricing = useSelector((state: AgencyServicesState) => state.agencyServices?.pricing);
+  const pricingLoading = useSelector((state: AgencyServicesState) => state.agencyServices?.pricing?.isCalculating || false);
+  const pricingError = useSelector((state: AgencyServicesState) => state.agencyServices?.pricing?.error);
+  const currentPrice = useSelector((state: AgencyServicesState) => state.agencyServices?.pricing?.currentPrice || 0);
+  const priceBreakdown = useSelector((state: AgencyServicesState) => state.agencyServices?.pricing?.priceBreakdown);
+  const routeFound = useSelector((state: AgencyServicesState) => state.agencyServices?.pricing?.routeFound || false);
   
   // SAP Selectors
-  const sapIntegration = useSelector((state: AgencyServicesState) => state.agencyServices.sapIntegration);
-  const sapLoading = useSelector((state: AgencyServicesState) => state.agencyServices.sapIntegration.sapLoading);
-  const sapError = useSelector((state: AgencyServicesState) => state.agencyServices.sapIntegration.sapError);
-  const xmlGenerated = useSelector((state: AgencyServicesState) => state.agencyServices.sapIntegration.xmlGenerated);
-  const xmlContent = useSelector((state: AgencyServicesState) => state.agencyServices.sapIntegration.xmlContent);
-  const xmlFileName = useSelector((state: AgencyServicesState) => state.agencyServices.sapIntegration.fileName);
-  const readyForInvoice = useSelector((state: AgencyServicesState) => state.agencyServices.sapIntegration.readyForInvoice);
-  const lastInvoiceNumber = useSelector((state: AgencyServicesState) => state.agencyServices.sapIntegration.lastInvoiceNumber);
+  const sapIntegration = useSelector((state: AgencyServicesState) => state.agencyServices?.sapIntegration);
+  const sapLoading = useSelector((state: AgencyServicesState) => state.agencyServices?.sapIntegration?.sapLoading || false);
+  const sapError = useSelector((state: AgencyServicesState) => state.agencyServices?.sapIntegration?.sapError);
+  const xmlGenerated = useSelector((state: AgencyServicesState) => state.agencyServices?.sapIntegration?.xmlGenerated || false);
+  const xmlContent = useSelector((state: AgencyServicesState) => state.agencyServices?.sapIntegration?.xmlContent);
+  const xmlFileName = useSelector((state: AgencyServicesState) => state.agencyServices?.sapIntegration?.fileName);
+  const readyForInvoice = useSelector((state: AgencyServicesState) => state.agencyServices?.sapIntegration?.readyForInvoice || []);
+  const lastInvoiceNumber = useSelector((state: AgencyServicesState) => state.agencyServices?.sapIntegration?.lastInvoiceNumber);
   
   // Action creators
   const actions = useMemo(() => ({
-    // Async actions
-    fetchServices: (params?: FetchServicesParams) => dispatch(fetchAgencyServices(params)),
-    createService: (serviceData: AgencyServiceInput) => dispatch(createAgencyService(serviceData)),
-    updateService: (params: UpdateServiceParams) => dispatch(updateAgencyService(params)),
-    updateStatus: (params: UpdateStatusParams) => dispatch(updateServiceStatus(params)),
-    deleteService: (id: string) => dispatch(deleteAgencyService(id)),
-    fetchServiceById: (id: string) => dispatch(fetchServiceById(id)),
+    // Async actions with .unwrap() for proper promise handling
+    fetchServices: (params?: FetchServicesParams) => dispatch(fetchAgencyServices(params)).unwrap(),
+    createService: (serviceData: AgencyServiceInput) => dispatch(createAgencyService(serviceData)).unwrap(),
+    updateService: (params: UpdateServiceParams) => dispatch(updateAgencyService(params)).unwrap(),
+    updateStatus: (params: UpdateStatusParams) => dispatch(updateServiceStatus(params)).unwrap(),
+    deleteService: (id: string) => dispatch(deleteAgencyService(id)).unwrap(),
+    fetchServiceById: (id: string) => dispatch(fetchServiceById(id)).unwrap(),
     fetchStatistics: (params?: { startDate?: string; endDate?: string; clientId?: string }) => 
-      dispatch(fetchAgencyStatistics(params)),
+      dispatch(fetchAgencyStatistics(params)).unwrap(),
     
     // Sync actions
     setFilters: (filters: AgencyServiceFilters) => dispatch(setFilters(filters)),
@@ -161,8 +175,8 @@ export const useAgencyServices = () => {
     
     // ========== PRICING ACTIONS ==========
     
-    // Pricing async actions
-    calculateServicePrice: (priceData: PriceCalculationRequest) => dispatch(calculateServicePrice(priceData)),
+    // Pricing async actions with .unwrap()
+    calculateServicePrice: (priceData: PriceCalculationRequest) => dispatch(calculateServicePrice(priceData)).unwrap(),
     
     // Pricing sync actions
     clearPricingState: () => dispatch(clearPricingState()),
@@ -171,18 +185,18 @@ export const useAgencyServices = () => {
     
     // ========== SAP ACTIONS ==========
     
-    // SAP Async actions
+    // SAP Async actions with .unwrap()
     fetchServicesReadyForInvoice: (filters?: {
       clientId?: string;
       startDate?: string;
       endDate?: string;
       vessel?: string;
       pickupLocation?: string;
-    }) => dispatch(fetchServicesReadyForInvoice(filters || {})),
+    }) => dispatch(fetchServicesReadyForInvoice(filters || {})).unwrap(),
     
-    generateSapXml: (invoiceData: SapXmlGenerationRequest) => dispatch(generateSapXml(invoiceData)),
-    downloadSapXml: (fileName: string) => dispatch(downloadSapXml(fileName)),
-    fetchSapXmlHistory: (params?: { page?: number; limit?: number }) => dispatch(fetchSapXmlHistory(params || {})),
+    generateSapXml: (invoiceData: SapXmlGenerationRequest) => dispatch(generateSapXml(invoiceData)).unwrap(),
+    downloadSapXml: (fileName: string) => dispatch(downloadSapXml(fileName)).unwrap(),
+    fetchSapXmlHistory: (params?: { page?: number; limit?: number }) => dispatch(fetchSapXmlHistory(params || {})).unwrap(),
     
     // SAP Sync actions
     clearSapState: () => dispatch(clearSapState()),
@@ -195,6 +209,19 @@ export const useAgencyServices = () => {
       totalAmount: number;
       invoiceNumber: string;
     }) => dispatch(setSapXmlGenerated(data)),
+    
+    // ========== INVOICES ACTIONS ==========
+    
+    // Invoices async actions with .unwrap()
+    fetchInvoices: (params?: any) => dispatch(fetchAgencyInvoices(params)).unwrap(),
+    createInvoice: (params: any) => dispatch(createAgencyInvoice(params)).unwrap(),
+    updateInvoice: (params: any) => dispatch(updateAgencyInvoice(params)).unwrap(),
+    deleteInvoice: (id: string) => dispatch(deleteAgencyInvoice(id)).unwrap(),
+    facturarInvoice: (params: any) => dispatch(facturarAgencyInvoice(params)).unwrap(),
+    
+    // Invoices sync actions
+    setCurrentInvoice: (invoice: any) => dispatch(setCurrentInvoice(invoice)),
+    clearInvoicesError: () => dispatch(clearInvoicesError()),
   }), [dispatch]);
   
   // Helper functions
@@ -367,6 +394,13 @@ export const useAgencyServices = () => {
     helpers
   ]);
   
+  // Invoices Selectors
+  const invoices = useSelector((state: AgencyServicesState) => state.agencyServices?.invoices || []);
+  const currentInvoice = useSelector((state: AgencyServicesState) => state.agencyServices?.currentInvoice);
+  const invoicesLoading = useSelector((state: AgencyServicesState) => state.agencyServices?.invoicesLoading || false);
+  const invoicesError = useSelector((state: AgencyServicesState) => state.agencyServices?.invoicesError);
+  const invoicesPagination = useSelector((state: AgencyServicesState) => state.agencyServices?.invoicesPagination);
+
   return {
     // State
     services,
@@ -399,6 +433,13 @@ export const useAgencyServices = () => {
     xmlFileName,
     readyForInvoice,
     lastInvoiceNumber,
+    
+    // Invoices State
+    invoices,
+    currentInvoice,
+    invoicesLoading,
+    invoicesError,
+    invoicesPagination,
     
     // Actions
     ...actions,

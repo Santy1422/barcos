@@ -54,11 +54,11 @@ export const validateSftpConfig = (): boolean => {
 // Función para obtener configuración con logs de debug
 export const getSftpConfigWithDebug = () => {
   const isFromEnv = validateSftpConfig();
-  
+
   // Determinar qué variables se están usando
   const usingSftpSpecific = process.env.SAP_SFTP_HOST && process.env.SAP_SFTP_USER && process.env.SAP_SFTP_PASSWORD;
   const usingFtpFallback = process.env.SAP_FTP_HOST && process.env.SAP_FTP_USER && process.env.SAP_FTP_PASSWORD;
-  
+
   console.log('🔧 Configuración SFTP:', {
     host: sapSftpConfig.host,
     username: sapSftpConfig.username,
@@ -73,6 +73,39 @@ export const getSftpConfigWithDebug = () => {
     fromEnv: isFromEnv,
     configSource: usingSftpSpecific ? 'SFTP_SPECIFIC' : usingFtpFallback ? 'FTP_FALLBACK' : 'DEFAULT'
   });
-  
+
   return sapSftpConfig;
+};
+
+// Función para obtener configuración FTP tradicional (puerto 21, no segura)
+export const getFtpConfigWithDebug = () => {
+  const isFromEnv = validateSftpConfig();
+
+  // Determinar qué variables se están usando
+  const usingSftpSpecific = process.env.SAP_SFTP_HOST && process.env.SAP_SFTP_USER && process.env.SAP_SFTP_PASSWORD;
+  const usingFtpFallback = process.env.SAP_FTP_HOST && process.env.SAP_FTP_USER && process.env.SAP_FTP_PASSWORD;
+
+  // Crear configuración FTP específica
+  const ftpConfig = {
+    host: process.env.SAP_FTP_HOST || process.env.SAP_SFTP_HOST || "ftp.msc.com",
+    username: process.env.SAP_FTP_USER || process.env.SAP_SFTP_USER || "SAP_PanamaTSG",
+    password: process.env.SAP_FTP_PASSWORD || process.env.SAP_SFTP_PASSWORD || "6whLgP4RKRhnTFEfYPt0",
+    path: process.env.SAP_FTP_PATH || process.env.SAP_SFTP_PATH || "/Test/Upload/SAP/001",
+    port: 21, // FTP tradicional usa puerto 21
+  };
+
+  console.log('🔧 Configuración FTP tradicional:', {
+    host: ftpConfig.host,
+    username: ftpConfig.username,
+    passwordLength: ftpConfig.password.length,
+    passwordFirstChar: ftpConfig.password.charAt(0),
+    passwordLastChar: ftpConfig.password.charAt(ftpConfig.password.length - 1),
+    passwordHex: Buffer.from(ftpConfig.password).toString('hex'),
+    path: ftpConfig.path,
+    port: ftpConfig.port,
+    fromEnv: isFromEnv,
+    configSource: usingSftpSpecific ? 'SFTP_SPECIFIC_FALLBACK' : usingFtpFallback ? 'FTP_SPECIFIC' : 'DEFAULT'
+  });
+
+  return ftpConfig;
 };

@@ -164,8 +164,7 @@ export function PTYSSHistory() {
       'Valor Total': record.totalValue || 0,
       'Tipo Registro': getRecordType(record) === 'local' ? 'Local' : 'Trasiego',
       'Estado': record.status === 'pendiente' ? 'Pendiente' : 
-                record.status === 'completado' ? 'Completado' : 
-                record.status === 'prefacturado' ? 'Prefacturado' : 'Facturado',
+                record.status === 'completado' ? 'Completado' : 'Facturado',
       'Fecha Creación': record.createdAt ? new Date(record.createdAt).toLocaleDateString('es-ES') : 'N/A',
       'Cliente Local': record.data?.localClientName || '',
       'Precio Ruta Local': record.data?.localRoutePrice || ''
@@ -197,7 +196,6 @@ export function PTYSSHistory() {
     trasiego: records.filter(r => getRecordType(r) === 'trasiego').length,
     pendientes: records.filter(r => r.status === 'pendiente').length,
     completados: records.filter(r => r.status === 'completado').length,
-    prefacturados: records.filter(r => r.status === 'prefacturado').length,
     facturados: records.filter(r => r.status === 'facturado').length
   }
 
@@ -227,7 +225,6 @@ export function PTYSSHistory() {
               <Badge variant="outline">Trasiego: <strong>{stats.trasiego}</strong></Badge>
               <Badge variant="outline">Pendientes: <strong>{stats.pendientes}</strong></Badge>
               <Badge variant="outline">Completados: <strong>{stats.completados}</strong></Badge>
-              <Badge variant="outline">Prefacturados: <strong>{stats.prefacturados}</strong></Badge>
               <Badge variant="outline">Facturados: <strong>{stats.facturados}</strong></Badge>
             </div>
           </div>
@@ -270,7 +267,6 @@ export function PTYSSHistory() {
                     <SelectItem value="all">Todos</SelectItem>
                     <SelectItem value="pendiente">Pendientes</SelectItem>
                     <SelectItem value="completado">Completados</SelectItem>
-                    <SelectItem value="prefacturado">Prefacturados</SelectItem>
                     <SelectItem value="facturado">Facturados</SelectItem>
                   </SelectContent>
                 </Select>
@@ -409,13 +405,11 @@ export function PTYSSHistory() {
                         <Badge 
                           variant={
                             record.status === 'pendiente' ? 'destructive' :
-                            record.status === 'completado' ? 'default' : 
-                            record.status === 'prefacturado' ? 'outline' : 'default'
+                            record.status === 'completado' ? 'default' : 'default'
                           }
                         >
                           {record.status === 'pendiente' ? 'Pendiente' :
-                           record.status === 'completado' ? 'Completado' : 
-                           record.status === 'prefacturado' ? 'Prefacturado' : 'Facturado'}
+                           record.status === 'completado' ? 'Completado' : 'Facturado'}
                         </Badge>
                       </TableCell>
                       <TableCell>${record.totalValue.toFixed(2)}</TableCell>
@@ -516,13 +510,11 @@ export function PTYSSHistory() {
                       <Badge 
                         variant={
                           selectedRecord.status === 'pendiente' ? 'destructive' :
-                          selectedRecord.status === 'completado' ? 'default' : 
-                          selectedRecord.status === 'prefacturado' ? 'outline' : 'default'
+                          selectedRecord.status === 'completado' ? 'default' : 'default'
                         }
                       >
                         {selectedRecord.status === 'pendiente' ? 'Pendiente' :
-                         selectedRecord.status === 'completado' ? 'Completado' : 
-                         selectedRecord.status === 'prefacturado' ? 'Prefacturado' : 'Facturado'}
+                         selectedRecord.status === 'completado' ? 'Completado' : 'Facturado'}
                       </Badge>
                     </div>
                   </div>

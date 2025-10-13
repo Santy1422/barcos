@@ -120,9 +120,9 @@ export const createAgencyService = async (req: Request, res: Response) => {
     } = req.body;
 
     // Validate required fields
-    if (!pickupDate || !pickupTime || !pickupLocation || !dropoffLocation || !vessel) {
+    if (!pickupDate || !pickupTime || !pickupLocation || !dropoffLocation || !vessel || !clientId) {
       return response(res, 400, {
-        message: 'Required fields: pickupDate, pickupTime, pickupLocation, dropoffLocation, vessel'
+        message: 'Required fields: pickupDate, pickupTime, pickupLocation, dropoffLocation, vessel, clientId'
       });
     }
 
@@ -142,16 +142,13 @@ export const createAgencyService = async (req: Request, res: Response) => {
       }
     }
 
-    // Validate client if provided
-    let clientData = null;
-    if (clientId) {
-      clientData = await clients.findById(clientId);
-      if (!clientData) {
-        return response(res, 404, { message: 'Client not found' });
-      }
-      if ((clientData as any).status !== 'active') {
-        return response(res, 400, { message: 'Client is not active' });
-      }
+    // Validate client (required)
+    const clientData = await clients.findById(clientId);
+    if (!clientData) {
+      return response(res, 404, { message: 'Client not found' });
+    }
+    if (!(clientData as any).isActive) {
+      return response(res, 400, { message: 'Client is not active' });
     }
 
     // Validate locations exist in catalogs
@@ -212,9 +209,9 @@ export const createAgencyService = async (req: Request, res: Response) => {
       price: calculatedPrice,
       currency: currency || 'USD',
       
-      // Client (opcional)
-      clientId: clientId || undefined,
-      clientName: clientData ? (clientData as any).name : undefined,
+      // Client (required)
+      clientId: clientId,
+      clientName: (clientData as any).type === 'natural' ? (clientData as any).fullName : (clientData as any).companyName,
       
       // Audit
       createdBy: (req as any).user?._id
@@ -249,7 +246,10 @@ export const updateAgencyService = async (req: Request, res: Response) => {
     }
 
     // Check if service can be edited
-    if (!service.canBeEdited || !service.canBeEdited()) {
+    // Permitir transición de completed -> facturado (para facturación)
+    const isFacturacionTransition = service.status === 'completed' && updateData.status === 'facturado';
+    
+    if (!isFacturacionTransition && (!service.canBeEdited || !service.canBeEdited())) {
       return response(res, 400, { message: 'Service cannot be edited in current status' });
     }
 
@@ -312,11 +312,7 @@ export const deleteAgencyService = async (req: Request, res: Response) => {
       return response(res, 404, { message: 'Service not found' });
     }
 
-    // Only allow deletion if not invoiced
-    if (service.status === 'facturado') {
-      return response(res, 400, { message: 'Cannot delete invoiced service' });
-    }
-
+    // Permitir eliminación de todos los estados (incluido facturado)
     if (hardDelete === 'true') {
       // Hard delete
       await AgencyService.findByIdAndDelete(id);

@@ -34,15 +34,31 @@ export interface AgencyService {
   // Ubicaciones
   pickupLocation: string;
   dropoffLocation: string;
+  returnDropoffLocation?: string; // For Round Trip
   
   // Información del buque
   vessel: string;
   voyage?: string;
   
-  // Información de la tripulación
-  crewName: string;
+  // Información de la tripulación (Legacy)
+  crewName?: string;
   crewRank?: string;
   nationality?: string;
+  
+  // Crew Members (Nuevo - array de crew members)
+  crewMembers?: Array<{
+    id: string;
+    name: string;
+    nationality: string;
+    crewRank: string;
+    crewCategory: string;
+    status: 'Visit' | 'On Signer';
+    flight: string;
+  }>;
+  
+  // Move type
+  moveType?: 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION';
+  passengerCount?: number;
   
   // Información del transporte
   transportCompany?: string;
@@ -62,6 +78,13 @@ export interface AgencyService {
   // Cliente
   clientId: string | Client;
   clientName?: string;
+  
+  // XML Data
+  xmlData?: {
+    xml: string;
+    fileName: string;
+    generatedAt: string;
+  };
   
   // Referencias de facturación
   prefacturaId?: string;
@@ -84,18 +107,48 @@ export interface AgencyServiceInput {
   pickupTime: string;
   pickupLocation: string;
   dropoffLocation: string;
+  returnDropoffLocation?: string; // For Round Trip
   vessel: string;
-  crewName: string;
-  clientId: string;
   voyage?: string;
+  
+  // Crew information - legacy
+  crewName?: string;
   crewRank?: string;
   nationality?: string;
+  
+  // Crew Members (Nuevo)
+  crewMembers?: Array<{
+    id: string;
+    name: string;
+    nationality: string;
+    crewRank: string;
+    crewCategory: string;
+    status: 'Visit' | 'On Signer';
+    flight: string;
+  }>;
+  
+  // Move type
+  moveType?: 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION';
+  passengerCount?: number;
+  
+  // Client (required)
+  clientId: string;
+  
+  // Transport
   transportCompany?: string;
+  driver?: string;
   driverName?: string;
   flightInfo?: string;
+  approve?: boolean;
+  
+  // Service details
   waitingTime?: number;
   comments?: string;
   serviceCode?: string;
+  
+  // Pricing
+  price?: number;
+  currency?: string;
 }
 
 // Interface para filtros de búsqueda
@@ -227,6 +280,116 @@ export interface SapIntegrationState {
   sapError: string | null;
 }
 
+// ==================== INVOICES INTERFACES ====================
+
+export interface AgencyInvoice {
+  _id: string;
+  id?: string;
+  module: 'AGENCY';
+  invoiceNumber: string;
+  status: 'prefactura' | 'facturada';
+  
+  // Client
+  clientId: string;
+  clientName: string;
+  clientRuc?: string;
+  clientSapNumber: string;
+  
+  // Services
+  relatedServiceIds: string[];
+  
+  // Financial
+  totalAmount: number;
+  currency: string;
+  
+  // Dates
+  issueDate: string;
+  dueDate?: string;
+  
+  // SAP
+  xmlData?: {
+    xml: string;
+    fileName: string;
+    generatedAt: string;
+  };
+  sentToSap: boolean;
+  sentToSapAt?: string;
+  sapFileName?: string;
+  sapLogs?: Array<{
+    timestamp: string;
+    level: 'info' | 'success' | 'error';
+    message: string;
+    details?: any;
+  }>;
+  
+  // Details
+  details?: {
+    additionalServices?: Array<{
+      id: string;
+      name: string;
+      description: string;
+      amount: number;
+    }>;
+    notes?: string;
+    trk137Amount?: number;
+    trk137Description?: string;
+  };
+  
+  // Audit
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateInvoiceParams {
+  invoiceNumber: string;
+  clientId: string;
+  relatedServiceIds: string[];
+  issueDate: string;
+  dueDate?: string;
+  details?: AgencyInvoice['details'];
+}
+
+export interface UpdateInvoiceParams {
+  id: string;
+  updates: Partial<AgencyInvoice>;
+}
+
+export interface FacturarInvoiceParams {
+  id: string;
+  xmlData?: {
+    xml: string;
+    fileName?: string;
+  };
+  newInvoiceNumber?: string;
+  invoiceDate?: string;
+}
+
+export interface InvoiceFilters {
+  status?: 'all' | 'prefactura' | 'facturada';
+  clientId?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface FetchInvoicesParams {
+  page?: number;
+  limit?: number;
+  filters?: InvoiceFilters;
+}
+
+export interface InvoicesResponse {
+  success: boolean;
+  invoices: AgencyInvoice[];
+  pagination: {
+    currentPage: number;
+    totalPages: number;
+    totalInvoices: number;
+    limit: number;
+  };
+}
+
 // State structure
 interface AgencyServicesState {
   // Servicios principales
@@ -260,6 +423,18 @@ interface AgencyServicesState {
   
   // Integración SAP
   sapIntegration: SapIntegrationState;
+  
+  // Invoices
+  invoices: AgencyInvoice[];
+  currentInvoice: AgencyInvoice | null;
+  invoicesLoading: boolean;
+  invoicesError: string | null;
+  invoicesPagination: {
+    currentPage: number;
+    totalPages: number;
+    totalInvoices: number;
+    limit: number;
+  } | null;
 }
 
 // Estado inicial
@@ -303,6 +478,13 @@ const initialState: AgencyServicesState = {
     sapLoading: false,
     sapError: null,
   },
+  
+  // Invoices initial state
+  invoices: [],
+  currentInvoice: null,
+  invoicesLoading: false,
+  invoicesError: null,
+  invoicesPagination: null,
 };
 
 // Async thunks
@@ -368,7 +550,9 @@ export const createAgencyService = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data.service as AgencyService;
+      // El backend devuelve { error: false, payload: { success: true, service: {...} } }
+      const service = data.payload?.service || data.service;
+      return service as AgencyService;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -380,6 +564,7 @@ export const updateAgencyService = createAsyncThunk(
   'agencyServices/updateAgencyService',
   async ({ id, updateData }: UpdateServiceParams, { rejectWithValue }) => {
     try {
+      console.log('updateAgencyService called with:', { id, updateData });
       const response = await fetch(createApiUrl(`/api/agency/services/${id}`), {
         method: 'PUT',
         headers: {
@@ -391,12 +576,24 @@ export const updateAgencyService = createAsyncThunk(
       
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('updateAgencyService failed:', errorData);
         throw new Error(errorData.message || 'Failed to update service');
       }
       
       const data = await response.json();
-      return data.service as AgencyService;
+      console.log('updateAgencyService response:', data);
+      
+      // El backend devuelve { error: false, payload: { success: true, service: {...} } }
+      const service = data.payload?.service || data.service;
+      
+      if (!service) {
+        console.error('No service in response:', data);
+        throw new Error('Service data missing from response');
+      }
+      
+      return service as AgencyService;
     } catch (error) {
+      console.error('updateAgencyService error:', error);
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
   }
@@ -478,7 +675,9 @@ export const fetchServiceById = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data;
+      // El backend devuelve { error: false, payload: { data: service } }
+      const service = data.payload?.data || data.data || data;
+      return service;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -511,7 +710,9 @@ export const fetchAgencyStatistics = createAsyncThunk(
       }
       
       const data = await response.json();
-      return data;
+      // El backend devuelve { error: false, payload: { data: {...} } }
+      const statistics = data.payload?.data || data.data || data;
+      return statistics;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -741,6 +942,181 @@ export const fetchSapXmlHistory = createAsyncThunk(
   }
 );
 
+// ==================== INVOICES THUNKS ====================
+
+// Fetch all invoices
+export const fetchAgencyInvoices = createAsyncThunk<InvoicesResponse, FetchInvoicesParams | undefined>(
+  'agencyServices/fetchInvoices',
+  async (params = {}, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token');
+      const { page = 1, limit = 100, filters = {} } = params;
+      
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+      });
+      
+      // Add filters to query params
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value && value !== 'all') {
+          queryParams.append(key, value as string);
+        }
+      });
+      
+      const response = await fetch(
+        createApiUrl(`/api/agency/invoices?${queryParams}`),
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch invoices');
+      }
+      
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+);
+
+// Create invoice
+export const createAgencyInvoice = createAsyncThunk<AgencyInvoice, CreateInvoiceParams>(
+  'agencyServices/createInvoice',
+  async (invoiceData, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(
+        createApiUrl('/api/agency/invoices'),
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(invoiceData)
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to create invoice');
+      }
+      
+      const data = await response.json();
+      return data.invoice;
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+);
+
+// Update invoice
+export const updateAgencyInvoice = createAsyncThunk<AgencyInvoice, UpdateInvoiceParams>(
+  'agencyServices/updateInvoice',
+  async ({ id, updates }, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(
+        createApiUrl(`/api/agency/invoices/${id}`),
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(updates)
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update invoice');
+      }
+      
+      const data = await response.json();
+      return data.invoice;
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+);
+
+// Delete invoice
+export const deleteAgencyInvoice = createAsyncThunk<string, string>(
+  'agencyServices/deleteInvoice',
+  async (id, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(
+        createApiUrl(`/api/agency/invoices/${id}`),
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete invoice');
+      }
+      
+      return id;
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+);
+
+// Facturar invoice
+export const facturarAgencyInvoice = createAsyncThunk<AgencyInvoice, FacturarInvoiceParams>(
+  'agencyServices/facturarInvoice',
+  async (params, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(
+        createApiUrl(`/api/agency/invoices/${params.id}/facturar`),
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            xmlData: params.xmlData,
+            newInvoiceNumber: params.newInvoiceNumber,
+            invoiceDate: params.invoiceDate
+          })
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to facturar invoice');
+      }
+      
+      const data = await response.json();
+      return data.invoice;
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+);
+
 // Slice
 const agencyServicesSlice = createSlice({
   name: 'agencyServices',
@@ -941,6 +1317,15 @@ const agencyServicesSlice = createSlice({
       state.sapIntegration.sapLoading = false;
       state.sapIntegration.sapError = null;
     },
+    
+    // Invoice actions
+    setCurrentInvoice: (state, action: PayloadAction<AgencyInvoice | null>) => {
+      state.currentInvoice = action.payload;
+    },
+    
+    clearInvoicesError: (state) => {
+      state.invoicesError = null;
+    },
   },
   
   extraReducers: (builder) => {
@@ -985,7 +1370,12 @@ const agencyServicesSlice = createSlice({
       })
       .addCase(updateAgencyService.fulfilled, (state, action) => {
         state.isUpdating = false;
-        const index = state.services.findIndex(s => s._id === action.payload._id);
+        // Safety check for payload
+        if (!action.payload || !action.payload._id) {
+          console.error('updateAgencyService.fulfilled: payload is missing or invalid', action.payload);
+          return;
+        }
+        const index = state.services.findIndex(s => s && s._id === action.payload._id);
         if (index !== -1) {
           state.services[index] = action.payload;
         }
@@ -1054,7 +1444,7 @@ const agencyServicesSlice = createSlice({
       })
       .addCase(fetchAgencyStatistics.fulfilled, (state, action) => {
         state.statisticsLoading = false;
-        state.statistics = action.payload.payload.data;
+        state.statistics = action.payload;
       })
       .addCase(fetchAgencyStatistics.rejected, (state, action) => {
         state.statisticsLoading = false;
@@ -1157,6 +1547,96 @@ const agencyServicesSlice = createSlice({
       .addCase(fetchSapXmlHistory.rejected, (state, action) => {
         state.sapIntegration.sapLoading = false;
         state.sapIntegration.sapError = action.payload as string;
+      })
+      
+      // ==================== INVOICES EXTRA REDUCERS ====================
+      
+      // Fetch invoices
+      .addCase(fetchAgencyInvoices.pending, (state) => {
+        state.invoicesLoading = true;
+        state.invoicesError = null;
+      })
+      .addCase(fetchAgencyInvoices.fulfilled, (state, action) => {
+        state.invoicesLoading = false;
+        state.invoices = action.payload.invoices || [];
+        state.invoicesPagination = action.payload.pagination;
+        state.invoicesError = null;
+      })
+      .addCase(fetchAgencyInvoices.rejected, (state, action) => {
+        state.invoicesLoading = false;
+        state.invoicesError = action.payload as string;
+      })
+      
+      // Create invoice
+      .addCase(createAgencyInvoice.pending, (state) => {
+        state.invoicesLoading = true;
+        state.invoicesError = null;
+      })
+      .addCase(createAgencyInvoice.fulfilled, (state, action) => {
+        state.invoicesLoading = false;
+        state.invoices.unshift(action.payload);
+        state.invoicesError = null;
+      })
+      .addCase(createAgencyInvoice.rejected, (state, action) => {
+        state.invoicesLoading = false;
+        state.invoicesError = action.payload as string;
+      })
+      
+      // Update invoice
+      .addCase(updateAgencyInvoice.pending, (state) => {
+        state.invoicesLoading = true;
+        state.invoicesError = null;
+      })
+      .addCase(updateAgencyInvoice.fulfilled, (state, action) => {
+        state.invoicesLoading = false;
+        const index = state.invoices.findIndex(inv => (inv._id || inv.id) === (action.payload._id || action.payload.id));
+        if (index !== -1) {
+          state.invoices[index] = action.payload;
+        }
+        if (state.currentInvoice && (state.currentInvoice._id === action.payload._id || state.currentInvoice.id === action.payload.id)) {
+          state.currentInvoice = action.payload;
+        }
+        state.invoicesError = null;
+      })
+      .addCase(updateAgencyInvoice.rejected, (state, action) => {
+        state.invoicesLoading = false;
+        state.invoicesError = action.payload as string;
+      })
+      
+      // Delete invoice
+      .addCase(deleteAgencyInvoice.pending, (state) => {
+        state.invoicesLoading = true;
+        state.invoicesError = null;
+      })
+      .addCase(deleteAgencyInvoice.fulfilled, (state, action) => {
+        state.invoicesLoading = false;
+        state.invoices = state.invoices.filter(inv => (inv._id || inv.id) !== action.payload);
+        if (state.currentInvoice && (state.currentInvoice._id === action.payload || state.currentInvoice.id === action.payload)) {
+          state.currentInvoice = null;
+        }
+        state.invoicesError = null;
+      })
+      .addCase(deleteAgencyInvoice.rejected, (state, action) => {
+        state.invoicesLoading = false;
+        state.invoicesError = action.payload as string;
+      })
+      
+      // Facturar invoice
+      .addCase(facturarAgencyInvoice.pending, (state) => {
+        state.invoicesLoading = true;
+        state.invoicesError = null;
+      })
+      .addCase(facturarAgencyInvoice.fulfilled, (state, action) => {
+        state.invoicesLoading = false;
+        const index = state.invoices.findIndex(inv => (inv._id || inv.id) === (action.payload._id || action.payload.id));
+        if (index !== -1) {
+          state.invoices[index] = action.payload;
+        }
+        state.invoicesError = null;
+      })
+      .addCase(facturarAgencyInvoice.rejected, (state, action) => {
+        state.invoicesLoading = false;
+        state.invoicesError = action.payload as string;
       });
   },
 });
@@ -1193,6 +1673,9 @@ export const {
   setSapError,
   setReadyForInvoice,
   setSapXmlGenerated,
+  // Invoice actions
+  setCurrentInvoice,
+  clearInvoicesError,
 } = agencyServicesSlice.actions;
 
 // Export reducer

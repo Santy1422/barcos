@@ -9,13 +9,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { 
   Plus, Save, Send, 
-  MapPin, Ship, User, Calendar, Clock, Plane, Users, DollarSign, X
+  MapPin, Ship, User, Calendar, Clock, Plane, Users, DollarSign, X, AlertTriangle, CheckCircle
 } from "lucide-react"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
 import { useAgencyRoutes } from "@/lib/features/agencyServices/useAgencyRoutes"
 import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
+import { useAppDispatch, useAppSelector } from "@/lib/hooks"
+import { fetchClients, selectAllClients } from "@/lib/features/clients/clientsSlice"
 
 interface CrewMember {
   id: string
@@ -45,6 +47,7 @@ interface ServiceFormData {
   price?: number          // Precio calculado automáticamente
   currency?: string       // Moneda (USD por defecto)
   passengerCount?: number // Número de pasajeros para cálculo
+  clientId: string        // Cliente seleccionado (requerido)
 }
 
 const initialFormData: ServiceFormData = {
@@ -64,7 +67,8 @@ const initialFormData: ServiceFormData = {
   waitingTime: 0,             // Tiempo de espera inicial en minutos (no se muestra en formulario)
   price: 0,                   // Precio inicial
   currency: 'USD',            // Moneda por defecto
-  passengerCount: 1           // Un pasajero por defecto
+  passengerCount: 1,          // Un pasajero por defecto
+  clientId: ''                // Cliente vacío inicialmente
 }
 
 const initialCrewMember: CrewMember = {
@@ -79,6 +83,8 @@ const initialCrewMember: CrewMember = {
 
 export function AgencyServices() {
   const { toast } = useToast()
+  const dispatch = useAppDispatch()
+  const clients = useAppSelector(selectAllClients)
   
   const {
     services,
@@ -123,7 +129,8 @@ export function AgencyServices() {
     fetchGroupedCatalogs()
     fetchActiveRoutes()
     fetchServices({ page: 1, limit: 10 })
-  }, [fetchGroupedCatalogs, fetchActiveRoutes, fetchServices])
+    dispatch(fetchClients())
+  }, [fetchGroupedCatalogs, fetchActiveRoutes, fetchServices, dispatch])
 
   // Get locations with site types only
   const getLocationsWithSiteType = () => {
@@ -251,7 +258,7 @@ export function AgencyServices() {
             firstRoute: `${pickupLoc.metadata.siteTypeName} → ${dropoffLoc.metadata.siteTypeName}`,
             secondRoute: `${dropoffLoc.metadata.siteTypeName} → ${returnDropoffLoc.metadata.siteTypeName}`,
             routeType: 'roundtrip',
-            waitingTime: (formData.waitingTime || 0) / 60,
+            waitingTime: formData.waitingTime || 0, // Enviar en minutos
             passengerCount: passengerCount
           });
           
@@ -286,7 +293,7 @@ export function AgencyServices() {
           pickupLocation: formData.pickupLocation,
           dropoffLocation: formData.dropoffLocation,
           routeType: routeType,
-          waitingTime: (formData.waitingTime || 0) / 60,
+          waitingTime: formData.waitingTime || 0, // Enviar en minutos
           passengerCount: passengerCount
         });
         
@@ -428,6 +435,7 @@ export function AgencyServices() {
       formData.vessel &&
       formData.transportCompany &&
       formData.driver &&
+      formData.clientId &&
       allCrewMembersComplete &&
       formData.pickupLocation !== formData.dropoffLocation &&
       pickupLoc?.metadata?.siteTypeName &&
@@ -458,6 +466,7 @@ export function AgencyServices() {
     if (!formData.vessel) errors.vessel = 'Vessel is required'
     if (!formData.transportCompany) errors.transportCompany = 'Transport company is required'
     if (!formData.driver) errors.driver = 'Driver is required'
+    if (!formData.clientId) errors.clientId = 'Client is required'
 
     // For Round Trip, return dropoff location is required
     if (formData.moveType === 'RT' && !formData.returnDropoffLocation) {
@@ -580,6 +589,7 @@ export function AgencyServices() {
         approve: false, // Always false in creation
         comments: formData.comments,
         crewMembers: formData.crewMembers,
+        clientId: formData.clientId, // Cliente seleccionado
         // Incluir campos de pricing (no waiting time in creation)
         waitingTime: 0, // No waiting time in creation form
         price: pricing?.currentPrice || formData.price || 0,
@@ -671,6 +681,28 @@ export function AgencyServices() {
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-gray-700">Service Details</h3>
                 
+                {/* Move Type */}
+                <div className="space-y-2">
+                  <Label htmlFor="moveType" className="text-sm font-medium">
+                    Move type
+                  </Label>
+                  <Select
+                    value={formData.moveType}
+                    onValueChange={(value) => handleInputChange('moveType', value as 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION')}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione tipo de movimiento" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SINGLE">Single</SelectItem>
+                      <SelectItem value="RT">Round Trip</SelectItem>
+                      <SelectItem value="INTERNAL">Internal</SelectItem>
+                      <SelectItem value="BAGS_CLAIM">Bags Claim</SelectItem>
+                      <SelectItem value="DOCUMENTATION">Documentation</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Pick Up Date */}
                 <div className="space-y-2">
                   <Label htmlFor="pickupDate" className="text-sm font-medium">
@@ -684,7 +716,6 @@ export function AgencyServices() {
                       value={formData.pickupDate}
                       onChange={(e) => handleInputChange('pickupDate', e.target.value)}
                       className={`pl-8 ${formErrors.pickupDate ? 'border-red-500' : ''}`}
-                      min={format(new Date(), 'yyyy-MM-dd')}
                     />
                   </div>
                   {formErrors.pickupDate && (
@@ -955,28 +986,6 @@ export function AgencyServices() {
                   <p className="text-xs text-yellow-600">Voyage puede quedar en blanco.</p>
                 </div>
 
-                {/* Move Type */}
-                <div className="space-y-2">
-                  <Label htmlFor="moveType" className="text-sm font-medium">
-                    Move type
-                  </Label>
-                  <Select
-                    value={formData.moveType}
-                    onValueChange={(value) => handleInputChange('moveType', value as 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION')}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccione tipo de movimiento" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="SINGLE">Single</SelectItem>
-                      <SelectItem value="RT">Round Trip</SelectItem>
-                      <SelectItem value="INTERNAL">Internal</SelectItem>
-                      <SelectItem value="BAGS_CLAIM">Bags Claim</SelectItem>
-                      <SelectItem value="DOCUMENTATION">Documentation</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
                 {/* Transport Company */}
                 <div className="space-y-2">
                   <Label htmlFor="transportCompany" className="text-sm font-medium">
@@ -1034,7 +1043,39 @@ export function AgencyServices() {
                   )}
                 </div>
 
-                {/* Automatic Price Display */}
+                {/* Client */}
+                <div className="space-y-2">
+                  <Label htmlFor="client" className="text-sm font-medium">
+                    Client <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={formData.clientId}
+                    onValueChange={(value) => handleInputChange('clientId', value)}
+                  >
+                    <SelectTrigger className={formErrors.clientId ? 'border-red-500' : ''}>
+                      <SelectValue placeholder="Select client" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients.filter(c => c.isActive && c.sapCode).map((client) => (
+                        <SelectItem key={client._id || client.id} value={client._id || client.id || ''}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {client.type === 'natural' ? client.fullName : client.companyName}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              SAP: {client.sapCode}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formErrors.clientId && (
+                    <p className="text-xs text-red-500">{formErrors.clientId}</p>
+                  )}
+                </div>
+
+                {/* Route Validation Display */}
                 {formData.pickupLocation && formData.dropoffLocation && (
                   <>
                     {formData.crewMembers.length === 0 ? (
@@ -1045,7 +1086,7 @@ export function AgencyServices() {
                             <span className="font-medium text-blue-800">Agregue Crew Members</span>
                           </div>
                           <p className="text-sm text-blue-600">
-                            Debe agregar al menos un crew member para calcular el precio de la ruta.
+                            Debe agregar al menos un crew member para validar la ruta.
                           </p>
                         </CardContent>
                       </Card>
@@ -1053,12 +1094,12 @@ export function AgencyServices() {
                       <Card className="bg-green-50 border-green-200">
                         <CardContent className="pt-4">
                           <div className="flex items-center gap-2 mb-2">
-                            <DollarSign className="h-4 w-4 text-green-600" />
-                            <span className="font-medium text-green-800">Precio Calculado Automáticamente</span>
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <span className="font-medium text-green-800">Ruta Válida</span>
                           </div>
-                          <div className="text-2xl font-bold text-green-700">
-                            ${pricing.currentPrice || formData.price || 0} {formData.currency || 'USD'}
-                          </div>
+                          <p className="text-sm text-green-600">
+                            ✅ Existe una ruta configurada para esta combinación
+                          </p>
                           <div className="text-sm text-green-600 mt-2">
                             <div className="flex items-center gap-2">
                               <Users className="h-3 w-3" />
@@ -1072,24 +1113,14 @@ export function AgencyServices() {
                                      formData.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}
                             </div>
                           </div>
-                          {pricing.priceBreakdown && (
-                            <div className="text-sm text-green-600 mt-2 space-y-1">
-                              <div>Tarifa Base: ${pricing.priceBreakdown.baseRate || 0}</div>
-                              <div>Tiempo de Espera: ${pricing.priceBreakdown.waitingTime || 0}</div>
-                              <div>Pasajeros Extra: ${pricing.priceBreakdown.extraPassengers || 0}</div>
-                            </div>
-                          )}
-                          <div className="text-xs text-green-600 mt-2">
-                            {pricing.routeFound ? '✅ Precio basado en ruta específica' : '⚠️ Precio por defecto aplicado'}
-                          </div>
                         </CardContent>
                       </Card>
                     ) : pricing && pricing.error ? (
                       <Card className="bg-red-50 border-red-200">
                         <CardContent className="pt-4">
                           <div className="flex items-center gap-2 mb-2">
-                            <DollarSign className="h-4 w-4 text-red-600" />
-                            <span className="font-medium text-red-800">Error al Calcular Precio</span>
+                            <AlertTriangle className="h-4 w-4 text-red-600" />
+                            <span className="font-medium text-red-800">Error de Validación</span>
                           </div>
                           <p className="text-sm text-red-600">
                             {pricing.error}
@@ -1100,11 +1131,11 @@ export function AgencyServices() {
                       <Card className="bg-yellow-50 border-yellow-200">
                         <CardContent className="pt-4">
                           <div className="flex items-center gap-2 mb-2">
-                            <DollarSign className="h-4 w-4 text-yellow-600" />
-                            <span className="font-medium text-yellow-800">Precio No Disponible</span>
+                            <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                            <span className="font-medium text-yellow-800">Ruta No Configurada</span>
                           </div>
                           <p className="text-sm text-yellow-600">
-                            No existe precio configurado para esta combinación:
+                            No existe configuración de ruta para esta combinación:
                           </p>
                           <div className="text-sm text-yellow-600 mt-2 space-y-1">
                             <div>• {formData.crewMembers.length} pasajero{formData.crewMembers.length !== 1 ? 's' : ''}</div>
@@ -1120,7 +1151,7 @@ export function AgencyServices() {
                             })()}</div>
                           </div>
                           <p className="text-xs text-yellow-600 mt-2">
-                            Contacte al administrador para configurar el precio de esta combinación.
+                            Contacte al administrador para configurar esta ruta.
                           </p>
                         </CardContent>
                       </Card>

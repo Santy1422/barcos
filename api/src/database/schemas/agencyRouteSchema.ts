@@ -213,12 +213,12 @@ const agencyRouteSchema = new Schema<IAgencyRoute>(
     
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User'
+      ref: 'users'
     },
     
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User'
+      ref: 'users'
     }
   },
   {

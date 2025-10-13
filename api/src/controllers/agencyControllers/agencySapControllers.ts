@@ -2,7 +2,10 @@ import { Request, Response } from 'express';
 import xml2js from 'xml2js';
 import fs from 'fs';
 import path from 'path';
+import * as ftp from 'basic-ftp';
+import { Readable } from 'stream';
 import AgencyService from '../../database/schemas/agencyServiceSchema';
+import { getSftpConfigWithDebug, getFtpConfigWithDebug } from '../../config/sftpConfig';
 
 const { catchedAsync } = require('../../utils');
 
@@ -32,16 +35,15 @@ export const generateSapXml = catchedAsync(async (req: Request, res: Response) =
     });
   }
 
-  // Buscar servicios a facturar
+  // Buscar servicios por IDs (pueden estar en cualquier estado ya que estamos enviando a SAP)
   const services = await AgencyService.find({
-    _id: { $in: serviceIds },
-    status: 'completed' // Solo servicios completados
+    _id: { $in: serviceIds }
   }).populate('clientId', 'name sapCode');
 
   if (services.length === 0) {
-    return res.status(404).json({ 
+    return res.status(404).json({
       success: false,
-      error: 'No completed services found for the provided IDs' 
+      error: 'No services found for the provided IDs'
     });
   }
 
@@ -332,7 +334,7 @@ export const validateXmlStructure = (xmlData: any): { valid: boolean; errors: st
 // Obtener historial de XMLs generados
 // Enviar XML a SAP via FTP
 export const sendXmlToSap = catchedAsync(async (req: Request, res: Response) => {
-  console.log('🚀 sendXmlToSap controller called');
+  console.log('🚀 sendXmlToSap controller called for Agency');
   console.log('📋 Request body:', {
     serviceIds: req.body.serviceIds,
     hasXmlContent: !!req.body.xmlContent,
@@ -357,74 +359,243 @@ export const sendXmlToSap = catchedAsync(async (req: Request, res: Response) => 
     });
   }
 
+  // Buscar servicios por IDs (pueden estar en cualquier estado ya que estamos enviando a SAP)
+  const services = await AgencyService.find({
+    _id: { $in: serviceIds }
+  }).populate('clientId', 'name sapCode');
+
+  if (services.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: 'No services found for the provided IDs'
+    });
+  }
+
   // Logs para el proceso de envío
   const logs: any[] = [];
-  const timestamp = new Date().toISOString();
-  
-  logs.push({
-    timestamp,
-    level: 'info',
-    message: `Iniciando envío de XML a SAP: ${fileName}`,
-    details: { serviceIds, fileName }
+
+  const addLog = (level: 'info' | 'success' | 'error' | 'warning', message: string, data?: any) => {
+    const logEntry = {
+      level,
+      message,
+      data,
+      timestamp: new Date().toISOString()
+    };
+    logs.push(logEntry);
+    console.log(`[Agency FTP ${level.toUpperCase()}] ${message}`, data || '');
+  };
+
+  addLog('info', 'Iniciando proceso de envío FTP para Agency', {
+    fileName,
+    xmlLength: xmlContent.length,
+    serviceCount: serviceIds.length,
+    servicesFound: services.length
   });
 
   try {
-    // Aquí iría la lógica de envío al FTP de SAP
-    // Por ahora, simulamos el envío exitoso y marcamos los servicios
-    
-    logs.push({
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      message: `XML guardado exitosamente en directorio SAP`
+    // Obtener configuración FTP específica para Agency
+    const ftpConfig = getFtpConfigWithDebug();
+    addLog('info', 'Configuración FTP cargada', {
+      host: ftpConfig.host,
+      username: ftpConfig.username,
+      path: ftpConfig.path,
+      port: ftpConfig.port
     });
 
-    // Marcar servicios como enviados a SAP
-    const updateResult = await AgencyService.updateMany(
-      { _id: { $in: serviceIds } },
-      {
-        sentToSap: true,
-        sentToSapAt: new Date(),
-        sapFileName: fileName,
-        updatedAt: new Date()
+    // Crear nombre del archivo XML (compatible con FTP)
+    const timestamp = new Date().toISOString()
+      .replace(/[:.]/g, '-')  // Reemplazar : y . por -
+      .replace(/T/g, '_')     // Reemplazar T por _
+      .replace(/Z/g, '');     // Remover Z del final
+    const finalFileName = fileName || `agency_${timestamp}.xml`;
+
+    addLog('info', 'Archivo a enviar', {
+      originalFileName: fileName,
+      finalFileName: finalFileName,
+      timestamp: timestamp
+    });
+
+    const client = new ftp.Client();
+    client.ftp.verbose = false;
+    
+    // Declarar uploadedFileName en el alcance correcto
+    let uploadedFileName = finalFileName;
+
+    try {
+      // Conectar al servidor FTP usando configuración específica
+      addLog('info', 'Conectando al servidor FTP', {
+        host: ftpConfig.host,
+        port: ftpConfig.port,
+        user: ftpConfig.username,
+        passwordLength: ftpConfig.password.length,
+        secure: false
+      });
+
+      await client.access({
+        host: ftpConfig.host,
+        port: ftpConfig.port, // Usar puerto específico de FTP
+        user: ftpConfig.username,
+        password: ftpConfig.password,
+        secure: false // FTP tradicional no seguro
+      });
+
+      addLog('success', 'Conexión FTP establecida');
+
+      // Pequeño retraso para estabilizar la conexión
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Subir archivo directamente (sin cambiar de directorio)
+      const xmlBuffer = Buffer.from(xmlContent, 'utf8');
+      const xmlStream = Readable.from(xmlBuffer);
+
+      addLog('info', 'Subiendo archivo XML...', {
+        fileName: finalFileName,
+        fileSize: xmlBuffer.length,
+        bufferType: typeof xmlBuffer,
+        xmlPreview: xmlContent.substring(0, 200) + '...' // Primeros 200 caracteres
+      });
+
+      try {
+        // Intentar subir con opciones adicionales
+        await client.uploadFrom(xmlStream, finalFileName);
+        addLog('success', 'Archivo XML subido exitosamente');
+      } catch (uploadError: any) {
+        addLog('error', 'Error con uploadFrom, intentando con upload', {
+          error: uploadError.message,
+          code: uploadError.code,
+          fileName: finalFileName,
+          bufferLength: xmlBuffer.length
+        });
+
+        // Intentar con método alternativo upload
+        try {
+          await client.upload(xmlStream, finalFileName);
+          addLog('success', 'Archivo XML subido exitosamente con método alternativo');
+        } catch (altError: any) {
+          addLog('error', 'Error con ambos métodos de subida', {
+            uploadFromError: uploadError.message,
+            uploadError: altError.message,
+            fileName: finalFileName
+          });
+
+          // Intentar con un nombre de archivo más simple como último recurso
+          const simpleFileName = `agency_${Date.now()}.xml`;
+          addLog('warning', `Último intento con nombre simplificado: ${simpleFileName}`);
+
+          try {
+            await client.upload(xmlStream, simpleFileName);
+            addLog('success', 'Archivo XML subido exitosamente con nombre alternativo');
+
+            // Usar el nombre alternativo para el resto del proceso
+            uploadedFileName = simpleFileName;
+          } catch (finalError: any) {
+            addLog('error', 'Error incluso con nombre alternativo', {
+              error: finalError.message,
+              code: finalError.code,
+              fileName: simpleFileName
+            });
+            throw finalError;
+          }
+        }
       }
-    );
 
-    logs.push({
-      timestamp: new Date().toISOString(),
-      level: 'success',
-      message: `Servicios actualizados: ${updateResult.modifiedCount} marcados como enviados a SAP`
-    });
-
-    // Log para auditoría
-    console.log(`Agency XML sent to SAP: ${fileName}, Services marked: ${updateResult.modifiedCount}`);
-
-    console.log('✅ Sending success response');
-    res.json({
-      success: true,
-      message: 'XML enviado a SAP exitosamente',
-      logs,
-      data: {
-        fileName,
-        servicesMarked: updateResult.modifiedCount,
-        sentAt: new Date().toISOString()
+      // Verificar que el archivo se subió correctamente (opcional)
+      try {
+        const fileList = await client.list();
+        const uploadedFile = fileList.find(file => file.name === uploadedFileName);
+        if (uploadedFile) {
+          addLog('success', 'Archivo verificado', { fileSize: uploadedFile.size });
+        } else {
+          addLog('info', 'Archivo subido pero no se pudo verificar en listado');
+        }
+      } catch (verifyError: any) {
+        addLog('info', 'No se pudo verificar el archivo (operación opcional)', { error: verifyError.message });
       }
-    });
+
+      client.close();
+
+      // Marcar servicios como enviados a SAP
+      const updateResult = await AgencyService.updateMany(
+        { _id: { $in: serviceIds } },
+        {
+          sentToSap: true,
+          sentToSapAt: new Date(),
+          sapFileName: uploadedFileName,
+          updatedAt: new Date()
+        }
+      );
+
+      addLog('success', 'Servicios actualizados en base de datos', {
+        servicesMarked: updateResult.modifiedCount
+      });
+
+      console.log(`✅ Agency XML sent to SAP: ${uploadedFileName}, Services marked: ${updateResult.modifiedCount}`);
+
+      return res.json({
+        success: true,
+        message: 'XML enviado a SAP exitosamente vía FTP',
+        logs,
+        data: {
+          fileName: uploadedFileName,
+          originalFileName: fileName,
+          servicesMarked: updateResult.modifiedCount,
+          protocol: 'FTP',
+          sentAt: new Date().toISOString()
+        }
+      });
+
+      } catch (ftpError: any) {
+        const errorMessage = ftpError?.message || 'Error en conexión FTP';
+        const errorCode = ftpError?.code || 'UNKNOWN';
+
+        addLog('error', 'Error en conexión FTP', {
+          error: errorMessage,
+          code: errorCode
+        });
+
+        client.close();
+
+        // Mensaje más amigable para el usuario
+        let userMessage = 'Error al conectar con el servidor FTP de SAP';
+        if (errorMessage.includes('501')) {
+          userMessage = 'Error de sintaxis en comandos FTP. Verifique la configuración del servidor.';
+        } else if (errorMessage.includes('Connection')) {
+          userMessage = 'No se pudo conectar al servidor FTP. Verifique la conexión de red.';
+        } else if (errorMessage.includes('Authentication') || errorMessage.includes('Login')) {
+          userMessage = 'Error de autenticación. Verifique usuario y contraseña.';
+        }
+
+        return res.status(500).json({
+          success: false,
+          message: userMessage,
+          error: errorMessage,
+          logs,
+          details: {
+            errorCode,
+            fullError: errorMessage
+          }
+        });
+      }
     
-  } catch (error) {
-    console.error('Error sending Agency XML to SAP:', error);
+  } catch (error: any) {
+    console.error('❌ Error sending Agency XML to SAP:', error);
     
-    logs.push({
-      timestamp: new Date().toISOString(),
-      level: 'error',
-      message: `Error al enviar XML a SAP: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      details: error
+    const errorMessage = error?.message || 'Error desconocido';
+    
+    addLog('error', 'Error crítico al enviar XML', { 
+      error: errorMessage
     });
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      error: 'Failed to send XML to SAP',
+      message: 'Error crítico al procesar el envío a SAP',
+      error: errorMessage,
       logs,
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error instanceof Error ? {
+        name: error.name,
+        message: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      } : String(error)
     });
   }
 });

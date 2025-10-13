@@ -1037,6 +1037,8 @@ export interface AgencyServiceForXml {
   moveType: 'RT' | 'SINGLE'
   price: number
   currency: string
+  waitingTime?: number // Waiting time en minutos
+  waitingTimePrice?: number // Precio del waiting time para TRK137
 }
 
 export interface AgencyInvoiceForXml {
@@ -1060,16 +1062,18 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
   // Calcular el total de los servicios (SHP242)
   const ship242Total = invoice.services.reduce((sum, service) => sum + (service.price || 0), 0)
   
-  // Obtener el monto del servicio adicional (TRK137)
-  const trk137Total = invoice.additionalService?.amount || 0
+  // Obtener el monto del servicio adicional (TRK137) - Waiting Time
+  // Sumar todos los waitingTimePrice de los servicios
+  const trk137Total = invoice.services.reduce((sum, service) => sum + (service.waitingTimePrice || 0), 0) || invoice.additionalService?.amount || 0
   
   // El total de la factura debe ser la suma de ambos
   const totalAmount = ship242Total + trk137Total
   
   console.log('=== DEBUG: generateAgencyInvoiceXML ===')
   console.log('SHP242 Total:', ship242Total)
-  console.log('TRK137 Total:', trk137Total)
+  console.log('TRK137 Total (Waiting Time):', trk137Total)
   console.log('Total Amount:', totalAmount)
+  console.log('Services with waiting time:', invoice.services.filter(s => s.waitingTime > 0))
 
   const xmlObject = {
     "ns1:LogisticARInvoices": {

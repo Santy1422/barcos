@@ -13,6 +13,7 @@ import { Service } from './schemas/servicesSchema';
 import { LocalService } from './schemas/localServiceSchema';
 import AgencyService from './schemas/agencyServiceSchema';
 import AgencyCatalog from './schemas/agencyCatalogSchema';
+import AgencyInvoice from './schemas/agencyInvoiceSchema';
 import recordsAutoridadesSchema from './schemas/recordsAutoridadesSchema';
 import { ContainerType } from './schemas/containerTypesSchema';
 
@@ -45,6 +46,7 @@ export const services = Service;
 export const localServices = LocalService;
 export const agencyServices = AgencyService;
 export const agencyCatalogs = AgencyCatalog;
+export const agencyInvoices = AgencyInvoice;
 export const recordsAutoridades = mongoose.model('recordsAutoridades', recordsAutoridadesSchema);
 export const containerTypes = ContainerType;
 
@@ -82,6 +84,7 @@ export const getModels = () => {
     localServices,
     agencyServices,
     agencyCatalogs,
+    agencyInvoices,
     recordsAutoridades,
     containerTypes
   };
@@ -100,6 +103,7 @@ export type Models = {
   localServices: typeof localServices;
   agencyServices: typeof agencyServices;
   agencyCatalogs: typeof agencyCatalogs;
+  agencyInvoices: typeof agencyInvoices;
   recordsAutoridades: typeof recordsAutoridades;
   containerTypes: typeof containerTypes;
 };

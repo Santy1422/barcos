@@ -386,8 +386,8 @@ router.post('/pricing/calculate',
       .withMessage('dropoffLocation is required'),
     body('serviceCode').optional().isString().trim()
       .withMessage('serviceCode must be string'),
-    body('waitingTime').optional().isFloat({ min: 0, max: 24 })
-      .withMessage('waitingTime must be between 0-24 hours'),
+    body('waitingTime').optional().isFloat({ min: 0, max: 1440 })
+      .withMessage('waitingTime must be between 0-1440 minutes (24 hours)'),
     body('passengerCount').optional().isInt({ min: 1, max: 8 })
       .withMessage('passengerCount must be between 1-8'),
     handleValidationErrors

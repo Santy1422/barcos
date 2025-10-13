@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { 
-  Car, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, 
+  Car, Search, Filter, Download, Eye, FileText, Calendar, 
   User, Loader2, Trash2, Edit, RefreshCw, MapPin, ArrowRight, Paperclip, 
   Clock, Save, X, Ship, Users, Plane, Building 
 } from "lucide-react"
@@ -167,7 +167,7 @@ export function AgencyRecords() {
       await updateService({
         id: selectedService._id,
         updateData: {
-          waitingTime: editFormData.waitingTime / 60 // Convert minutes to hours for backend
+          waitingTime: editFormData.waitingTime // Guardar en minutos directamente
         }
       })
       
@@ -194,11 +194,9 @@ export function AgencyRecords() {
       case 'in_progress':
         return 'bg-blue-100 text-blue-800'
       case 'completed':
-        return 'bg-green-100 text-green-800'
       case 'prefacturado':
-        return 'bg-purple-100 text-purple-800'
       case 'facturado':
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-green-100 text-green-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
@@ -211,11 +209,9 @@ export function AgencyRecords() {
       case 'in_progress':
         return 'In Progress'
       case 'completed':
-        return 'Completed'
       case 'prefacturado':
-        return 'Pre-invoiced'
       case 'facturado':
-        return 'Invoiced'
+        return 'Completed'
       default:
         return status
     }
@@ -275,14 +271,14 @@ export function AgencyRecords() {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold">{totalServices}</div>
+            <div className="text-2xl font-bold">{totalServices || 0}</div>
             <p className="text-xs text-muted-foreground">Total Services</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold">
-              {services.filter(s => s.status === 'pending').length}
+              {services && Array.isArray(services) ? services.filter(s => s?.status === 'pending').length : 0}
             </div>
             <p className="text-xs text-muted-foreground">Pending</p>
           </CardContent>
@@ -290,7 +286,7 @@ export function AgencyRecords() {
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold">
-              {services.filter(s => s.status === 'in_progress').length}
+              {services && Array.isArray(services) ? services.filter(s => s?.status === 'in_progress').length : 0}
             </div>
             <p className="text-xs text-muted-foreground">In Progress</p>
           </CardContent>
@@ -298,7 +294,7 @@ export function AgencyRecords() {
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold">
-              {services.filter(s => s.status === 'completed').length}
+              {services && Array.isArray(services) ? services.filter(s => ['completed', 'prefacturado', 'facturado'].includes(s?.status)).length : 0}
             </div>
             <p className="text-xs text-muted-foreground">Completed</p>
           </CardContent>
@@ -352,7 +348,7 @@ export function AgencyRecords() {
       {/* Services Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Services ({services.length})</CardTitle>
+          <CardTitle>Services ({services && Array.isArray(services) ? services.length : 0})</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="rounded-md border">
@@ -364,21 +360,20 @@ export function AgencyRecords() {
                   <TableHead>Vessel</TableHead>
                   <TableHead>Route</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Price</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={6} className="h-24 text-center">
                       <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                       Loading services...
                     </TableCell>
                   </TableRow>
-                ) : services.length === 0 ? (
+                ) : !services || !Array.isArray(services) || services.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={6} className="h-24 text-center">
                       No services found
                     </TableCell>
                   </TableRow>
@@ -398,7 +393,7 @@ export function AgencyRecords() {
                       
                       <TableCell>
                         <div>
-                          {service.crewMembers && service.crewMembers.length > 0 ? (
+                          {service?.crewMembers && Array.isArray(service.crewMembers) && service.crewMembers.length > 0 ? (
                             <>
                               <div className="font-medium">
                                 {service.crewMembers[0].name}
@@ -488,17 +483,6 @@ export function AgencyRecords() {
                       </TableCell>
                       
                       <TableCell>
-                        {service.price ? (
-                          <div className="font-medium">
-                            {service.currency === 'USD' ? '$' : service.currency} 
-                            {service.price}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      
-                      <TableCell>
                         <div className="flex gap-1">
                           <Button
                             size="sm"
@@ -509,42 +493,47 @@ export function AgencyRecords() {
                             <Eye className="h-3 w-3" />
                           </Button>
                           
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleOpenEditModal(service._id)}
-                            disabled={!['pending', 'in_progress'].includes(service.status)}
-                          >
-                            <Edit className="h-3 w-3" />
-                          </Button>
+                          {/* Solo mostrar acciones de edición/cambio si no está completado, prefacturado o facturado */}
+                          {!['completed', 'prefacturado', 'facturado'].includes(service.status) && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleOpenEditModal(service._id)}
+                                disabled={!['pending', 'in_progress'].includes(service.status)}
+                              >
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                              
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleOpenStatusModal(service._id)}
+                                title="Change Status"
+                              >
+                                <RefreshCw className="h-3 w-3" />
+                              </Button>
+                              
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {/* Handle files */}}
+                              >
+                                <Paperclip className="h-3 w-3" />
+                                {service.attachments?.length > 0 && (
+                                  <span className="ml-1 text-xs">
+                                    {service.attachments.length}
+                                  </span>
+                                )}
+                              </Button>
+                            </>
+                          )}
                           
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleOpenStatusModal(service._id)}
-                            title="Change Status"
-                          >
-                            <RefreshCw className="h-3 w-3" />
-                          </Button>
-                          
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {/* Handle files */}}
-                          >
-                            <Paperclip className="h-3 w-3" />
-                            {service.attachments?.length > 0 && (
-                              <span className="ml-1 text-xs">
-                                {service.attachments.length}
-                              </span>
-                            )}
-                          </Button>
-                          
+                          {/* Botón de eliminar siempre visible */}
                           <Button
                             size="sm"
                             variant="ghost"
                             onClick={() => handleDeleteService(service._id)}
-                            disabled={service.status === 'facturado'}
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
@@ -697,7 +686,7 @@ export function AgencyRecords() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Current waiting time: {selectedService.waitingTime ? `${selectedService.waitingTime * 60} minutes` : 'Not set'}
+                    Current waiting time: {selectedService.waitingTime ? `${selectedService.waitingTime} minutes` : 'Not set'}
                   </p>
                 </div>
               </>
@@ -756,20 +745,14 @@ export function AgencyRecords() {
                   <Card>
                     <CardContent className="pt-4">
                       <h3 className="font-semibold mb-3 flex items-center gap-2">
-                        <DollarSign className="h-4 w-4" />
-                        Pricing Information
+                        <Users className="h-4 w-4" />
+                        Service Details
                       </h3>
                       <div className="space-y-2 text-sm">
-                        <div><strong>Price:</strong> 
-                          {selectedService.price ? 
-                            `${selectedService.currency === 'USD' ? '$' : selectedService.currency} ${selectedService.price}` : 
-                            'Not set'
-                          }
-                        </div>
                         <div><strong>Passengers:</strong> {selectedService.passengerCount || 'N/A'}</div>
                         <div><strong>Waiting Time:</strong> 
                           {selectedService.waitingTime ? 
-                            `${selectedService.waitingTime * 60} minutes` : 
+                            `${selectedService.waitingTime} minutes` : 
                             'Not set'
                           }
                         </div>

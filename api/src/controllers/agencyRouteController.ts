@@ -201,8 +201,13 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
       returnDropoffLocation, // For Round Trip
       routeType = 'single', 
       passengerCount = 1,
-      waitingTimeHours = 0
+      waitingTimeHours = 0, // Mantener por compatibilidad
+      waitingTime = 0 // Nuevo: en minutos
     } = req.body;
+
+    // Convertir waitingTime de minutos a horas si se proporciona
+    // Priorizar waitingTime (en minutos) sobre waitingTimeHours
+    const waitingTimeInHours = waitingTime > 0 ? waitingTime / 60 : waitingTimeHours;
 
     if (!pickupLocation || !dropoffLocation) {
       return res.status(400).json({
@@ -247,7 +252,7 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
       const firstRoutePrice = firstRoute.calculatePrice(
         'roundtrip' as RouteType,
         passengerCount,
-        waitingTimeHours / 2 // Split waiting time between routes
+        waitingTimeInHours / 2 // Split waiting time between routes
       );
 
       if (firstRoutePrice === null) {
@@ -265,7 +270,7 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
       totalBreakdown = firstRoute.getPriceBreakdown(
         'roundtrip' as RouteType,
         passengerCount,
-        waitingTimeHours / 2
+        waitingTimeInHours / 2
       );
 
       // Find and calculate second route (dropoff -> returnDropoff)
@@ -291,7 +296,7 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
       const secondRoutePrice = secondRoute.calculatePrice(
         'roundtrip' as RouteType,
         passengerCount,
-        waitingTimeHours / 2 // Split waiting time between routes
+        waitingTimeInHours / 2 // Split waiting time between routes
       );
 
       if (secondRoutePrice === null) {
@@ -313,7 +318,7 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
       const secondBreakdown = secondRoute.getPriceBreakdown(
         'roundtrip' as RouteType,
         passengerCount,
-        waitingTimeHours / 2
+        waitingTimeInHours / 2
       );
 
       if (totalBreakdown && secondBreakdown) {
@@ -329,7 +334,7 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
       const routePrice = firstRoute.calculatePrice(
         routeType as RouteType,
         passengerCount,
-        waitingTimeHours
+        waitingTimeInHours
       );
 
       if (routePrice === null) {
@@ -347,7 +352,7 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
       totalBreakdown = firstRoute.getPriceBreakdown(
         routeType as RouteType,
         passengerCount,
-        waitingTimeHours
+        waitingTimeInHours
       );
     }
 
@@ -367,7 +372,8 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
         calculation: {
           routeType,
           passengerCount,
-          waitingTimeHours,
+          waitingTimeHours: waitingTimeInHours,
+          waitingTimeMinutes: waitingTime,
           isRoundTrip: routeType === 'roundtrip'
         }
       }

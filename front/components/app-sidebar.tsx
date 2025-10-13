@@ -115,7 +115,7 @@ export function AppSidebar() {
         { title: "Crear Servicios", href: "/agency/services", icon: Plus },
         { title: "Registros", href: "/agency/records", icon: ListOrdered },
         { title: "SAP Invoice", href: "/agency/sap-invoice", icon: FileText },
-        { title: "Facturas", href: "/agency/invoice", icon: FilePlus2 },
+        // { title: "Facturas", href: "/agency/invoice", icon: FilePlus2 },
         { title: "Historial", href: "/agency/historial", icon: History },
         // { title: "Reportes", href: "/agency/reports", icon: BarChart3 },
         { title: "Catálogos", href: "/agency/catalogs", icon: BookOpen },

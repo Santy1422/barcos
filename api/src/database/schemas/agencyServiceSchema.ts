@@ -62,7 +62,8 @@ export interface IAgencyService extends Document {
   flightInfo?: string;
   
   // Service details
-  waitingTime: number;
+  waitingTime: number; // Stored in MINUTES
+  waitingTimePrice?: number; // Price for waiting time (TRK137 in XML)
   comments?: string;
   notes?: string;
   serviceCode?: string;
@@ -88,6 +89,11 @@ export interface IAgencyService extends Document {
   sentToSap?: boolean;
   sentToSapAt?: Date;
   sapFileName?: string;
+  xmlData?: {
+    xml: string;
+    fileName: string;
+    generatedAt: Date;
+  };
   
   // Attachments
   attachments: Array<{
@@ -129,7 +135,7 @@ const agencyServiceSchema = new Schema<IAgencyService>(
     },
     
     // Información de revisión
-    reviewedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    reviewedBy: { type: Schema.Types.ObjectId, ref: 'users' },
     reviewedAt: Date,
     reviewNotes: String,
     
@@ -283,7 +289,15 @@ const agencyServiceSchema = new Schema<IAgencyService>(
     waitingTime: {
       type: Number,
       default: 0,
-      min: 0
+      min: 0,
+      // NOTE: waitingTime is stored in MINUTES
+    },
+    
+    waitingTimePrice: {
+      type: Number,
+      default: 0,
+      min: 0,
+      // NOTE: Price for waiting time (used in TRK137 XML item)
     },
     
     comments: {
@@ -318,7 +332,7 @@ const agencyServiceSchema = new Schema<IAgencyService>(
     // Client information (Opcional - se asigna al facturar)
     clientId: {
       type: Schema.Types.ObjectId,
-      ref: 'Client'
+      ref: 'clients'
     },
     
     clientName: {
@@ -329,12 +343,12 @@ const agencyServiceSchema = new Schema<IAgencyService>(
     // References to invoices
     prefacturaId: {
       type: Schema.Types.ObjectId,
-      ref: 'Invoice'
+      ref: 'invoices'
     },
     
     invoiceId: {
       type: Schema.Types.ObjectId,
-      ref: 'Invoice'
+      ref: 'invoices'
     },
     
     sapDocumentNumber: {
@@ -377,6 +391,13 @@ const agencyServiceSchema = new Schema<IAgencyService>(
       trim: true
     },
     
+    // XML Data (store complete XML for SAP)
+    xmlData: {
+      xml: String,
+      fileName: String,
+      generatedAt: Date
+    },
+    
     // Attachments array
     attachments: [{
       fileName: {
@@ -398,12 +419,12 @@ const agencyServiceSchema = new Schema<IAgencyService>(
     // Audit fields
     createdBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User'
+      ref: 'users'
     },
     
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User'
+      ref: 'users'
     }
   },
   {

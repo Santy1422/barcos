@@ -1,739 +1,459 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAgencyServices } from '@/lib/features/agencyServices/useAgencyServices';
-import { useAgencyCatalogs } from '@/lib/features/agencyServices/useAgencyCatalogs';
-import { generateAgencyInvoiceXML, type AgencyInvoiceForXml } from '@/lib/xml-generator';
 import { useAppDispatch, useAppSelector } from '@/lib/hooks';
 import { fetchClients, selectAllClients } from '@/lib/features/clients/clientsSlice';
-import { createApiUrl } from '@/lib/api-config';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Textarea } from '@/components/ui/textarea';
-import { Separator } from '@/components/ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
-  FileText, 
-  Download, 
-  Send, 
-  CheckCircle, 
-  AlertTriangle, 
-  Users, 
   Ship, 
+  Search, 
+  Eye, 
   Calendar,
   DollarSign,
-  Filter,
-  RefreshCw,
+  User, 
   Loader2,
-  Eye,
-  History,
-  Package,
-  ScrollText,
-  Copy,
-  Info
+  Trash2, 
+  X,
+  Users,
+  Code,
+  FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { AgencyServiceDetailModal } from './agency-service-detail-modal';
+import { AgencyServiceFacturarModal } from './agency-service-facturar-modal';
+import { AgencyServiceXmlModal } from './agency-service-xml-modal';
+import { AgencyPdfViewer } from './agency-pdf-viewer';
 
 export const AgencySapInvoice: React.FC = () => {
   const dispatch = useAppDispatch();
   const clients = useAppSelector(selectAllClients);
   
   const { 
-    readyForInvoice,
-    sapIntegration,
-    sapLoading,
-    sapError,
-    xmlGenerated,
-    xmlContent,
-    xmlFileName,
-    lastInvoiceNumber,
-    fetchServicesReadyForInvoice,
-    generateSapXml,
-    downloadSapXml,
-    fetchSapXmlHistory,
-    clearSapState,
+    services,
+    loading,
+    fetchServices,
+    updateService,
+    deleteService,
+    updateStatus
   } = useAgencyServices();
 
-  const { 
-    locations,
-    vessels,
-    fetchGroupedCatalogs 
-  } = useAgencyCatalogs();
+  // Filtros y búsqueda
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'facturado'>('all');
+  const [clientFilter, setClientFilter] = useState('all');
+  const [vesselFilter, setVesselFilter] = useState('');
+  const [activePeriodFilter, setActivePeriodFilter] = useState<'none' | 'today' | 'week' | 'month' | 'advanced'>('none');
+  const [isUsingPeriodFilter, setIsUsingPeriodFilter] = useState(false);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
-  // Estados locales
-  const [selectedServices, setSelectedServices] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState('generate');
-  const [xmlHistory, setXmlHistory] = useState<any[]>([]);
-  
-  // Filtros para servicios
-  const [filters, setFilters] = useState({
-    clientId: 'all',
-    startDate: '',
-    endDate: '',
-    vessel: '',
-    pickupLocation: ''
-  });
-
-  // Datos de factura
-  const [invoiceData, setInvoiceData] = useState({
-    invoiceNumber: '',
-    invoiceDate: new Date().toISOString().split('T')[0],
-    postingDate: new Date().toISOString().split('T')[0],
-    notes: '',
-    trk137Amount: 0, // Monto para el servicio TRK137
-    trk137Description: 'Tiempo de Espera',
-    clientId: '' // Cliente seleccionado
-  });
-
-  // Estados de carga
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [isSendingToSap, setIsSendingToSap] = useState(false);
-  const [sentToSap, setSentToSap] = useState(false);
-  const [sentToSapAt, setSentToSapAt] = useState<string | null>(null);
-  const [sapLogs, setSapLogs] = useState<any[]>([]);
-  const [showSapLogs, setShowSapLogs] = useState(false);
+  // Estado de modales (simplificado para servicios)
+  const [selectedService, setSelectedService] = useState<any | null>(null);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [facturarModalOpen, setFacturarModalOpen] = useState(false);
+  const [serviceToFacturar, setServiceToFacturar] = useState<any | null>(null);
+  const [xmlModalOpen, setXmlModalOpen] = useState(false);
+  const [serviceForXml, setServiceForXml] = useState<any | null>(null);
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [serviceForPdf, setServiceForPdf] = useState<any | null>(null);
 
   useEffect(() => {
-    // Cargar datos iniciales
-    fetchGroupedCatalogs();
-    handleFetchServices();
     dispatch(fetchClients());
-  }, []);
+    fetchServices({ page: 1, limit: 100 });
+  }, [dispatch]); // Solo dispatch como dependencia, igual que trucking-records
 
-  useEffect(() => {
-    // Solo limpiar selección cuando cambian los servicios SI no hay XML generado
-    if (!xmlGenerated) {
-      setSelectedServices([]);
-    }
-  }, [readyForInvoice, xmlGenerated]);
-
-  const handleFetchServices = () => {
-    fetchServicesReadyForInvoice(filters);
-  };
-
-  const handleApplyFilters = () => {
-    handleFetchServices();
-  };
-
-  const handleClearFilters = () => {
-    setFilters({
-      clientId: 'all',
-      startDate: '',
-      endDate: '',
-      vessel: '',
-      pickupLocation: ''
-    });
-    fetchServicesReadyForInvoice({});
-  };
-
-  const handleSelectService = (serviceId: string, checked: boolean) => {
-    if (checked) {
-      setSelectedServices(prev => [...prev, serviceId]);
-    } else {
-      setSelectedServices(prev => prev.filter(id => id !== serviceId));
-    }
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedServices(readyForInvoice.map(service => service._id));
-    } else {
-      setSelectedServices([]);
-    }
-  };
-
-  const calculateSelectedTotal = () => {
-    return readyForInvoice
-      .filter(service => selectedServices.includes(service._id))
-      .reduce((sum, service) => sum + (service.price || 0), 0);
-  };
-
-  const getServicesByVessel = () => {
-    const grouped = readyForInvoice.reduce((acc, service) => {
-      const vessel = service.vessel || 'Unknown';
-      if (!acc[vessel]) {
-        acc[vessel] = [];
-      }
-      acc[vessel].push(service);
-      return acc;
-    }, {} as Record<string, typeof readyForInvoice>);
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A';
     
-    return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = dateString.split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      return date.toLocaleDateString('es-ES');
+    }
+    
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+      const datePart = dateString.split('T')[0];
+      const [year, month, day] = datePart.split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      return date.toLocaleDateString('es-ES');
+    }
+    
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'N/A';
+    return date.toLocaleDateString('es-ES');
   };
 
-  const handleGenerateXml = async () => {
-    if (selectedServices.length === 0) {
-      toast.error('Please select at least one service');
+  const getClientForService = (service: any) => {
+    if (service.clientName) return service.clientName;
+    
+    // Si solo tiene clientId, buscar en la lista de clientes
+    if (service.clientId) {
+      const client = clients.find(c => (c._id || c.id) === service.clientId);
+      if (client) {
+        return client.type === 'natural' ? client.fullName : client.companyName;
+      }
+    }
+    
+    return 'N/A';
+  };
+
+  const getCrewMembersForService = (service: any) => {
+    if (service.crewMembers && service.crewMembers.length > 0) {
+      return service.crewMembers.length === 1 
+        ? service.crewMembers[0].name 
+        : `${service.crewMembers[0].name} +${service.crewMembers.length - 1}`;
+    }
+    return service.crewName || 'N/A';
+  };
+
+  const getTodayDates = () => {
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+    return { start: startOfDay.toISOString().split('T')[0], end: endOfDay.toISOString().split('T')[0] };
+  };
+
+  const getCurrentWeekDates = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+    const startOfWeek = new Date(today.getFullYear(), today.getMonth(), diff);
+    startOfWeek.setHours(0, 0, 0, 0);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+    return { start: startOfWeek.toISOString().split('T')[0], end: endOfWeek.toISOString().split('T')[0] };
+  };
+
+  const getCurrentMonthDates = () => {
+    const today = new Date();
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+    return { start: startOfMonth.toISOString().split('T')[0], end: endOfMonth.toISOString().split('T')[0] };
+  };
+
+  const handleFilterByPeriod = (period: 'today' | 'week' | 'month' | 'advanced') => {
+    if (activePeriodFilter === period) {
+      setIsUsingPeriodFilter(false);
+      setActivePeriodFilter('none');
+      setStartDate('');
+      setEndDate('');
       return;
     }
-
-    if (!invoiceData.invoiceNumber.trim()) {
-      toast.error('Please enter an invoice number');
-      return;
+    setIsUsingPeriodFilter(true);
+    setActivePeriodFilter(period);
+    switch (period) {
+      case 'today': { const d = getTodayDates(); setStartDate(d.start); setEndDate(d.end); break; }
+      case 'week': { const d = getCurrentWeekDates(); setStartDate(d.start); setEndDate(d.end); break; }
+      case 'month': { const d = getCurrentMonthDates(); setStartDate(d.start); setEndDate(d.end); break; }
+      case 'advanced':
+        // TODO: Abrir modal de fechas avanzadas
+        break;
     }
+  };
 
-    if (invoiceData.trk137Amount <= 0) {
-      toast.error('Please enter a valid TRK137 amount');
-      return;
-    }
+  const getActivePeriodText = () => {
+    if (!isUsingPeriodFilter || activePeriodFilter === 'advanced') return null;
+    const week = getCurrentWeekDates();
+    const month = getCurrentMonthDates();
+    if (startDate === endDate) return 'Hoy';
+    if (startDate === week.start && endDate === week.end) return 'Semana en curso';
+    if (startDate === month.start && endDate === month.end) return 'Mes en curso';
+    return 'Período personalizado';
+  };
 
-    if (!invoiceData.clientId) {
-      toast.error('Please select a client');
-      return;
-    }
-
-    // Validar formato de número de factura
-    const invoiceNumberPattern = /^[A-Z0-9-_]+$/;
-    if (!invoiceNumberPattern.test(invoiceData.invoiceNumber)) {
-      toast.error('Invoice number can only contain uppercase letters, numbers, hyphens, and underscores');
-      return;
-    }
-
-    try {
-      // Obtener los servicios seleccionados con sus datos completos
-      const selectedServicesData = readyForInvoice.filter(service => 
-        selectedServices.includes(service._id)
-      );
-
-      // Obtener el cliente seleccionado
-      const selectedClient = clients.find(c => (c._id || c.id) === invoiceData.clientId);
-      if (!selectedClient || !selectedClient.sapCode) {
-        toast.error('Selected client does not have a SAP code');
-        return;
+  const filteredServices = useMemo(() => {
+    const q = search.toLowerCase();
+    
+    return (services || []).filter((service: any) => {
+      // Filtrar solo servicios completados o facturados
+      if (!['completed', 'facturado'].includes(service.status)) {
+        return false;
       }
       
-      const clientSapNumber = selectedClient.sapCode;
+      // Búsqueda
+      const clientName = getClientForService(service).toLowerCase();
+      const crewName = getCrewMembersForService(service).toLowerCase();
+      const vessel = (service.vessel || '').toLowerCase();
+      
+      const matchesSearch = clientName.includes(q) || 
+                           crewName.includes(q) || 
+                           vessel.includes(q) ||
+                           (service.pickupLocation || '').toLowerCase().includes(q) ||
+                           (service.dropoffLocation || '').toLowerCase().includes(q);
+      
+      // Filtro de estado
+      const matchesStatus = statusFilter === 'all' || service.status === statusFilter;
+      
+      // Filtro de cliente
+      const matchesClient = clientFilter === 'all' || service.clientId === clientFilter;
+      
+      // Filtro de vessel
+      const matchesVessel = !vesselFilter || (service.vessel || '').toLowerCase().includes(vesselFilter.toLowerCase());
+      
+      // Filtro de fecha
+      let matchesDate = true;
+      if (isUsingPeriodFilter && startDate && endDate) {
+        const d = new Date(service.pickupDate || service.createdAt);
+        const s = new Date(startDate);
+        const e = new Date(endDate);
+        e.setHours(23, 59, 59, 999);
+        matchesDate = d >= s && d <= e;
+      }
+      
+      return matchesSearch && matchesStatus && matchesClient && matchesVessel && matchesDate;
+    });
+  }, [services, search, statusFilter, clientFilter, vesselFilter, isUsingPeriodFilter, startDate, endDate, clients]);
 
-      // Crear el payload para generar el XML
-      const xmlPayload: AgencyInvoiceForXml = {
-        invoiceNumber: invoiceData.invoiceNumber,
-        invoiceDate: invoiceData.invoiceDate,
-        clientSapNumber: clientSapNumber,
-        services: selectedServicesData.map(service => ({
-          _id: service._id,
-          pickupDate: service.pickupDate,
-          vessel: service.vessel,
-          crewMembers: service.crewMembers || [],
-          pickupLocation: service.pickupLocation,
-          dropoffLocation: service.dropoffLocation,
-          moveType: service.moveType,
-          price: service.price || 0,
-          currency: service.currency || 'USD'
-        })),
-        additionalService: {
-          amount: invoiceData.trk137Amount,
-          description: invoiceData.trk137Description
+  const handleDeleteService = async (service: any) => {
+    if (!confirm(`¿Está seguro de eliminar el servicio?`)) return;
+    
+    try {
+      console.log('Deleting service:', service._id || service.id);
+      await deleteService(service._id || service.id);
+      toast.success('Servicio eliminado');
+      
+      // Pequeño delay antes de refrescar para asegurar que la BD se actualizó
+      setTimeout(() => {
+        fetchServices({ page: 1, limit: 100 });
+      }, 300);
+    } catch (e: any) {
+      console.error('Error deleting service:', e);
+      toast.error(e.message || 'No se pudo eliminar');
+    }
+  };
+
+  const handleViewServiceDetails = (service: any) => {
+    setSelectedService(service);
+    setViewModalOpen(true);
+  };
+
+  const handleOpenFacturarModal = (service: any) => {
+    setServiceToFacturar(service);
+    setFacturarModalOpen(true);
+  };
+
+  const handleOpenXmlModal = (service: any) => {
+    setServiceForXml(service);
+    setXmlModalOpen(true);
+  };
+
+  const handleOpenPdfModal = (service: any) => {
+    setServiceForPdf(service);
+    setPdfModalOpen(true);
+  };
+
+  const handleFacturarService = async (serviceId: string, invoiceNumber: string, invoiceDate: string, xmlData: any, waitingTimePrice?: number) => {
+    try {
+      console.log('handleFacturarService called with:', { serviceId, invoiceNumber, invoiceDate, xmlData, waitingTimePrice });
+      
+      // Actualizar servicio a facturado con datos de factura
+      console.log('Updating service with data:', {
+        id: serviceId,
+        status: 'facturado',
+        invoiceNumber,
+        invoiceDate,
+        hasXmlData: !!xmlData,
+        waitingTimePrice
+      });
+      
+      const result = await updateService({
+        id: serviceId,
+        updateData: {
+          status: 'facturado' as any,
+          invoiceNumber: invoiceNumber,
+          invoiceDate: invoiceDate,
+          xmlData: xmlData, // Guardar XML si se generó
+          waitingTimePrice: waitingTimePrice || 0 // Guardar precio de waiting time
         }
-      };
-
-      // Generar el XML
-      const xmlContent = generateAgencyInvoiceXML(xmlPayload);
-
-      console.log('XML Generated:', xmlContent);
-
-      // Aquí podrías guardar el XML en el backend o descargarlo directamente
-      // Por ahora, lo guardamos en el estado
-      await generateSapXml({
-        serviceIds: selectedServices,
-        invoiceNumber: invoiceData.invoiceNumber,
-        invoiceDate: invoiceData.invoiceDate,
-        postingDate: invoiceData.postingDate || invoiceData.invoiceDate,
-        xmlContent: xmlContent, // Pasar el XML generado
-        trk137Amount: invoiceData.trk137Amount
       });
       
-      toast.success(`SAP XML generated successfully! Invoice: ${invoiceData.invoiceNumber}`);
+      console.log('Update service result:', result);
       
-      // No limpiar selectedServices aquí - los necesitamos para enviar a SAP
+      toast.success(`Servicio facturado: ${invoiceNumber}`);
       
-      // Refrescar servicios listos para facturar
-      handleFetchServices();
-      
-      // Cambiar a la pestaña de resultado
-      setActiveTab('result');
-      
-    } catch (error) {
-      console.error('Error generating XML:', error);
-      toast.error(error instanceof Error ? error.message : 'Error generating SAP XML');
-    }
-  };
-
-  const handleDownloadXml = () => {
-    if (xmlFileName) {
-      // Verificar que el token existe antes de hacer la descarga
-      const token = localStorage.getItem('token');
-      if (!token) {
-        toast.error('No authentication token found. Please log in again.');
-        return;
-      }
-      
-      console.log('Downloading XML with token:', token ? 'Token exists' : 'No token');
-      downloadSapXml(xmlFileName);
-      toast.success('XML download initiated');
-    }
-  };
-
-  const handleSendToSap = async () => {
-    console.log('🚀 handleSendToSap called!');
-    
-    if (!xmlContent || !xmlFileName || selectedServices.length === 0) {
-      console.log('❌ Missing required data:', {
-        xmlContent: !!xmlContent,
-        xmlFileName: !!xmlFileName,
-        selectedServices: selectedServices.length
+      // Refresh services list (sin await para no bloquear el cierre del modal)
+      fetchServices({ page: 1, limit: 100 }).catch(err => {
+        console.error('Error refreshing services:', err);
+        // No mostrar error al usuario, el servicio ya fue facturado exitosamente
       });
-      toast.error('Missing XML content or service IDs');
-      return;
+    } catch (e: any) {
+      console.error('Error in handleFacturarService:', e);
+      toast.error(e.message || 'Error al facturar servicio');
+      throw e;
     }
-
-    const token = localStorage.getItem('token');
-    if (!token) {
-      toast.error('No authentication token found. Please log in again.');
-      return;
-    }
-
-    console.log('Sending to SAP:', {
-      fileName: xmlFileName,
-      serviceIds: selectedServices,
-      hasXmlContent: !!xmlContent,
-      hasToken: !!token
-    });
-
-    setIsSendingToSap(true);
-    setShowSapLogs(true);
-    setSapLogs([]);
-
-    try {
-      console.log('📤 Making request to SAP endpoint...');
-      const response = await fetch(createApiUrl('/api/agency/sap/send-to-sap'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          serviceIds: selectedServices,
-          xmlContent,
-          fileName: xmlFileName
-        })
-      });
-      
-      console.log('📥 Response received:', response.status, response.statusText);
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to send XML to SAP');
-      }
-
-      setSapLogs(result.logs || []);
-      setSentToSap(true);
-      setSentToSapAt(result.data.sentAt);
-      
-      toast.success(`XML enviado exitosamente a SAP: ${xmlFileName}`);
-      
-      // Refrescar servicios
-      handleFetchServices();
-      
-    } catch (error) {
-      console.error('Error sending to SAP:', error);
-      setSapLogs(prev => [...prev, {
-        timestamp: new Date().toISOString(),
-        level: 'error',
-        message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        details: error
-      }]);
-      toast.error(error instanceof Error ? error.message : 'Error sending to SAP');
-    } finally {
-      setIsSendingToSap(false);
-    }
-  };
-
-  const handleLoadHistory = async () => {
-    setLoadingHistory(true);
-    try {
-      const history = await fetchSapXmlHistory({ page: 1, limit: 20 });
-      setXmlHistory(history?.invoices || []);
-      setActiveTab('history');
-    } catch (error) {
-      toast.error('Error loading XML history');
-    } finally {
-      setLoadingHistory(false);
-    }
-  };
-
-  const handleClearSapState = () => {
-    clearSapState();
-    setSelectedServices([]);
-    setSentToSap(false);
-    setSentToSapAt(null);
-    setSapLogs([]);
-    setShowSapLogs(false);
-    setInvoiceData({
-      invoiceNumber: '',
-      invoiceDate: new Date().toISOString().split('T')[0],
-      postingDate: new Date().toISOString().split('T')[0],
-      notes: '',
-      trk137Amount: 0,
-      trk137Description: 'Tiempo de Espera',
-      clientId: ''
-    });
-    toast.success('SAP state cleared');
-  };
-
-  const generateInvoiceNumber = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const time = String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
-    
-    const invoiceNumber = `AGY-${year}${month}${day}-${time}`;
-    setInvoiceData(prev => ({ ...prev, invoiceNumber }));
   };
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-blue-500 flex items-center justify-center">
-              <FileText className="h-6 w-6 text-white" />
-            </div>
-            Agency SAP Integration
-          </h1>
-          <p className="text-muted-foreground mt-1">Generate XML invoices for SAP with Agency transportation services</p>
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <div className="h-10 w-10 rounded-lg bg-blue-600 flex items-center justify-center">
+          <Ship className="h-6 w-6 text-white" />
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={handleLoadHistory}
-            disabled={loadingHistory}
-            className="flex items-center gap-2"
-          >
-            {loadingHistory ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />}
-            History
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleClearSapState}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Reset
-          </Button>
+        <div>
+          <h1 className="text-2xl font-bold">Servicios Listos para Facturar - Agency</h1>
+          <p className="text-muted-foreground">Servicios completados y facturados de Crew Transportation</p>
         </div>
       </div>
 
-      {/* Error Display */}
-      {sapError && (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>{sapError}</AlertDescription>
-        </Alert>
-      )}
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="generate">Generate Invoice</TabsTrigger>
-          <TabsTrigger value="result">XML Result</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
-        </TabsList>
-
-        {/* Generate Invoice Tab */}
-        <TabsContent value="generate" className="space-y-6">
-          {/* Invoice Configuration */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Package className="h-5 w-5" />
-                Invoice Configuration
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <div>
-                  <Label htmlFor="invoiceNumber">Invoice Number *</Label>
-                  <div className="flex gap-2">
+        <CardContent className="space-y-4 mt-6">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      id="invoiceNumber"
-                      value={invoiceData.invoiceNumber}
-                      onChange={(e) => setInvoiceData({...invoiceData, invoiceNumber: e.target.value.toUpperCase()})}
-                      placeholder="AGY-20241210-1430"
-                      className="font-mono"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={generateInvoiceNumber}
-                      title="Generate automatic invoice number"
-                    >
-                      Auto
-                    </Button>
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="invoiceDate">Invoice Date *</Label>
-                  <Input
-                    id="invoiceDate"
-                    type="date"
-                    value={invoiceData.invoiceDate}
-                    onChange={(e) => setInvoiceData({...invoiceData, invoiceDate: e.target.value})}
+                value={search} 
+                onChange={(e) => setSearch(e.target.value)} 
+                placeholder="Buscar por cliente, crew, vessel, ubicación..." 
+                className="pl-9" 
                   />
                 </div>
-                <div>
-                  <Label htmlFor="client">Client (SAP) *</Label>
-                  <Select 
-                    value={invoiceData.clientId} 
-                    onValueChange={(value) => setInvoiceData({...invoiceData, clientId: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select client" />
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Estado" />
                     </SelectTrigger>
                     <SelectContent>
-                      {clients.filter(c => c.isActive && c.sapCode).map((client) => (
-                        <SelectItem key={client._id || client.id} value={client._id || client.id || ''}>
-                          <div className="flex flex-col">
-                            <span className="font-medium">
-                              {client.type === 'natural' ? client.fullName : client.companyName}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              SAP: {client.sapCode}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="completed">Completado</SelectItem>
+                <SelectItem value="facturado">Facturado</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-                <div>
-                  <Label htmlFor="trk137Amount">TRK137 Amount (USD) *</Label>
                   <Input
-                    id="trk137Amount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={invoiceData.trk137Amount}
-                    onChange={(e) => setInvoiceData({...invoiceData, trk137Amount: parseFloat(e.target.value) || 0})}
-                    placeholder="0.00"
-                  />
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Tiempo de Espera
-                  </div>
-                </div>
-                <div>
-                  <Label>Total Amount</Label>
-                  <div className="text-2xl font-bold text-blue-600">
-                    ${(calculateSelectedTotal() + invoiceData.trk137Amount).toLocaleString()}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {selectedServices.length} services selected
-                  </div>
-                </div>
-              </div>
-              
-              {invoiceData.notes && (
-                <div className="mt-4">
-                  <Label htmlFor="notes">Notes (Optional)</Label>
-                  <Textarea
-                    id="notes"
-                    value={invoiceData.notes}
-                    onChange={(e) => setInvoiceData({...invoiceData, notes: e.target.value})}
-                    placeholder="Additional notes for this invoice..."
-                    rows={2}
-                  />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Filters */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Filter className="h-5 w-5" />
-                Filter Services Ready for Invoice
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-6">
-                <Select value={filters.clientId} onValueChange={(value) => setFilters({...filters, clientId: value})}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Clients" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Clients</SelectItem>
-                    <SelectItem value="msc">MSC</SelectItem>
-                    <SelectItem value="other">Other Clients</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Input
-                  type="date"
-                  placeholder="Start Date"
-                  value={filters.startDate}
-                  onChange={(e) => setFilters({...filters, startDate: e.target.value})}
-                />
-
-                <Input
-                  type="date"
-                  placeholder="End Date"
-                  value={filters.endDate}
-                  onChange={(e) => setFilters({...filters, endDate: e.target.value})}
-                />
-
-                <Input
-                  placeholder="Vessel name..."
-                  value={filters.vessel}
-                  onChange={(e) => setFilters({...filters, vessel: e.target.value})}
-                />
-
-                <Input
-                  placeholder="Pickup location..."
-                  value={filters.pickupLocation}
-                  onChange={(e) => setFilters({...filters, pickupLocation: e.target.value})}
-                />
-
-                <div className="flex gap-2">
-                  <Button onClick={handleApplyFilters} size="sm">
-                    Apply
+              placeholder="Filtrar por vessel..."
+              value={vesselFilter}
+              onChange={(e) => setVesselFilter(e.target.value)}
+              className="w-[200px]"
+            />
+            <div className="flex gap-1 flex-wrap">
+              <Button 
+                variant={activePeriodFilter === 'today' ? 'default' : 'outline'} 
+                size="sm" 
+                onClick={() => handleFilterByPeriod('today')} 
+                className="h-8"
+              >
+                Hoy
+              </Button>
+              <Button 
+                variant={activePeriodFilter === 'week' ? 'default' : 'outline'} 
+                size="sm" 
+                onClick={() => handleFilterByPeriod('week')} 
+                className="h-8"
+              >
+                Semana
+              </Button>
+              <Button 
+                variant={activePeriodFilter === 'month' ? 'default' : 'outline'} 
+                size="sm" 
+                onClick={() => handleFilterByPeriod('month')} 
+                className="h-8"
+              >
+                Mes
                   </Button>
-                  <Button onClick={handleClearFilters} variant="outline" size="sm">
-                    Clear
+              <Button 
+                variant={activePeriodFilter === 'advanced' ? 'default' : 'outline'} 
+                size="sm" 
+                onClick={() => handleFilterByPeriod('advanced')} 
+                className="h-8"
+              >
+                Avanzado
                   </Button>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Services Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Available Services</p>
-                    <p className="text-2xl font-bold">{readyForInvoice.length}</p>
-                  </div>
-                  <Users className="h-8 w-8 text-blue-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Selected Services</p>
-                    <p className="text-2xl font-bold text-green-600">{selectedServices.length}</p>
-                  </div>
-                  <CheckCircle className="h-8 w-8 text-green-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Amount</p>
-                    <p className="text-2xl font-bold text-purple-600">
-                      ${calculateSelectedTotal().toLocaleString()}
-                    </p>
-                  </div>
-                  <DollarSign className="h-8 w-8 text-purple-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Active Vessels</p>
-                    <p className="text-2xl font-bold text-orange-600">
-                      {getServicesByVessel().length}
-                    </p>
-                  </div>
-                  <Ship className="h-8 w-8 text-orange-600" />
-                </div>
-              </CardContent>
-            </Card>
           </div>
 
-          {/* Services Table */}
-          <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle>Services Ready for SAP Invoice ({readyForInvoice.length})</CardTitle>
-                <div className="flex gap-2 items-center">
-                  <Badge variant="outline">
-                    Selected: {selectedServices.length}
+          {isUsingPeriodFilter && activePeriodFilter !== 'advanced' && (
+            <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+              <Badge variant="default" className="bg-blue-600 text-white text-xs">
+                {getActivePeriodText()}
                   </Badge>
+              <span className="text-sm text-blue-700">{startDate} - {endDate}</span>
                   <Button
+                variant="ghost" 
                     size="sm"
-                    variant="outline"
-                    onClick={handleFetchServices}
-                    disabled={sapLoading}
-                  >
-                    {sapLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                    Refresh
+                onClick={() => { 
+                  setIsUsingPeriodFilter(false); 
+                  setActivePeriodFilter('none'); 
+                  setStartDate(''); 
+                  setEndDate(''); 
+                }} 
+                className="h-6 w-6 p-0 ml-auto"
+              >
+                <X className="h-3 w-3" />
                   </Button>
                 </div>
+          )}
+
+          {isUsingPeriodFilter && activePeriodFilter === 'advanced' && startDate && endDate && (
+            <div className="flex items-center gap-2 p-2 bg-purple-50 border border-purple-200 rounded-md">
+              <Badge variant="default" className="bg-purple-600 text-white text-xs">Filtro Avanzado</Badge>
+              <span className="text-sm text-purple-700">{startDate} - {endDate}</span>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => { 
+                  setIsUsingPeriodFilter(false); 
+                  setActivePeriodFilter('none'); 
+                  setStartDate(''); 
+                  setEndDate(''); 
+                }} 
+                className="h-6 w-6 p-0 ml-auto"
+              >
+                <X className="h-3 w-3" />
+              </Button>
               </div>
-            </CardHeader>
-            <CardContent>
-              {readyForInvoice.length === 0 ? (
-                <div className="text-center py-8">
-                  <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p className="text-muted-foreground">No services ready for invoicing</p>
-                  <p className="text-sm text-muted-foreground">Complete some services first</p>
-                </div>
-              ) : (
+          )}
+
+          <div className="rounded-md border">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-12">
-                        <Checkbox
-                          checked={selectedServices.length === readyForInvoice.length && readyForInvoice.length > 0}
-                          onCheckedChange={handleSelectAll}
-                        />
-                      </TableHead>
-                      <TableHead>Service Date</TableHead>
-                      <TableHead>Crew Member</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Crew</TableHead>
                       <TableHead>Vessel</TableHead>
-                      <TableHead>Route</TableHead>
-                      <TableHead>Price (USD)</TableHead>
-                      <TableHead>Service Code</TableHead>
+                  <TableHead>Ruta</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {readyForInvoice.map((service) => (
-                      <TableRow key={service._id} className={selectedServices.includes(service._id) ? 'bg-blue-50' : ''}>
-                        <TableCell>
-                          <Checkbox
-                            checked={selectedServices.includes(service._id)}
-                            onCheckedChange={(checked) => handleSelectService(service._id, checked as boolean)}
-                          />
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Cargando…
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : filteredServices.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                      No hay servicios completados o facturados
                         </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredServices.map((service: any) => (
+                    <TableRow key={service._id || service.id}>
                         <TableCell>
                           <div>
                             <div className="font-medium">
-                              {format(new Date(service.pickupDate), 'MMM dd, yyyy')}
+                            {formatDate(service.pickupDate)}
                             </div>
                             <div className="text-sm text-muted-foreground">
-                              {service.pickupTime}
+                            {service.pickupTime || 'N/A'}
+                          </div>
                             </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4 text-muted-foreground" />
+                          {getClientForService(service)}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -748,28 +468,17 @@ export const AgencySapInvoice: React.FC = () => {
                                     </span>
                                   )}
                                 </div>
-                                {service.crewMembers[0].crewRank && (
-                                  <div className="text-sm text-muted-foreground">{service.crewMembers[0].crewRank}</div>
-                                )}
-                                {service.crewMembers[0].nationality && (
-                                  <div className="text-xs text-muted-foreground">{service.crewMembers[0].nationality}</div>
-                                )}
+                              <div className="text-xs text-muted-foreground">
+                                {service.crewMembers[0].crewRank}
+                              </div>
                               </>
                             ) : (
-                              <>
-                                <div className="font-medium">{service.crewName || '-'}</div>
-                                {service.crewRank && (
-                                  <div className="text-sm text-muted-foreground">{service.crewRank}</div>
-                                )}
-                                {service.nationality && (
-                                  <div className="text-xs text-muted-foreground">{service.nationality}</div>
-                                )}
-                              </>
+                            <div className="font-medium">{service.crewName || 'N/A'}</div>
                             )}
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="font-medium">{service.vessel}</div>
+                        <div className="font-medium">{service.vessel || 'N/A'}</div>
                           {service.voyage && (
                             <div className="text-sm text-muted-foreground">V. {service.voyage}</div>
                           )}
@@ -779,297 +488,123 @@ export const AgencySapInvoice: React.FC = () => {
                             <div>{service.pickupLocation}</div>
                             <div className="text-muted-foreground">→ {service.dropoffLocation}</div>
                           </div>
-                          {service.transportCompany && (
-                            <div className="text-xs text-muted-foreground">
-                              via {service.transportCompany}
+                        {service.moveType === 'RT' && service.returnDropoffLocation && (
+                          <div className="text-xs text-blue-600 mt-1">
+                            Return: {service.dropoffLocation} → {service.returnDropoffLocation}
                             </div>
                           )}
                         </TableCell>
                         <TableCell>
-                          <div className="font-medium text-green-600">
-                            ${(service.price || 0).toLocaleString()}
-                          </div>
-                          <div className="text-xs text-muted-foreground">{service.currency || 'USD'}</div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {service.serviceCode || 'SHP243'}
+                        {service.status === 'completed' ? (
+                          <Badge variant="outline" className="text-blue-600 border-blue-600">
+                            Completado
                           </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-green-600 border-green-600">
+                            Facturado
+                          </Badge>
+                        )}
                         </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Generate Actions */}
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex justify-between items-center">
-                <div className="space-y-1">
-                  <p className="font-medium">
-                    Ready to generate SAP XML for {selectedServices.length} service{selectedServices.length !== 1 ? 's' : ''}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    SHP242 Services: ${calculateSelectedTotal().toLocaleString()} USD
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    TRK137 Tiempo de Espera: ${invoiceData.trk137Amount.toLocaleString()} USD
-                  </p>
-                  <p className="text-sm font-semibold text-foreground">
-                    Total: ${(calculateSelectedTotal() + invoiceData.trk137Amount).toLocaleString()} USD
-                  </p>
-                </div>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
                 <Button 
-                  onClick={handleGenerateXml}
-                  disabled={sapLoading || selectedServices.length === 0 || !invoiceData.invoiceNumber.trim() || invoiceData.trk137Amount <= 0 || !invoiceData.clientId}
-                  size="lg"
-                  className="flex items-center gap-2"
-                >
-                  {sapLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                  Generate SAP XML
+                            variant="ghost" 
+                            size="sm" 
+                            title="Ver detalles" 
+                            onClick={() => handleViewServiceDetails(service)} 
+                            className="h-8 w-8 text-blue-600 hover:bg-blue-50"
+                          >
+                            <Eye className="h-4 w-4" />
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* XML Result Tab */}
-        <TabsContent value="result" className="space-y-6">
-          {xmlGenerated ? (
-            <>
-              {/* Success Message */}
-              <Alert>
-                <CheckCircle className="h-4 w-4" />
-                <AlertDescription>
-                  <strong>SAP XML Generated Successfully!</strong>
-                  <br />
-                  Invoice Number: {lastInvoiceNumber}
-                  <br />
-                  File: {xmlFileName}
-                </AlertDescription>
-              </Alert>
-
-              {/* XML Details */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-green-500" />
-                    Generated XML Details
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Invoice Number</Label>
-                      <p className="font-mono text-lg">{lastInvoiceNumber}</p>
-                    </div>
-                    <div>
-                      <Label>File Name</Label>
-                      <p className="font-mono">{xmlFileName}</p>
-                    </div>
-                    <div>
-                      <Label>Total Amount</Label>
-                      <p className="text-lg font-semibold text-green-600">
-                        ${sapIntegration.totalAmount?.toLocaleString()} USD
-                      </p>
-                    </div>
-                    <div>
-                      <Label>Generation Time</Label>
-                      <p>{new Date().toLocaleString()}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Status Badge */}
-              {sentToSap && (
-                <Alert className="border border-green-200 bg-green-50">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <AlertDescription className="text-green-800">
-                    <strong>XML enviado a SAP exitosamente</strong>
-                    <br />
-                    Enviado: {sentToSapAt ? format(new Date(sentToSapAt), 'PPpp') : 'N/A'}
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              {/* Actions */}
-              <div className="flex gap-4">
-                <Button 
-                  onClick={() => {
-                    console.log('🔘 Send to SAP button clicked!', {
-                      isSendingToSap,
-                      sentToSap,
-                      disabled: isSendingToSap || sentToSap
-                    });
-                    handleSendToSap();
-                  }}
-                  disabled={isSendingToSap || sentToSap}
-                  className={`flex items-center gap-2 ${sentToSap ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                >
-                  {isSendingToSap ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Enviando...
-                    </>
-                  ) : sentToSap ? (
-                    <>
-                      <CheckCircle className="h-4 w-4" />
-                      Enviado a SAP
-                    </>
-                  ) : (
-                    <>
-                      <Send className="h-4 w-4" />
-                      Enviar a SAP
-                    </>
-                  )}
-                </Button>
-                <Button onClick={handleDownloadXml} variant="outline" className="flex items-center gap-2">
-                  <Download className="h-4 w-4" />
-                  Download XML
-                </Button>
-              </div>
-
-              {/* SAP Logs */}
-              {showSapLogs && sapLogs.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <ScrollText className="h-5 w-5" />
-                      Logs de envío a SAP
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="max-h-60 overflow-y-auto space-y-2">
-                      {sapLogs.map((log, index) => (
-                        <div 
-                          key={index} 
-                          className={`text-xs p-2 rounded ${
-                            log.level === 'error' ? 'bg-red-100 text-red-800' : 
-                            log.level === 'success' ? 'bg-green-100 text-green-800' : 
-                            'bg-blue-100 text-blue-800'
-                          }`}
-                        >
-                          <div className="flex justify-between items-start gap-2">
-                            <span className="font-mono text-xs opacity-75">
-                              {format(new Date(log.timestamp), 'PPpp')}
-                            </span>
-                            <span className={`text-xs px-1 rounded ${
-                              log.level === 'error' ? 'bg-red-200' : 
-                              log.level === 'success' ? 'bg-green-200' : 
-                              'bg-blue-200'
-                            }`}>
-                              {(log.level || 'info').toUpperCase()}
-                            </span>
-                          </div>
-                          <div className="mt-1">{log.message}</div>
-                          {log.details && (
-                            <details className="mt-1">
-                              <summary className="cursor-pointer text-xs opacity-75">Ver detalles</summary>
-                              <pre className="mt-1 text-xs overflow-x-auto bg-white p-2 rounded">
-                                {JSON.stringify(log.details, null, 2)}
-                              </pre>
-                            </details>
+                          {service.status === 'facturado' && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              title="Ver PDF" 
+                              onClick={() => handleOpenPdfModal(service)} 
+                              className="h-8 w-8 text-purple-600 hover:bg-purple-50"
+                            >
+                              <FileText className="h-4 w-4" />
+                            </Button>
                           )}
+                          {service.status === 'completed' && (
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              title="Facturar servicio" 
+                              onClick={() => handleOpenFacturarModal(service)} 
+                              className="h-8 px-2 text-green-700 border-green-600 hover:bg-green-50"
+                            >
+                              Facturar
+                            </Button>
+                          )}
+                          {service.status === 'facturado' && (
+                <Button 
+                              variant="ghost"
+                              size="sm"
+                              title={service.sentToSap ? 'XML enviado a SAP' : 'Ver/Enviar XML a SAP'}
+                              onClick={() => handleOpenXmlModal(service)}
+                              className={`h-8 w-8 ${service.sentToSap ? 'text-green-600 hover:text-green-700 hover:bg-green-50' : 'text-orange-600 hover:text-orange-700 hover:bg-orange-50'}`}
+                            >
+                              <Code className="h-4 w-4" />
+                </Button>
+                          )}
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            title="Eliminar" 
+                            onClick={() => handleDeleteService(service)} 
+                            className="h-8 w-8 text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* XML Preview */}
-              {xmlContent && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Eye className="h-5 w-5" />
-                      XML Preview (First 1000 characters)
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <pre className="bg-gray-50 p-4 rounded-lg text-xs overflow-x-auto border">
-                      {xmlContent.substring(0, 1000)}
-                      {xmlContent.length > 1000 && '\n\n... (truncated, download full file)'}
-                    </pre>
-                  </CardContent>
-                </Card>
-              )}
-            </>
-          ) : (
-            <div className="text-center py-12">
-              <FileText className="h-16 w-16 mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-medium mb-2">No XML Generated Yet</h3>
-              <p className="text-muted-foreground mb-4">
-                Go to the Generate Invoice tab to create your first SAP XML
-              </p>
-              <Button onClick={() => setActiveTab('generate')}>
-                Generate Invoice
-              </Button>
-            </div>
-          )}
-        </TabsContent>
-
-        {/* History Tab */}
-        <TabsContent value="history" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <History className="h-5 w-5" />
-                SAP XML Generation History
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingHistory ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="h-8 w-8 animate-spin" />
-                </div>
-              ) : xmlHistory.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Invoice Number</TableHead>
-                      <TableHead>Invoice Date</TableHead>
-                      <TableHead>Services</TableHead>
-                      <TableHead>Total Amount</TableHead>
-                      <TableHead>Generated</TableHead>
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {xmlHistory.map((invoice, index) => (
-                      <TableRow key={index}>
-                        <TableCell className="font-mono">{invoice.invoiceNumber}</TableCell>
-                        <TableCell>
-                          {invoice.invoiceDate ? format(new Date(invoice.invoiceDate), 'MMM dd, yyyy') : '-'}
-                        </TableCell>
-                        <TableCell>{invoice.serviceCount}</TableCell>
-                        <TableCell className="font-medium">
-                          ${invoice.totalAmount?.toLocaleString() || 0}
-                        </TableCell>
-                        <TableCell>
-                          {invoice.sapProcessedAt ? format(new Date(invoice.sapProcessedAt), 'MMM dd, HH:mm') : '-'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                  ))
+                )}
                   </TableBody>
                 </Table>
-              ) : (
-                <div className="text-center py-8">
-                  <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p className="text-muted-foreground">No XML generation history found</p>
+          </div>
+
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <span>Mostrando {filteredServices.length} servicio{filteredServices.length !== 1 ? 's' : ''}</span>
+            <span>Total: ${filteredServices.reduce((s: number, service: any) => s + (service.price || 0), 0).toFixed(2)}</span>
                 </div>
-              )}
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+
+      {/* Modal de detalles */}
+      <AgencyServiceDetailModal
+        open={viewModalOpen}
+        onOpenChange={setViewModalOpen}
+        service={selectedService}
+      />
+
+      {/* Modal de facturación */}
+      <AgencyServiceFacturarModal
+        open={facturarModalOpen}
+        onOpenChange={setFacturarModalOpen}
+        service={serviceToFacturar}
+        onFacturar={handleFacturarService}
+      />
+
+      {/* Modal de XML */}
+      <AgencyServiceXmlModal
+        open={xmlModalOpen}
+        onOpenChange={setXmlModalOpen}
+        service={serviceForXml}
+        onXmlSentToSap={() => {
+          fetchServices({ page: 1, limit: 100 });
+        }}
+      />
+
+      {/* Modal de PDF */}
+      <AgencyPdfViewer
+        open={pdfModalOpen}
+        onOpenChange={setPdfModalOpen}
+        service={serviceForPdf}
+      />
     </div>
   );
 };
