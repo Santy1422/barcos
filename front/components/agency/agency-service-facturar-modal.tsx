@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAppSelector } from "@/lib/hooks";
 import { selectAllClients } from "@/lib/features/clients/clientsSlice";
 import { generateXmlFileName } from "@/lib/xml-generator";
+import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs";
 
 interface AgencyServiceFacturarModalProps {
   open: boolean;
@@ -23,11 +24,42 @@ interface AgencyServiceFacturarModalProps {
 export function AgencyServiceFacturarModal({ open, onOpenChange, service, onFacturar }: AgencyServiceFacturarModalProps) {
   const { toast } = useToast();
   const clients = useAppSelector(selectAllClients);
+  const { groupedCatalogs, fetchGroupedCatalogs } = useAgencyCatalogs();
   const [isProcessing, setIsProcessing] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [generateXml, setGenerateXml] = useState(false);
   const [waitingTimePrice, setWaitingTimePrice] = useState(0);
+  const [hourlyRate, setHourlyRate] = useState(0);
+
+  // Load catalogs to get waiting time rate
+  useEffect(() => {
+    fetchGroupedCatalogs();
+  }, [fetchGroupedCatalogs]);
+
+  // Get waiting time hourly rate from catalog
+  useEffect(() => {
+    if (groupedCatalogs && groupedCatalogs.taulia_code) {
+      // Get the waiting time rate with specific code
+      const waitingTimeConfig = groupedCatalogs.taulia_code.find(
+        (catalog: any) => catalog.code === 'WAITING_TIME_RATE' && catalog.isActive && catalog.metadata?.price
+      );
+      if (waitingTimeConfig) {
+        setHourlyRate(waitingTimeConfig.metadata.price || 0);
+      }
+    }
+  }, [groupedCatalogs]);
+
+  // Calculate waiting time price automatically based on hours and hourly rate
+  useEffect(() => {
+    if (service && service.waitingTime > 0 && hourlyRate > 0) {
+      const hours = service.waitingTime / 60; // Convert minutes to hours
+      const calculatedPrice = hours * hourlyRate;
+      setWaitingTimePrice(calculatedPrice);
+    } else {
+      setWaitingTimePrice(0);
+    }
+  }, [service, hourlyRate]);
 
   useEffect(() => {
     if (open && service) {
@@ -43,7 +75,6 @@ export function AgencyServiceFacturarModal({ open, onOpenChange, service, onFact
       const today = new Date();
       setInvoiceDate(today.toISOString().split('T')[0]);
       setGenerateXml(false);
-      setWaitingTimePrice(0);
     }
   }, [open, service]);
 
@@ -118,7 +149,7 @@ export function AgencyServiceFacturarModal({ open, onOpenChange, service, onFact
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
@@ -126,99 +157,120 @@ export function AgencyServiceFacturarModal({ open, onOpenChange, service, onFact
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Service Summary */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 p-4 rounded-lg">
-            <h3 className="font-semibold text-blue-900 mb-3">Resumen del Servicio</h3>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="flex items-center gap-2">
-                <User className="h-4 w-4 text-blue-600" />
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 p-3 rounded-lg">
+            <h3 className="font-semibold text-blue-900 mb-2 text-sm">Resumen del Servicio</h3>
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="flex items-center gap-1">
+                <User className="h-3 w-3 text-blue-600" />
                 <span className="font-medium">Cliente:</span>
-                <span>{service.clientName || 'N/A'}</span>
+                <span className="truncate">{service.clientName || 'N/A'}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Ship className="h-4 w-4 text-blue-600" />
+              <div className="flex items-center gap-1">
+                <Ship className="h-3 w-3 text-blue-600" />
                 <span className="font-medium">Vessel:</span>
-                <span>{service.vessel}</span>
+                <span className="truncate">{service.vessel}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-blue-600" />
+              <div className="flex items-center gap-1">
+                <Calendar className="h-3 w-3 text-blue-600" />
                 <span className="font-medium">Fecha:</span>
                 <span>{new Date(service.pickupDate).toLocaleDateString('es-ES')}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-blue-600" />
+              <div className="flex items-center gap-1">
+                <Users className="h-3 w-3 text-blue-600" />
                 <span className="font-medium">Pasajeros:</span>
                 <span>{service.crewMembers?.length || 1}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-blue-600" />
+              <div className="flex items-center gap-1">
+                <Calendar className="h-3 w-3 text-blue-600" />
                 <span className="font-medium">Waiting Time:</span>
-                <span>{service.waitingTime ? `${service.waitingTime} min` : 'N/A'}</span>
+                <span>{service.waitingTime ? `${(service.waitingTime / 60).toFixed(2)} hrs` : 'N/A'}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <DollarSign className="h-4 w-4 text-blue-600" />
-                <span className="font-medium">Total:</span>
+              <div className="flex items-center gap-1">
+                <DollarSign className="h-3 w-3 text-blue-600" />
+                <span className="font-medium">Precio Base:</span>
                 <span className="font-bold">${(service.price || 0).toFixed(2)}</span>
               </div>
             </div>
+            {service.waitingTime > 0 && waitingTimePrice > 0 && (
+              <div className="flex items-center justify-between pt-2 mt-2 border-t border-blue-200">
+                <span className="font-medium text-blue-900 text-sm">Total con Waiting Time:</span>
+                <span className="text-lg font-bold text-blue-700">${((service.price || 0) + waitingTimePrice).toFixed(2)}</span>
+              </div>
+            )}
           </div>
 
-          {/* Invoice Number */}
-          <div className="space-y-2">
-            <Label htmlFor="invoice-number" className="text-sm font-semibold">
-              Número de Factura *
-            </Label>
-            <Input 
-              id="invoice-number" 
-              value={invoiceNumber} 
-              onChange={(e) => setInvoiceNumber(e.target.value.toUpperCase())} 
-              placeholder="AGY-20241210-1430" 
-              className="font-mono"
-            />
-            <p className="text-xs text-muted-foreground">
-              Se usará este número para referenciar la factura en SAP
-            </p>
-          </div>
-
-          {/* Invoice Date */}
-          <div className="space-y-2">
-            <Label htmlFor="invoice-date" className="text-sm font-semibold">
-              Fecha de Factura *
-            </Label>
-            <Input 
-              id="invoice-date" 
-              type="date" 
-              value={invoiceDate} 
-              onChange={(e) => setInvoiceDate(e.target.value)} 
-              className="font-mono" 
-            />
-          </div>
-
-          {/* Waiting Time Price - Solo si hay waiting time */}
-          {service.waitingTime > 0 && (
-            <div className="space-y-2">
-              <Label htmlFor="waiting-time-price" className="text-sm font-semibold">
-                Precio de Waiting Time (TRK137)
-              </Label>
-              <div className="relative">
-                <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          {/* Invoice Data and Waiting Time in 2 columns */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Left Column - Invoice Data */}
+            <div className="space-y-4">
+              {/* Invoice Number */}
+              <div className="space-y-2">
+                <Label htmlFor="invoice-number" className="text-sm font-semibold">
+                  Número de Factura *
+                </Label>
                 <Input 
-                  id="waiting-time-price" 
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={waitingTimePrice} 
-                  onChange={(e) => setWaitingTimePrice(parseFloat(e.target.value) || 0)} 
-                  placeholder="0.00"
-                  className="pl-8"
+                  id="invoice-number" 
+                  value={invoiceNumber} 
+                  onChange={(e) => setInvoiceNumber(e.target.value.toUpperCase())} 
+                  placeholder="AGY-20241210-1430" 
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Número de referencia en SAP
+                </p>
+              </div>
+
+              {/* Invoice Date */}
+              <div className="space-y-2">
+                <Label htmlFor="invoice-date" className="text-sm font-semibold">
+                  Fecha de Factura *
+                </Label>
+                <Input 
+                  id="invoice-date" 
+                  type="date" 
+                  value={invoiceDate} 
+                  onChange={(e) => setInvoiceDate(e.target.value)} 
+                  className="font-mono" 
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Waiting Time: {service.waitingTime} minutos. Este monto se agregará como servicio TRK137 en el XML.
-              </p>
             </div>
-          )}
+
+            {/* Right Column - Waiting Time Calculation */}
+            {service.waitingTime > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">
+                  Precio de Waiting Time (TRK137)
+                </Label>
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 p-3 rounded-lg">
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-gray-700">Tiempo de espera:</span>
+                      <span className="font-medium">{(service.waitingTime / 60).toFixed(2)} horas</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-gray-700">Tarifa por hora:</span>
+                      <span className="font-medium">${hourlyRate.toFixed(2)}/hora</span>
+                    </div>
+                    <div className="border-t border-green-300 pt-2 mt-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-semibold text-green-900">Precio calculado:</span>
+                        <span className="text-base font-bold text-green-700">${waitingTimePrice.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {hourlyRate === 0 ? (
+                    <span className="text-yellow-600">⚠️ Configure la tarifa en Agency Catalogs.</span>
+                  ) : (
+                    <span>Se agregará como TRK137 en XML.</span>
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
 
           {/* Generate XML Option - Ocultado temporalmente */}
           {/* 

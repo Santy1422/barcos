@@ -22,7 +22,8 @@ import {
   X,
   Users,
   Code,
-  FileText
+  FileText,
+  Receipt
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgencyServiceDetailModal } from './agency-service-detail-modal';
@@ -45,7 +46,7 @@ export const AgencySapInvoice: React.FC = () => {
 
   // Filtros y búsqueda
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'facturado'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'facturado' | 'nota_de_credito'>('all');
   const [clientFilter, setClientFilter] = useState('all');
   const [vesselFilter, setVesselFilter] = useState('');
   const [activePeriodFilter, setActivePeriodFilter] = useState<'none' | 'today' | 'week' | 'month' | 'advanced'>('none');
@@ -172,8 +173,8 @@ export const AgencySapInvoice: React.FC = () => {
     const q = search.toLowerCase();
     
     return (services || []).filter((service: any) => {
-      // Filtrar solo servicios completados o facturados
-      if (!['completed', 'facturado'].includes(service.status)) {
+      // Filtrar solo servicios completados, facturados o nota de credito
+      if (!['completed', 'facturado', 'nota_de_credito'].includes(service.status)) {
         return false;
       }
       
@@ -298,7 +299,7 @@ export const AgencySapInvoice: React.FC = () => {
         </div>
         <div>
           <h1 className="text-2xl font-bold">Servicios Listos para Facturar - Agency</h1>
-          <p className="text-muted-foreground">Servicios completados y facturados de Crew Transportation</p>
+          <p className="text-muted-foreground">Servicios completados, facturados y notas de crédito de Crew Transportation</p>
         </div>
       </div>
 
@@ -322,6 +323,7 @@ export const AgencySapInvoice: React.FC = () => {
                 <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="completed">Completado</SelectItem>
                 <SelectItem value="facturado">Facturado</SelectItem>
+                <SelectItem value="nota_de_credito">Nota de Crédito</SelectItem>
                     </SelectContent>
                   </Select>
                   <Input
@@ -434,7 +436,7 @@ export const AgencySapInvoice: React.FC = () => {
                 ) : filteredServices.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                      No hay servicios completados o facturados
+                      No hay servicios que coincidan con los filtros
                         </TableCell>
                   </TableRow>
                 ) : (
@@ -499,9 +501,13 @@ export const AgencySapInvoice: React.FC = () => {
                           <Badge variant="outline" className="text-blue-600 border-blue-600">
                             Completado
                           </Badge>
-                        ) : (
+                        ) : service.status === 'facturado' ? (
                           <Badge variant="outline" className="text-green-600 border-green-600">
                             Facturado
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-orange-600 border-orange-600">
+                            Nota de Crédito
                           </Badge>
                         )}
                         </TableCell>
@@ -516,7 +522,8 @@ export const AgencySapInvoice: React.FC = () => {
                           >
                             <Eye className="h-4 w-4" />
                 </Button>
-                          {service.status === 'facturado' && (
+                          {/* Botón Ver PDF - Para facturado y nota de crédito */}
+                          {['facturado', 'nota_de_credito'].includes(service.status) && (
                             <Button 
                               variant="ghost" 
                               size="sm" 
@@ -527,6 +534,7 @@ export const AgencySapInvoice: React.FC = () => {
                               <FileText className="h-4 w-4" />
                             </Button>
                           )}
+                          {/* Botón Facturar - Solo para completed */}
                           {service.status === 'completed' && (
                             <Button 
                               variant="outline" 
@@ -538,17 +546,41 @@ export const AgencySapInvoice: React.FC = () => {
                               Facturar
                             </Button>
                           )}
+                          {/* Botones para Facturado: XML y Nota de Crédito */}
                           {service.status === 'facturado' && (
-                <Button 
-                              variant="ghost"
-                              size="sm"
-                              title={service.sentToSap ? 'XML enviado a SAP' : 'Ver/Enviar XML a SAP'}
-                              onClick={() => handleOpenXmlModal(service)}
-                              className={`h-8 w-8 ${service.sentToSap ? 'text-green-600 hover:text-green-700 hover:bg-green-50' : 'text-orange-600 hover:text-orange-700 hover:bg-orange-50'}`}
-                            >
-                              <Code className="h-4 w-4" />
-                </Button>
+                            <>
+                              <Button 
+                                variant="ghost"
+                                size="sm"
+                                title={service.sentToSap ? 'XML enviado a SAP' : 'Ver/Enviar XML a SAP'}
+                                onClick={() => handleOpenXmlModal(service)}
+                                className={`h-8 w-8 ${service.sentToSap ? 'text-green-600 hover:text-green-700 hover:bg-green-50' : 'text-orange-600 hover:text-orange-700 hover:bg-orange-50'}`}
+                              >
+                                <Code className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="outline"
+                                size="sm"
+                                title="Cambiar a Nota de Crédito"
+                                onClick={async () => {
+                                  if (confirm('¿Está seguro de cambiar este servicio a Nota de Crédito? Esta acción no se puede deshacer.')) {
+                                    try {
+                                      await updateStatus({ id: service._id || service.id, status: 'nota_de_credito' as any });
+                                      toast.success('Servicio cambiado a Nota de Crédito');
+                                      fetchServices({ page: 1, limit: 100 });
+                                    } catch (e: any) {
+                                      toast.error(e.message || 'Error al cambiar estado');
+                                    }
+                                  }
+                                }}
+                                className="h-8 px-2 text-orange-700 border-orange-600 hover:bg-orange-50"
+                              >
+                                <Receipt className="h-3 w-3 mr-1" />
+                                N/C
+                              </Button>
+                            </>
                           )}
+                          {/* Botón Eliminar - Siempre visible */}
                           <Button 
                             variant="ghost" 
                             size="sm" 

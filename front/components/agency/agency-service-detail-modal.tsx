@@ -92,7 +92,9 @@ export function AgencyServiceDetailModal({ open, onOpenChange, service }: Agency
                   <div className="flex items-center gap-2">
                     <Clock className="h-4 w-4 text-blue-600" />
                     <strong>Waiting Time:</strong> 
-                    <span>{service.waitingTime ? `${service.waitingTime} minutos` : 'N/A'}</span>
+                    <span>{service.waitingTime 
+                      ? `${(service.waitingTime / 60).toFixed(2)} horas (${service.waitingTime} minutos)` 
+                      : 'N/A'}</span>
                   </div>
                   {service.waitingTimePrice > 0 && (
                     <div><strong>Precio Waiting Time:</strong> ${service.waitingTimePrice.toFixed(2)}</div>

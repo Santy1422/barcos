@@ -10,11 +10,13 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { 
-  Car, Search, Filter, Download, Eye, FileText, Calendar, 
-  User, Loader2, Trash2, Edit, RefreshCw, MapPin, ArrowRight, Paperclip, 
+  Car, Search, Eye, FileText, Calendar, 
+  User, Loader2, Trash2, Edit, RefreshCw, MapPin, ArrowRight, Paperclip,
   Clock, Save, X, Ship, Users, Plane, Building 
 } from "lucide-react"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
+import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
+import { useAgencyRoutes } from "@/lib/features/agencyServices/useAgencyRoutes"
 import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import Link from "next/link"
@@ -42,6 +44,17 @@ export function AgencyRecords() {
     modals
   } = useAgencyServices()
 
+  const {
+    locations,
+    fetchGroupedCatalogs
+  } = useAgencyCatalogs()
+
+  const {
+    routes,
+    fetchActiveRoutes,
+    findRouteByLocations
+  } = useAgencyRoutes()
+
   // Local state
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
@@ -51,20 +64,31 @@ export function AgencyRecords() {
   
   // Edit modal state
   const [editFormData, setEditFormData] = useState({
-    waitingTime: 0
+    waitingTime: 0,
+    moveType: 'SINGLE' as 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION',
+    returnDropoffLocation: ''
   })
+  const [editFormErrors, setEditFormErrors] = useState<Record<string, string>>({})
 
-  // Load services on component mount
+  // Load services and catalogs on component mount
   useEffect(() => {
     fetchServices({ page: 1, limit: 20 })
-  }, [fetchServices])
+    fetchGroupedCatalogs()
+    fetchActiveRoutes()
+  }, [fetchServices, fetchGroupedCatalogs, fetchActiveRoutes])
 
   // Load service data when edit modal opens
   useEffect(() => {
     if (modals?.showEditModal && selectedService) {
+      // Convert waiting time from minutes to hours for display
+      const waitingTimeInHours = selectedService.waitingTime ? selectedService.waitingTime / 60 : 0
+      
       setEditFormData({
-        waitingTime: selectedService.waitingTime || 0
+        waitingTime: waitingTimeInHours,
+        moveType: selectedService.moveType || 'SINGLE',
+        returnDropoffLocation: selectedService.returnDropoffLocation || ''
       })
+      setEditFormErrors({})
     }
   }, [modals?.showEditModal, selectedService])
 
@@ -76,7 +100,12 @@ export function AgencyRecords() {
       filterObj.search = searchTerm
     }
     if (statusFilter !== "all") {
-      filterObj.status = statusFilter
+      // If filtering by "completed", include prefacturado, facturado and nota_de_credito as well
+      if (statusFilter === "completed") {
+        filterObj.statusIn = ['completed', 'prefacturado', 'facturado', 'nota_de_credito']
+      } else {
+        filterObj.status = statusFilter
+      }
     }
     if (clientFilter !== "all") {
       filterObj.clientId = clientFilter
@@ -100,6 +129,19 @@ export function AgencyRecords() {
 
   const handleStatusChange = async (serviceId: string, newStatus: string) => {
     try {
+      // Find the service to validate
+      const service = services.find(s => s._id === serviceId)
+      
+      // Validate Round Trip services before marking as completed
+      if (newStatus === 'completed' && service?.moveType === 'RT' && !service?.returnDropoffLocation) {
+        toast({
+          title: "Validation Error",
+          description: "Round Trip services require a Return Drop-off Location before marking as completed. Please edit the service first.",
+          variant: "destructive",
+        })
+        return
+      }
+      
       console.log('Changing status:', { serviceId, newStatus })
       await updateStatus({ id: serviceId, status: newStatus as any })
       toast({
@@ -160,14 +202,105 @@ export function AgencyRecords() {
     }
   }
 
+  // Get valid return dropoff locations based on current dropoff location
+  const getValidReturnDropoffLocations = () => {
+    if (!selectedService) return []
+    
+    const locationsWithSiteType = locations.filter(loc => 
+      loc.metadata?.siteTypeId && loc.metadata?.siteTypeName
+    )
+    
+    const dropoffLocation = locations.find(loc => loc.name === selectedService.dropoffLocation)
+    if (!dropoffLocation || !dropoffLocation.metadata?.siteTypeName) {
+      return []
+    }
+    
+    const dropoffSiteType = dropoffLocation.metadata.siteTypeName
+    
+    // Find routes that start with this site type (for return trip)
+    const validRoutes = routes.filter(
+      route => (route.pickupSiteType || route.pickupLocation)?.toUpperCase() === dropoffSiteType.toUpperCase() && route.isActive
+    )
+    
+    // Get valid dropoff site types from routes
+    const validDropoffSiteTypes = validRoutes.map(route => 
+      (route.dropoffSiteType || route.dropoffLocation)?.toUpperCase()
+    )
+    
+    // Return locations whose site type matches valid dropoff site types
+    return locationsWithSiteType.filter(loc =>
+      loc.metadata?.siteTypeName && 
+      validDropoffSiteTypes.includes(loc.metadata.siteTypeName.toUpperCase())
+    )
+  }
+
+  // Validate return dropoff location for Round Trip
+  const validateReturnDropoffLocation = (): boolean => {
+    if (!selectedService) return false
+    
+    // If not Round Trip or no return dropoff location selected, it's valid (optional)
+    if (editFormData.moveType !== 'RT' || !editFormData.returnDropoffLocation) {
+      return true
+    }
+    
+    // Validate that the return route exists
+    const dropoffLoc = locations.find(loc => loc.name === selectedService.dropoffLocation)
+    const returnDropoffLoc = locations.find(loc => loc.name === editFormData.returnDropoffLocation)
+    
+    if (!dropoffLoc?.metadata?.siteTypeName || !returnDropoffLoc?.metadata?.siteTypeName) {
+      setEditFormErrors(prev => ({
+        ...prev,
+        returnDropoffLocation: 'Selected locations do not have site types assigned'
+      }))
+      return false
+    }
+    
+    const route = findRouteByLocations(
+      dropoffLoc.metadata.siteTypeName,
+      returnDropoffLoc.metadata.siteTypeName
+    )
+    
+    if (!route) {
+      setEditFormErrors(prev => ({
+        ...prev,
+        returnDropoffLocation: `No existe una ruta para el return trip: ${dropoffLoc.metadata.siteTypeName} → ${returnDropoffLoc.metadata.siteTypeName}`
+      }))
+      return false
+    }
+    
+    setEditFormErrors(prev => {
+      const newErrors = { ...prev }
+      delete newErrors.returnDropoffLocation
+      return newErrors
+    })
+    return true
+  }
+
   const handleEditService = async () => {
     if (!selectedService) return
     
+    // Validate return dropoff location if Round Trip
+    if (editFormData.moveType === 'RT' && editFormData.returnDropoffLocation) {
+      if (!validateReturnDropoffLocation()) {
+        toast({
+          title: "Validation Error",
+          description: "Please check the return dropoff location",
+          variant: "destructive",
+        })
+        return
+      }
+    }
+    
     try {
+      // Convert waiting time from hours to minutes for backend
+      const waitingTimeInMinutes = Math.round(editFormData.waitingTime * 60)
+      
       await updateService({
         id: selectedService._id,
         updateData: {
-          waitingTime: editFormData.waitingTime // Guardar en minutos directamente
+          waitingTime: waitingTimeInMinutes, // Guardar en minutos (backend espera minutos)
+          moveType: editFormData.moveType,
+          returnDropoffLocation: editFormData.moveType === 'RT' ? editFormData.returnDropoffLocation : undefined
         }
       })
       
@@ -196,7 +329,10 @@ export function AgencyRecords() {
       case 'completed':
       case 'prefacturado':
       case 'facturado':
+      case 'nota_de_credito':
         return 'bg-green-100 text-green-800'
+      case 'cancelled':
+        return 'bg-red-100 text-red-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
@@ -211,7 +347,10 @@ export function AgencyRecords() {
       case 'completed':
       case 'prefacturado':
       case 'facturado':
+      case 'nota_de_credito':
         return 'Completed'
+      case 'cancelled':
+        return 'Cancelled'
       default:
         return status
     }
@@ -268,7 +407,7 @@ export function AgencyRecords() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold">{totalServices || 0}</div>
@@ -294,9 +433,17 @@ export function AgencyRecords() {
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold">
-              {services && Array.isArray(services) ? services.filter(s => ['completed', 'prefacturado', 'facturado'].includes(s?.status)).length : 0}
+              {services && Array.isArray(services) ? services.filter(s => ['completed', 'prefacturado', 'facturado', 'nota_de_credito'].includes(s?.status)).length : 0}
             </div>
             <p className="text-xs text-muted-foreground">Completed</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold">
+              {services && Array.isArray(services) ? services.filter(s => s?.status === 'cancelled').length : 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Cancelled</p>
           </CardContent>
         </Card>
       </div>
@@ -324,6 +471,7 @@ export function AgencyRecords() {
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="in_progress">In Progress</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
 
@@ -335,11 +483,6 @@ export function AgencyRecords() {
 
             <Button variant="outline" onClick={handleClearFilters}>
               Clear Filters
-            </Button>
-
-            <Button variant="outline">
-              <Download className="mr-2 h-4 w-4" />
-              Export
             </Button>
           </div>
         </CardContent>
@@ -359,6 +502,7 @@ export function AgencyRecords() {
                   <TableHead>Crew</TableHead>
                   <TableHead>Vessel</TableHead>
                   <TableHead>Route</TableHead>
+                  <TableHead>Move Type</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -366,14 +510,14 @@ export function AgencyRecords() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
+                    <TableCell colSpan={7} className="h-24 text-center">
                       <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                       Loading services...
                     </TableCell>
                   </TableRow>
                 ) : !services || !Array.isArray(services) || services.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
+                    <TableCell colSpan={7} className="h-24 text-center">
                       No services found
                     </TableCell>
                   </TableRow>
@@ -460,20 +604,22 @@ export function AgencyRecords() {
                               <span className="ml-2 text-blue-600 font-medium">(Return)</span>
                             </div>
                           )}
-                          {/* Move type indicator */}
-                          <div className="text-xs text-blue-600 font-medium mt-1">
-                            {service.moveType === 'RT' ? 'Round Trip' :
-                             service.moveType === 'SINGLE' ? 'Single' :
-                             service.moveType === 'INTERNAL' ? 'Internal' :
-                             service.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
-                             service.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}
-                          </div>
                         </div>
                         {service.transportCompany && (
                           <div className="text-xs text-muted-foreground mt-1">
                             {service.transportCompany}
                           </div>
                         )}
+                      </TableCell>
+                      
+                      <TableCell>
+                        <Badge variant="outline" className="font-medium">
+                          {service.moveType === 'RT' ? 'Round Trip' :
+                           service.moveType === 'SINGLE' ? 'Single' :
+                           service.moveType === 'INTERNAL' ? 'Internal' :
+                           service.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
+                           service.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}
+                        </Badge>
                       </TableCell>
                       
                       <TableCell>
@@ -493,8 +639,8 @@ export function AgencyRecords() {
                             <Eye className="h-3 w-3" />
                           </Button>
                           
-                          {/* Solo mostrar acciones de edición/cambio si no está completado, prefacturado o facturado */}
-                          {!['completed', 'prefacturado', 'facturado'].includes(service.status) && (
+                          {/* Solo mostrar acciones de edición/cambio si no está completado, prefacturado, facturado, nota_de_credito o cancelado */}
+                          {!['completed', 'prefacturado', 'facturado', 'nota_de_credito', 'cancelled'].includes(service.status) && (
                             <>
                               <Button
                                 size="sm"
@@ -512,19 +658,6 @@ export function AgencyRecords() {
                                 title="Change Status"
                               >
                                 <RefreshCw className="h-3 w-3" />
-                              </Button>
-                              
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {/* Handle files */}}
-                              >
-                                <Paperclip className="h-3 w-3" />
-                                {service.attachments?.length > 0 && (
-                                  <span className="ml-1 text-xs">
-                                    {service.attachments.length}
-                                  </span>
-                                )}
                               </Button>
                             </>
                           )}
@@ -590,6 +723,18 @@ export function AgencyRecords() {
               Select the new status for this service
             </p>
             
+            {/* Show warning if Round Trip without return dropoff */}
+            {(() => {
+              const service = services.find(s => s._id === selectedService)
+              return service?.moveType === 'RT' && !service?.returnDropoffLocation && (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                  <p className="text-xs text-yellow-800">
+                    ⚠️ This Round Trip service does not have a Return Drop-off Location. Please edit the service to add it before marking as completed.
+                  </p>
+                </div>
+              )
+            })()}
+            
             <div className="space-y-2">
               <Button
                 variant="outline"
@@ -624,6 +769,10 @@ export function AgencyRecords() {
               <Button
                 variant="outline"
                 className="w-full justify-start"
+                disabled={(() => {
+                  const service = services.find(s => s._id === selectedService)
+                  return service?.moveType === 'RT' && !service?.returnDropoffLocation
+                })()}
                 onClick={() => {
                   if (selectedService) {
                     handleStatusChange(selectedService, 'completed')
@@ -634,6 +783,21 @@ export function AgencyRecords() {
                   Completed
                 </Badge>
                 Set as Completed
+              </Button>
+              
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => {
+                  if (selectedService) {
+                    handleStatusChange(selectedService, 'cancelled')
+                  }
+                }}
+              >
+                <Badge className="bg-red-100 text-red-800 mr-2">
+                  Cancelled
+                </Badge>
+                Set as Cancelled
               </Button>
             </div>
           </div>
@@ -647,26 +811,124 @@ export function AgencyRecords() {
 
       {/* Edit Service Modal */}
       <Dialog open={modals?.showEditModal} onOpenChange={closeModals}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Service</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {selectedService && (
               <>
-                <div className="text-sm text-muted-foreground">
+                <div className="text-sm text-muted-foreground bg-gray-50 p-3 rounded-lg">
                   <p><strong>Service ID:</strong> {selectedService._id}</p>
                   <p><strong>Date:</strong> {formatSafeDate(selectedService.pickupDate)}</p>
                   <p><strong>Time:</strong> {selectedService.pickupTime || 'N/A'}</p>
-                  <p><strong>Route:</strong> {selectedService.pickupLocation} → {selectedService.dropoffLocation}</p>
+                  <p><strong>Pickup:</strong> {selectedService.pickupLocation}</p>
+                  <p><strong>Drop-off:</strong> {selectedService.dropoffLocation}</p>
                   {selectedService.moveType === 'RT' && selectedService.returnDropoffLocation && (
-                    <p><strong>Return:</strong> {selectedService.dropoffLocation} → {selectedService.returnDropoffLocation}</p>
+                    <p><strong>Current Return Drop-off:</strong> {selectedService.returnDropoffLocation}</p>
                   )}
                 </div>
+
+                {/* Move Type */}
+                <div className="space-y-2">
+                  <Label htmlFor="moveType" className="text-sm font-medium">
+                    Move Type
+                  </Label>
+                  <Select
+                    value={editFormData.moveType}
+                    onValueChange={(value) => {
+                      setEditFormData(prev => ({ 
+                        ...prev, 
+                        moveType: value as any,
+                        // Clear return dropoff if changing from RT to another type
+                        returnDropoffLocation: value === 'RT' ? prev.returnDropoffLocation : ''
+                      }))
+                      setEditFormErrors({})
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select move type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SINGLE">Single</SelectItem>
+                      <SelectItem value="RT">Round Trip</SelectItem>
+                      <SelectItem value="INTERNAL">Internal</SelectItem>
+                      <SelectItem value="BAGS_CLAIM">Bags Claim</SelectItem>
+                      <SelectItem value="DOCUMENTATION">Documentation</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Current: {selectedService.moveType === 'RT' ? 'Round Trip' :
+                             selectedService.moveType === 'SINGLE' ? 'Single' :
+                             selectedService.moveType === 'INTERNAL' ? 'Internal' :
+                             selectedService.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
+                             selectedService.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}
+                  </p>
+                </div>
+
+                {/* Return Drop-off Location - Only for Round Trip */}
+                {editFormData.moveType === 'RT' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="returnDropoffLocation" className="text-sm font-medium">
+                      Return Drop-off Location
+                    </Label>
+                    <Select
+                      value={editFormData.returnDropoffLocation}
+                      onValueChange={(value) => {
+                        setEditFormData(prev => ({ 
+                          ...prev, 
+                          returnDropoffLocation: value 
+                        }))
+                        // Clear error when user selects a value
+                        setEditFormErrors(prev => {
+                          const newErrors = { ...prev }
+                          delete newErrors.returnDropoffLocation
+                          return newErrors
+                        })
+                      }}
+                    >
+                      <SelectTrigger className={editFormErrors.returnDropoffLocation ? 'border-red-500' : ''}>
+                        <SelectValue placeholder="Seleccione return dropoff location" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getValidReturnDropoffLocations().length === 0 ? (
+                          <div className="p-2 text-sm text-gray-500">
+                            No hay rutas disponibles para el return trip desde {selectedService.dropoffLocation}
+                          </div>
+                        ) : (
+                          getValidReturnDropoffLocations().map((location) => (
+                            <SelectItem key={location._id} value={location.name}>
+                              <div className="flex flex-col">
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-3 w-3" />
+                                  {location.name}
+                                </div>
+                                {location.metadata?.siteTypeName && (
+                                  <div className="text-xs text-muted-foreground ml-5">
+                                    Site Type: {location.metadata.siteTypeName}
+                                  </div>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {editFormErrors.returnDropoffLocation && (
+                      <p className="text-xs text-red-500">{editFormErrors.returnDropoffLocation}</p>
+                    )}
+                    {getValidReturnDropoffLocations().length > 0 && (
+                      <p className="text-xs text-blue-600">
+                        {getValidReturnDropoffLocations().length} ubicación(es) disponible(s) para el return trip
+                      </p>
+                    )}
+                  </div>
+                )}
                 
+                {/* Waiting Time */}
                 <div className="space-y-2">
                   <Label htmlFor="waitingTime" className="text-sm font-medium">
-                    Tiempo de Espera (minutos)
+                    Tiempo de Espera (horas)
                   </Label>
                   <div className="relative">
                     <Clock className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -674,19 +936,21 @@ export function AgencyRecords() {
                       id="waitingTime"
                       type="number"
                       min="0"
-                      max="1440"
-                      step="5"
+                      max="24"
+                      step="0.25"
                       value={editFormData.waitingTime}
                       onChange={(e) => setEditFormData(prev => ({ 
                         ...prev, 
-                        waitingTime: parseInt(e.target.value) || 0 
+                        waitingTime: parseFloat(e.target.value) || 0 
                       }))}
                       className="pl-8"
-                      placeholder="Enter waiting time in minutes"
+                      placeholder="Enter waiting time in hours"
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Current waiting time: {selectedService.waitingTime ? `${selectedService.waitingTime} minutes` : 'Not set'}
+                    Current waiting time: {selectedService.waitingTime 
+                      ? `${(selectedService.waitingTime / 60).toFixed(2)} hours (${selectedService.waitingTime} minutes)` 
+                      : 'Not set'}
                   </p>
                 </div>
               </>
@@ -752,7 +1016,7 @@ export function AgencyRecords() {
                         <div><strong>Passengers:</strong> {selectedService.passengerCount || 'N/A'}</div>
                         <div><strong>Waiting Time:</strong> 
                           {selectedService.waitingTime ? 
-                            `${selectedService.waitingTime} minutes` : 
+                            `${(selectedService.waitingTime / 60).toFixed(2)} horas (${selectedService.waitingTime} minutos)` : 
                             'Not set'
                           }
                         </div>

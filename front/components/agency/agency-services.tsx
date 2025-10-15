@@ -245,39 +245,57 @@ export function AgencyServices() {
     // Clear pricing state first to avoid conflicts
     clearPricingState();
     
-    // For Round Trip, we need both routes
+    // For Round Trip, return dropoff is optional
     if (formData.moveType === 'RT') {
-      if (formData.pickupLocation && formData.dropoffLocation && formData.returnDropoffLocation && passengerCount > 0) {
+      if (formData.pickupLocation && formData.dropoffLocation && passengerCount > 0) {
         // Obtener los site types de las locations seleccionadas
         const pickupLoc = locations.find(loc => loc.name === formData.pickupLocation)
         const dropoffLoc = locations.find(loc => loc.name === formData.dropoffLocation)
-        const returnDropoffLoc = locations.find(loc => loc.name === formData.returnDropoffLocation)
+        const returnDropoffLoc = formData.returnDropoffLocation 
+          ? locations.find(loc => loc.name === formData.returnDropoffLocation)
+          : null
         
-        if (pickupLoc?.metadata?.siteTypeName && dropoffLoc?.metadata?.siteTypeName && returnDropoffLoc?.metadata?.siteTypeName) {
-          console.log('Calculating Round Trip price with:', {
-            firstRoute: `${pickupLoc.metadata.siteTypeName} → ${dropoffLoc.metadata.siteTypeName}`,
-            secondRoute: `${dropoffLoc.metadata.siteTypeName} → ${returnDropoffLoc.metadata.siteTypeName}`,
-            routeType: 'roundtrip',
-            waitingTime: formData.waitingTime || 0, // Enviar en minutos
-            passengerCount: passengerCount
-          });
-          
-          // For Round Trip, we'll calculate the combined price
-          // The backend should handle this by summing both routes
-          calculateServicePrice({
-            pickupLocation: pickupLoc.metadata.siteTypeName,
-            dropoffLocation: dropoffLoc.metadata.siteTypeName,
-            returnDropoffLocation: returnDropoffLoc.metadata.siteTypeName, // Add return location for Round Trip
-            routeType: 'roundtrip',
-            waitingTime: 0, // No waiting time in creation form
-            passengerCount: passengerCount
-          });
+        if (pickupLoc?.metadata?.siteTypeName && dropoffLoc?.metadata?.siteTypeName) {
+          // If return dropoff location is provided and valid, include it in calculation
+          if (formData.returnDropoffLocation && returnDropoffLoc?.metadata?.siteTypeName) {
+            console.log('Calculating Round Trip price with return location:', {
+              firstRoute: `${pickupLoc.metadata.siteTypeName} → ${dropoffLoc.metadata.siteTypeName}`,
+              secondRoute: `${dropoffLoc.metadata.siteTypeName} → ${returnDropoffLoc.metadata.siteTypeName}`,
+              routeType: 'roundtrip',
+              waitingTime: formData.waitingTime || 0,
+              passengerCount: passengerCount
+            });
+            
+            calculateServicePrice({
+              pickupLocation: pickupLoc.metadata.siteTypeName,
+              dropoffLocation: dropoffLoc.metadata.siteTypeName,
+              returnDropoffLocation: returnDropoffLoc.metadata.siteTypeName,
+              routeType: 'roundtrip',
+              waitingTime: 0,
+              passengerCount: passengerCount
+            });
+          } else {
+            // Round Trip without return location specified - calculate only first route
+            console.log('Calculating Round Trip price (one-way only):', {
+              route: `${pickupLoc.metadata.siteTypeName} → ${dropoffLoc.metadata.siteTypeName}`,
+              routeType: 'roundtrip',
+              waitingTime: formData.waitingTime || 0,
+              passengerCount: passengerCount
+            });
+            
+            calculateServicePrice({
+              pickupLocation: pickupLoc.metadata.siteTypeName,
+              dropoffLocation: dropoffLoc.metadata.siteTypeName,
+              routeType: 'roundtrip',
+              waitingTime: 0,
+              passengerCount: passengerCount
+            });
+          }
         }
       } else {
         console.log('Clearing Round Trip pricing - conditions not met:', {
           hasPickup: !!formData.pickupLocation,
           hasDropoff: !!formData.dropoffLocation,
-          hasReturnDropoff: !!formData.returnDropoffLocation,
           crewMembersCount: passengerCount
         });
       }
@@ -443,10 +461,10 @@ export function AgencyServices() {
       findRouteByLocations(pickupLoc.metadata.siteTypeName, dropoffLoc.metadata.siteTypeName)
     )
 
-    // For Round Trip, also validate return dropoff location
-    if (formData.moveType === 'RT') {
+    // For Round Trip, return dropoff location is optional
+    // If it's provided, validate that the route exists
+    if (formData.moveType === 'RT' && formData.returnDropoffLocation) {
       return baseValidation && !!(
-        formData.returnDropoffLocation &&
         returnDropoffLoc?.metadata?.siteTypeName &&
         findRouteByLocations(dropoffLoc.metadata.siteTypeName, returnDropoffLoc.metadata.siteTypeName)
       )
@@ -468,10 +486,8 @@ export function AgencyServices() {
     if (!formData.driver) errors.driver = 'Driver is required'
     if (!formData.clientId) errors.clientId = 'Client is required'
 
-    // For Round Trip, return dropoff location is required
-    if (formData.moveType === 'RT' && !formData.returnDropoffLocation) {
-      errors.returnDropoffLocation = 'Return drop-off location is required for Round Trip'
-    }
+    // For Round Trip, return dropoff location is optional (can be left empty)
+    // No validation needed - it's optional
 
     // Validation rules
     if (formData.pickupLocation === formData.dropoffLocation) {
@@ -516,8 +532,8 @@ export function AgencyServices() {
       }
     }
 
-    // Validate return trip route for Round Trip
-    if (formData.moveType === 'RT' && formData.dropoffLocation && formData.returnDropoffLocation && dropoffLoc && returnDropoffLoc) {
+    // Validate return trip route for Round Trip (only if return dropoff location is provided)
+    if (formData.moveType === 'RT' && formData.returnDropoffLocation && formData.dropoffLocation && dropoffLoc && returnDropoffLoc) {
       const dropoffSiteType = dropoffLoc.metadata?.siteTypeName
       const returnDropoffSiteType = returnDropoffLoc.metadata?.siteTypeName
       
@@ -855,7 +871,7 @@ export function AgencyServices() {
                 {formData.moveType === 'RT' && (
                   <div className="space-y-2">
                     <Label htmlFor="returnDropoffLocation" className="text-sm font-medium">
-                      RETURN DROP-OFF Location <span className="text-red-500">*</span>
+                      RETURN DROP-OFF Location <span className="text-muted-foreground text-xs">(no obligatorio en esta instancia)</span>
                     </Label>
                     <Select
                       value={formData.returnDropoffLocation}

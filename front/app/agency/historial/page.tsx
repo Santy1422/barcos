@@ -101,6 +101,10 @@ export default function AgencyHistorialPage() {
         return <Badge className="bg-purple-100 text-purple-800">Pre-invoiced</Badge>;
       case 'facturado':
         return <Badge className="bg-gray-100 text-gray-800">Invoiced</Badge>;
+      case 'nota_de_credito':
+        return <Badge className="bg-orange-100 text-orange-800">Credit Note</Badge>;
+      case 'cancelled':
+        return <Badge className="bg-red-100 text-red-800">Cancelled</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -132,7 +136,7 @@ export default function AgencyHistorialPage() {
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="text-center">
@@ -181,6 +185,26 @@ export default function AgencyHistorialPage() {
             </div>
           </CardContent>
         </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-orange-600">
+                {services.filter(s => s.status === 'nota_de_credito').length}
+              </div>
+              <p className="text-xs text-muted-foreground">Credit Notes</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-red-600">
+                {services.filter(s => s.status === 'cancelled').length}
+              </div>
+              <p className="text-xs text-muted-foreground">Cancelled</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Filters */}
@@ -215,6 +239,8 @@ export default function AgencyHistorialPage() {
                 <SelectItem value="in_progress">In Progress</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
                 <SelectItem value="facturado">Invoiced</SelectItem>
+                <SelectItem value="nota_de_credito">Credit Note</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
 

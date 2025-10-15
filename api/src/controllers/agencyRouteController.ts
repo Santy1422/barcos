@@ -216,13 +216,8 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
       });
     }
 
-    // For Round Trip, we need returnDropoffLocation
-    if (routeType === 'roundtrip' && !returnDropoffLocation) {
-      return res.status(400).json({
-        success: false,
-        message: 'Return dropoff location is required for Round Trip'
-      });
-    }
+    // Note: returnDropoffLocation is optional for Round Trip
+    // If not provided, only calculate the first route
 
     // Find first route (pickup -> dropoff)
     const firstRoute = await AgencyRoute.findByLocations(
@@ -248,86 +243,115 @@ export const calculateRoutePrice = async (req: Request, res: Response) => {
 
     // For Round Trip, sum the roundtrip prices of both routes
     if (routeType === 'roundtrip') {
-      // Calculate price for first route using roundtrip pricing
-      const firstRoutePrice = firstRoute.calculatePrice(
-        'roundtrip' as RouteType,
-        passengerCount,
-        waitingTimeInHours / 2 // Split waiting time between routes
-      );
+      // If returnDropoffLocation is not provided, only calculate first route
+      if (!returnDropoffLocation) {
+        // Calculate price for first route only using roundtrip pricing
+        const firstRoutePrice = firstRoute.calculatePrice(
+          'roundtrip' as RouteType,
+          passengerCount,
+          waitingTimeInHours
+        );
 
-      if (firstRoutePrice === null) {
-        return res.status(400).json({
-          success: false,
-          message: 'Could not calculate roundtrip price for first route. Check passenger count and roundtrip pricing configuration.',
-          payload: {
-            found: true,
-            price: null
-          }
-        });
-      }
+        if (firstRoutePrice === null) {
+          return res.status(400).json({
+            success: false,
+            message: 'Could not calculate roundtrip price for first route. Check passenger count and roundtrip pricing configuration.',
+            payload: {
+              found: true,
+              price: null
+            }
+          });
+        }
 
-      totalPrice += firstRoutePrice;
-      totalBreakdown = firstRoute.getPriceBreakdown(
-        'roundtrip' as RouteType,
-        passengerCount,
-        waitingTimeInHours / 2
-      );
+        totalPrice = firstRoutePrice;
+        totalBreakdown = firstRoute.getPriceBreakdown(
+          'roundtrip' as RouteType,
+          passengerCount,
+          waitingTimeInHours
+        );
+      } else {
+        // Both routes provided - calculate full round trip
+        // Calculate price for first route using roundtrip pricing
+        const firstRoutePrice = firstRoute.calculatePrice(
+          'roundtrip' as RouteType,
+          passengerCount,
+          waitingTimeInHours / 2 // Split waiting time between routes
+        );
 
-      // Find and calculate second route (dropoff -> returnDropoff)
-      const secondRoute = await AgencyRoute.findByLocations(
-        dropoffLocation,
-        returnDropoffLocation,
-        true
-      );
+        if (firstRoutePrice === null) {
+          return res.status(400).json({
+            success: false,
+            message: 'Could not calculate roundtrip price for first route. Check passenger count and roundtrip pricing configuration.',
+            payload: {
+              found: true,
+              price: null
+            }
+          });
+        }
 
-      if (!secondRoute) {
-        return res.status(404).json({
-          success: false,
-          message: 'Return route not found',
-          payload: {
-            found: true,
-            firstRoutePrice,
-            price: null
-          }
-        });
-      }
+        totalPrice += firstRoutePrice;
+        totalBreakdown = firstRoute.getPriceBreakdown(
+          'roundtrip' as RouteType,
+          passengerCount,
+          waitingTimeInHours / 2
+        );
 
-      // Calculate price for second route using roundtrip pricing
-      const secondRoutePrice = secondRoute.calculatePrice(
-        'roundtrip' as RouteType,
-        passengerCount,
-        waitingTimeInHours / 2 // Split waiting time between routes
-      );
+        // Find and calculate second route (dropoff -> returnDropoff)
+        const secondRoute = await AgencyRoute.findByLocations(
+          dropoffLocation,
+          returnDropoffLocation,
+          true
+        );
 
-      if (secondRoutePrice === null) {
-        return res.status(400).json({
-          success: false,
-          message: 'Could not calculate roundtrip price for return route. Check passenger count and roundtrip pricing configuration.',
-          payload: {
-            found: true,
-            firstRoutePrice,
-            price: null
-          }
-        });
-      }
+        if (!secondRoute) {
+          return res.status(404).json({
+            success: false,
+            message: 'Return route not found',
+            payload: {
+              found: true,
+              firstRoutePrice,
+              price: null
+            }
+          });
+        }
 
-      totalPrice += secondRoutePrice;
-      routes.push(secondRoute);
+        // Calculate price for second route using roundtrip pricing
+        const secondRoutePrice = secondRoute.calculatePrice(
+          'roundtrip' as RouteType,
+          passengerCount,
+          waitingTimeInHours / 2 // Split waiting time between routes
+        );
 
-      // Combine breakdowns
-      const secondBreakdown = secondRoute.getPriceBreakdown(
-        'roundtrip' as RouteType,
-        passengerCount,
-        waitingTimeInHours / 2
-      );
+        if (secondRoutePrice === null) {
+          return res.status(400).json({
+            success: false,
+            message: 'Could not calculate roundtrip price for return route. Check passenger count and roundtrip pricing configuration.',
+            payload: {
+              found: true,
+              firstRoutePrice,
+              price: null
+            }
+          });
+        }
 
-      if (totalBreakdown && secondBreakdown) {
-        totalBreakdown = {
-          basePrice: totalBreakdown.basePrice + secondBreakdown.basePrice,
-          waitingTime: totalBreakdown.waitingTime + secondBreakdown.waitingTime,
-          extraPassengers: totalBreakdown.extraPassengers + secondBreakdown.extraPassengers,
-          total: totalBreakdown.total + secondBreakdown.total
-        };
+        totalPrice += secondRoutePrice;
+        routes.push(secondRoute);
+
+        // Combine breakdowns
+        const secondBreakdown = secondRoute.getPriceBreakdown(
+          'roundtrip' as RouteType,
+          passengerCount,
+          waitingTimeInHours / 2
+        );
+
+        if (totalBreakdown && secondBreakdown) {
+          totalBreakdown = {
+            basePrice: totalBreakdown.basePrice + secondBreakdown.basePrice,
+            waitingTime: totalBreakdown.waitingTime + secondBreakdown.waitingTime,
+            extraPassengers: totalBreakdown.extraPassengers + secondBreakdown.extraPassengers,
+            total: totalBreakdown.total + secondBreakdown.total
+          };
+        }
       }
     } else {
       // For other route types (single, internal, etc.), calculate normally

@@ -444,14 +444,42 @@ export const sendXmlToSap = catchedAsync(async (req: Request, res: Response) => 
       // Pequeño retraso para estabilizar la conexión
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Subir archivo directamente (sin cambiar de directorio)
+      // Cambiar al directorio de destino especificado en SAP_FTP_PATH
+      const targetPath = ftpConfig.path;
+      addLog('info', 'Navegando al directorio de destino', { targetPath });
+      
+      try {
+        await client.cd(targetPath);
+        addLog('success', 'Directorio de destino alcanzado');
+      } catch (cdError: any) {
+        addLog('error', 'Error al cambiar directorio', { 
+          targetPath, 
+          error: cdError.message 
+        });
+        throw new Error(`No se pudo acceder al directorio: ${targetPath}`);
+      }
+
+      // Listar contenido del directorio (para verificar)
+      addLog('info', 'Verificando contenido del directorio...');
+      try {
+        const list = await client.list();
+        addLog('success', 'Directorio listado exitosamente', { 
+          fileCount: list.length 
+        });
+      } catch (listError: any) {
+        addLog('warning', 'No se pudo listar el directorio', { 
+          error: listError.message 
+        });
+      }
+
+      // Subir archivo al directorio correcto
       const xmlBuffer = Buffer.from(xmlContent, 'utf8');
       const xmlStream = Readable.from(xmlBuffer);
 
       addLog('info', 'Subiendo archivo XML...', {
         fileName: finalFileName,
         fileSize: xmlBuffer.length,
-        bufferType: typeof xmlBuffer,
+        targetPath: targetPath,
         xmlPreview: xmlContent.substring(0, 200) + '...' // Primeros 200 caracteres
       });
 

@@ -215,7 +215,8 @@ export function AgencyPdfViewer({ open, onOpenChange, service }: AgencyPdfViewer
     
     // Agregar waiting time si existe
     if (serviceData.waitingTime > 0 && serviceData.waitingTimePrice > 0) {
-      const wtDescription = `Waiting Time (${serviceData.waitingTime} minutes)`
+      const hours = (serviceData.waitingTime / 60).toFixed(2)
+      const wtDescription = `Waiting Time (${hours} hours)`
       bodyRows.push(['', wtDescription, serviceData.waitingTimePrice.toFixed(2)])
     }
 

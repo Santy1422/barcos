@@ -24,7 +24,7 @@ export interface ServiceAttachment {
 export interface AgencyService {
   _id: string;
   module: 'AGENCY';
-  status: 'pending' | 'in_progress' | 'completed' | 'prefacturado' | 'facturado';
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'prefacturado' | 'facturado' | 'nota_de_credito';
   
   // Fechas
   serviceDate: string;
@@ -505,7 +505,12 @@ export const fetchAgencyServices = createAsyncThunk(
       // Agregar filtros
       Object.entries(filters).forEach(([key, value]) => {
         if (value) {
-          queryParams.append(key, value);
+          // If statusIn is an array, convert to JSON string
+          if (key === 'statusIn' && Array.isArray(value)) {
+            queryParams.append(key, JSON.stringify(value));
+          } else {
+            queryParams.append(key, value);
+          }
         }
       });
       

@@ -13,6 +13,7 @@ export const getAllAgencyServices = async (req: Request, res: Response) => {
       page = 1,
       limit = 10,
       status,
+      statusIn,
       clientId,
       pickupLocation,
       dropoffLocation,
@@ -26,7 +27,19 @@ export const getAllAgencyServices = async (req: Request, res: Response) => {
     // Build query
     const query: any = { module: 'AGENCY' };
     
-    if (status) query.status = status;
+    // Handle status filter - can be a single status or an array of statuses (statusIn)
+    if (statusIn) {
+      // statusIn comes as a string, parse it as JSON array
+      try {
+        const statuses = typeof statusIn === 'string' ? JSON.parse(statusIn) : statusIn;
+        query.status = { $in: statuses };
+      } catch (e) {
+        query.status = { $in: [statusIn] };
+      }
+    } else if (status) {
+      query.status = status;
+    }
+    
     if (clientId) query.clientId = clientId;
     if (pickupLocation) query.pickupLocation = { $regex: pickupLocation, $options: 'i' };
     if (dropoffLocation) query.dropoffLocation = { $regex: dropoffLocation, $options: 'i' };
@@ -126,12 +139,7 @@ export const createAgencyService = async (req: Request, res: Response) => {
       });
     }
 
-    // Validate returnDropoffLocation for Round Trip
-    if (moveType === 'RT' && !returnDropoffLocation) {
-      return response(res, 400, {
-        message: 'Return dropoff location is required for Round Trip services'
-      });
-    }
+    // Note: returnDropoffLocation is optional for Round Trip (can be added later)
 
     // Validate crew information (either crewMembers array or legacy crewName)
     if (!crewMembers || crewMembers.length === 0) {
@@ -350,7 +358,7 @@ export const updateAgencyServiceStatus = async (req: Request, res: Response) => 
     }
 
     // Validate status value
-    const validStatuses = ['pending', 'in_progress', 'completed', 'prefacturado', 'facturado'];
+    const validStatuses = ['pending', 'in_progress', 'completed', 'cancelled', 'prefacturado', 'facturado', 'nota_de_credito'];
     if (!validStatuses.includes(status)) {
       return response(res, 400, { message: `Invalid status. Valid values: ${validStatuses.join(', ')}` });
     }
@@ -368,24 +376,40 @@ export const updateAgencyServiceStatus = async (req: Request, res: Response) => 
     // Define valid transitions
     switch (currentStatus) {
       case 'pending':
-        isValidTransition = ['in_progress', 'completed'].includes(status);
+        isValidTransition = ['in_progress', 'completed', 'cancelled'].includes(status);
         break;
       case 'in_progress':
-        isValidTransition = ['completed', 'pending'].includes(status);
+        isValidTransition = ['completed', 'pending', 'cancelled'].includes(status);
         break;
       case 'completed':
-        isValidTransition = ['prefacturado', 'pending', 'in_progress'].includes(status);
+        isValidTransition = ['prefacturado', 'pending', 'in_progress', 'cancelled'].includes(status);
         break;
       case 'prefacturado':
-        isValidTransition = status === 'facturado';
+        isValidTransition = ['facturado', 'cancelled'].includes(status);
         break;
       case 'facturado':
-        isValidTransition = false; // Cannot change from facturado
+        isValidTransition = status === 'nota_de_credito'; // Can only change to credit note
+        break;
+      case 'cancelled':
+        isValidTransition = false; // Cannot change from cancelled (final state)
+        break;
+      case 'nota_de_credito':
+        isValidTransition = false; // Cannot change from nota_de_credito (final state)
         break;
     }
 
-    // Allow rollback to pending from any state except facturado
-    if (status === 'pending' && currentStatus !== 'facturado') {
+    // Allow rollback to pending from any state except facturado, cancelled, and nota_de_credito
+    if (status === 'pending' && !['facturado', 'cancelled', 'nota_de_credito'].includes(currentStatus)) {
+      isValidTransition = true;
+    }
+
+    // Allow cancellation from any state except facturado, cancelled, and nota_de_credito
+    if (status === 'cancelled' && !['facturado', 'cancelled', 'nota_de_credito'].includes(currentStatus)) {
+      isValidTransition = true;
+    }
+
+    // Allow credit note only from facturado
+    if (status === 'nota_de_credito' && currentStatus === 'facturado') {
       isValidTransition = true;
     }
 

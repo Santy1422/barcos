@@ -16,7 +16,7 @@ export interface IAgencyService extends Document {
   module: string;
   
   // Status management
-  status: 'pending' | 'in_progress' | 'completed' | 'ready_for_invoice' | 'prefacturado' | 'facturado';
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'ready_for_invoice' | 'prefacturado' | 'facturado' | 'nota_de_credito';
   
   // Review status
   reviewStatus: 'pending_review' | 'reviewed' | 'approved' | 'rejected';
@@ -122,7 +122,7 @@ const agencyServiceSchema = new Schema<IAgencyService>(
     // Status management - NO debe pasar automáticamente a prefactura
     status: {
       type: String,
-      enum: ['pending', 'in_progress', 'completed', 'ready_for_invoice', 'prefacturado', 'facturado'],
+      enum: ['pending', 'in_progress', 'completed', 'cancelled', 'ready_for_invoice', 'prefacturado', 'facturado', 'nota_de_credito'],
       default: 'pending',
       required: true
     },
@@ -471,8 +471,10 @@ agencyServiceSchema.virtual('displayStatus').get(function() {
     'pending': 'Pendiente',
     'in_progress': 'En Progreso',
     'completed': 'Completado',
+    'cancelled': 'Cancelado',
     'prefacturado': 'Prefacturado',
-    'facturado': 'Facturado'
+    'facturado': 'Facturado',
+    'nota_de_credito': 'Nota de Crédito'
   };
   return statusMap[this.status] || this.status;
 });

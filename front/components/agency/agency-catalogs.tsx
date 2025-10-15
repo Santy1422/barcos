@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea"
 import { 
   MapPin, Flag, Users, Ship, Building, User, Code, Plus, Edit, 
-  Trash2, Download, Search, AlertCircle, Save, X, RotateCcw, Route, DollarSign, Building2
+  Trash2, Download, Search, AlertCircle, Save, X, RotateCcw, Route, DollarSign, Building2, Clock
 } from "lucide-react"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
 import { useToast } from "@/hooks/use-toast"
@@ -33,6 +33,7 @@ interface CatalogTypeConfig {
   }
 }
 
+// Standard catalog types (excluding waiting_time which has special UI)
 const catalogTypes: CatalogTypeConfig[] = [
   {
     key: 'site_type',
@@ -109,21 +110,6 @@ const catalogTypes: CatalogTypeConfig[] = [
         { key: 'company', label: 'Company', type: 'text' }
       ]
     }
-  },
-  {
-    key: 'taulia_code',
-    label: 'Service Codes',
-    icon: Code,
-    description: 'Taulia service codes and pricing',
-    fields: {
-      name: 'Service Name',
-      code: true,
-      description: true,
-      metadata: [
-        { key: 'price', label: 'Price', type: 'number' },
-        { key: 'category', label: 'Category', type: 'text' }
-      ]
-    }
   }
 ]
 
@@ -161,6 +147,10 @@ export function AgencyCatalogs() {
   })
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
 
+  // Waiting Time Rate state
+  const [waitingTimeRate, setWaitingTimeRate] = useState(0)
+  const [isSavingWaitingTime, setIsSavingWaitingTime] = useState(false)
+
   // Search state
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -168,6 +158,18 @@ export function AgencyCatalogs() {
   useEffect(() => {
     fetchGroupedCatalogs()
   }, [fetchGroupedCatalogs])
+
+  // Load waiting time rate when catalogs are loaded
+  useEffect(() => {
+    if (groupedCatalogs?.taulia_code) {
+      const waitingTimeConfig = groupedCatalogs.taulia_code.find(
+        (c: any) => c.code === 'WAITING_TIME_RATE' && c.isActive
+      )
+      if (waitingTimeConfig) {
+        setWaitingTimeRate(waitingTimeConfig.metadata?.price || 0)
+      }
+    }
+  }, [groupedCatalogs])
 
   const getCurrentTypeConfig = () => 
     catalogTypes.find(type => type.key === selectedCatalogType) || catalogTypes[0]
@@ -345,6 +347,53 @@ export function AgencyCatalogs() {
     }))
   }
 
+  const handleSaveWaitingTimeRate = async () => {
+    setIsSavingWaitingTime(true)
+    try {
+      // Check if waiting time config already exists
+      const existingConfig = groupedCatalogs?.taulia_code?.find(
+        (c: any) => c.code === 'WAITING_TIME_RATE'
+      )
+
+      const catalogData: any = {
+        type: 'taulia_code',
+        name: 'Waiting Time Hourly Rate',
+        code: 'WAITING_TIME_RATE',
+        description: 'Default hourly rate for waiting time calculation',
+        metadata: {
+          price: waitingTimeRate,
+          category: 'waiting_time'
+        }
+      }
+
+      if (existingConfig) {
+        // Update existing
+        await updateCatalog({
+          id: existingConfig._id,
+          updateData: catalogData
+        })
+      } else {
+        // Create new
+        await createCatalog(catalogData)
+      }
+
+      toast({
+        title: "Success",
+        description: "Waiting time rate saved successfully",
+      })
+      
+      fetchGroupedCatalogs()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to save waiting time rate",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSavingWaitingTime(false)
+    }
+  }
+
   const handleSeedCatalogs = async () => {
     if (!confirm("This will load initial catalog data. Continue?")) return
     
@@ -400,7 +449,7 @@ export function AgencyCatalogs() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid gap-4 md:grid-cols-8">
+      <div className="grid gap-4 md:grid-cols-7">
         {catalogTypes.map((type) => (
           <Card key={type.key}>
             <CardContent className="p-4">
@@ -442,6 +491,10 @@ export function AgencyCatalogs() {
               {type.label}
             </TabsTrigger>
           ))}
+          <TabsTrigger value="waiting_time" className="text-xs">
+            <Clock className="h-3 w-3 mr-1" />
+            Waiting Time
+          </TabsTrigger>
           <TabsTrigger value="routes" className="text-xs">
             <Route className="h-3 w-3 mr-1" />
             Routes
@@ -569,6 +622,104 @@ export function AgencyCatalogs() {
             </Card>
           </TabsContent>
         ))}
+
+        {/* Waiting Time Tab - Special handling */}
+        <TabsContent value="waiting_time">
+          <Card>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="h-5 w-5" />
+                    Waiting Time Configuration
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Configure the hourly rate for waiting time calculation
+                  </p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="max-w-2xl space-y-6">
+                <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <DollarSign className="h-5 w-5 text-blue-600 mt-0.5" />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-blue-900 mb-2">How it works</h3>
+                      <p className="text-sm text-blue-800">
+                        When a service has waiting time, the system will automatically calculate the price:
+                      </p>
+                      <p className="text-sm text-blue-800 font-mono mt-2 bg-white/50 p-2 rounded">
+                        Waiting Time Price = (Hours × Hourly Rate)
+                      </p>
+                      <p className="text-xs text-blue-700 mt-2">
+                        Example: 2.5 hours × $50/hour = $125.00
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="hourly-rate" className="text-base font-semibold">
+                      Hourly Rate ($/hour)
+                    </Label>
+                    <div className="relative">
+                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                      <Input
+                        id="hourly-rate"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={waitingTimeRate}
+                        onChange={(e) => setWaitingTimeRate(parseFloat(e.target.value) || 0)}
+                        className="pl-10 text-lg font-semibold h-12"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      This rate will be used to calculate the waiting time price for all services
+                    </p>
+                  </div>
+
+                  <Button 
+                    onClick={handleSaveWaitingTimeRate} 
+                    disabled={isSavingWaitingTime || waitingTimeRate < 0}
+                    className="w-full"
+                  >
+                    {isSavingWaitingTime ? (
+                      <>
+                        <Save className="mr-2 h-4 w-4 animate-pulse" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="mr-2 h-4 w-4" />
+                        Save Hourly Rate
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Current Configuration */}
+                {groupedCatalogs?.taulia_code?.find((c: any) => c.code === 'WAITING_TIME_RATE') && (
+                  <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Save className="h-4 w-4 text-green-600" />
+                      <h4 className="font-semibold text-green-900">Current Configuration</h4>
+                    </div>
+                    <div className="text-sm text-green-800">
+                      <p>Hourly Rate: <span className="font-bold">${waitingTimeRate.toFixed(2)}/hour</span></p>
+                      <p className="text-xs mt-1 text-green-700">
+                        Last updated: {new Date(groupedCatalogs.taulia_code.find((c: any) => c.code === 'WAITING_TIME_RATE')?.updatedAt || '').toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Routes Tab - Special handling */}
         <TabsContent value="routes">
