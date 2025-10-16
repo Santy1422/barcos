@@ -1,7 +1,12 @@
 "use client"
 
 import { TruckingGastosAutoridadesPage } from "@/components/trucking/trucking-gastos-autoridades-page"
+import { SectionGuard } from "@/components/section-guard"
 
 export default function GastosAutoridadesPage() {
-  return <TruckingGastosAutoridadesPage />
+  return (
+    <SectionGuard module="trucking" section="gastos-autoridades">
+      <TruckingGastosAutoridadesPage />
+    </SectionGuard>
+  )
 }

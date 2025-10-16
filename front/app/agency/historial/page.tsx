@@ -1,5 +1,6 @@
 'use client';
 
+import { SectionGuard } from '@/components/section-guard';
 import { useState, useEffect } from 'react';
 import { useAgencyServices } from '@/lib/features/agencyServices/useAgencyServices';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -115,6 +116,7 @@ export default function AgencyHistorialPage() {
   };
 
   return (
+    <SectionGuard module="agency" section="historial">
     <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -453,5 +455,6 @@ export default function AgencyHistorialPage() {
         </Card>
       )}
     </div>
+    </SectionGuard>
   );
 }

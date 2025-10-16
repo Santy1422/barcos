@@ -8,8 +8,8 @@ const usersSchema = new mongoose.Schema({
   // Campos principales del usuario - ROLES CORREGIDOS SEGÚN FRONTEND
   role: {
     type: String,
-    enum: ["administrador", "operaciones", "facturacion"],
-    default: "administrador"
+    enum: ["administrador", "operaciones", "facturacion", "pendiente"],
+    default: "pendiente"
   },
   username: {
     type: String,

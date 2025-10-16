@@ -8,8 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "@/hooks/use-toast"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, ArrowLeft } from "lucide-react"
@@ -23,9 +21,7 @@ export default function RegisterPage() {
     lastName: "",
     email: "",
     password: "",
-    confirmPassword: "",
-    role: "administrador" as const,
-    modules: ["trucking"]
+    confirmPassword: ""
   })
   
   const router = useRouter()
@@ -49,15 +45,6 @@ export default function RegisterPage() {
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }))
-  }
-
-  const handleModuleChange = (module: string, checked: boolean) => {
-    setFormData(prev => ({
-      ...prev,
-      modules: checked 
-        ? [...prev.modules, module]
-        : prev.modules.filter(m => m !== module)
-    }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -92,15 +79,6 @@ export default function RegisterPage() {
       return
     }
 
-    if (formData.modules.length === 0) {
-      toast({
-        title: "Error",
-        description: "Debe seleccionar al menos un módulo",
-        variant: "destructive",
-      })
-      return
-    }
-
     try {
       const result = await dispatch(registerAsync({
         username: formData.username,
@@ -109,16 +87,18 @@ export default function RegisterPage() {
         lastName: formData.lastName,
         email: formData.email,
         password: formData.password,
-        role: formData.role,
-        modules: formData.modules
+        role: 'pendiente',
+        modules: []
       }))
       
       if (registerAsync.fulfilled.match(result)) {
         toast({
           title: "Registro exitoso",
-          description: "Usuario administrador creado correctamente",
+          description: "Tu cuenta ha sido creada. Un administrador debe activarla antes de que puedas acceder al sistema.",
+          duration: 6000,
         })
-        router.push("/")
+        // Redirigir a login en lugar del dashboard
+        router.push("/login")
       }
     } catch (error) {
       console.error('Error en registro:', error)
@@ -135,13 +115,19 @@ export default function RegisterPage() {
                 <ArrowLeft className="h-4 w-4" />
               </Button>
             </Link>
-            <CardTitle className="text-2xl font-bold">Registro de Administrador</CardTitle>
+            <CardTitle className="text-2xl font-bold">Crear Cuenta</CardTitle>
           </div>
           <CardDescription>
-            Crear una nueva cuenta de administrador
+            Registra tu cuenta. Un administrador deberá activarla.
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <Alert className="mb-4">
+            <AlertDescription>
+              <strong>Importante:</strong> Tu cuenta quedará pendiente hasta que un administrador te asigne permisos y la active.
+            </AlertDescription>
+          </Alert>
+          
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -197,38 +183,6 @@ export default function RegisterPage() {
                 onChange={(e) => handleInputChange('email', e.target.value)}
                 required
               />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="role">Rol</Label>
-              <Select value={formData.role} onValueChange={(value) => handleInputChange('role', value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="administrador">Administrador</SelectItem>
-                  <SelectItem value="operaciones">Operaciones</SelectItem>
-                  <SelectItem value="facturacion">Facturación</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Módulos de Acceso</Label>
-              <div className="space-y-2">
-                {[
-                  { id: 'trucking', label: 'Trucking' }
-                ].map((module) => (
-                  <div key={module.id} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={module.id}
-                      checked={formData.modules.includes(module.id)}
-                      onCheckedChange={(checked) => handleModuleChange(module.id, checked as boolean)}
-                    />
-                    <Label htmlFor={module.id}>{module.label}</Label>
-                  </div>
-                ))}
-              </div>
             </div>
             
             <div className="space-y-2">

@@ -22,6 +22,8 @@ export default async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, saltRounds);
     
     // Crear usuario con contraseña hasheada
+    // Los nuevos usuarios se crean con rol "pendiente" y sin módulos
+    // hasta que un administrador los active y asigne permisos
     const userData = {
       username,
       fullName,
@@ -29,17 +31,15 @@ export default async (req, res) => {
       lastName,
       email,
       password: hashedPassword,
-      role: role || 'administrador',
-      modules: modules || ['trucking', 'shipchandler', 'agency'],
-      isActive: true
+      role: role || 'pendiente',
+      modules: modules || [],
+      isActive: false // Los usuarios pendientes están inactivos por defecto
     };
     
     const user = await users.create(userData);
     
-  // Generar token
-    const token = await firmarToken({ mongoId: user._id.toString() });
-    
-    // Respuesta sin la contraseña
+    // Respuesta sin la contraseña y sin token
+    // Los usuarios pendientes NO reciben token hasta ser activados
     const userResponse = {
       id: user._id,
       username: user.username,
@@ -49,10 +49,12 @@ export default async (req, res) => {
       email: user.email,
       role: user.role,
       modules: user.modules,
-      createdAt: user.createdAt
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+      message: "Cuenta creada exitosamente. Un administrador debe activar tu cuenta antes de que puedas acceder."
     };
-    console.log('Usuario registrado:', userResponse);
-    return response(res, 200, { user: userResponse, token: token });
+    console.log('Usuario registrado (pendiente):', userResponse);
+    return response(res, 201, { user: userResponse });
     
   } catch (error) {
     console.error('Error en registro:', error);

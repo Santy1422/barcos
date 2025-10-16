@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,48 +13,74 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 import { 
   selectAllUsers, 
-  selectCurrentUser, 
-  addUser, 
-  updateUser, 
-  deleteUser,
+  selectCurrentUser,
+  selectUsersLoading,
+  fetchAllUsersAsync,
+  updateUserAsync,
+  deleteUserAsync,
   type User,
   type UserRole,
+  type UserModule,
   hasPermission
 } from "@/lib/features/auth/authSlice"
-import { UserPlus, Edit, Trash2, Shield, Users, Eye, EyeOff } from "lucide-react"
+import { UserPlus, Edit, Trash2, Shield, Users, Eye, EyeOff, CheckSquare, Square } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Switch } from "@/components/ui/switch"
 
 const roleLabels: Record<UserRole, string> = {
   "administrador": "Administrador",
   "operaciones": "Operaciones",
-  "facturacion": "Facturación"
+  "facturacion": "Facturación",
+  "pendiente": "Pendiente"
 }
 
 const roleColors: Record<UserRole, "default" | "secondary" | "destructive" | "outline"> = {
   "administrador": "destructive",
   "operaciones": "default",
-  "facturacion": "secondary"
+  "facturacion": "secondary",
+  "pendiente": "outline"
+}
+
+const moduleLabels: Record<UserModule, string> = {
+  "trucking": "PTG",
+  "shipchandler": "PTYSS",
+  "agency": "Agency"
 }
 
 export function UsersManagement() {
   const dispatch = useAppDispatch()
   const users = useAppSelector(selectAllUsers)
   const currentUser = useAppSelector(selectCurrentUser)
+  const isLoadingUsers = useAppSelector(selectUsersLoading)
   const { toast } = useToast()
   
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [hasLoadedUsers, setHasLoadedUsers] = useState(false)
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set())
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [userToDelete, setUserToDelete] = useState<string | null>(null)
+  const [showBatchDeleteDialog, setShowBatchDeleteDialog] = useState(false)
   const [formData, setFormData] = useState({
     username: "",
     email: "",
     fullName: "",
-    role: "facturacion" as UserRole,
-    isActive: true
+    role: "pendiente" as UserRole,
+    modules: [] as UserModule[],
+    isActive: false
   })
 
+  // Cargar usuarios al montar el componente - SOLO UNA VEZ
+  useEffect(() => {
+    if (currentUser?.role === "administrador" && !hasLoadedUsers) {
+      console.log('👥 UsersManagement - Fetching users...')
+      setHasLoadedUsers(true)
+      dispatch(fetchAllUsersAsync())
+    }
+  }, [currentUser, hasLoadedUsers, dispatch])
+
   // Verificar permisos
-  const canManageUsers = currentUser && hasPermission(currentUser.role, "administrador")
+  const canManageUsers = currentUser && hasPermission(currentUser, "administrador")
 
   if (!canManageUsers) {
     return (
@@ -76,13 +102,23 @@ export function UsersManagement() {
       username: "",
       email: "",
       fullName: "",
-      role: "facturacion",
-      isActive: true
+      role: "pendiente",
+      modules: [],
+      isActive: false
     })
     setEditingUser(null)
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const toggleModule = (module: UserModule) => {
+    setFormData(prev => ({
+      ...prev,
+      modules: prev.modules.includes(module)
+        ? prev.modules.filter(m => m !== module)
+        : [...prev.modules, module]
+    }))
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!formData.username || !formData.email || !formData.fullName) {
@@ -94,47 +130,45 @@ export function UsersManagement() {
       return
     }
 
-    // Verificar username único
-    const existingUser = users.find(u => 
-      u.username === formData.username && 
-      (!editingUser || u.id !== editingUser.id)
-    )
-    
-    if (existingUser) {
+    if (editingUser) {
+      try {
+        await dispatch(updateUserAsync({ 
+          id: editingUser.id, 
+          updates: formData 
+        })).unwrap()
+        
+        toast({
+          title: "Usuario actualizado",
+          description: `El usuario ${formData.username} ha sido actualizado correctamente`
+        })
+        
+        setShowCreateDialog(false)
+        resetForm()
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error || "Error al actualizar el usuario",
+          variant: "destructive"
+        })
+      }
+    } else {
       toast({
-        title: "Error",
-        description: "El nombre de usuario ya existe",
+        title: "Función no disponible",
+        description: "Por favor, use la página de registro para crear nuevos usuarios",
         variant: "destructive"
       })
-      return
     }
-
-    if (editingUser) {
-      dispatch(updateUser({ id: editingUser.id, updates: formData }))
-      toast({
-        title: "Usuario actualizado",
-        description: `El usuario ${formData.username} ha sido actualizado correctamente`
-      })
-    } else {
-      dispatch(addUser(formData))
-      toast({
-        title: "Usuario creado",
-        description: `El usuario ${formData.username} ha sido creado correctamente`
-      })
-    }
-
-    setShowCreateDialog(false)
-    resetForm()
   }
 
   const handleEdit = (user: User) => {
     setEditingUser(user)
     setFormData({
-      username: user.username,
+      username: user.username || "",
       email: user.email,
-      fullName: user.fullName,
+      fullName: user.fullName || user.name,
       role: user.role,
-      isActive: user.isActive
+      modules: user.modules || [],
+      isActive: user.isActive ?? true
     })
     setShowCreateDialog(true)
   }
@@ -148,15 +182,31 @@ export function UsersManagement() {
       })
       return
     }
-
-    dispatch(deleteUser(userId))
-    toast({
-      title: "Usuario eliminado",
-      description: "El usuario ha sido eliminado correctamente"
-    })
+    setUserToDelete(userId)
+    setShowDeleteDialog(true)
   }
 
-  const handleToggleStatus = (user: User) => {
+  const confirmDelete = async () => {
+    if (!userToDelete) return
+
+    try {
+      await dispatch(deleteUserAsync(userToDelete)).unwrap()
+      toast({
+        title: "Usuario eliminado",
+        description: "El usuario ha sido eliminado correctamente"
+      })
+      setShowDeleteDialog(false)
+      setUserToDelete(null)
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error || "Error al eliminar el usuario",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleToggleStatus = async (user: User) => {
     if (user.id === currentUser?.id) {
       toast({
         title: "Error",
@@ -166,15 +216,84 @@ export function UsersManagement() {
       return
     }
 
-    dispatch(updateUser({ 
-      id: user.id, 
-      updates: { isActive: !user.isActive } 
-    }))
-    
-    toast({
-      title: user.isActive ? "Usuario desactivado" : "Usuario activado",
-      description: `El usuario ${user.username} ha sido ${user.isActive ? 'desactivado' : 'activado'}`
-    })
+    try {
+      await dispatch(updateUserAsync({ 
+        id: user.id, 
+        updates: { isActive: !user.isActive } 
+      })).unwrap()
+      
+      toast({
+        title: user.isActive ? "Usuario desactivado" : "Usuario activado",
+        description: `El usuario ${user.username || user.email} ha sido ${user.isActive ? 'desactivado' : 'activado'}`
+      })
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error || "Error al cambiar el estado del usuario",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const toggleUserSelection = (userId: string) => {
+    const newSelected = new Set(selectedUsers)
+    if (newSelected.has(userId)) {
+      newSelected.delete(userId)
+    } else {
+      newSelected.add(userId)
+    }
+    setSelectedUsers(newSelected)
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedUsers.size === users.filter(u => u.id !== currentUser?.id).length) {
+      setSelectedUsers(new Set())
+    } else {
+      const allUserIds = new Set(users.filter(u => u.id !== currentUser?.id).map(u => u.id))
+      setSelectedUsers(allUserIds)
+    }
+  }
+
+  const handleDeleteSelected = () => {
+    if (selectedUsers.size === 0) {
+      toast({
+        title: "Error",
+        description: "No hay usuarios seleccionados",
+        variant: "destructive"
+      })
+      return
+    }
+    setShowBatchDeleteDialog(true)
+  }
+
+  const confirmBatchDelete = async () => {
+    let successCount = 0
+    let errorCount = 0
+
+    for (const userId of selectedUsers) {
+      try {
+        await dispatch(deleteUserAsync(userId)).unwrap()
+        successCount++
+      } catch (error) {
+        errorCount++
+      }
+    }
+
+    setSelectedUsers(new Set())
+    setShowBatchDeleteDialog(false)
+
+    if (errorCount === 0) {
+      toast({
+        title: "Usuarios eliminados",
+        description: `Se eliminaron ${successCount} usuario(s) correctamente`
+      })
+    } else {
+      toast({
+        title: "Eliminación completada con errores",
+        description: `Eliminados: ${successCount} | Errores: ${errorCount}`,
+        variant: errorCount > successCount ? "destructive" : "default"
+      })
+    }
   }
 
   return (
@@ -189,9 +308,24 @@ export function UsersManagement() {
               </CardTitle>
               <CardDescription>
                 Administra los usuarios del sistema y sus roles
+                {selectedUsers.size > 0 && (
+                  <span className="ml-2 text-primary font-medium">
+                    ({selectedUsers.size} seleccionado{selectedUsers.size > 1 ? 's' : ''})
+                  </span>
+                )}
               </CardDescription>
             </div>
-            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+            <div className="flex gap-2">
+              {selectedUsers.size > 0 && (
+                <Button 
+                  variant="destructive" 
+                  onClick={handleDeleteSelected}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Eliminar ({selectedUsers.size})
+                </Button>
+              )}
+              <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
               <DialogTrigger asChild>
                 <Button onClick={resetForm}>
                   <UserPlus className="mr-2 h-4 w-4" />
@@ -250,11 +384,33 @@ export function UsersManagement() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="pendiente">Pendiente</SelectItem>
                         <SelectItem value="facturacion">Facturación</SelectItem>
                         <SelectItem value="operaciones">Operaciones</SelectItem>
                         <SelectItem value="administrador">Administrador</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Módulos de Acceso</Label>
+                    <div className="flex flex-wrap gap-2 border rounded-lg p-3">
+                      {(Object.entries(moduleLabels) as [UserModule, string][]).map(([module, label]) => (
+                        <div key={module} className="flex items-center space-x-2">
+                          <Switch
+                            id={`module-${module}`}
+                            checked={formData.modules.includes(module)}
+                            onCheckedChange={() => toggleModule(module)}
+                          />
+                          <Label htmlFor={`module-${module}`} className="cursor-pointer">
+                            {label}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Los administradores tienen acceso a todos los módulos automáticamente
+                    </p>
                   </div>
                   
                   <div className="flex items-center space-x-2">
@@ -277,31 +433,94 @@ export function UsersManagement() {
                 </form>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Usuario</TableHead>
-                <TableHead>Nombre Completo</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Rol</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Último Acceso</TableHead>
-                <TableHead>Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.username}</TableCell>
-                  <TableCell>{user.fullName}</TableCell>
+          {isLoadingUsers ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-center">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+                <p className="mt-2 text-sm text-muted-foreground">Cargando usuarios...</p>
+              </div>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={toggleSelectAll}
+                      title={selectedUsers.size === users.filter(u => u.id !== currentUser?.id).length ? "Deseleccionar todos" : "Seleccionar todos"}
+                    >
+                      {selectedUsers.size > 0 && selectedUsers.size === users.filter(u => u.id !== currentUser?.id).length ? (
+                        <CheckSquare className="h-4 w-4" />
+                      ) : (
+                        <Square className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </TableHead>
+                  <TableHead>Usuario</TableHead>
+                  <TableHead>Nombre Completo</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Rol</TableHead>
+                  <TableHead>Módulos</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Último Acceso</TableHead>
+                  <TableHead>Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users.map((user) => {
+                  const isCurrentUser = user.id === currentUser?.id
+                  const isSelected = selectedUsers.has(user.id)
+                  
+                  return (
+                    <TableRow 
+                      key={user.id}
+                      className={isSelected ? "bg-muted/50" : ""}
+                    >
+                      <TableCell>
+                        {!isCurrentUser && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => toggleUserSelection(user.id)}
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="h-4 w-4 text-primary" />
+                            ) : (
+                              <Square className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium">{user.username || user.email.split('@')[0]}</TableCell>
+                  <TableCell>{user.fullName || user.name}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
                     <Badge variant={roleColors[user.role]}>
                       {roleLabels[user.role]}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {user.role === 'administrador' ? (
+                        <Badge variant="secondary" className="text-xs">Todos</Badge>
+                      ) : user.modules && user.modules.length > 0 ? (
+                        user.modules.map(module => (
+                          <Badge key={module} variant="outline" className="text-xs">
+                            {moduleLabels[module]}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Ninguno</span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -352,11 +571,97 @@ export function UsersManagement() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
+
+      {/* Dialog de confirmación para eliminar usuario individual */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar eliminación</DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de que deseas eliminar este usuario?
+              <br />
+              <span className="font-semibold text-destructive">Esta acción no se puede deshacer.</span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => {
+                setShowDeleteDialog(false)
+                setUserToDelete(null)
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              type="button" 
+              variant="destructive" 
+              onClick={confirmDelete}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Eliminar Usuario
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de confirmación para eliminación múltiple */}
+      <Dialog open={showBatchDeleteDialog} onOpenChange={setShowBatchDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar eliminación múltiple</DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de que deseas eliminar <span className="font-bold text-destructive">{selectedUsers.size} usuario(s)</span>?
+              <br />
+              <br />
+              <span className="font-semibold text-destructive">Esta acción no se puede deshacer.</span>
+              <br />
+              <br />
+              Usuarios que serán eliminados:
+              <ul className="mt-2 ml-4 list-disc text-sm">
+                {Array.from(selectedUsers).slice(0, 5).map(userId => {
+                  const user = users.find(u => u.id === userId)
+                  return user ? (
+                    <li key={userId} className="text-foreground">
+                      {user.username || user.email} ({user.email})
+                    </li>
+                  ) : null
+                })}
+                {selectedUsers.size > 5 && (
+                  <li className="text-muted-foreground">
+                    ...y {selectedUsers.size - 5} más
+                  </li>
+                )}
+              </ul>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => setShowBatchDeleteDialog(false)}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              type="button" 
+              variant="destructive" 
+              onClick={confirmBatchDelete}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Eliminar {selectedUsers.size} Usuario(s)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

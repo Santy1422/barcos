@@ -4,7 +4,7 @@ import React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
-import { logoutAsync, selectCurrentUser } from "@/lib/features/auth/authSlice"
+import { logoutAsync, selectCurrentUser, hasModuleAccess, hasSectionAccess, canSeeDashboard } from "@/lib/features/auth/authSlice"
 import {
   Sidebar,
   SidebarContent,
@@ -81,64 +81,103 @@ export function AppSidebar() {
     router.push("/login")
   }
 
-  const mainNavItems: NavItem[] = [
-    { title: "Dashboard", href: "/", icon: LayoutDashboard },
-    {
+  // Filter navigation items based on user module access
+  const allNavItems: NavItem[] = [
+    // Dashboard - Solo para usuario específico (leandrojavier@gmail.com)
+    ...(canSeeDashboard(currentUser) ? [
+      { title: "Dashboard", href: "/", icon: LayoutDashboard }
+    ] : []),
+    // PTG/Trucking module - filtered by role
+    ...(hasModuleAccess(currentUser, "trucking") ? [{
       title: "PTG",
       href: "/trucking",
       icon: Truck,
       children: [
-        { title: "Subir Excel", href: "/trucking/upload", icon: UploadCloud },
-        { title: "Crear Prefactura", href: "/trucking/prefactura", icon: FilePlus2 },
-        { title: "Gastos Autoridades", href: "/trucking/gastos-autoridades", icon: Briefcase },
-        { title: "Facturas", href: "/trucking/records", icon: ListOrdered },
-        { title: "Configuración", href: "/trucking/config", icon: Settings2 },
-      ],
-    },
-    {
+        ...(hasSectionAccess(currentUser, "trucking", "upload") ? [
+          { title: "Subir Excel", href: "/trucking/upload", icon: UploadCloud }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "trucking", "prefactura") ? [
+          { title: "Crear Prefactura", href: "/trucking/prefactura", icon: FilePlus2 }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "trucking", "gastos-autoridades") ? [
+          { title: "Gastos Autoridades", href: "/trucking/gastos-autoridades", icon: Briefcase }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "trucking", "records") ? [
+          { title: "Facturas", href: "/trucking/records", icon: ListOrdered }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "trucking", "config") ? [
+          { title: "Configuración", href: "/trucking/config", icon: Settings2 }
+        ] : []),
+      ].filter(Boolean),
+    }] : []),
+    // PTYSS/Shipchandler module - filtered by role
+    ...(hasModuleAccess(currentUser, "shipchandler") ? [{
       title: "PTYSS",
       href: "/ptyss",
       icon: Ship,
       children: [
-        { title: "Crear Registros", href: "/ptyss/upload", icon: Plus },
-        { title: "Crear Prefactura", href: "/ptyss/invoice", icon: FilePlus2 },
-        { title: "Facturas", href: "/ptyss/records", icon: ListOrdered },
-        { title: "Historial", href: "/ptyss/historial", icon: History },
-        { title: "Configuración", href: "/ptyss/config", icon: Settings2 },
-      ],
-    },
-    {
+        ...(hasSectionAccess(currentUser, "shipchandler", "upload") ? [
+          { title: "Crear Registros", href: "/ptyss/upload", icon: Plus }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "shipchandler", "invoice") ? [
+          { title: "Crear Prefactura", href: "/ptyss/invoice", icon: FilePlus2 }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "shipchandler", "records") ? [
+          { title: "Facturas", href: "/ptyss/records", icon: ListOrdered }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "shipchandler", "historial") ? [
+          { title: "Historial", href: "/ptyss/historial", icon: History }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "shipchandler", "config") ? [
+          { title: "Configuración", href: "/ptyss/config", icon: Settings2 }
+        ] : []),
+      ].filter(Boolean),
+    }] : []),
+    // Agency module - filtered by role
+    ...(hasModuleAccess(currentUser, "agency") ? [{
       title: "Agency",
       href: "/agency",
       icon: Car,
       children: [
-        { title: "Crear Servicios", href: "/agency/services", icon: Plus },
-        { title: "Registros", href: "/agency/records", icon: ListOrdered },
-        { title: "SAP Invoice", href: "/agency/sap-invoice", icon: FileText },
-        // { title: "Facturas", href: "/agency/invoice", icon: FilePlus2 },
-        { title: "Historial", href: "/agency/historial", icon: History },
-        // { title: "Reportes", href: "/agency/reports", icon: BarChart3 },
-        { title: "Catálogos", href: "/agency/catalogs", icon: BookOpen },
-        // { title: "Configuración", href: "/agency/config", icon: Settings2 },
-      ],
-    },
-    {
+        ...(hasSectionAccess(currentUser, "agency", "services") ? [
+          { title: "Crear Servicios", href: "/agency/services", icon: Plus }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "agency", "records") ? [
+          { title: "Registros", href: "/agency/records", icon: ListOrdered }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "agency", "sap-invoice") ? [
+          { title: "SAP Invoice", href: "/agency/sap-invoice", icon: FileText }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "agency", "historial") ? [
+          { title: "Historial", href: "/agency/historial", icon: History }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "agency", "catalogs") ? [
+          { title: "Catálogos", href: "/agency/catalogs", icon: BookOpen }
+        ] : []),
+        // Configuración removida - no se usa por ahora
+      ].filter(Boolean),
+    }] : []),
+    // Clientes - Solo facturación y administradores
+    ...(currentUser?.role === "facturacion" || currentUser?.role === "administrador" ? [{
       title: "Clientes",
       href: "/clientes",
       icon: Users,
-    },
-    {
+    }] : []),
+    // Historial General - Solo administradores
+    ...(currentUser?.role === "administrador" ? [{
       title: "Historial General",
       href: "/historial",
       icon: History,
-    },
-    // Add Users menu item conditionally for administrators
+    }] : []),
+    // Usuarios - Solo administradores
     ...(currentUser?.role === "administrador" ? [{
       title: "Usuarios",
       href: "/usuarios",
       icon: Users,
     }] : []),
   ]
+  
+  const mainNavItems = allNavItems
 
   const helpNavItems: NavItem[] = [{ title: "Soporte", href: "/support", icon: LifeBuoy }]
 

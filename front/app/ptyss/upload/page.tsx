@@ -1,5 +1,10 @@
 import { PTYSSUpload } from "@/components/ptyss/ptyss-upload"
+import { SectionGuard } from "@/components/section-guard"
 
 export default function PTYSSUploadPage() {
-  return <PTYSSUpload />
+  return (
+    <SectionGuard module="shipchandler" section="upload">
+      <PTYSSUpload />
+    </SectionGuard>
+  )
 } 
