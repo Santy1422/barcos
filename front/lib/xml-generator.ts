@@ -533,7 +533,9 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
               
               invoice.records.forEach((record: InvoiceLineItemForXml) => {
                 // Crear una clave única basada en las características del registro
-                const key = `${record.serviceCode || "TRK002"}-${record.description}-${record.unitPrice}-${record.containerType || "DV"}-${record.containerSize || "40"}-${record.fullEmptyStatus || "FULL"}-${record.businessType || "IMPORT"}`
+                // IMPORTANTE: No incluir description ni containerNumber porque son únicos por contenedor
+                // Solo agrupar por: serviceCode, precio unitario, tipo/tamaño de contenedor, categoría, estado full/empty, tipo de negocio
+                const key = `${record.serviceCode || "TRK002"}-${record.unitPrice}-${record.containerType || "DV"}-${record.containerSize || "40"}-${record.ctrCategory || "D"}-${record.fullEmptyStatus || "FULL"}-${record.businessType || "IMPORT"}`
                 
                 // Para registros AUTH ya agrupados, usar la cantidad que ya viene en el registro
                 const recordQuantity = record.quantity || 1
@@ -735,82 +737,177 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
           "BaselineDate": formatDateForXML(invoice.date),
           "DueDate": calculateDueDate(invoice.date)
         },
-        // OtherItems Section
+        // OtherItems Section - usar la misma lógica de agrupación que el PDF
         "OtherItems": {
-          "OtherItem": invoice.records.map((record: PTYSSRecordForXml, index: number) => {
-            // Determinar el valor de BusinessType para el XML (texto completo)
-            const businessTypeXmlValue = record.data.operationType === "export" ? "EXPORT" : "IMPORT"
+          "OtherItem": (function() {
+            // Agrupar registros usando la misma lógica que el PDF de PTYSS
+            const groupedRecords = new Map<string, { records: any[], price: number, count: number }>()
             
-            // Mapear tamaño de contenedor PTYSS a formato SAP
-            const containerSizeMap: { [key: string]: string } = {
-              "20": "20",
-              "40": "40",
-              "45": "45",
-              "20'": "20",
-              "40'": "40",
-              "45'": "45"
-            }
+            console.log("🔍 PTYSS XML - Total records to process:", invoice.records.length)
+            console.log("🔍 PTYSS XML - Records:", invoice.records)
             
-            const containerSize = containerSizeMap[record.data.containerSize] || "40"
-            
-            // Mapear tipo de contenedor PTYSS a formato SAP
-            const containerTypeMap: { [key: string]: string } = {
-              "DRY": "DV",
-              "DV": "DV",
-              "REEFER": "RF",
-              "RF": "RF",
-              "TANK": "TK",
-              "TK": "TK",
-              "FLAT": "FL",
-              "FL": "FL"
-            }
-            
-            const containerType = containerTypeMap[record.data.containerType] || "FL"
-            
-            // Generar ISO code basado en tamaño y tipo según el ejemplo
-            const generateIsoCode = (size: string, type: string): string => {
-              if (size === "40" && type === "FL") {
-                return "42P1" // Como en el ejemplo
+            invoice.records.forEach((record: PTYSSRecordForXml, index: number) => {
+              const data = record.data
+              
+              console.log(`🔍 PTYSS XML - Processing record ${index + 1}:`, {
+                id: record.id,
+                data: data,
+                totalValue: record.totalValue
+              })
+              
+              // Identificar registros de trasiego: tienen line, matchedPrice, y no tienen localRouteId
+              const isTrasiego = data.line && data.matchedPrice && !data.localRouteId
+              
+              console.log(`🔍 PTYSS XML - Is trasiego:`, isTrasiego, {
+                line: data.line,
+                matchedPrice: data.matchedPrice,
+                localRouteId: data.localRouteId
+              })
+              
+              if (isTrasiego) {
+                // Los registros de trasiego en PTYSS tienen estos campos:
+                const line = data.line || ''
+                const from = data.from || ''
+                const to = data.to || ''
+                const size = data.size || data.containerSize || ''
+                const type = data.type || data.containerType || ''
+                const route = data.route || ''
+                const fe = data.fe ? (data.fe.toString().toUpperCase().trim() === 'F' ? 'FULL' : 'EMPTY') : 'FULL'
+                const price = (data.matchedPrice || record.totalValue || 0)
+                
+                // Crear clave única para agrupar por características similares (igual que PDF)
+                const groupKey = `TRASIEGO|${line}|${from}|${to}|${size}|${type}|${fe}|${route}|${price}`
+                
+                console.log(`🔍 PTYSS XML - Trasiego groupKey:`, groupKey)
+                
+                if (!groupedRecords.has(groupKey)) {
+                  groupedRecords.set(groupKey, {
+                    records: [],
+                    price: price,
+                    count: 0
+                  })
+                  console.log(`🔍 PTYSS XML - Created new trasiego group:`, groupKey)
+                }
+                
+                const group = groupedRecords.get(groupKey)!
+                group.records.push(record)
+                group.count += 1
+                console.log(`🔍 PTYSS XML - Added to trasiego group. Count:`, group.count)
+              } else {
+                // Para registros locales, agrupar por ruta local (igual que PDF)
+                const localRouteId = data.localRouteId || ''
+                const localRoutePrice = data.localRoutePrice || 0
+                const containerSize = data.containerSize || ''
+                const containerType = data.containerType || ''
+                const from = data.from || ''
+                const to = data.to || ''
+                
+                const groupKey = `LOCAL|${localRouteId}|${containerSize}|${containerType}|${from}|${to}|${localRoutePrice}`
+                
+                console.log(`🔍 PTYSS XML - Local groupKey:`, groupKey)
+                
+                if (!groupedRecords.has(groupKey)) {
+                  groupedRecords.set(groupKey, {
+                    records: [],
+                    price: localRoutePrice,
+                    count: 0
+                  })
+                  console.log(`🔍 PTYSS XML - Created new local group:`, groupKey)
+                }
+                
+                const group = groupedRecords.get(groupKey)!
+                group.records.push(record)
+                group.count += 1
+                console.log(`🔍 PTYSS XML - Added to local group. Count:`, group.count)
               }
-              // Otros mapeos básicos
-              const sizeCode = size === "20" ? "2" : size === "40" ? "4" : size === "45" ? "L" : "4"
-              const typeCode = type === "RF" ? "H" : type === "TK" ? "T" : type === "FL" ? "P" : "G"
-              return `${sizeCode}${typeCode}1`
-            }
+            })
             
-            const isoCode = generateIsoCode(containerSize, containerType)
+            console.log("🔍 PTYSS XML - Final groups created:", groupedRecords.size)
+            Array.from(groupedRecords.entries()).forEach(([key, group], index) => {
+              console.log(`🔍 PTYSS XML - Group ${index + 1}: ${key} - Count: ${group.count} - Price: $${group.price}`)
+            })
             
-            // Determinar categoría del contenedor
-            const ctrCategory = containerType === "FL" ? "N" : containerType.substring(0, 1)
-            
-            // Determinar el código de servicio basado en el tipo de registro
-            const recordType = record.data.recordType || ''
-            const sapCode = record.data.sapCode || ''
-            // Fallback: si el cliente es PTG, o sapCode es TRK002, forzar trasiego
-            const isTrasiego = recordType === 'trasiego' || sapCode === 'TRK002' || invoice.clientName === 'PTG'
-            const serviceCode = isTrasiego ? 'TRK002' : 'TRK001'
-            return {
-              "IncomeRebateCode": "I",
-              "AmntTransacCur": (-record.totalValue).toFixed(3),
-              "BaseUnitMeasure": "CTR",
-              "Qty": "1.00",
-              "ProfitCenter": "PAPANB110",
-              "ReferencePeriod": formatReferencePeriod(invoice.date),
-              "Service": serviceCode,
-              "Activity": "TRK",
-              "Pillar": "TRSP",
-              "BUCountry": "PAN",
-              "ServiceCountry": "PAN",
-              "ClientType": "MEDLOG",
-              "BusinessType": businessTypeXmlValue,
-              "FullEmpty": "FULL",
-              "CtrISOcode": isoCode,
-              "CtrType": containerType,
-              "CtrSize": containerSize,
-              "CtrCategory": ctrCategory,
-              "SubContracting": "YES"
-            }
-          })
+            // Convertir grupos a OtherItems (cada grupo = una línea del PDF)
+            return Array.from(groupedRecords.entries()).map(([groupKey, group]) => {
+              const parts = groupKey.split('|')
+              const totalPrice = group.price * group.count
+              
+              // Usar el primer registro del grupo para obtener los datos
+              const firstRecord = group.records[0]
+              const data = firstRecord.data
+              
+              // Determinar el código de servicio basado en el tipo de registro
+              const recordType = data.recordType || ''
+              const sapCode = data.sapCode || ''
+              const isTrasiego = recordType === 'trasiego' || sapCode === 'TRK002' || invoice.clientName === 'PTG'
+              const serviceCode = isTrasiego ? 'TRK002' : 'TRK001'
+              
+              // Extraer información del contenedor
+              let containerSize = "40"
+              let containerType = "DV"
+              let ctrCategory = "D"
+              
+              if (parts[0] === 'TRASIEGO') {
+                containerSize = parts[4] || "40" // size
+                containerType = parts[5] || "DV" // type
+                // Determinar categoría basada en el tipo
+                if (containerType.includes('HR') || containerType.includes('HC')) {
+                  ctrCategory = 'H'
+                } else if (containerType.includes('RF')) {
+                  ctrCategory = 'R'
+                } else if (containerType.includes('CA')) {
+                  ctrCategory = 'C'
+                } else if (containerType.includes('DV')) {
+                  ctrCategory = 'D'
+                } else if (containerType.includes('FL')) {
+                  ctrCategory = 'N'
+                }
+              } else {
+                containerSize = parts[2] || "40" // containerSize
+                containerType = parts[3] || "DV" // containerType
+                // Determinar categoría basada en el tipo
+                if (containerType.includes('HR') || containerType.includes('HC')) {
+                  ctrCategory = 'H'
+                } else if (containerType.includes('RF')) {
+                  ctrCategory = 'R'
+                } else if (containerType.includes('CA')) {
+                  ctrCategory = 'C'
+                } else if (containerType.includes('DV')) {
+                  ctrCategory = 'D'
+                } else if (containerType.includes('FL')) {
+                  ctrCategory = 'N'
+                }
+              }
+              
+              // Calcular CtrISOcode basándose en CtrType y CtrSize
+              const ctrISOcode = getCtrISOcode(containerType, containerSize)
+              
+              // Determinar FullEmpty
+              const fullEmpty = parts[0] === 'TRASIEGO' ? (parts[6] || 'FULL') : 'FULL'
+              
+              return {
+                "IncomeRebateCode": "I",
+                "AmntTransacCur": (-totalPrice).toFixed(3),
+                "BaseUnitMeasure": "CTR",
+                "Qty": group.count.toString(),
+                "ProfitCenter": "PAPANB110",
+                "ReferencePeriod": formatReferencePeriod(invoice.date),
+                "Service": serviceCode,
+                "Activity": "TRK",
+                "Pillar": "TRSP",
+                "BUCountry": "PA",
+                "ServiceCountry": "PA",
+                "ClientType": "MEDLOG",
+                "BusinessType": "I", // Siempre IMPORT para PTYSS
+                "FullEmpty": fullEmpty,
+                "CtrISOcode": ctrISOcode,
+                "CtrType": containerType,
+                "CtrSize": containerSize,
+                "CtrCategory": ctrCategory,
+                "SubContracting": "YES"
+              }
+            })
+          })()
         }
       }
     }

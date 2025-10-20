@@ -412,33 +412,36 @@ export function PTYSSPrefactura() {
     const clientId = data?.clientId
     
     console.log('🔍 getRecordClient - ClientId:', clientId, 'Associate:', data?.associate, 'RecordType:', data?.recordType)
-    console.log('🔍 getRecordClient - Clientes disponibles:', clients.map((c: any) => c.type === 'juridico' ? c.companyName : c.fullName))
+    console.log('🔍 getRecordClient - Clientes disponibles:', clients.map((c: any) => ({ name: c.name, companyName: c.companyName, fullName: c.fullName, type: c.type })))
     
-    // Si clientId está vacío, intentar buscar por nombre (para registros antiguos)
-    if (!clientId || clientId.trim() === '') {
-      // Para registros de trasiego, buscar específicamente por "PTG"
-      const recordType = getRecordType(record)
-      if (recordType === 'trasiego') {
-        console.log('🔍 getRecordClient - Buscando cliente PTG para registro de trasiego')
-        const ptgClient = clients.find((c: any) => {
-          if (c.type === 'juridico') {
-            return c.companyName?.toLowerCase() === 'ptg'
-          } else if (c.type === 'natural') {
-            return c.fullName?.toLowerCase() === 'ptg'
-          }
-          return false
-        })
-        console.log('🔍 getRecordClient - Cliente PTG encontrado:', ptgClient?.companyName || ptgClient?.fullName)
-        return ptgClient
-      }
-      console.log('🔍 getRecordClient - No es registro de trasiego. RecordType:', recordType)
-      return null
+    // Para registros de trasiego, buscar siempre por "PTG" en el campo name
+    const recordType = getRecordType(record)
+    if (recordType === 'trasiego') {
+      console.log('🔍 getRecordClient - Buscando cliente PTG para registro de trasiego')
+      const ptgClient = clients.find((c: any) => {
+        const name = c.name?.toLowerCase().trim() || ''
+        const companyName = c.companyName?.toLowerCase().trim() || ''
+        const fullName = c.fullName?.toLowerCase().trim() || ''
+        
+        // Buscar por cualquiera de estos campos que contenga "ptg"
+        return name === 'ptg' || companyName === 'ptg' || fullName === 'ptg'
+      })
+      console.log('🔍 getRecordClient - Cliente PTG encontrado:', ptgClient)
+      console.log('🔍 getRecordClient - PTG name:', ptgClient?.name)
+      console.log('🔍 getRecordClient - PTG companyName:', ptgClient?.companyName)
+      console.log('🔍 getRecordClient - PTG fullName:', ptgClient?.fullName)
+      return ptgClient
     }
     
-    // Buscar por ID
-    const clientById = clients.find((c: any) => (c._id || c.id) === clientId)
-    console.log('🔍 getRecordClient - Cliente encontrado por ID:', clientById?.companyName || clientById?.fullName)
-    return clientById
+    // Para registros locales, buscar por clientId si existe
+    if (clientId && clientId.trim() !== '') {
+      const clientById = clients.find((c: any) => (c._id || c.id) === clientId)
+      console.log('🔍 getRecordClient - Cliente encontrado por ID:', clientById?.companyName || clientById?.fullName)
+      return clientById
+    }
+    
+    console.log('🔍 getRecordClient - No se encontró cliente')
+    return null
   }
 
   // Función para validar si un registro puede ser seleccionado

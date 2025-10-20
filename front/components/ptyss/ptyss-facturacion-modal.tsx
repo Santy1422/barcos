@@ -224,7 +224,7 @@ export function PTYSSFacturacionModal({
       let clientSapNumber = client.sapCode
       console.log("🔍 generateXMLForInvoice - clientSapNumber final:", clientSapNumber)
 
-      // Preparar datos para XML
+      // Preparar datos para XML - pasar los registros originales para que el generador haga la agrupación
       const invoiceForXml: PTYSSInvoiceForXml = {
         id: invoice.id,
         invoiceNumber: newInvoiceNumber,
