@@ -366,8 +366,14 @@ export function TruckingPrefactura() {
   const getClient = (name: string) => {
     const target = normalizeName(name)
     return clients.find((c: any) => {
-      const n = c.type === 'juridico' ? (c.companyName || '') : (c.fullName || '')
-      return normalizeName(n) === target
+      // Buscar por name, companyName o fullName
+      const clientName = c.name || ''
+      const companyName = c.companyName || ''
+      const fullName = c.fullName || ''
+      
+      return normalizeName(clientName) === target || 
+             normalizeName(companyName) === target || 
+             normalizeName(fullName) === target
     })
   }
 

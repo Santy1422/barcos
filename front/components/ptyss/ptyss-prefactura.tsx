@@ -2438,7 +2438,6 @@ export function PTYSSPrefactura() {
                       <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">
                         {recordTypeFilter === "trasiego" ? "Subcliente" : "Ruta"}
                       </TableHead>
-                      <TableHead className="py-3 px-3 text-sm font-semibold text-gray-700">Operación</TableHead>
                       <TableHead className="w-12 py-3 px-3 text-sm font-semibold text-gray-700">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -2575,18 +2574,6 @@ export function PTYSSPrefactura() {
                                 })()}
                               </div>
                             </div>
-                          </TableCell>
-                          <TableCell className="py-2 px-3">
-                            <Badge variant={data.operationType === "import" ? "default" : "secondary"} className="text-xs">
-                              {(() => {
-                                // Para registros de trasiego, siempre es import
-                                if (getRecordType(record) === "trasiego") {
-                                  return "IMPORT"
-                                }
-                                // Para registros locales, usar operationType
-                                return data.operationType?.toUpperCase() || "N/A"
-                              })()}
-                            </Badge>
                           </TableCell>
                           <TableCell className="py-2 px-3">
                             <div className="flex items-center gap-1">
