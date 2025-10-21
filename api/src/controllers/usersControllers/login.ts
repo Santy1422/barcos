@@ -28,8 +28,12 @@ export default async (req, res) => {
     
     // Verificar si el usuario está activo
     if (!user.isActive) {
+      // Soportar tanto roles (array) como role (único) para compatibilidad
+      const userRoles = user.roles || (user.role ? [user.role] : [])
+      const isPendiente = userRoles.includes('pendiente')
+      
       return response(res, 403, { 
-        error: user.role === 'pendiente' 
+        error: isPendiente
           ? "Tu cuenta está pendiente de activación. Por favor, contacta al administrador."
           : "Tu cuenta ha sido desactivada. Contacta al administrador para más información."
       });
@@ -37,22 +41,30 @@ export default async (req, res) => {
     
     // Actualizar último login
     user.lastLogin = new Date();
-    await user.save();
-    console.log('Último login actualizado:', user);
-    // Generar token
-    const token = await firmarToken({ mongoId: user._id.toString() });
     
     // Asegurar valores por defecto para compatibilidad con usuarios existentes
     const modules = user.modules || [];
     const isActive = user.isActive !== undefined ? user.isActive : true;
-    const role = user.role || 'administrador';
+    
+    // Migrar role único a roles array si es necesario
+    if (!user.roles && user.role) {
+      user.roles = [user.role];
+    }
+    
+    const userRoles = user.roles || (user.role ? [user.role] : ['pendiente'])
+    const isAdmin = userRoles.includes('administrador')
     
     // Si el usuario no tiene módulos y es admin, asignarle todos automáticamente
-    if (role === 'administrador' && modules.length === 0) {
+    if (isAdmin && modules.length === 0) {
       user.modules = ['trucking', 'shipchandler', 'agency'];
       user.isActive = true;
-      await user.save();
     }
+    
+    await user.save();
+    console.log('Último login actualizado:', user);
+    
+    // Generar token
+    const token = await firmarToken({ mongoId: user._id.toString() });
     
     // Respuesta sin la contraseña
     const userResponse = {
@@ -62,7 +74,8 @@ export default async (req, res) => {
       name: user.name,
       lastName: user.lastName,
       email: user.email,
-      role: user.role,
+      role: user.role, // Mantener para compatibilidad
+      roles: user.roles,
       modules: user.modules || [],
       isActive: user.isActive !== undefined ? user.isActive : true,
       lastLogin: user.lastLogin,

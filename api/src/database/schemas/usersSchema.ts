@@ -11,6 +11,11 @@ const usersSchema = new mongoose.Schema({
     enum: ["administrador", "operaciones", "facturacion", "pendiente"],
     default: "pendiente"
   },
+  // Nuevo campo para múltiples roles
+  roles: [{
+    type: String,
+    enum: ["administrador", "operaciones", "facturacion", "pendiente"]
+  }],
   username: {
     type: String,
     unique: true,
@@ -112,6 +117,7 @@ const usersSchema = new mongoose.Schema({
 usersSchema.index({ email: 1 });
 usersSchema.index({ username: 1 });
 usersSchema.index({ role: 1 });
+usersSchema.index({ roles: 1 });
 usersSchema.index({ isActive: 1 });
 usersSchema.index({ modules: 1 });
 usersSchema.index({ 'company.ruc': 1 });

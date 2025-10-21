@@ -19,6 +19,7 @@
     "seed:ptg-taxes": "ts-node scripts/seedPTGTaxes.ts",
     "seed:ptg-taxes:js": "node scripts/seedPTGTaxes.js",
     "seed:agency-pricing": "ts-node scripts/seedAgencyRoutePricing.ts",
+    "seed:agency-vessels": "ts-node scripts/seedAgencyVessels.ts",
     "seed:trucking-routes": "ts-node src/database/seeds/truckingRoutesSeed.ts",
     "seed:container-types-mty-fb": "ts-node src/database/seeds/containerTypesMTYFBSeed.ts",
     "migrate:ptg-taxes": "ts-node scripts/migratePTGTaxesToPrice.ts",

@@ -18,6 +18,7 @@ import {
   fetchAllUsersAsync,
   updateUserAsync,
   deleteUserAsync,
+  createUserAsync,
   type User,
   type UserRole,
   type UserModule,
@@ -65,9 +66,10 @@ export function UsersManagement() {
     username: "",
     email: "",
     fullName: "",
-    role: "pendiente" as UserRole,
+    password: "",
+    roles: [] as UserRole[],
     modules: [] as UserModule[],
-    isActive: false
+    isActive: true
   })
 
   // Cargar usuarios al montar el componente - SOLO UNA VEZ
@@ -102,11 +104,21 @@ export function UsersManagement() {
       username: "",
       email: "",
       fullName: "",
-      role: "pendiente",
+      password: "",
+      roles: [],
       modules: [],
-      isActive: false
+      isActive: true
     })
     setEditingUser(null)
+  }
+  
+  const toggleRole = (role: UserRole) => {
+    setFormData(prev => ({
+      ...prev,
+      roles: prev.roles.includes(role)
+        ? prev.roles.filter(r => r !== role)
+        : [...prev.roles, role]
+    }))
   }
 
   const toggleModule = (module: UserModule) => {
@@ -131,6 +143,7 @@ export function UsersManagement() {
     }
 
     if (editingUser) {
+      // Actualizar usuario existente
       try {
         await dispatch(updateUserAsync({ 
           id: editingUser.id, 
@@ -144,6 +157,9 @@ export function UsersManagement() {
         
         setShowCreateDialog(false)
         resetForm()
+        
+        // Recargar lista de usuarios
+        dispatch(fetchAllUsersAsync())
       } catch (error: any) {
         toast({
           title: "Error",
@@ -152,11 +168,50 @@ export function UsersManagement() {
         })
       }
     } else {
-      toast({
-        title: "Función no disponible",
-        description: "Por favor, use la página de registro para crear nuevos usuarios",
-        variant: "destructive"
-      })
+      // Crear nuevo usuario
+      if (!formData.password) {
+        toast({
+          title: "Error",
+          description: "La contraseña es requerida para crear un nuevo usuario",
+          variant: "destructive"
+        })
+        return
+      }
+      
+      if (formData.password.length < 6) {
+        toast({
+          title: "Error",
+          description: "La contraseña debe tener al menos 6 caracteres",
+          variant: "destructive"
+        })
+        return
+      }
+      
+      try {
+        await dispatch(createUserAsync({
+          username: formData.username,
+          fullName: formData.fullName,
+          email: formData.email,
+          password: formData.password,
+          roles: formData.roles,
+          modules: formData.modules,
+          isActive: formData.isActive
+        })).unwrap()
+        
+        toast({
+          title: "Usuario creado",
+          description: `El usuario ${formData.username} ha sido creado correctamente`
+        })
+        
+        setShowCreateDialog(false)
+        resetForm()
+      } catch (error: any) {
+        toast({
+          title: "Error al crear usuario",
+          description: error || "Error al crear el usuario",
+          variant: "destructive"
+        })
+      }
     }
   }
 
@@ -166,7 +221,8 @@ export function UsersManagement() {
       username: user.username || "",
       email: user.email,
       fullName: user.fullName || user.name,
-      role: user.role,
+      password: "", // No mostrar la contraseña al editar
+      roles: user.roles || (user.role ? [user.role] : []), // Convertir role único a array para compatibilidad
       modules: user.modules || [],
       isActive: user.isActive ?? true
     })
@@ -377,19 +433,41 @@ export function UsersManagement() {
                     />
                   </div>
                   
+                  {!editingUser && (
+                    <div className="space-y-2">
+                      <Label htmlFor="password">Contraseña</Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        value={formData.password}
+                        onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                        placeholder="Contraseña del usuario"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        La contraseña debe tener al menos 6 caracteres
+                      </p>
+                    </div>
+                  )}
+                  
                   <div className="space-y-2">
-                    <Label htmlFor="role">Rol</Label>
-                    <Select value={formData.role} onValueChange={(value: UserRole) => setFormData(prev => ({ ...prev, role: value }))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pendiente">Pendiente</SelectItem>
-                        <SelectItem value="facturacion">Facturación</SelectItem>
-                        <SelectItem value="operaciones">Operaciones</SelectItem>
-                        <SelectItem value="administrador">Administrador</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label>Roles de Usuario</Label>
+                    <div className="flex flex-col gap-3 border rounded-lg p-3">
+                      {(Object.entries(roleLabels) as [UserRole, string][]).map(([role, label]) => (
+                        <div key={role} className="flex items-center space-x-2">
+                          <Switch
+                            id={`role-${role}`}
+                            checked={formData.roles.includes(role)}
+                            onCheckedChange={() => toggleRole(role)}
+                          />
+                          <Label htmlFor={`role-${role}`} className="cursor-pointer">
+                            {label}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Puedes asignar múltiples roles al mismo usuario
+                    </p>
                   </div>
                   
                   <div className="space-y-2">
@@ -503,23 +581,40 @@ export function UsersManagement() {
                   <TableCell>{user.fullName || user.name}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
-                    <Badge variant={roleColors[user.role]}>
-                      {roleLabels[user.role]}
-                    </Badge>
+                    <div className="flex flex-wrap gap-1">
+                      {(() => {
+                        const userRoles = user.roles || (user.role ? [user.role] : [])
+                        if (userRoles.length === 0) {
+                          return <Badge variant="outline" className="text-xs">Sin rol</Badge>
+                        }
+                        return userRoles.map((role) => (
+                          <Badge key={role} variant={roleColors[role]} className="text-xs">
+                            {roleLabels[role]}
+                          </Badge>
+                        ))
+                      })()}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      {user.role === 'administrador' ? (
-                        <Badge variant="secondary" className="text-xs">Todos</Badge>
-                      ) : user.modules && user.modules.length > 0 ? (
-                        user.modules.map(module => (
-                          <Badge key={module} variant="outline" className="text-xs">
-                            {moduleLabels[module]}
-                          </Badge>
-                        ))
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Ninguno</span>
-                      )}
+                      {(() => {
+                        const userRoles = user.roles || (user.role ? [user.role] : [])
+                        const isAdmin = userRoles.includes('administrador')
+                        
+                        if (isAdmin) {
+                          return <Badge variant="secondary" className="text-xs">Todos</Badge>
+                        }
+                        
+                        if (user.modules && user.modules.length > 0) {
+                          return user.modules.map(module => (
+                            <Badge key={module} variant="outline" className="text-xs">
+                              {moduleLabels[module]}
+                            </Badge>
+                          ))
+                        }
+                        
+                        return <span className="text-xs text-muted-foreground">Ninguno</span>
+                      })()}
                     </div>
                   </TableCell>
                   <TableCell>

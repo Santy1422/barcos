@@ -6,7 +6,7 @@ const bcrypt = require('bcrypt');
 
 export default async (req, res) => {
   try {
-    const { username, fullName, name, lastName, email, password, role, modules } = req.body;
+    const { username, fullName, name, lastName, email, password, role, roles, modules, isActive } = req.body;
     console.log('Datos de registro:', req.body);
     // Verificar si el usuario ya existe
     const existingUser = await users.findOne({ 
@@ -21,9 +21,16 @@ export default async (req, res) => {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
     
+    // Determinar si es un administrador creando el usuario
+    // Si viene con un token de autorización, es un admin creando el usuario
+    const isAdminCreating = !!req.headers.authorization;
+    
+    // Soportar tanto roles (array) como role (único) para compatibilidad
+    const userRoles = roles || (role ? [role] : ['pendiente'])
+    
     // Crear usuario con contraseña hasheada
-    // Los nuevos usuarios se crean con rol "pendiente" y sin módulos
-    // hasta que un administrador los active y asigne permisos
+    // Si es registro público, crear inactivo por defecto
+    // Si es un admin creando, respetar el valor de isActive enviado
     const userData = {
       username,
       fullName,
@@ -31,9 +38,9 @@ export default async (req, res) => {
       lastName,
       email,
       password: hashedPassword,
-      role: role || 'pendiente',
+      roles: userRoles,
       modules: modules || [],
-      isActive: false // Los usuarios pendientes están inactivos por defecto
+      isActive: isAdminCreating ? (isActive !== undefined ? isActive : false) : false
     };
     
     const user = await users.create(userData);

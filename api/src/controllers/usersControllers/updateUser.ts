@@ -5,10 +5,12 @@ const bcrypt = require('bcrypt');
 export default async (req, res) => {
   try {
     const { userId } = req.params;
-    const { username, fullName, name, lastName, email, role, modules, isActive, password } = req.body;
+    const { username, fullName, name, lastName, email, role, roles, modules, isActive, password } = req.body;
 
     // Solo administradores pueden actualizar usuarios
-    if (req.user.role !== 'administrador') {
+    // Soportar tanto roles (array) como role (único) para compatibilidad
+    const userRoles = req.user.roles || (req.user.role ? [req.user.role] : [])
+    if (!userRoles.includes('administrador')) {
       return response(res, 403, { error: "No tienes permisos para actualizar usuarios" });
     }
 
@@ -45,7 +47,14 @@ export default async (req, res) => {
     if (name) user.name = name;
     if (lastName) user.lastName = lastName;
     if (email) user.email = email;
-    if (role) user.role = role;
+    
+    // Soportar tanto roles (array) como role (único) para compatibilidad
+    if (roles !== undefined) {
+      user.roles = roles;
+    } else if (role) {
+      user.roles = [role];
+    }
+    
     if (modules !== undefined) user.modules = modules;
     if (isActive !== undefined) user.isActive = isActive;
     
@@ -65,7 +74,7 @@ export default async (req, res) => {
       name: user.name,
       lastName: user.lastName,
       email: user.email,
-      role: user.role,
+      roles: user.roles,
       modules: user.modules,
       isActive: user.isActive,
       lastLogin: user.lastLogin,

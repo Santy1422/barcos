@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { 
   Plus, Save, Send, 
-  MapPin, Ship, User, Calendar, Clock, Plane, Users, DollarSign, X, AlertTriangle, CheckCircle
+  MapPin, Ship, User, Calendar, Clock, Plane, Users, DollarSign, X, AlertTriangle, CheckCircle, Search
 } from "lucide-react"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
@@ -123,6 +123,8 @@ export function AgencyServices() {
   // Form state
   const [formData, setFormData] = useState<ServiceFormData>(initialFormData)
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [vesselSearchTerm, setVesselSearchTerm] = useState('')
+  const [vesselSelectOpen, setVesselSelectOpen] = useState(false)
 
   // Load data on mount
   useEffect(() => {
@@ -384,6 +386,22 @@ export function AgencyServices() {
         }
       }
       
+      // If changing transport company, clear driver if doesn't belong to this company
+      if (field === 'transportCompany' && prev.driver) {
+        const selectedDriver = drivers.find(d => d.name === prev.driver)
+        if (selectedDriver && selectedDriver.metadata?.company !== value) {
+          newData.driver = ''
+        }
+      }
+      
+      // If changing driver, automatically set their transport company
+      if (field === 'driver') {
+        const selectedDriver = drivers.find(d => d.name === value as string)
+        if (selectedDriver?.metadata?.company) {
+          newData.transportCompany = selectedDriver.metadata.company
+        }
+      }
+      
       return newData
     })
     
@@ -622,6 +640,7 @@ export function AgencyServices() {
 
       // Reset form
       setFormData(initialFormData)
+      setVesselSearchTerm('')
       
       // Refresh services list
       fetchServices({ page: 1, limit: 10 })
@@ -638,6 +657,7 @@ export function AgencyServices() {
   const handleClearForm = () => {
     setFormData(initialFormData)
     setFormErrors({})
+    setVesselSearchTerm('')
   }
 
   const handleClearLocations = () => {
@@ -965,26 +985,92 @@ export function AgencyServices() {
                   <Label htmlFor="vessel" className="text-sm font-medium">
                     VESSEL <span className="text-red-500">*</span>
                   </Label>
+                  
                   <Select
+                    open={vesselSelectOpen}
+                    onOpenChange={(open) => {
+                      setVesselSelectOpen(open)
+                      if (!open) {
+                        // Limpiar búsqueda cuando se cierra el select
+                        setVesselSearchTerm('')
+                      }
+                    }}
                     value={formData.vessel}
-                    onValueChange={(value) => handleInputChange('vessel', value)}
+                    onValueChange={(value) => {
+                      handleInputChange('vessel', value)
+                      setVesselSelectOpen(false)
+                    }}
                   >
                     <SelectTrigger className={formErrors.vessel ? 'border-red-500' : ''}>
-                      <SelectValue placeholder="del catálogo / selección dinámica" />
+                      <SelectValue placeholder="Seleccione vessel" />
                     </SelectTrigger>
-                    <SelectContent>
-                      {vessels.map((vessel) => (
-                        <SelectItem key={vessel._id} value={vessel.name}>
-                          <div className="flex items-center gap-2">
-                            <Ship className="h-3 w-3" />
-                            {vessel.name}
+                    <SelectContent className="max-h-[400px]">
+                      {/* Campo de búsqueda dentro del dropdown */}
+                      <div className="sticky top-0 z-10 bg-white border-b pb-2 mb-2">
+                        <div className="relative px-2 pt-2">
+                          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <input
+                            placeholder="Buscar vessel..."
+                            value={vesselSearchTerm}
+                            onChange={(e) => setVesselSearchTerm(e.target.value)}
+                            onKeyDown={(e) => {
+                              // Evitar que el select se cierre al presionar teclas
+                              e.stopPropagation()
+                            }}
+                            className="w-full h-9 pl-9 pr-8 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          {vesselSearchTerm && (
+                            <button
+                              type="button"
+                              onClick={() => setVesselSearchTerm('')}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center hover:bg-gray-100 rounded"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Lista de vessels filtrados */}
+                      <div className="max-h-[300px] overflow-y-auto">
+                        {vessels
+                          .filter(vessel => 
+                            vessel.name.toLowerCase().includes(vesselSearchTerm.toLowerCase()) ||
+                            vessel.metadata?.shippingLine?.toLowerCase().includes(vesselSearchTerm.toLowerCase())
+                          )
+                          .map((vessel) => (
+                            <SelectItem key={vessel._id} value={vessel.name}>
+                              <div className="flex items-center gap-2">
+                                <Ship className="h-3 w-3" />
+                                <div className="flex flex-col">
+                                  <span>{vessel.name}</span>
+                                  {vessel.metadata?.shippingLine && (
+                                    <span className="text-xs text-muted-foreground">
+                                      {vessel.metadata.shippingLine}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        {vessels.filter(vessel => 
+                          vessel.name.toLowerCase().includes(vesselSearchTerm.toLowerCase()) ||
+                          vessel.metadata?.shippingLine?.toLowerCase().includes(vesselSearchTerm.toLowerCase())
+                        ).length === 0 && (
+                          <div className="p-4 text-sm text-gray-500 text-center">
+                            No se encontraron vessels que coincidan con "{vesselSearchTerm}"
                           </div>
-                        </SelectItem>
-                      ))}
+                        )}
+                      </div>
                     </SelectContent>
                   </Select>
                   {formErrors.vessel && (
                     <p className="text-xs text-red-500">{formErrors.vessel}</p>
+                  )}
+                  {vessels.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {vessels.length} vessel{vessels.length !== 1 ? 's' : ''} disponible{vessels.length !== 1 ? 's' : ''}
+                    </p>
                   )}
                 </div>
 
@@ -1012,14 +1098,22 @@ export function AgencyServices() {
                     onValueChange={(value) => handleInputChange('transportCompany', value)}
                   >
                     <SelectTrigger className={formErrors.transportCompany ? 'border-red-500' : ''}>
-                      <SelectValue placeholder="del catálogo / selección dinámica" />
+                      <SelectValue placeholder="Seleccione transport company" />
                     </SelectTrigger>
                     <SelectContent>
-                      {transportCompanies.map((company) => (
-                        <SelectItem key={company._id} value={company.name}>
-                          {company.name}
-                        </SelectItem>
-                      ))}
+                      {transportCompanies.map((company) => {
+                        const driversCount = drivers.filter(d => d.metadata?.company === company.name).length
+                        return (
+                          <SelectItem key={company._id} value={company.name}>
+                            <div className="flex items-center justify-between gap-2">
+                              <span>{company.name}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${driversCount > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                {driversCount} driver{driversCount !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        )
+                      })}
                     </SelectContent>
                   </Select>
                   {formErrors.transportCompany && (
@@ -1037,25 +1131,57 @@ export function AgencyServices() {
                     onValueChange={(value) => handleInputChange('driver', value)}
                   >
                     <SelectTrigger className={formErrors.driver ? 'border-red-500' : ''}>
-                      <SelectValue placeholder="del catálogo / selección dinámica" />
+                      <SelectValue placeholder={formData.transportCompany ? "Seleccione driver de la compañía" : "Primero seleccione Transport Co."} />
                     </SelectTrigger>
                     <SelectContent>
-                      {drivers.map((driver) => (
-                        <SelectItem key={driver._id} value={driver.name}>
-                          <div>
-                            {driver.name}
-                            {driver.metadata?.phone && (
-                              <div className="text-xs text-muted-foreground">
-                                {driver.metadata.phone}
+                      {formData.transportCompany ? (
+                        drivers
+                          .filter(driver => driver.metadata?.company === formData.transportCompany)
+                          .map((driver) => (
+                            <SelectItem key={driver._id} value={driver.name}>
+                              <div>
+                                {driver.name}
+                                {driver.metadata?.phone && (
+                                  <div className="text-xs text-muted-foreground">
+                                    {driver.metadata.phone}
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
+                            </SelectItem>
+                          ))
+                      ) : (
+                        drivers.map((driver) => (
+                          <SelectItem key={driver._id} value={driver.name}>
+                            <div>
+                              {driver.name}
+                              {driver.metadata?.phone && (
+                                <div className="text-xs text-muted-foreground">
+                                  {driver.metadata.phone}
+                                </div>
+                              )}
+                              {driver.metadata?.company && (
+                                <div className="text-xs text-blue-600">
+                                  Compañía: {driver.metadata.company}
+                                </div>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
+                      {formData.transportCompany && drivers.filter(driver => driver.metadata?.company === formData.transportCompany).length === 0 && (
+                        <div className="p-2 text-sm text-gray-500 text-center">
+                          No hay drivers disponibles para esta compañía
+                        </div>
+                      )}
                     </SelectContent>
                   </Select>
                   {formErrors.driver && (
                     <p className="text-xs text-red-500">{formErrors.driver}</p>
+                  )}
+                  {formData.transportCompany && (
+                    <p className="text-xs text-blue-600">
+                      {drivers.filter(driver => driver.metadata?.company === formData.transportCompany).length} driver(s) disponible(s) para {formData.transportCompany}
+                    </p>
                   )}
                 </div>
 

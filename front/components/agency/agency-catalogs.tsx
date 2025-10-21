@@ -832,9 +832,50 @@ export function AgencyCatalogs() {
                 return null
               }
               
+              // Special handling for Company selection in Driver catalog
+              if (selectedCatalogType === 'driver' && metaField.key === 'company') {
+                const transportCompaniesList = groupedCatalogs?.transport_company || []
+                return (
+                  <div key={metaField.key} className="space-y-2">
+                    <Label htmlFor={metaField.key}>
+                      {metaField.label} *
+                    </Label>
+                    <Select
+                      value={formData.metadata[metaField.key] || ''}
+                      onValueChange={(value) => {
+                        handleMetadataChange('company', value)
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select transport company" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {transportCompaniesList
+                          .filter((tc: any) => tc.isActive)
+                          .map((company: any) => (
+                            <SelectItem key={company._id} value={company.name}>
+                              {company.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    {transportCompaniesList.length === 0 && (
+                      <p className="text-xs text-yellow-600">
+                        No transport companies available. Please create transport companies first.
+                      </p>
+                    )}
+                  </div>
+                )
+              }
+              
               return (
                 <div key={metaField.key} className="space-y-2">
-                  <Label htmlFor={metaField.key}>{metaField.label}</Label>
+                  <Label htmlFor={metaField.key}>
+                    {metaField.label}
+                    {selectedCatalogType === 'vessel' && metaField.key === 'shippingLine' && (
+                      <span className="text-muted-foreground text-xs ml-1">(opcional)</span>
+                    )}
+                  </Label>
                   <Input
                     id={metaField.key}
                     type={metaField.type}
@@ -961,9 +1002,50 @@ export function AgencyCatalogs() {
                 return null
               }
               
+              // Special handling for Company selection in Driver catalog
+              if (selectedCatalogType === 'driver' && metaField.key === 'company') {
+                const transportCompaniesList = groupedCatalogs?.transport_company || []
+                return (
+                  <div key={metaField.key} className="space-y-2">
+                    <Label htmlFor={`edit-${metaField.key}`}>
+                      {metaField.label} *
+                    </Label>
+                    <Select
+                      value={formData.metadata[metaField.key] || ''}
+                      onValueChange={(value) => {
+                        handleMetadataChange('company', value)
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select transport company" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {transportCompaniesList
+                          .filter((tc: any) => tc.isActive)
+                          .map((company: any) => (
+                            <SelectItem key={company._id} value={company.name}>
+                              {company.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    {transportCompaniesList.length === 0 && (
+                      <p className="text-xs text-yellow-600">
+                        No transport companies available. Please create transport companies first.
+                      </p>
+                    )}
+                  </div>
+                )
+              }
+              
               return (
                 <div key={metaField.key} className="space-y-2">
-                  <Label htmlFor={`edit-${metaField.key}`}>{metaField.label}</Label>
+                  <Label htmlFor={`edit-${metaField.key}`}>
+                    {metaField.label}
+                    {selectedCatalogType === 'vessel' && metaField.key === 'shippingLine' && (
+                      <span className="text-muted-foreground text-xs ml-1">(opcional)</span>
+                    )}
+                  </Label>
                   <Input
                     id={`edit-${metaField.key}`}
                     type={metaField.type}

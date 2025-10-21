@@ -1200,7 +1200,7 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
         // CustomerOpenItem Section - monto en POSITIVO
         "CustomerOpenItem": {
           "CustomerNbr": invoice.clientSapNumber,
-          "AmntTransacCur": totalAmount.toFixed(2),
+          "AmntTransactCur": totalAmount.toFixed(2),
           "BaselineDate": formatDateForXML(invoice.invoiceDate),
           "DueDate": calculateDueDate(invoice.invoiceDate)
         },

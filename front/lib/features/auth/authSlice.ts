@@ -9,7 +9,8 @@ export interface User {
   name: string
   username?: string
   fullName?: string
-  role: UserRole
+  role?: UserRole // Mantener para compatibilidad con registros antiguos
+  roles?: UserRole[] // Nuevo campo para múltiples roles
   modules?: UserModule[]
   isActive?: boolean
   lastLogin?: string
@@ -381,6 +382,73 @@ export const deleteUserAsync = createAsyncThunk(
   }
 )
 
+// Async thunk para crear usuario como administrador (sin afectar sesión actual)
+export const createUserAsync = createAsyncThunk(
+  'auth/createUser',
+  async ({ 
+    username, 
+    fullName, 
+    email, 
+    password, 
+    roles = [],
+    modules = [],
+    isActive = true
+  }: { 
+    username: string;
+    fullName: string;
+    email: string;
+    password: string;
+    roles?: UserRole[];
+    modules?: UserModule[];
+    isActive?: boolean;
+  }, { rejectWithValue, getState }) => {
+    try {
+      const state = getState() as { auth: AuthState }
+      const token = state.auth.token
+      
+      if (!token) {
+        throw new Error('No autorizado')
+      }
+      
+      // Separar fullName en name y lastName
+      const nameParts = fullName.trim().split(' ')
+      const name = nameParts[0] || fullName
+      const lastName = nameParts.slice(1).join(' ') || ''
+      
+      const response = await fetch('/api/user/register', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          username, 
+          fullName, 
+          name, 
+          lastName, 
+          email, 
+          password, 
+          roles, 
+          modules,
+          isActive
+        }),
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.payload?.error || 'Error al crear usuario')
+      }
+      
+      const data = await response.json()
+      
+      // Retornar solo el usuario creado, NO el token
+      return data.payload.user
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Error de conexión')
+    }
+  }
+)
+
 const authSlice = createSlice({
   name: 'auth',
   initialState: authInitialState,
@@ -579,6 +647,19 @@ const authSlice = createSlice({
         state.loading = false
         state.error = action.payload as string
       })
+      // Create user (admin)
+      .addCase(createUserAsync.pending, (state) => {
+        state.loading = true
+      })
+      .addCase(createUserAsync.fulfilled, (state, action) => {
+        state.loading = false
+        // Agregar el nuevo usuario a la lista sin afectar la sesión actual
+        state.users.push(action.payload)
+      })
+      .addCase(createUserAsync.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
   },
 })
 
@@ -613,13 +694,22 @@ export const hasPermission = (user: User | null, requiredRole: UserRole): boolea
     'pendiente': 0,
   }
   
-  return roleHierarchy[user.role] >= roleHierarchy[requiredRole]
+  // Obtener los roles del usuario (soportar tanto role único como roles múltiples)
+  const userRoles: UserRole[] = user.roles || (user.role ? [user.role] : [])
+  
+  // Verificar si alguno de los roles del usuario cumple con el permiso requerido
+  return userRoles.some(role => roleHierarchy[role] >= roleHierarchy[requiredRole])
 }
 
 // Helper function to check module access
 export const hasModuleAccess = (user: User | null, requiredModule: UserModule): boolean => {
   if (!user) return false
-  if (user.role === 'administrador') return true // Admin has access to all modules
+  
+  // Obtener los roles del usuario (soportar tanto role único como roles múltiples)
+  const userRoles: UserRole[] = user.roles || (user.role ? [user.role] : [])
+  
+  // Si el usuario es administrador, tiene acceso a todos los módulos
+  if (userRoles.includes('administrador')) return true
   return user.modules?.includes(requiredModule) || false
 }
 
