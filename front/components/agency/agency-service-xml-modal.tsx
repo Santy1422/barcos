@@ -63,8 +63,30 @@ export function AgencyServiceXmlModal({ open, onOpenChange, service, onXmlSentTo
     setIsGeneratingXml(true);
     try {
       // Obtener el SAP code del cliente
-      const client = clients.find(c => (c._id || c.id) === service.clientId);
-      const clientSapNumber = client?.sapCode || 'N/A';
+      console.log('🔍 Buscando cliente para XML:', {
+        serviceClientId: service.clientId,
+        isObject: typeof service.clientId === 'object',
+        totalClients: clients.length,
+        clientsWithSapCode: clients.filter(c => c.sapCode).length
+      });
+      
+      // Verificar si clientId es un objeto (ya poblado) o un string (ID)
+      let client;
+      let clientSapNumber;
+      
+      if (typeof service.clientId === 'object' && service.clientId !== null) {
+        // Cliente ya está poblado desde el backend
+        client = service.clientId;
+        clientSapNumber = client.sapCode || 'N/A';
+        console.log('🔍 Cliente ya poblado desde backend:', client);
+      } else {
+        // Cliente es solo el ID, buscar en el array
+        client = clients.find(c => (c._id || c.id) === service.clientId);
+        clientSapNumber = client?.sapCode || 'N/A';
+        console.log('🔍 Cliente encontrado en array:', client);
+      }
+      
+      console.log('🔍 SAP Code del cliente:', clientSapNumber);
       
       const xmlPayload = {
         invoiceNumber: service.invoiceNumber || `AGY-SERVICE-${service._id || service.id}`,
@@ -85,7 +107,11 @@ export function AgencyServiceXmlModal({ open, onOpenChange, service, onXmlSentTo
         }]
       };
       
+      console.log('📦 XML Payload completo:', JSON.stringify(xmlPayload, null, 2));
+      
       const xml = generateAgencyInvoiceXML(xmlPayload);
+      console.log('📄 XML generado (primeras 800 caracteres):', xml.substring(0, 800));
+      
       setGeneratedXml(xml);
     } catch (error) {
       console.error('Error generating XML:', error);

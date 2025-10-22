@@ -2,7 +2,7 @@
 
 import { DashboardPage } from "@/components/dashboard-page"
 import { useAppSelector } from "@/lib/hooks"
-import { selectCurrentUser, canSeeDashboard } from "@/lib/features/auth/authSlice"
+import { selectCurrentUser, canSeeDashboard, type UserRole } from "@/lib/features/auth/authSlice"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -24,9 +24,13 @@ export default function Home() {
           'agency': '/agency'
         }
         router.push(moduleRoutes[firstModule] || '/login')
-      } else if (currentUser.role === 'facturacion') {
-        // Si es facturación sin módulos, ir a clientes
-        router.push('/clientes')
+      } else {
+        // Verificar si tiene rol de facturación (soportar roles múltiples)
+        const userRoles: UserRole[] = currentUser.roles || (currentUser.role ? [currentUser.role] : [])
+        if (userRoles.includes('facturacion')) {
+          // Si es facturación sin módulos, ir a clientes
+          router.push('/clientes')
+        }
       }
     }
   }, [currentUser, router])

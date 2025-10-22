@@ -98,10 +98,32 @@ export function AgencyServiceFacturarModal({ open, onOpenChange, service, onFact
         const { generateAgencyInvoiceXML } = await import('@/lib/xml-generator');
         
         // Obtener el SAP code del cliente
-        const client = clients.find(c => (c._id || c.id) === service.clientId);
-        const clientSapNumber = client?.sapCode || 'N/A';
+        console.log('🔍 Buscando cliente para servicio:', {
+          serviceClientId: service.clientId,
+          isObject: typeof service.clientId === 'object',
+          totalClients: clients.length,
+          clientsWithSapCode: clients.filter(c => c.sapCode).length
+        });
         
-        if (clientSapNumber === 'N/A') {
+        // Verificar si clientId es un objeto (ya poblado) o un string (ID)
+        let client;
+        let clientSapNumber;
+        
+        if (typeof service.clientId === 'object' && service.clientId !== null) {
+          // Cliente ya está poblado desde el backend
+          client = service.clientId;
+          clientSapNumber = client.sapCode || 'N/A';
+          console.log('🔍 Cliente ya poblado desde backend:', client);
+        } else {
+          // Cliente es solo el ID, buscar en el array
+          client = clients.find(c => (c._id || c.id) === service.clientId);
+          clientSapNumber = client?.sapCode || 'N/A';
+          console.log('🔍 Cliente encontrado en array:', client);
+        }
+        
+        console.log('🔍 SAP Code del cliente:', clientSapNumber);
+        
+        if (!clientSapNumber || clientSapNumber === 'N/A') {
           toast({ title: "Error", description: "El cliente no tiene código SAP asignado", variant: "destructive" });
           return;
         }
@@ -126,7 +148,11 @@ export function AgencyServiceFacturarModal({ open, onOpenChange, service, onFact
           }]
         };
         
+        console.log('📦 XML Payload completo:', JSON.stringify(xmlPayload, null, 2));
+        
         const xml = generateAgencyInvoiceXML(xmlPayload);
+        console.log('📄 XML generado (primeras 500 caracteres):', xml.substring(0, 500));
+        
         xmlData = {
           xml: xml,
           fileName: generateXmlFileName('9326'), // Usar el mismo formato que PTYSS con código 9326 para Agency

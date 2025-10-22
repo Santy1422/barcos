@@ -726,8 +726,11 @@ export const canSeeDashboard = (user: User | null): boolean => {
 export const hasSectionAccess = (user: User | null, module: UserModule, section: string): boolean => {
   if (!user) return false
   
+  // Obtener los roles del usuario (soportar tanto role único como roles múltiples)
+  const userRoles: UserRole[] = user.roles || (user.role ? [user.role] : [])
+  
   // Admin has access to everything
-  if (user.role === 'administrador') return true
+  if (userRoles.includes('administrador')) return true
   
   // User must have access to the module first
   if (!hasModuleAccess(user, module)) return false
@@ -754,8 +757,14 @@ export const hasSectionAccess = (user: User | null, module: UserModule, section:
     }
   }
   
-  const allowedSections = sectionPermissions[module]?.[user.role] || []
-  return allowedSections.includes(section)
+  // Combinar todas las secciones permitidas de todos los roles del usuario
+  const allAllowedSections = new Set<string>()
+  userRoles.forEach(role => {
+    const roleSections = sectionPermissions[module]?.[role] || []
+    roleSections.forEach(s => allAllowedSections.add(s))
+  })
+  
+  return allAllowedSections.has(section)
 }
 
 export default authSlice.reducer

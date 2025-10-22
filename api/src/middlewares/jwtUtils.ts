@@ -30,10 +30,18 @@ export const jwtUtils = async (req, res, next) => {
         mongoId: user._id.toString(),
         email: user.email,
         name: user.name,
-        role: user.role,
+        role: user.role, // Mantener para compatibilidad
+        roles: user.roles || (user.role ? [user.role] : []), // Agregar roles (soportar múltiples roles)
         modules: user.modules,
         isActive: user.isActive
       };
+      
+      console.log('✅ JWT: Usuario autenticado:', {
+        email: req.user.email,
+        role: req.user.role,
+        roles: req.user.roles,
+        modules: req.user.modules
+      });
       
       next();
     } catch (error) {

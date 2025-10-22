@@ -67,7 +67,7 @@ export const getAllAgencyServices = async (req: Request, res: Response) => {
 
     const services = await AgencyService
       .find(query)
-      .populate('clientId', 'name tradeName ruc')
+      .populate('clientId', 'name tradeName ruc sapCode')
       .sort({ pickupDate: -1 })
       .skip(skip)
       .limit(limitNum);
@@ -133,9 +133,9 @@ export const createAgencyService = async (req: Request, res: Response) => {
     } = req.body;
 
     // Validate required fields
-    if (!pickupDate || !pickupTime || !pickupLocation || !dropoffLocation || !vessel || !clientId) {
+    if (!pickupDate || !pickupTime || !pickupLocation || !dropoffLocation || !clientId) {
       return response(res, 400, {
-        message: 'Required fields: pickupDate, pickupTime, pickupLocation, dropoffLocation, vessel, clientId'
+        message: 'Required fields: pickupDate, pickupTime, pickupLocation, dropoffLocation, clientId'
       });
     }
 
@@ -292,7 +292,7 @@ export const updateAgencyService = async (req: Request, res: Response) => {
       id,
       updateData,
       { new: true, runValidators: true }
-    ).populate('clientId', 'name tradeName ruc');
+    ).populate('clientId', 'name tradeName ruc sapCode');
 
     return response(res, 200, {
       success: true,

@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea"
 import { 
   MapPin, Flag, Users, Ship, Building, User, Code, Plus, Edit, 
-  Trash2, Download, Search, AlertCircle, Save, X, RotateCcw, Route, DollarSign, Building2, Clock
+  Trash2, Search, AlertCircle, Save, X, RotateCcw, Route, DollarSign, Building2, Clock
 } from "lucide-react"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
 import { useToast } from "@/hooks/use-toast"
@@ -75,6 +75,15 @@ const catalogTypes: CatalogTypeConfig[] = [
     fields: {
       name: 'Crew Rank',
       code: true
+    }
+  },
+  {
+    key: 'crew_status',
+    label: 'MSC Status',
+    icon: Users,
+    description: 'Crew member status categories (Visit, On Signer, Off Signer, Bil)',
+    fields: {
+      name: 'Status Name'
     }
   },
   {
@@ -440,16 +449,10 @@ export function AgencyCatalogs() {
             Manage locations, drivers, vessels and service codes
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={handleSeedCatalogs} variant="outline">
-            <Download className="mr-2 h-4 w-4" />
-            Load Initial Data
-          </Button>
-        </div>
       </div>
 
       {/* Quick Stats */}
-      <div className="grid gap-4 md:grid-cols-7">
+      <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-8">
         {catalogTypes.map((type) => (
           <Card key={type.key}>
             <CardContent className="p-4">
@@ -484,7 +487,7 @@ export function AgencyCatalogs() {
 
       {/* Catalog Tabs */}
       <Tabs value={selectedCatalogType} onValueChange={(value) => setSelectedCatalogType(value as CatalogType)}>
-        <TabsList className="grid w-full grid-cols-9">
+        <TabsList className="grid w-full grid-cols-10">
           {catalogTypes.map((type) => (
             <TabsTrigger key={type.key} value={type.key} className="text-xs">
               <type.icon className="h-3 w-3 mr-1" />

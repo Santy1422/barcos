@@ -44,6 +44,7 @@ import {
   selectActiveLocations,
   selectActiveNationalities,
   selectActiveRanks,
+  selectActiveCrewStatuses,
   selectActiveVessels,
   selectActiveTransportCompanies,
   selectActiveDrivers,
@@ -103,6 +104,7 @@ export const useAgencyCatalogs = () => {
   const locations = useSelector(selectActiveLocations);
   const nationalities = useSelector(selectActiveNationalities);
   const ranks = useSelector(selectActiveRanks);
+  const crewStatuses = useSelector(selectActiveCrewStatuses);
   const vessels = useSelector(selectActiveVessels);
   const transportCompanies = useSelector(selectActiveTransportCompanies);
   const drivers = useSelector(selectActiveDrivers);
@@ -239,6 +241,7 @@ export const useAgencyCatalogs = () => {
         location: { total: 0, active: 0, inactive: 0 },
         nationality: { total: 0, active: 0, inactive: 0 },
         rank: { total: 0, active: 0, inactive: 0 },
+        crew_status: { total: 0, active: 0, inactive: 0 },
         vessel: { total: 0, active: 0, inactive: 0 },
         transport_company: { total: 0, active: 0, inactive: 0 },
         driver: { total: 0, active: 0, inactive: 0 },
@@ -356,6 +359,7 @@ export const useAgencyCatalogs = () => {
     locations,
     nationalities,
     ranks,
+    crewStatuses,
     vessels,
     transportCompanies,
     drivers,

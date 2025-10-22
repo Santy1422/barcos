@@ -108,6 +108,7 @@ export function AgencyServices() {
     locations,
     nationalities,
     ranks,
+    crewStatuses,
     vessels,
     transportCompanies,
     drivers,
@@ -468,7 +469,6 @@ export function AgencyServices() {
       formData.pickupTime &&
       formData.pickupLocation &&
       formData.dropoffLocation &&
-      formData.vessel &&
       formData.transportCompany &&
       formData.driver &&
       formData.clientId &&
@@ -499,7 +499,7 @@ export function AgencyServices() {
     if (!formData.pickupTime) errors.pickupTime = 'Pickup time is required'
     if (!formData.pickupLocation) errors.pickupLocation = 'Pickup location is required'
     if (!formData.dropoffLocation) errors.dropoffLocation = 'Drop-off location is required'
-    if (!formData.vessel) errors.vessel = 'Vessel is required'
+    // Vessel es opcional - no validar
     if (!formData.transportCompany) errors.transportCompany = 'Transport company is required'
     if (!formData.driver) errors.driver = 'Driver is required'
     if (!formData.clientId) errors.clientId = 'Client is required'
@@ -983,7 +983,7 @@ export function AgencyServices() {
                 {/* Vessel */}
                 <div className="space-y-2">
                   <Label htmlFor="vessel" className="text-sm font-medium">
-                    VESSEL <span className="text-red-500">*</span>
+                    VESSEL
                   </Label>
                   
                   <Select
@@ -1335,7 +1335,7 @@ export function AgencyServices() {
                   <div className="text-xs font-semibold text-gray-600">Name</div>
                   <div className="text-xs font-semibold text-gray-600">Nationality</div>
                   <div className="text-xs font-semibold text-gray-600">Crew Rank</div>
-                  <div className="text-xs font-semibold text-gray-600">Status</div>
+                  <div className="text-xs font-semibold text-gray-600">Categoría</div>
                   <div className="text-xs font-semibold text-gray-600">Flight</div>
                 </div>
                 
@@ -1414,8 +1414,11 @@ export function AgencyServices() {
                           <SelectValue placeholder="Categoría" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Visit">Visit</SelectItem>
-                          <SelectItem value="On Signer">On Signer</SelectItem>
+                          {crewStatuses.map((status) => (
+                            <SelectItem key={status._id} value={status.name}>
+                              {status.name}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       {formErrors[`crewMember_${index}_crewCategory`] && (

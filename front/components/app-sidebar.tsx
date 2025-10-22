@@ -4,7 +4,7 @@ import React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
-import { logoutAsync, selectCurrentUser, hasModuleAccess, hasSectionAccess, canSeeDashboard } from "@/lib/features/auth/authSlice"
+import { logoutAsync, selectCurrentUser, hasModuleAccess, hasSectionAccess, canSeeDashboard, type UserRole } from "@/lib/features/auth/authSlice"
 import {
   Sidebar,
   SidebarContent,
@@ -79,6 +79,13 @@ export function AppSidebar() {
   const handleLogout = async () => {
     await dispatch(logoutAsync())
     router.push("/login")
+  }
+
+  // Helper function to check if user has any of the specified roles
+  const hasAnyRole = (roles: UserRole[]): boolean => {
+    if (!currentUser) return false
+    const userRoles: UserRole[] = currentUser.roles || (currentUser.role ? [currentUser.role] : [])
+    return roles.some(role => userRoles.includes(role))
   }
 
   // Filter navigation items based on user module access
@@ -158,19 +165,19 @@ export function AppSidebar() {
       ].filter(Boolean),
     }] : []),
     // Clientes - Solo facturación y administradores
-    ...(currentUser?.role === "facturacion" || currentUser?.role === "administrador" ? [{
+    ...(hasAnyRole(["facturacion", "administrador"]) ? [{
       title: "Clientes",
       href: "/clientes",
       icon: Users,
     }] : []),
     // Historial General - Solo administradores
-    ...(currentUser?.role === "administrador" ? [{
+    ...(hasAnyRole(["administrador"]) ? [{
       title: "Historial General",
       href: "/historial",
       icon: History,
     }] : []),
     // Usuarios - Solo administradores
-    ...(currentUser?.role === "administrador" ? [{
+    ...(hasAnyRole(["administrador"]) ? [{
       title: "Usuarios",
       href: "/usuarios",
       icon: Users,

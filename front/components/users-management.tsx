@@ -74,7 +74,7 @@ export function UsersManagement() {
 
   // Cargar usuarios al montar el componente - SOLO UNA VEZ
   useEffect(() => {
-    if (currentUser?.role === "administrador" && !hasLoadedUsers) {
+    if (currentUser && hasPermission(currentUser, "administrador") && !hasLoadedUsers) {
       console.log('👥 UsersManagement - Fetching users...')
       setHasLoadedUsers(true)
       dispatch(fetchAllUsersAsync())

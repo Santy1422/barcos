@@ -11,24 +11,24 @@ import {
   getSchemaSummary,
 } from '../controllers/ptyssLocalRoutesControllers/ptyssLocalRoutesControllers';
 import { jwtUtils } from "../middlewares/jwtUtils";
-import { requireAdminOrOperations } from '../middlewares/authorization';
+import { requireAdminOrOperations, requireShipchandlerModule, requireAnyRole } from '../middlewares/authorization';
 
 const { catchedAsync } = require('../utils');
 const router = Router();
 
-// Gestión de esquemas
-router.get('/schemas/summary', jwtUtils, requireAdminOrOperations, catchedAsync(getSchemaSummary));
-router.post('/schemas', jwtUtils, requireAdminOrOperations, catchedAsync(createRouteSchema));
-router.delete('/schemas/:schemaName', jwtUtils, requireAdminOrOperations, catchedAsync(deleteRouteSchema));
+// Gestión de esquemas - permitir lectura a todos con módulo, escritura solo admin/operaciones
+router.get('/schemas/summary', jwtUtils, requireShipchandlerModule, catchedAsync(getSchemaSummary));
+router.post('/schemas', jwtUtils, requireShipchandlerModule, requireAdminOrOperations, catchedAsync(createRouteSchema));
+router.delete('/schemas/:schemaName', jwtUtils, requireShipchandlerModule, requireAdminOrOperations, catchedAsync(deleteRouteSchema));
 
-// Rutas PTYSS Local Routes
-router.get('/', jwtUtils, requireAdminOrOperations, catchedAsync(getAllPTYSSLocalRoutes));
-router.post('/', jwtUtils, requireAdminOrOperations, catchedAsync(createPTYSSLocalRoute));
-router.put('/:id', jwtUtils, requireAdminOrOperations, catchedAsync(updatePTYSSLocalRoute));
-router.delete('/:id', jwtUtils, requireAdminOrOperations, catchedAsync(deletePTYSSLocalRoute));
+// Rutas PTYSS Local Routes - permitir lectura a todos con módulo, escritura a cualquier rol autorizado
+router.get('/', jwtUtils, requireShipchandlerModule, catchedAsync(getAllPTYSSLocalRoutes));
+router.post('/', jwtUtils, requireShipchandlerModule, requireAnyRole, catchedAsync(createPTYSSLocalRoute));
+router.put('/:id', jwtUtils, requireShipchandlerModule, requireAnyRole, catchedAsync(updatePTYSSLocalRoute));
+router.delete('/:id', jwtUtils, requireShipchandlerModule, requireAdminOrOperations, catchedAsync(deletePTYSSLocalRoute));
 
-// Asociación y desasociación de clientes reales a esquemas de rutas
-router.post('/associate-client', jwtUtils, requireAdminOrOperations, catchedAsync(associateClientToRouteSet));
-router.post('/disassociate-client', jwtUtils, requireAdminOrOperations, catchedAsync(disassociateClientFromRouteSet));
+// Asociación y desasociación de clientes reales a esquemas de rutas - solo admin/operaciones
+router.post('/associate-client', jwtUtils, requireShipchandlerModule, requireAdminOrOperations, catchedAsync(associateClientToRouteSet));
+router.post('/disassociate-client', jwtUtils, requireShipchandlerModule, requireAdminOrOperations, catchedAsync(disassociateClientFromRouteSet));
 
 export default router; 

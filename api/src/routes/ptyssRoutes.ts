@@ -3,22 +3,23 @@ import ptyssRoutesControllers from '../controllers/ptyssRoutesControllers/ptyssR
 import importPTYSSRoutes from '../controllers/ptyssRoutesControllers/importPTYSSRoutes';
 import fixPTYSSRoutesIndexes from '../controllers/ptyssRoutesControllers/fixPTYSSRoutesIndexes';
 import { jwtUtils } from "../middlewares/jwtUtils";
-import { requireAdminOrOperations } from '../middlewares/authorization';
+import { requireAdminOrOperations, requireShipchandlerModule, requireAnyRole } from '../middlewares/authorization';
 
 const { catchedAsync } = require('../utils');
 const router = Router();
 
-// CRUD
-router.get('/', jwtUtils, requireAdminOrOperations, catchedAsync(ptyssRoutesControllers.getAllPTYSSRoutes));
-router.post('/', jwtUtils, requireAdminOrOperations, catchedAsync(ptyssRoutesControllers.createPTYSSRoute));
-router.put('/:id', jwtUtils, requireAdminOrOperations, catchedAsync(ptyssRoutesControllers.updatePTYSSRoute));
-router.delete('/:id', jwtUtils, requireAdminOrOperations, catchedAsync(ptyssRoutesControllers.deletePTYSSRoute));
+// CRUD - Usar verificación por módulo para GET (lectura), permitir a todos los usuarios con acceso a PTYSS
+router.get('/', jwtUtils, requireShipchandlerModule, catchedAsync(ptyssRoutesControllers.getAllPTYSSRoutes));
+// Para operaciones de escritura (crear, actualizar, eliminar), usar verificación por rol más estricta
+router.post('/', jwtUtils, requireShipchandlerModule, requireAnyRole, catchedAsync(ptyssRoutesControllers.createPTYSSRoute));
+router.put('/:id', jwtUtils, requireShipchandlerModule, requireAnyRole, catchedAsync(ptyssRoutesControllers.updatePTYSSRoute));
+router.delete('/:id', jwtUtils, requireShipchandlerModule, requireAdminOrOperations, catchedAsync(ptyssRoutesControllers.deletePTYSSRoute));
 
 // Importación masiva
-router.post('/import', jwtUtils, requireAdminOrOperations, catchedAsync(importPTYSSRoutes));
+router.post('/import', jwtUtils, requireShipchandlerModule, requireAdminOrOperations, catchedAsync(importPTYSSRoutes));
 
 // Endpoint temporal para arreglar índices
-router.post('/fix-indexes', jwtUtils, requireAdminOrOperations, catchedAsync(fixPTYSSRoutesIndexes));
+router.post('/fix-indexes', jwtUtils, requireShipchandlerModule, requireAdminOrOperations, catchedAsync(fixPTYSSRoutesIndexes));
 
 // Endpoint temporal para listar todas las rutas (debugging)
 router.get('/debug-list', catchedAsync(async (req, res) => {

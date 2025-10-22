@@ -1,6 +1,6 @@
 import { Schema, model, Document, Model } from 'mongoose';
 
-export type CatalogType = 'site_type' | 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'route_pricing' | 'crew_rank' | 'crew_change_service';
+export type CatalogType = 'site_type' | 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'route_pricing' | 'crew_rank' | 'crew_change_service' | 'crew_status';
 
 // Interface para métodos estáticos del modelo
 interface IAgencyCatalogModel extends Model<IAgencyCatalog> {
@@ -28,7 +28,7 @@ const agencyCatalogSchema = new Schema<IAgencyCatalog>(
   {
     type: {
       type: String,
-      enum: ['site_type', 'location', 'nationality', 'rank', 'vessel', 'transport_company', 'driver', 'taulia_code', 'route_pricing', 'crew_rank', 'crew_change_service'],
+      enum: ['site_type', 'location', 'nationality', 'rank', 'vessel', 'transport_company', 'driver', 'taulia_code', 'route_pricing', 'crew_rank', 'crew_change_service', 'crew_status'],
       required: true
     },
     
@@ -231,6 +231,7 @@ agencyCatalogSchema.statics.getAllGroupedByType = async function() {
     location: [],
     nationality: [],
     rank: [],
+    crew_status: [],
     vessel: [],
     transport_company: [],
     driver: [],
@@ -274,6 +275,7 @@ agencyCatalogSchema.virtual('typeLabel').get(function() {
     'location': 'Ubicación',
     'nationality': 'Nacionalidad',
     'rank': 'Rango',
+    'crew_status': 'Estado MSC',
     'vessel': 'Buque',
     'transport_company': 'Empresa de Transporte',
     'driver': 'Conductor',

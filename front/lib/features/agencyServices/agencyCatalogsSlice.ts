@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/tool
 import { createApiUrl } from '@/lib/api-config';
 
 // Types based on backend schema
-export type CatalogType = 'site_type' | 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'crew_rank' | 'crew_change_service' | 'route';
+export type CatalogType = 'site_type' | 'location' | 'nationality' | 'rank' | 'vessel' | 'transport_company' | 'driver' | 'taulia_code' | 'crew_rank' | 'crew_change_service' | 'route' | 'crew_status';
 
 // Interface para catálogo individual
 export interface AgencyCatalog {
@@ -825,6 +825,9 @@ export const selectActiveNationalities = selectActiveCatalogsByType('nationality
 
 // Obtener catálogos activos de rangos
 export const selectActiveRanks = selectActiveCatalogsByType('rank');
+
+// Obtener catálogos activos de MSC Status (crew status)
+export const selectActiveCrewStatuses = selectActiveCatalogsByType('crew_status');
 
 // Obtener catálogos activos de buques
 export const selectActiveVessels = selectActiveCatalogsByType('vessel');

@@ -54,7 +54,8 @@ export default async (req, res) => {
       name: user.name,
       lastName: user.lastName,
       email: user.email,
-      role: user.role,
+      role: user.role, // Mantener para compatibilidad
+      roles: user.roles,
       modules: user.modules,
       isActive: user.isActive,
       createdAt: user.createdAt,

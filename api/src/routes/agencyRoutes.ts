@@ -10,7 +10,7 @@ import {
   getAgencyStatistics
 } from '../controllers/agencyControllers';
 import { jwtUtils } from "../middlewares/jwtUtils";
-import { requireAdminOrOperations } from '../middlewares/authorization';
+import { requireAdminOrOperations, requireAgencyModule, requireAnyRole } from '../middlewares/authorization';
 import { body, param, query, validationResult } from 'express-validator';
 
 const { catchedAsync } = require('../utils');
@@ -42,16 +42,16 @@ const validateStatusTransition = (req: Request, res: Response, next: NextFunctio
 // Middleware para validar datos de servicio
 const validateServiceData = [
   body('pickupDate').notEmpty().isISO8601().withMessage('Valid pickup date is required'),
-  body('pickupTime').notEmpty().trim().withMessage('Pickup time is required'),
-  body('pickupLocation').notEmpty().trim().withMessage('Pickup location is required'),
-  body('dropoffLocation').notEmpty().trim().withMessage('Dropoff location is required'),
-  body('vessel').notEmpty().trim().withMessage('Vessel is required'),
+  body('pickupTime').notEmpty().withMessage('Pickup time is required').trim(),
+  body('pickupLocation').notEmpty().withMessage('Pickup location is required').trim(),
+  body('dropoffLocation').notEmpty().withMessage('Dropoff location is required').trim(),
+  body('vessel').optional().trim(),
   // crewMembers o crewName es requerido (validado en el controlador)
   body('crewMembers').optional().isArray().withMessage('Crew members must be an array'),
   body('crewName').optional().trim(),
-  // clientId es opcional (se asigna al facturar)
+  // clientId es requerido (se valida en el controlador)
   body('clientId').optional().isMongoId().withMessage('Valid client ID required'),
-  body('moveType').optional().isIn(['RT', 'SINGLE']).withMessage('Move type must be RT or SINGLE'),
+  body('moveType').optional().isIn(['RT', 'SINGLE', 'INTERNAL', 'BAGS_CLAIM', 'DOCUMENTATION']).withMessage('Move type must be RT, SINGLE, INTERNAL, BAGS_CLAIM or DOCUMENTATION'),
   body('approve').optional().isBoolean().withMessage('Approve must be boolean'),
   body('passengerCount').optional().isInt({ min: 1 }).withMessage('Passenger count must be positive integer'),
   body('waitingTime').optional().isNumeric().withMessage('Waiting time must be numeric'),
@@ -75,47 +75,44 @@ const validateId = [
   handleValidationErrors
 ];
 
-// Todas las rutas requieren autenticación
+// Todas las rutas requieren autenticación y acceso al módulo Agency
 router.use(jwtUtils);
+router.use(requireAgencyModule);
 
 // GET /api/agency/services - Get all agency services with filters
 router.get('/', 
-  requireAdminOrOperations,
   validateQueryParams,
   catchedAsync(getAllAgencyServices)
 );
 
 // GET /api/agency/services/statistics - Get service statistics
 router.get('/statistics',
-  requireAdminOrOperations,
   validateQueryParams,
   catchedAsync(getAgencyStatistics)
 );
 
 // GET /api/agency/services/invoicing - Get services ready for invoicing
 router.get('/invoicing',
-  requireAdminOrOperations,
   validateQueryParams,
   catchedAsync(getServicesForInvoicing)
 );
 
 // GET /api/agency/services/:id - Get service by ID
 router.get('/:id',
-  requireAdminOrOperations,
   validateId,
   catchedAsync(getAgencyServiceById)
 );
 
-// POST /api/agency/services - Create new agency service
+// POST /api/agency/services - Create new agency service (requiere cualquier rol autorizado)
 router.post('/',
-  requireAdminOrOperations,
+  requireAnyRole,
   validateServiceData,
   catchedAsync(createAgencyService)
 );
 
-// PUT /api/agency/services/:id - Update agency service
+// PUT /api/agency/services/:id - Update agency service (requiere cualquier rol autorizado)
 router.put('/:id',
-  requireAdminOrOperations,
+  requireAnyRole,
   validateId,
   [
     body('pickupDate').optional().isISO8601().withMessage('Valid pickup date required'),
@@ -130,9 +127,9 @@ router.put('/:id',
   catchedAsync(updateAgencyService)
 );
 
-// PUT /api/agency/services/:id/status - Update service status
+// PUT /api/agency/services/:id/status - Update service status (requiere cualquier rol autorizado)
 router.put('/:id/status',
-  requireAdminOrOperations,
+  requireAnyRole,
   validateId,
   [
     body('status').notEmpty().withMessage('Status is required'),
@@ -142,7 +139,7 @@ router.put('/:id/status',
   catchedAsync(updateAgencyServiceStatus)
 );
 
-// DELETE /api/agency/services/:id - Delete agency service
+// DELETE /api/agency/services/:id - Delete agency service (solo admin/operaciones)
 router.delete('/:id',
   requireAdminOrOperations,
   validateId,
