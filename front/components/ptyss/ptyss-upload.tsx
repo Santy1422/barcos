@@ -24,10 +24,12 @@ import {
   Save,
   Loader2,
   Check,
-  Send
+  Send,
+  X
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
+import { selectCurrentUser, type UserRole } from "@/lib/features/auth/authSlice"
 import { createTruckingRecords, createPTYSSRecords, selectCreatingRecords, selectRecordsError, selectRecordsByModule, fetchRecordsByModule, updateRecordAsync, deleteRecordAsync, type ExcelRecord } from "@/lib/features/records/recordsSlice"
 import { 
   selectAllClients,
@@ -123,6 +125,14 @@ export function PTYSSUpload() {
   const dispatch = useAppDispatch()
   const { toast } = useToast()
   
+  // Obtener usuario actual para verificar permisos
+  const currentUser = useAppSelector(selectCurrentUser)
+  
+  // Verificar si el usuario tiene SOLO rol de operaciones (no facturación ni admin)
+  const userRoles: UserRole[] = currentUser?.roles || (currentUser?.role ? [currentUser.role] : [])
+  const isOnlyOperations = userRoles.includes('operaciones') && !userRoles.includes('facturacion') && !userRoles.includes('administrador')
+  const canViewPrices = !isOnlyOperations // Solo ocultar precios si es SOLO operaciones
+  
   const [currentRecord, setCurrentRecord] = useState<PTYSSRecordData>(initialRecordData)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -161,6 +171,9 @@ export function PTYSSUpload() {
   
   // Obtener registros PTYSS desde Redux (para mostrar registros pendientes)
   const ptyssRecords = useAppSelector((state) => selectRecordsByModule(state, "ptyss"))
+
+  // Estado para filtro de estado de registros locales
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pendiente' | 'completado' | 'cancelado'>('all')
 
   // Estado para crear rutas desde registros sin match
   const [showCreateRouteModal, setShowCreateRouteModal] = useState(false)
@@ -212,14 +225,24 @@ export function PTYSSUpload() {
     dispatch(fetchRecordsByModule("ptyss"))
   }, [dispatch])
 
-  // Filtrar registros locales pendientes
+  // Filtrar registros locales (pendientes, completados y cancelados)
   const pendingLocalRecords = useMemo(() => {
-    return ptyssRecords.filter((record: ExcelRecord) => {
+    const filtered = ptyssRecords.filter((record: ExcelRecord) => {
       const data = record.data as Record<string, any>
-      // Filtrar solo registros locales (tienen recordType = "local") y con estado pendiente
-      return data.recordType === "local" && record.status === "pendiente" && !record.invoiceId
+      // Filtrar solo registros locales (tienen recordType = "local")
+      // Mostrar pendientes, completados y cancelados (excluir solo los que ya tienen factura)
+      return data.recordType === "local" && 
+             (record.status === "pendiente" || record.status === "completado" || record.status === "cancelado") && 
+             !record.invoiceId
     })
-  }, [ptyssRecords])
+    
+    // Aplicar filtro de estado si no es 'all'
+    if (statusFilter === 'all') {
+      return filtered
+    }
+    
+    return filtered.filter(record => record.status === statusFilter)
+  }, [ptyssRecords, statusFilter])
 
   // Función para re-procesar el Excel (simula el handleFileChange pero sin seleccionar archivo)
   const reprocessExcel = useCallback(async () => {
@@ -870,7 +893,7 @@ export function PTYSSUpload() {
     
     if (!currentRecord.clientId || !currentRecord.order || !currentRecord.container || !currentRecord.naviera || 
         !currentRecord.localRouteId || !currentRecord.operationType || !currentRecord.containerSize || 
-        !currentRecord.containerType || !currentRecord.estadia || !currentRecord.ti || !currentRecord.conductor) {
+        !currentRecord.containerType || !currentRecord.conductor) {
       toast({
         title: "Error",
         description: "Completa todos los campos obligatorios marcados con *",
@@ -1078,6 +1101,40 @@ export function PTYSSUpload() {
       console.error("Error al actualizar estado:", error)
       toast({
         title: "Error al enviar",
+        description: error.message || "Error al actualizar el estado del registro",
+        variant: "destructive"
+      })
+    }
+  }
+
+  // Función para cancelar un registro
+  const handleMarkAsCancelled = async () => {
+    if (!recordToSend) return
+
+    try {
+      await dispatch(updateRecordAsync({
+        id: recordToSend,
+        updates: {
+          status: "cancelado"
+        }
+      })).unwrap()
+      
+      toast({
+        title: "Registro cancelado",
+        description: "El registro ha sido marcado como cancelado",
+      })
+      
+      // Refrescar los registros
+      dispatch(fetchRecordsByModule("ptyss"))
+      
+      // Cerrar el diálogo
+      setConfirmSendDialogOpen(false)
+      setRecordToSend(null)
+      
+    } catch (error: any) {
+      console.error("Error al cancelar registro:", error)
+      toast({
+        title: "Error al cancelar",
         description: error.message || "Error al actualizar el estado del registro",
         variant: "destructive"
       })
@@ -1666,21 +1723,89 @@ export function PTYSSUpload() {
         </CardContent>
       </Card>
 
-      {/* Lista de registros pendientes solo para tab local */}
+      {/* Lista de registros locales solo para tab local */}
       {activeTab === "local" && pendingLocalRecords.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <Database className="h-5 w-5" />
-                Registros Locales Pendientes ({pendingLocalRecords.length})
+                Registros Locales
+                {statusFilter !== 'all' && (
+                  <Badge variant="secondary" className="ml-2">
+                    {pendingLocalRecords.length} {statusFilter}
+                  </Badge>
+                )}
               </span>
-              <Badge variant="secondary" className="text-sm">
-                Presiona enviar para enviar registro a prefactura
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-orange-600 border-orange-600 text-xs">
+                  {ptyssRecords.filter((r: ExcelRecord) => {
+                    const data = r.data as Record<string, any>
+                    return data.recordType === "local" && r.status === "pendiente" && !r.invoiceId
+                  }).length} Pendientes
+                </Badge>
+                <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
+                  {ptyssRecords.filter((r: ExcelRecord) => {
+                    const data = r.data as Record<string, any>
+                    return data.recordType === "local" && r.status === "completado" && !r.invoiceId
+                  }).length} Completados
+                </Badge>
+                <Badge variant="outline" className="text-red-600 border-red-600 text-xs">
+                  {ptyssRecords.filter((r: ExcelRecord) => {
+                    const data = r.data as Record<string, any>
+                    return data.recordType === "local" && r.status === "cancelado" && !r.invoiceId
+                  }).length} Cancelados
+                </Badge>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {/* Filtro de Estado */}
+            <div className="flex items-center gap-4 mb-4 p-3 bg-slate-50 rounded-lg border">
+              <Label htmlFor="status-filter" className="text-sm font-medium whitespace-nowrap">Filtrar por estado:</Label>
+              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as 'all' | 'pendiente' | 'completado' | 'cancelado')}>
+                <SelectTrigger className="w-64">
+                  <SelectValue placeholder="Seleccionar estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    Todos ({ptyssRecords.filter((r: ExcelRecord) => {
+                      const data = r.data as Record<string, any>
+                      return data.recordType === "local" && !r.invoiceId
+                    }).length})
+                  </SelectItem>
+                  <SelectItem value="pendiente">
+                    Pendientes ({ptyssRecords.filter((r: ExcelRecord) => {
+                      const data = r.data as Record<string, any>
+                      return data.recordType === "local" && r.status === "pendiente" && !r.invoiceId
+                    }).length})
+                  </SelectItem>
+                  <SelectItem value="completado">
+                    Completados ({ptyssRecords.filter((r: ExcelRecord) => {
+                      const data = r.data as Record<string, any>
+                      return data.recordType === "local" && r.status === "completado" && !r.invoiceId
+                    }).length})
+                  </SelectItem>
+                  <SelectItem value="cancelado">
+                    Cancelados ({ptyssRecords.filter((r: ExcelRecord) => {
+                      const data = r.data as Record<string, any>
+                      return data.recordType === "local" && r.status === "cancelado" && !r.invoiceId
+                    }).length})
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {statusFilter !== 'all' && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setStatusFilter('all')}
+                  className="text-xs"
+                >
+                  Limpiar Filtro
+                </Button>
+              )}
+            </div>
+            
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
@@ -1691,7 +1816,6 @@ export function PTYSSUpload() {
                     <TableHead className="font-semibold">Ruta</TableHead>
                     <TableHead className="font-semibold">Operación</TableHead>
                     <TableHead className="font-semibold">Fecha Movimiento</TableHead>
-                    <TableHead className="font-semibold">Monto</TableHead>
                     <TableHead className="font-semibold">Estado</TableHead>
                     <TableHead className="font-semibold text-center">Acciones</TableHead>
                   </TableRow>
@@ -1738,46 +1862,64 @@ export function PTYSSUpload() {
                           {formatDate(data.moveDate)}
                         </TableCell>
                         <TableCell>
-                          <div className="font-semibold text-blue-600">
-                            ${(data.localRoutePrice || record.totalValue || 0).toFixed(2)}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-orange-600 border-orange-600">
-                            Pendiente
-                          </Badge>
+                          {record.status === "pendiente" && (
+                            <Badge variant="outline" className="text-orange-600 border-orange-600">
+                              Pendiente
+                            </Badge>
+                          )}
+                          {record.status === "completado" && (
+                            <Badge variant="outline" className="text-green-600 border-green-600">
+                              Completado
+                            </Badge>
+                          )}
+                          {record.status === "cancelado" && (
+                            <Badge variant="outline" className="text-red-600 border-red-600">
+                              Cancelado
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center justify-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleEditRecord(record)}
-                              className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                              title="Editar registro"
-                            >
-                              <Edit className="h-4 w-4 mr-1" />
-                              Editar
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleOpenSendConfirmation(record._id || record.id || "")}
-                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                              title="Enviar a prefactura"
-                            >
-                              <Send className="h-4 w-4 mr-1" />
-                              Enviar
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeletePendingRecord(record._id || record.id || "")}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                              title="Eliminar registro"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            {/* Botón Editar - Solo para pendientes */}
+                            {record.status === "pendiente" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEditRecord(record)}
+                                className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                title="Editar registro"
+                              >
+                                <Edit className="h-4 w-4 mr-1" />
+                                Editar
+                              </Button>
+                            )}
+                            
+                            {/* Botón Enviar/Cancelar - Solo para pendientes */}
+                            {record.status === "pendiente" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenSendConfirmation(record._id || record.id || "")}
+                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                title="Completar o Cancelar registro"
+                              >
+                                <Send className="h-4 w-4 mr-1" />
+                                Acciones
+                              </Button>
+                            )}
+                            
+                            {/* Botón Eliminar - Para todos los estados excepto completado */}
+                            {record.status !== "completado" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeletePendingRecord(record._id || record.id || "")}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                title="Eliminar registro"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -2114,9 +2256,11 @@ export function PTYSSUpload() {
                           <SelectItem key={route._id} value={route._id}>
                             <div className="flex flex-col">
                               <span>{route.from} → {route.to}</span>
-                              <span className="text-xs text-muted-foreground">
-                                ${routePrice.toFixed(2)} ({containerTypeLabel})
-                              </span>
+                              {canViewPrices && (
+                                <span className="text-xs text-muted-foreground">
+                                  ${routePrice.toFixed(2)} ({containerTypeLabel})
+                                </span>
+                              )}
                             </div>
                           </SelectItem>
                         )
@@ -2140,9 +2284,11 @@ export function PTYSSUpload() {
                           {currentRecord.containerType === 'RE' ? 'Reefer' : 'Regular'}
                         </Badge>
                       </div>
-                      <div className="text-sm font-bold text-blue-700">
-                        Precio: ${getRoutePrice(getSelectedLocalRoute()!, currentRecord.containerType).toFixed(2)}
-                      </div>
+                      {canViewPrices && (
+                        <div className="text-sm font-bold text-blue-700">
+                          Precio: ${getRoutePrice(getSelectedLocalRoute()!, currentRecord.containerType).toFixed(2)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -2217,7 +2363,7 @@ export function PTYSSUpload() {
               <h3 className="text-lg font-medium">Servicios Adicionales</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="estadia">Estadia *</Label>
+                  <Label htmlFor="estadia">Estadia</Label>
                   <Select value={currentRecord.estadia} onValueChange={(value) => setCurrentRecord({...currentRecord, estadia: value})}>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar" />
@@ -2269,7 +2415,7 @@ export function PTYSSUpload() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="ti">TI *</Label>
+                  <Label htmlFor="ti">TI</Label>
                   <Select value={currentRecord.ti} onValueChange={(value) => setCurrentRecord({...currentRecord, ti: value})}>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar" />
@@ -2378,9 +2524,15 @@ export function PTYSSUpload() {
             <CardTitle>Vista Previa de Datos</CardTitle>
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <span>{previewData.length} registros encontrados</span>
-              <Badge variant="outline" className="text-green-600 border-green-600">
-                {previewData.filter(record => record.isMatched).length} con precio
-              </Badge>
+              {canViewPrices ? (
+                <Badge variant="outline" className="text-green-600 border-green-600">
+                  {previewData.filter(record => record.isMatched).length} con precio
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-green-600 border-green-600">
+                  {previewData.filter(record => record.isMatched).length} con match
+                </Badge>
+              )}
               {previewData.filter(record => !record.isMatched).length > 0 && (
                 <Badge variant="outline" className="text-orange-600 border-orange-600">
                   {previewData.filter(record => !record.isMatched).length} sin coincidencia
@@ -2401,9 +2553,11 @@ export function PTYSSUpload() {
                   </Badge>
                 </>
               )}
-              <span className="ml-auto font-medium">
-                Total: ${previewData.reduce((sum, record) => sum + (record.matchedPrice || 0), 0).toFixed(2)}
-              </span>
+              {canViewPrices && (
+                <span className="ml-auto font-medium">
+                  Total: ${previewData.reduce((sum, record) => sum + (record.matchedPrice || 0), 0).toFixed(2)}
+                </span>
+              )}
             </div>
             
             {/* Filtro de matching */}
@@ -2448,7 +2602,7 @@ export function PTYSSUpload() {
                     <TableHead>Tipo Movimiento</TableHead>
                     <TableHead>Tipo Contenedor</TableHead>
                     <TableHead>Estado (FE)</TableHead>
-                    <TableHead>Precio</TableHead>
+                    {canViewPrices && <TableHead>Precio</TableHead>}
                     <TableHead>Match</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -2523,16 +2677,18 @@ export function PTYSSUpload() {
                           </Badge>
                         </TableCell>
                         
-                        {/* Precio */}
-                        <TableCell>
-                          {record.isMatched ? (
-                            <span className="font-medium text-green-600">
-                              ${record.matchedPrice?.toFixed(2)}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
+                        {/* Precio - Solo mostrar si el usuario puede ver precios */}
+                        {canViewPrices && (
+                          <TableCell>
+                            {record.isMatched ? (
+                              <span className="font-medium text-green-600">
+                                ${record.matchedPrice?.toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                        )}
                         
                         {/* Estado del Match */}
                         <TableCell>
@@ -2890,31 +3046,45 @@ export function PTYSSUpload() {
         </DialogContent>
       </Dialog>
 
-      {/* Diálogo de confirmación para enviar a prefactura */}
+      {/* Diálogo de confirmación para acciones del registro */}
       <Dialog open={confirmSendDialogOpen} onOpenChange={setConfirmSendDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Send className="h-5 w-5 text-blue-600" />
-              Confirmar Envío a Prefactura
+              Acciones de Registro
             </DialogTitle>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5" />
-              <div className="space-y-2">
-                <p className="text-sm font-medium">
-                  ¿Estás seguro de enviar este registro a prefactura?
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  El registro pasará a estado <span className="font-semibold text-green-600">completado</span> y aparecerá en la lista de prefactura donde podrá ser facturado.
-                </p>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-green-900">
+                    Completar Registro
+                  </p>
+                  <p className="text-xs text-green-700">
+                    El registro pasará a estado <span className="font-semibold">completado</span> y estará disponible en la lista de prefactura para ser facturado.
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-start gap-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <X className="h-5 w-5 text-red-600 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-red-900">
+                    Cancelar Registro
+                  </p>
+                  <p className="text-xs text-red-700">
+                    El registro pasará a estado <span className="font-semibold">cancelado</span> y no aparecerá en prefactura.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
           
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-between gap-2">
             <Button 
               variant="outline" 
               onClick={() => {
@@ -2922,15 +3092,25 @@ export function PTYSSUpload() {
                 setRecordToSend(null)
               }}
             >
-              Cancelar
+              Cerrar
             </Button>
-            <Button 
-              onClick={handleMarkAsCompleted}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              <Send className="h-4 w-4 mr-2" />
-              Confirmar Envío
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline"
+                onClick={handleMarkAsCancelled}
+                className="text-red-700 border-red-600 hover:bg-red-50"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Cancelar Registro
+              </Button>
+              <Button 
+                onClick={handleMarkAsCompleted}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Completar
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
