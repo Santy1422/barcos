@@ -1812,7 +1812,7 @@ export function PTYSSConfig() {
               <CardTitle className="flex items-center justify-between">
                 <div className="flex items-center">
                   <Settings2 className="mr-2 h-5 w-5" />
-                  Servicios Trasiego
+                  Servicios Locales
                 </div>
                 <Button onClick={() => setShowAddServiceForm(!showAddServiceForm)}>
                   <Plus className="h-4 w-4 mr-2" />
@@ -1820,7 +1820,7 @@ export function PTYSSConfig() {
                 </Button>
               </CardTitle>
               <CardDescription>
-                Servicios de trasiego que se seleccionan manualmente en el Paso 2 de crear prefactura
+                Servicios de locales que se seleccionan manualmente en el Paso 2 de crear prefactura
               </CardDescription>
             </CardHeader>
             <CardContent>
