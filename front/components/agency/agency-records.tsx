@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { 
   Car, Search, Eye, FileText, Calendar, 
   User, Loader2, Trash2, Edit, RefreshCw, MapPin, ArrowRight, Paperclip,
-  Clock, Save, X, Ship, Users, Plane, Building 
+  Clock, Save, X, Ship, Users, Plane, Building, Plus, CheckCircle, AlertTriangle
 } from "lucide-react"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
@@ -46,6 +46,12 @@ export function AgencyRecords() {
 
   const {
     locations,
+    nationalities,
+    ranks,
+    crewStatuses,
+    vessels,
+    transportCompanies,
+    drivers,
     fetchGroupedCatalogs
   } = useAgencyCatalogs()
 
@@ -64,9 +70,47 @@ export function AgencyRecords() {
   
   // Edit modal state
   const [editFormData, setEditFormData] = useState({
-    waitingTime: 0,
+    // Basic service info
+    pickupDate: '',
+    pickupTime: '',
+    pickupLocation: '',
+    dropoffLocation: '',
+    returnDropoffLocation: '',
+    
+    // Vessel info
+    vessel: '',
+    voyage: '',
+    
+    // Move type and passenger count
     moveType: 'SINGLE' as 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION',
-    returnDropoffLocation: ''
+    passengerCount: 1,
+    
+    // Transport info
+    transportCompany: '',
+    driver: '',
+    
+    // Service details
+    waitingTime: 0,
+    comments: '',
+    
+    // Crew members (new structure)
+    crewMembers: [] as Array<{
+      id: string;
+      name: string;
+      nationality: string;
+      crewRank: string;
+      crewCategory: string;
+      status: 'Visit' | 'On Signer';
+      flight: string;
+    }>,
+    
+    // Legacy crew info (for backward compatibility)
+    crewName: '',
+    crewRank: '',
+    nationality: '',
+    
+    // Client
+    clientId: ''
   })
   const [editFormErrors, setEditFormErrors] = useState<Record<string, string>>({})
 
@@ -84,9 +128,39 @@ export function AgencyRecords() {
       const waitingTimeInHours = selectedService.waitingTime ? selectedService.waitingTime / 60 : 0
       
       setEditFormData({
-        waitingTime: waitingTimeInHours,
+        // Basic service info
+        pickupDate: selectedService.pickupDate ? (typeof selectedService.pickupDate === 'string' ? selectedService.pickupDate.split('T')[0] : format(new Date(selectedService.pickupDate), 'yyyy-MM-dd')) : '',
+        pickupTime: selectedService.pickupTime || '',
+        pickupLocation: selectedService.pickupLocation || '',
+        dropoffLocation: selectedService.dropoffLocation || '',
+        returnDropoffLocation: selectedService.returnDropoffLocation || '',
+        
+        // Vessel info
+        vessel: selectedService.vessel || '',
+        voyage: selectedService.voyage || '',
+        
+        // Move type and passenger count
         moveType: selectedService.moveType || 'SINGLE',
-        returnDropoffLocation: selectedService.returnDropoffLocation || ''
+        passengerCount: selectedService.passengerCount || 1,
+        
+        // Transport info
+        transportCompany: selectedService.transportCompany || '',
+        driver: selectedService.driver || selectedService.driverName || '',
+        
+        // Service details
+        waitingTime: waitingTimeInHours,
+        comments: selectedService.comments || '',
+        
+        // Crew members (new structure)
+        crewMembers: selectedService.crewMembers || [],
+        
+        // Legacy crew info (for backward compatibility)
+        crewName: selectedService.crewName || '',
+        crewRank: selectedService.crewRank || '',
+        nationality: selectedService.nationality || '',
+        
+        // Client
+        clientId: typeof selectedService.clientId === 'string' ? selectedService.clientId : selectedService.clientId?._id || ''
       })
       setEditFormErrors({})
     }
@@ -202,15 +276,89 @@ export function AgencyRecords() {
     }
   }
 
-  // Get valid return dropoff locations based on current dropoff location
-  const getValidReturnDropoffLocations = () => {
-    if (!selectedService) return []
-    
-    const locationsWithSiteType = locations.filter(loc => 
+  // Get locations with site types only
+  const getLocationsWithSiteType = () => {
+    return locations.filter(loc => 
       loc.metadata?.siteTypeId && loc.metadata?.siteTypeName
     )
+  }
+
+  // Get valid pickup locations based on selected dropoff
+  const getValidPickupLocations = () => {
+    const locationsWithSiteType = getLocationsWithSiteType()
     
-    const dropoffLocation = locations.find(loc => loc.name === selectedService.dropoffLocation)
+    if (!editFormData.dropoffLocation) {
+      return locationsWithSiteType
+    }
+    
+    // Find the selected dropoff location's site type
+    const dropoffLocation = locations.find(loc => loc.name === editFormData.dropoffLocation)
+    if (!dropoffLocation || !dropoffLocation.metadata?.siteTypeName) {
+      return []
+    }
+    
+    const dropoffSiteType = dropoffLocation.metadata.siteTypeName
+    
+    // Find routes that end with this site type
+    const validRoutes = routes.filter(
+      route => (route.dropoffSiteType || route.dropoffLocation)?.toUpperCase() === dropoffSiteType.toUpperCase() && route.isActive
+    )
+    
+    // Get valid pickup site types from routes
+    const validPickupSiteTypes = validRoutes.map(route => 
+      (route.pickupSiteType || route.pickupLocation)?.toUpperCase()
+    )
+    
+    // Return locations whose site type matches valid pickup site types
+    return locationsWithSiteType.filter(loc =>
+      loc.metadata?.siteTypeName && 
+      validPickupSiteTypes.includes(loc.metadata.siteTypeName.toUpperCase())
+    )
+  }
+
+  // Get valid dropoff locations based on selected pickup
+  const getValidDropoffLocations = () => {
+    const locationsWithSiteType = getLocationsWithSiteType()
+    
+    if (!editFormData.pickupLocation) {
+      return locationsWithSiteType
+    }
+    
+    // Find the selected pickup location's site type
+    const pickupLocation = locations.find(loc => loc.name === editFormData.pickupLocation)
+    if (!pickupLocation || !pickupLocation.metadata?.siteTypeName) {
+      return []
+    }
+    
+    const pickupSiteType = pickupLocation.metadata.siteTypeName
+    
+    // Find routes that start with this site type
+    const validRoutes = routes.filter(
+      route => (route.pickupSiteType || route.pickupLocation)?.toUpperCase() === pickupSiteType.toUpperCase() && route.isActive
+    )
+    
+    // Get valid dropoff site types from routes
+    const validDropoffSiteTypes = validRoutes.map(route => 
+      (route.dropoffSiteType || route.dropoffLocation)?.toUpperCase()
+    )
+    
+    // Return locations whose site type matches valid dropoff site types
+    return locationsWithSiteType.filter(loc =>
+      loc.metadata?.siteTypeName && 
+      validDropoffSiteTypes.includes(loc.metadata.siteTypeName.toUpperCase())
+    )
+  }
+
+  // Get valid return dropoff locations for Round Trip (based on first dropoff location)
+  const getValidReturnDropoffLocations = () => {
+    const locationsWithSiteType = getLocationsWithSiteType()
+    
+    if (!editFormData.dropoffLocation) {
+      return locationsWithSiteType
+    }
+    
+    // Find the selected dropoff location's site type (this becomes the pickup for return trip)
+    const dropoffLocation = locations.find(loc => loc.name === editFormData.dropoffLocation)
     if (!dropoffLocation || !dropoffLocation.metadata?.siteTypeName) {
       return []
     }
@@ -234,6 +382,74 @@ export function AgencyRecords() {
     )
   }
 
+  // Validate form data
+  const validateEditForm = (): boolean => {
+    const errors: Record<string, string> = {}
+    
+    // Required fields validation
+    if (!editFormData.pickupDate) {
+      errors.pickupDate = 'Pickup date is required'
+    }
+    
+    if (!editFormData.pickupTime) {
+      errors.pickupTime = 'Pickup time is required'
+    }
+    
+    if (!editFormData.pickupLocation) {
+      errors.pickupLocation = 'Pickup location is required'
+    }
+    
+    if (!editFormData.dropoffLocation) {
+      errors.dropoffLocation = 'Drop-off location is required'
+    }
+    
+    // Vessel is optional - no validation needed
+    
+    // Validate return dropoff location for Round Trip
+    if (editFormData.moveType === 'RT' && editFormData.returnDropoffLocation) {
+      const dropoffLoc = locations.find(loc => loc.name === editFormData.dropoffLocation)
+      const returnDropoffLoc = locations.find(loc => loc.name === editFormData.returnDropoffLocation)
+      
+      if (!dropoffLoc?.metadata?.siteTypeName || !returnDropoffLoc?.metadata?.siteTypeName) {
+        errors.returnDropoffLocation = 'Selected locations do not have site types assigned'
+      } else {
+        const route = findRouteByLocations(
+          dropoffLoc.metadata.siteTypeName,
+          returnDropoffLoc.metadata.siteTypeName
+        )
+        
+        if (!route) {
+          errors.returnDropoffLocation = `No existe una ruta para el return trip: ${dropoffLoc.metadata.siteTypeName} → ${returnDropoffLoc.metadata.siteTypeName}`
+        }
+      }
+    }
+
+    // Validate crew members
+    if (editFormData.crewMembers.length === 0) {
+      errors.crewMembers = 'At least one crew member is required'
+    } else {
+      // Validate each crew member has all required fields
+      editFormData.crewMembers.forEach((member, index) => {
+        if (!member.name.trim()) {
+          errors[`crewMember_${index}_name`] = `Crew member ${index + 1} name is required`
+        }
+        if (!member.nationality) {
+          errors[`crewMember_${index}_nationality`] = `Crew member ${index + 1} nationality is required`
+        }
+        if (!member.crewRank) {
+          errors[`crewMember_${index}_crewRank`] = `Crew member ${index + 1} crew rank is required`
+        }
+        if (!member.crewCategory) {
+          errors[`crewMember_${index}_crewCategory`] = `Crew member ${index + 1} crew category is required`
+        }
+        // Flight is optional - no validation needed
+      })
+    }
+    
+    setEditFormErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
   // Validate return dropoff location for Round Trip
   const validateReturnDropoffLocation = (): boolean => {
     if (!selectedService) return false
@@ -244,7 +460,7 @@ export function AgencyRecords() {
     }
     
     // Validate that the return route exists
-    const dropoffLoc = locations.find(loc => loc.name === selectedService.dropoffLocation)
+    const dropoffLoc = locations.find(loc => loc.name === editFormData.dropoffLocation)
     const returnDropoffLoc = locations.find(loc => loc.name === editFormData.returnDropoffLocation)
     
     if (!dropoffLoc?.metadata?.siteTypeName || !returnDropoffLoc?.metadata?.siteTypeName) {
@@ -279,16 +495,14 @@ export function AgencyRecords() {
   const handleEditService = async () => {
     if (!selectedService) return
     
-    // Validate return dropoff location if Round Trip
-    if (editFormData.moveType === 'RT' && editFormData.returnDropoffLocation) {
-      if (!validateReturnDropoffLocation()) {
-        toast({
-          title: "Validation Error",
-          description: "Please check the return dropoff location",
-          variant: "destructive",
-        })
-        return
-      }
+    // Validate form data
+    if (!validateEditForm()) {
+      toast({
+        title: "Validation Error",
+        description: "Please fix the errors and try again",
+        variant: "destructive",
+      })
+      return
     }
     
     try {
@@ -298,9 +512,39 @@ export function AgencyRecords() {
       await updateService({
         id: selectedService._id,
         updateData: {
-          waitingTime: waitingTimeInMinutes, // Guardar en minutos (backend espera minutos)
+          // Basic service info
+          pickupDate: editFormData.pickupDate,
+          pickupTime: editFormData.pickupTime,
+          pickupLocation: editFormData.pickupLocation,
+          dropoffLocation: editFormData.dropoffLocation,
+          returnDropoffLocation: editFormData.moveType === 'RT' ? editFormData.returnDropoffLocation : undefined,
+          
+          // Vessel info
+          vessel: editFormData.vessel,
+          voyage: editFormData.voyage,
+          
+          // Move type and passenger count (calculated automatically)
           moveType: editFormData.moveType,
-          returnDropoffLocation: editFormData.moveType === 'RT' ? editFormData.returnDropoffLocation : undefined
+          passengerCount: editFormData.crewMembers.length || 1,
+          
+          // Transport info
+          transportCompany: editFormData.transportCompany,
+          driver: editFormData.driver,
+          
+          // Service details
+          waitingTime: waitingTimeInMinutes, // Guardar en minutos (backend espera minutos)
+          comments: editFormData.comments,
+          
+          // Crew members (new structure)
+          crewMembers: editFormData.crewMembers,
+          
+          // Legacy crew info (for backward compatibility)
+          crewName: editFormData.crewName,
+          crewRank: editFormData.crewRank,
+          nationality: editFormData.nationality,
+          
+          // Client
+          clientId: editFormData.clientId
         }
       })
       
@@ -623,9 +867,49 @@ export function AgencyRecords() {
                       </TableCell>
                       
                       <TableCell>
-                        <Badge className={getStatusColor(service.status)}>
-                          {getStatusLabel(service.status)}
-                        </Badge>
+                        <div className="space-y-2">
+                          <Badge className={getStatusColor(service.status)}>
+                            {getStatusLabel(service.status)}
+                          </Badge>
+                          
+                          {/* Progress indicator for each service */}
+                          {(() => {
+                            const isRoundTrip = service.moveType === 'RT'
+                            
+                            // For Round Trip, always 9 fields total (8 basic + 1 optional return dropoff)
+                            // For Single and other types, 8 fields total
+                            const totalFields = isRoundTrip ? 9 : 8
+                            
+                            const completedFields = [
+                              service.pickupDate,
+                              service.pickupTime,
+                              service.pickupLocation,
+                              service.dropoffLocation,
+                              service.vessel,
+                              service.transportCompany,
+                              service.driver,
+                              service.crewMembers?.length > 0 || service.crewName,
+                              // For Round Trip, count return dropoff if it's filled (optional)
+                              isRoundTrip ? service.returnDropoffLocation : true
+                            ].filter(Boolean).length
+                            
+                            // Cap the completed fields to the total to avoid percentages > 100%
+                            const actualCompletedFields = Math.min(completedFields, totalFields)
+                            
+                            const percentage = Math.round((actualCompletedFields / totalFields) * 100)
+                            const isComplete = actualCompletedFields === totalFields
+                            
+                            return (
+                              <div className="flex items-center gap-1 text-xs">
+                                <div className={`w-1.5 h-1.5 rounded-full ${isComplete ? 'bg-green-500' : actualCompletedFields > totalFields / 2 ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                                <span className={`font-medium ${isComplete ? 'text-green-600' : actualCompletedFields > totalFields / 2 ? 'text-yellow-600' : 'text-red-600'}`}>
+                                  {actualCompletedFields}/{totalFields}
+                                </span>
+                                <span className="text-gray-500">({percentage}%)</span>
+                              </div>
+                            )
+                          })()}
+                        </div>
                       </TableCell>
                       
                       <TableCell>
@@ -811,28 +1095,211 @@ export function AgencyRecords() {
 
       {/* Edit Service Modal */}
       <Dialog open={modals?.showEditModal} onOpenChange={closeModals}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Service</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-6">
             {selectedService && (
               <>
+                {/* Service Info Section */}
                 <div className="text-sm text-muted-foreground bg-gray-50 p-3 rounded-lg">
                   <p><strong>Service ID:</strong> {selectedService._id}</p>
-                  <p><strong>Date:</strong> {formatSafeDate(selectedService.pickupDate)}</p>
-                  <p><strong>Time:</strong> {selectedService.pickupTime || 'N/A'}</p>
-                  <p><strong>Pickup:</strong> {selectedService.pickupLocation}</p>
-                  <p><strong>Drop-off:</strong> {selectedService.dropoffLocation}</p>
-                  {selectedService.moveType === 'RT' && selectedService.returnDropoffLocation && (
-                    <p><strong>Current Return Drop-off:</strong> {selectedService.returnDropoffLocation}</p>
-                  )}
+                  <p><strong>Current Status:</strong> {getStatusLabel(selectedService.status)}</p>
+                </div>
+
+                {/* Basic Service Information */}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="pickupDate" className="text-sm font-medium">
+                      Pickup Date *
+                    </Label>
+                    <Input
+                      id="pickupDate"
+                      type="date"
+                      value={editFormData.pickupDate}
+                      onChange={(e) => setEditFormData(prev => ({ 
+                        ...prev, 
+                        pickupDate: e.target.value 
+                      }))}
+                      className={editFormErrors.pickupDate ? 'border-red-500' : ''}
+                    />
+                    {editFormErrors.pickupDate && (
+                      <p className="text-xs text-red-500">{editFormErrors.pickupDate}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="pickupTime" className="text-sm font-medium">
+                      Pickup Time *
+                    </Label>
+                    <Input
+                      id="pickupTime"
+                      type="time"
+                      value={editFormData.pickupTime}
+                      onChange={(e) => setEditFormData(prev => ({ 
+                        ...prev, 
+                        pickupTime: e.target.value 
+                      }))}
+                      className={editFormErrors.pickupTime ? 'border-red-500' : ''}
+                    />
+                    {editFormErrors.pickupTime && (
+                      <p className="text-xs text-red-500">{editFormErrors.pickupTime}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Locations */}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="pickupLocation" className="text-sm font-medium">
+                      Pickup Location *
+                    </Label>
+                    <Select
+                      value={editFormData.pickupLocation}
+                      onValueChange={(value) => {
+                        setEditFormData(prev => {
+                          const newData = { ...prev, pickupLocation: value }
+                          
+                          // If changing pickup, clear dropoff if the combination is not valid
+                          if (prev.dropoffLocation) {
+                            const pickupLoc = locations.find(loc => loc.name === value)
+                            const dropoffLoc = locations.find(loc => loc.name === prev.dropoffLocation)
+                            
+                            if (pickupLoc?.metadata?.siteTypeName && dropoffLoc?.metadata?.siteTypeName) {
+                              const route = findRouteByLocations(pickupLoc.metadata.siteTypeName, dropoffLoc.metadata.siteTypeName)
+                              if (!route) {
+                                newData.dropoffLocation = ''
+                              }
+                            }
+                          }
+                          
+                          return newData
+                        })
+                      }}
+                    >
+                      <SelectTrigger className={editFormErrors.pickupLocation ? 'border-red-500' : ''}>
+                        <SelectValue placeholder="Select pickup location" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getValidPickupLocations().length === 0 ? (
+                          <div className="p-2 text-sm text-gray-500">
+                            {editFormData.dropoffLocation 
+                              ? 'No hay rutas disponibles para el site type de este dropoff'
+                              : 'No hay locations con site types asignados'
+                            }
+                          </div>
+                        ) : (
+                          getValidPickupLocations().map((location) => (
+                            <SelectItem key={location._id} value={location.name}>
+                              <div className="flex flex-col">
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-3 w-3" />
+                                  {location.name}
+                                </div>
+                                {location.metadata?.siteTypeName && (
+                                  <div className="text-xs text-muted-foreground ml-5">
+                                    Site Type: {location.metadata.siteTypeName}
+                                  </div>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {editFormErrors.pickupLocation && (
+                      <p className="text-xs text-red-500">{editFormErrors.pickupLocation}</p>
+                    )}
+                    {editFormData.dropoffLocation && getValidPickupLocations().length > 0 && (
+                      <p className="text-xs text-blue-600">
+                        {getValidPickupLocations().length} ubicación(es) disponible(s) para este dropoff site type
+                      </p>
+                    )}
+                    {editFormData.dropoffLocation && getValidPickupLocations().length === 0 && (
+                      <p className="text-xs text-yellow-600">
+                        No hay ubicaciones de pickup disponibles para el site type de este dropoff
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="dropoffLocation" className="text-sm font-medium">
+                      Drop-off Location *
+                    </Label>
+                    <Select
+                      value={editFormData.dropoffLocation}
+                      onValueChange={(value) => {
+                        setEditFormData(prev => {
+                          const newData = { ...prev, dropoffLocation: value }
+                          
+                          // If changing dropoff, clear pickup if the combination is not valid
+                          if (prev.pickupLocation) {
+                            const pickupLoc = locations.find(loc => loc.name === prev.pickupLocation)
+                            const dropoffLoc = locations.find(loc => loc.name === value)
+                            
+                            if (pickupLoc?.metadata?.siteTypeName && dropoffLoc?.metadata?.siteTypeName) {
+                              const route = findRouteByLocations(pickupLoc.metadata.siteTypeName, dropoffLoc.metadata.siteTypeName)
+                              if (!route) {
+                                newData.pickupLocation = ''
+                              }
+                            }
+                          }
+                          
+                          return newData
+                        })
+                      }}
+                    >
+                      <SelectTrigger className={editFormErrors.dropoffLocation ? 'border-red-500' : ''}>
+                        <SelectValue placeholder="Select drop-off location" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getValidDropoffLocations().length === 0 ? (
+                          <div className="p-2 text-sm text-gray-500">
+                            {editFormData.pickupLocation 
+                              ? 'No hay rutas disponibles para el site type de este pickup'
+                              : 'No hay locations con site types asignados'
+                            }
+                          </div>
+                        ) : (
+                          getValidDropoffLocations().map((location) => (
+                            <SelectItem key={location._id} value={location.name}>
+                              <div className="flex flex-col">
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-3 w-3" />
+                                  {location.name}
+                                </div>
+                                {location.metadata?.siteTypeName && (
+                                  <div className="text-xs text-muted-foreground ml-5">
+                                    Site Type: {location.metadata.siteTypeName}
+                                  </div>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {editFormErrors.dropoffLocation && (
+                      <p className="text-xs text-red-500">{editFormErrors.dropoffLocation}</p>
+                    )}
+                    {editFormData.pickupLocation && getValidDropoffLocations().length > 0 && (
+                      <p className="text-xs text-blue-600">
+                        {getValidDropoffLocations().length} ubicación(es) disponible(s) para este pickup site type
+                      </p>
+                    )}
+                    {editFormData.pickupLocation && getValidDropoffLocations().length === 0 && (
+                      <p className="text-xs text-yellow-600">
+                        No hay ubicaciones de dropoff disponibles para el site type de este pickup
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Move Type */}
                 <div className="space-y-2">
                   <Label htmlFor="moveType" className="text-sm font-medium">
-                    Move Type
+                    Move Type *
                   </Label>
                   <Select
                     value={editFormData.moveType}
@@ -857,13 +1324,6 @@ export function AgencyRecords() {
                       <SelectItem value="DOCUMENTATION">Documentation</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Current: {selectedService.moveType === 'RT' ? 'Round Trip' :
-                             selectedService.moveType === 'SINGLE' ? 'Single' :
-                             selectedService.moveType === 'INTERNAL' ? 'Internal' :
-                             selectedService.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
-                             selectedService.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}
-                  </p>
                 </div>
 
                 {/* Return Drop-off Location - Only for Round Trip */}
@@ -888,12 +1348,12 @@ export function AgencyRecords() {
                       }}
                     >
                       <SelectTrigger className={editFormErrors.returnDropoffLocation ? 'border-red-500' : ''}>
-                        <SelectValue placeholder="Seleccione return dropoff location" />
+                        <SelectValue placeholder="Select return drop-off location" />
                       </SelectTrigger>
                       <SelectContent>
                         {getValidReturnDropoffLocations().length === 0 ? (
                           <div className="p-2 text-sm text-gray-500">
-                            No hay rutas disponibles para el return trip desde {selectedService.dropoffLocation}
+                            No hay rutas disponibles para el return trip desde {editFormData.dropoffLocation}
                           </div>
                         ) : (
                           getValidReturnDropoffLocations().map((location) => (
@@ -924,11 +1384,161 @@ export function AgencyRecords() {
                     )}
                   </div>
                 )}
-                
+
+                {/* Vessel Information */}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="vessel" className="text-sm font-medium">
+                      Vessel
+                    </Label>
+                    <Input
+                      id="vessel"
+                      value={editFormData.vessel}
+                      onChange={(e) => setEditFormData(prev => ({ 
+                        ...prev, 
+                        vessel: e.target.value 
+                      }))}
+                      placeholder="Enter vessel name"
+                      className={editFormErrors.vessel ? 'border-red-500' : ''}
+                    />
+                    {editFormErrors.vessel && (
+                      <p className="text-xs text-red-500">{editFormErrors.vessel}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="voyage" className="text-sm font-medium">
+                      Voyage
+                    </Label>
+                    <Input
+                      id="voyage"
+                      value={editFormData.voyage}
+                      onChange={(e) => setEditFormData(prev => ({ 
+                        ...prev, 
+                        voyage: e.target.value 
+                      }))}
+                      placeholder="Enter voyage number"
+                    />
+                  </div>
+                </div>
+
+                {/* Transport Information */}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="transportCompany" className="text-sm font-medium">
+                      Transport Company
+                    </Label>
+                    <Select
+                      value={editFormData.transportCompany}
+                      onValueChange={(value) => {
+                        setEditFormData(prev => {
+                          const newData = { ...prev, transportCompany: value }
+                          
+                          // Clear driver if it doesn't belong to the new company
+                          if (prev.driver) {
+                            const selectedDriver = drivers.find(d => d.name === prev.driver)
+                            if (selectedDriver && selectedDriver.metadata?.company !== value) {
+                              newData.driver = ''
+                            }
+                          }
+                          
+                          return newData
+                        })
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select transport company" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {transportCompanies.map((company) => {
+                          const driversCount = drivers.filter(d => d.metadata?.company === company.name).length
+                          return (
+                            <SelectItem key={company._id} value={company.name}>
+                              <div className="flex items-center justify-between gap-2">
+                                <span>{company.name}</span>
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${driversCount > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                  {driversCount} driver{driversCount !== 1 ? 's' : ''}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="driver" className="text-sm font-medium">
+                      Driver
+                    </Label>
+                    <Select
+                      value={editFormData.driver}
+                      onValueChange={(value) => {
+                        setEditFormData(prev => {
+                          const newData = { ...prev, driver: value }
+                          
+                          // Auto-set transport company when driver is selected
+                          const selectedDriver = drivers.find(d => d.name === value)
+                          if (selectedDriver?.metadata?.company) {
+                            newData.transportCompany = selectedDriver.metadata.company
+                          }
+                          
+                          return newData
+                        })
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select driver" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {editFormData.transportCompany ? (
+                          drivers
+                            .filter(driver => driver.metadata?.company === editFormData.transportCompany)
+                            .map((driver) => (
+                              <SelectItem key={driver._id} value={driver.name}>
+                                <div>
+                                  {driver.name}
+                                  {driver.metadata?.phone && (
+                                    <div className="text-xs text-muted-foreground">
+                                      {driver.metadata.phone}
+                                    </div>
+                                  )}
+                                </div>
+                              </SelectItem>
+                            ))
+                        ) : (
+                          drivers.map((driver) => (
+                            <SelectItem key={driver._id} value={driver.name}>
+                              <div>
+                                {driver.name}
+                                {driver.metadata?.phone && (
+                                  <div className="text-xs text-muted-foreground">
+                                    {driver.metadata.phone}
+                                  </div>
+                                )}
+                                {driver.metadata?.company && (
+                                  <div className="text-xs text-blue-600">
+                                    Company: {driver.metadata.company}
+                                  </div>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))
+                        )}
+                        {editFormData.transportCompany && drivers.filter(driver => driver.metadata?.company === editFormData.transportCompany).length === 0 && (
+                          <div className="p-2 text-sm text-gray-500 text-center">
+                            No hay drivers disponibles para esta compañía
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                 {/* Waiting Time */}
                 <div className="space-y-2">
                   <Label htmlFor="waitingTime" className="text-sm font-medium">
-                    Tiempo de Espera (horas)
+                    Waiting Time (hours)
                   </Label>
                   <div className="relative">
                     <Clock className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -947,24 +1557,377 @@ export function AgencyRecords() {
                       placeholder="Enter waiting time in hours"
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Current waiting time: {selectedService.waitingTime 
-                      ? `${(selectedService.waitingTime / 60).toFixed(2)} hours (${selectedService.waitingTime} minutes)` 
-                      : 'Not set'}
-                  </p>
+                </div>
+
+                {/* Comments */}
+                <div className="space-y-2">
+                  <Label htmlFor="comments" className="text-sm font-medium">
+                    Comments
+                  </Label>
+                  <textarea
+                    id="comments"
+                    value={editFormData.comments}
+                    onChange={(e) => setEditFormData(prev => ({ 
+                      ...prev, 
+                      comments: e.target.value 
+                    }))}
+                    className="w-full p-2 border border-gray-300 rounded-md resize-none"
+                    rows={3}
+                    placeholder="Enter any additional comments or notes"
+                  />
+                </div>
+
+                {/* Route Validation Display */}
+                {editFormData.pickupLocation && editFormData.dropoffLocation && (
+                  <>
+                    {editFormData.crewMembers.length === 0 ? (
+                      <Card className="bg-blue-50 border-blue-200">
+                        <CardContent className="pt-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Users className="h-4 w-4 text-blue-600" />
+                            <span className="font-medium text-blue-800">Agregue Crew Members</span>
+                          </div>
+                          <p className="text-sm text-blue-600">
+                            Debe agregar al menos un crew member para validar la ruta.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (() => {
+                      // Check if route exists
+                      const pickupLoc = locations.find(loc => loc.name === editFormData.pickupLocation)
+                      const dropoffLoc = locations.find(loc => loc.name === editFormData.dropoffLocation)
+                      
+                      if (pickupLoc?.metadata?.siteTypeName && dropoffLoc?.metadata?.siteTypeName) {
+                        const route = findRouteByLocations(pickupLoc.metadata.siteTypeName, dropoffLoc.metadata.siteTypeName)
+                        
+                        if (route) {
+                          return (
+                            <Card className="bg-green-50 border-green-200">
+                              <CardContent className="pt-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <CheckCircle className="h-4 w-4 text-green-600" />
+                                  <span className="font-medium text-green-800">Ruta Válida</span>
+                                </div>
+                                <p className="text-sm text-green-600">
+                                  ✅ Existe una ruta configurada para esta combinación
+                                </p>
+                                <div className="text-sm text-green-600 mt-2">
+                                  <div className="flex items-center gap-2">
+                                    <Users className="h-3 w-3" />
+                                    <span>{editFormData.crewMembers.length} pasajero{editFormData.crewMembers.length !== 1 ? 's' : ''}</span>
+                                  </div>
+                                  <div className="text-xs mt-1">
+                                    Tipo: {editFormData.moveType === 'RT' ? 'Round Trip' : 
+                                           editFormData.moveType === 'SINGLE' ? 'Single' :
+                                           editFormData.moveType === 'INTERNAL' ? 'Internal' :
+                                           editFormData.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
+                                           editFormData.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          )
+                        } else {
+                          return (
+                            <Card className="bg-yellow-50 border-yellow-200">
+                              <CardContent className="pt-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                                  <span className="font-medium text-yellow-800">Ruta No Configurada</span>
+                                </div>
+                                <p className="text-sm text-yellow-600">
+                                  No existe configuración de ruta para esta combinación:
+                                </p>
+                                <div className="text-sm text-yellow-600 mt-2 space-y-1">
+                                  <div>• {editFormData.crewMembers.length} pasajero{editFormData.crewMembers.length !== 1 ? 's' : ''}</div>
+                                  <div>• Tipo: {editFormData.moveType === 'RT' ? 'Round Trip' : 
+                                                 editFormData.moveType === 'SINGLE' ? 'Single' :
+                                                 editFormData.moveType === 'INTERNAL' ? 'Internal' :
+                                                 editFormData.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
+                                                 editFormData.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}</div>
+                                  <div>• Ruta: {pickupLoc.metadata.siteTypeName} → {dropoffLoc.metadata.siteTypeName}</div>
+                                </div>
+                                <p className="text-xs text-yellow-600 mt-2">
+                                  Contacte al administrador para configurar esta ruta.
+                                </p>
+                              </CardContent>
+                            </Card>
+                          )
+                        }
+                      }
+                      
+                      return null
+                    })()}
+                  </>
+                )}
+
+                {/* Crew Members Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">
+                      Crew Members
+                    </Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const newCrewMember = {
+                          id: Date.now().toString(),
+                          name: '',
+                          nationality: '',
+                          crewRank: '',
+                          crewCategory: '',
+                          status: 'Visit' as 'Visit' | 'On Signer',
+                          flight: ''
+                        }
+                        setEditFormData(prev => ({
+                          ...prev,
+                          crewMembers: [...prev.crewMembers, newCrewMember]
+                        }))
+                      }}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Crew Member
+                    </Button>
+                  </div>
+
+                  {editFormData.crewMembers.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
+                      No crew members added yet. Click "Add Crew Member" to add one.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {editFormData.crewMembers.map((member, index) => (
+                        <div key={member.id} className="border rounded-lg p-4 bg-gray-50">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="font-medium text-sm">Crew Member {index + 1}</h4>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setEditFormData(prev => ({
+                                  ...prev,
+                                  crewMembers: prev.crewMembers.filter(m => m.id !== member.id)
+                                }))
+                              }}
+                              className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <div className="space-y-2">
+                              <Label className="text-xs font-medium">Name *</Label>
+                              <Input
+                                value={member.name}
+                                onChange={(e) => {
+                                  setEditFormData(prev => ({
+                                    ...prev,
+                                    crewMembers: prev.crewMembers.map(m =>
+                                      m.id === member.id ? { ...m, name: e.target.value } : m
+                                    )
+                                  }))
+                                }}
+                                placeholder="Enter crew member name"
+                                className="text-sm"
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label className="text-xs font-medium">Nationality *</Label>
+                              <Select
+                                value={member.nationality}
+                                onValueChange={(value) => {
+                                  setEditFormData(prev => ({
+                                    ...prev,
+                                    crewMembers: prev.crewMembers.map(m =>
+                                      m.id === member.id ? { ...m, nationality: value } : m
+                                    )
+                                  }))
+                                }}
+                              >
+                                <SelectTrigger className="text-sm">
+                                  <SelectValue placeholder="Select nationality" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {nationalities.map((nationality) => (
+                                    <SelectItem key={nationality._id} value={nationality.name}>
+                                      {nationality.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label className="text-xs font-medium">Crew Rank *</Label>
+                              <Select
+                                value={member.crewRank}
+                                onValueChange={(value) => {
+                                  setEditFormData(prev => ({
+                                    ...prev,
+                                    crewMembers: prev.crewMembers.map(m =>
+                                      m.id === member.id ? { ...m, crewRank: value } : m
+                                    )
+                                  }))
+                                }}
+                              >
+                                <SelectTrigger className="text-sm">
+                                  <SelectValue placeholder="Select crew rank" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {ranks.map((rank) => (
+                                    <SelectItem key={rank._id} value={rank.name}>
+                                      {rank.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label className="text-xs font-medium">Category *</Label>
+                              <Select
+                                value={member.crewCategory}
+                                onValueChange={(value) => {
+                                  setEditFormData(prev => ({
+                                    ...prev,
+                                    crewMembers: prev.crewMembers.map(m =>
+                                      m.id === member.id ? { ...m, crewCategory: value } : m
+                                    )
+                                  }))
+                                }}
+                              >
+                                <SelectTrigger className="text-sm">
+                                  <SelectValue placeholder="Select category" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {crewStatuses.map((status) => (
+                                    <SelectItem key={status._id} value={status.name}>
+                                      {status.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+
+                            <div className="space-y-2">
+                              <Label className="text-xs font-medium">Flight</Label>
+                              <Input
+                                value={member.flight}
+                                onChange={(e) => {
+                                  setEditFormData(prev => ({
+                                    ...prev,
+                                    crewMembers: prev.crewMembers.map(m =>
+                                      m.id === member.id ? { ...m, flight: e.target.value } : m
+                                    )
+                                  }))
+                                }}
+                                placeholder="Enter flight number"
+                                className="text-sm"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closeModals}>
-              <X className="mr-2 h-4 w-4" />
-              Cancel
-            </Button>
-            <Button onClick={handleEditService} disabled={!selectedService}>
-              <Save className="mr-2 h-4 w-4" />
-              Save Changes
-            </Button>
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-2 text-sm">
+                {(() => {
+                  // For Round Trip, return dropoff location is optional but counts if filled
+                  const isRoundTrip = editFormData.moveType === 'RT'
+                  
+                  // For Round Trip, always 9 fields total (8 basic + 1 optional return dropoff)
+                  // For Single and other types, 8 fields total
+                  const totalFields = isRoundTrip ? 9 : 8
+                  
+                  const completedFields = [
+                    editFormData.pickupDate,
+                    editFormData.pickupTime,
+                    editFormData.pickupLocation,
+                    editFormData.dropoffLocation,
+                    editFormData.vessel,
+                    editFormData.transportCompany,
+                    editFormData.driver,
+                    editFormData.crewMembers.length > 0,
+                    // For Round Trip, count return dropoff if it's filled (optional)
+                    isRoundTrip ? editFormData.returnDropoffLocation : true
+                  ].filter(Boolean).length
+                  
+                  // Cap the completed fields to the total to avoid percentages > 100%
+                  const actualCompletedFields = Math.min(completedFields, totalFields)
+                  
+                  const percentage = Math.round((actualCompletedFields / totalFields) * 100)
+                  const isComplete = actualCompletedFields === totalFields
+                  
+                  return (
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <div className={`w-2 h-2 rounded-full ${isComplete ? 'bg-green-500' : actualCompletedFields > totalFields / 2 ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                        <span className={`text-xs font-medium ${isComplete ? 'text-green-600' : actualCompletedFields > totalFields / 2 ? 'text-yellow-600' : 'text-red-600'}`}>
+                          {actualCompletedFields}/{totalFields} campos
+                        </span>
+                      </div>
+                      <div className="w-16 bg-gray-200 rounded-full h-1.5">
+                        <div 
+                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                            isComplete ? 'bg-green-500' : actualCompletedFields > totalFields / 2 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-gray-500">{percentage}%</span>
+                      <div className="group relative">
+                        <div className="w-4 h-4 rounded-full bg-gray-300 hover:bg-gray-400 cursor-help flex items-center justify-center text-xs text-gray-600">
+                          ?
+                        </div>
+                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                          <div className="text-center">
+                            <div className="font-semibold mb-1">Campos incluidos:</div>
+                            <div className="text-left space-y-1">
+                              <div>• Fecha y hora</div>
+                              <div>• Ubicaciones (pickup/dropoff)</div>
+                              <div>• Vessel, transport, driver</div>
+                              <div>• Crew members</div>
+                              {isRoundTrip && <div>• Return dropoff (opcional)</div>}
+                            </div>
+                            <div className="mt-2 pt-1 border-t border-gray-600">
+                              <div className="font-semibold">No incluidos:</div>
+                              <div className="text-left">
+                                <div>• Comments, voyage</div>
+                                <div>• Waiting time</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800"></div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+              
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={closeModals}>
+                  <X className="mr-2 h-4 w-4" />
+                  Cancel
+                </Button>
+                <Button onClick={handleEditService} disabled={!selectedService}>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Changes
+                </Button>
+              </div>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
