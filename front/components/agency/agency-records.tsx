@@ -129,7 +129,19 @@ export function AgencyRecords() {
       
       setEditFormData({
         // Basic service info
-        pickupDate: selectedService.pickupDate ? (typeof selectedService.pickupDate === 'string' ? selectedService.pickupDate.split('T')[0] : format(new Date(selectedService.pickupDate), 'yyyy-MM-dd')) : '',
+        pickupDate: selectedService.pickupDate ? (() => {
+          if (typeof selectedService.pickupDate === 'string') {
+            // Si es string, extraer solo la parte de fecha
+            return selectedService.pickupDate.split('T')[0];
+          } else {
+            // Si es Date object, crear una fecha local sin cambios de zona horaria
+            const date = new Date(selectedService.pickupDate);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          }
+        })() : '',
         pickupTime: selectedService.pickupTime || '',
         pickupLocation: selectedService.pickupLocation || '',
         dropoffLocation: selectedService.dropoffLocation || '',
@@ -609,7 +621,15 @@ export function AgencyRecords() {
         return format(dateValue, 'MMM dd, yyyy')
       }
       
-      // Si es string, intentar parsearlo
+      // Si es string, extraer solo la parte de fecha para evitar cambios de zona horaria
+      if (typeof dateValue === 'string') {
+        const dateOnly = dateValue.split('T')[0] // Extraer solo la parte de fecha
+        const [year, month, day] = dateOnly.split('-')
+        const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+        return format(date, 'MMM dd, yyyy')
+      }
+      
+      // Si es otro tipo, intentar parsearlo
       const date = new Date(dateValue)
       if (isNaN(date.getTime())) {
         return 'Invalid Date'
