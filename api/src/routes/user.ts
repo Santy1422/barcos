@@ -17,6 +17,7 @@ router.post('/reloadUser', jwtUtils, catchedAsync(usersControllers.reloadUser));
 // Admin-only routes
 router.get('/all', jwtUtils, requireAdmin, catchedAsync(usersControllers.getAllUsers));
 router.put('/:userId', jwtUtils, requireAdmin, catchedAsync(usersControllers.updateUser));
+router.put('/reset-password/:userId', jwtUtils, requireAdmin, catchedAsync(usersControllers.resetPassword));
 router.delete('/:userId', jwtUtils, requireAdmin, catchedAsync(usersControllers.deleteUser));
 
 export default router;

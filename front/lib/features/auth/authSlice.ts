@@ -449,6 +449,40 @@ export const createUserAsync = createAsyncThunk(
   }
 )
 
+// Async thunk para resetear contraseña de usuario (admin)
+export const resetPasswordAsync = createAsyncThunk(
+  'auth/resetPassword',
+  async ({ userId, newPassword }: { userId: string; newPassword: string }, { rejectWithValue, getState }) => {
+    try {
+      const state = getState() as { auth: AuthState }
+      const token = state.auth.token
+      
+      if (!token) {
+        throw new Error('No autorizado')
+      }
+      
+      const response = await fetch(`/api/user/reset-password/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ newPassword }),
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.payload?.error || 'Error al resetear contraseña')
+      }
+      
+      const data = await response.json()
+      return data.payload
+    } catch (error: any) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
 const authSlice = createSlice({
   name: 'auth',
   initialState: authInitialState,

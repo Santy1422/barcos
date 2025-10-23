@@ -19,12 +19,13 @@ import {
   updateUserAsync,
   deleteUserAsync,
   createUserAsync,
+  resetPasswordAsync,
   type User,
   type UserRole,
   type UserModule,
   hasPermission
 } from "@/lib/features/auth/authSlice"
-import { UserPlus, Edit, Trash2, Shield, Users, Eye, EyeOff, CheckSquare, Square } from "lucide-react"
+import { UserPlus, Edit, Trash2, Shield, Users, Eye, EyeOff, CheckSquare, Square, Key } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Switch } from "@/components/ui/switch"
 
@@ -62,6 +63,9 @@ export function UsersManagement() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [userToDelete, setUserToDelete] = useState<string | null>(null)
   const [showBatchDeleteDialog, setShowBatchDeleteDialog] = useState(false)
+  const [showResetPasswordDialog, setShowResetPasswordDialog] = useState(false)
+  const [userToResetPassword, setUserToResetPassword] = useState<User | null>(null)
+  const [newPassword, setNewPassword] = useState("")
   const [formData, setFormData] = useState({
     username: "",
     email: "",
@@ -240,6 +244,45 @@ export function UsersManagement() {
     }
     setUserToDelete(userId)
     setShowDeleteDialog(true)
+  }
+
+  const handleResetPassword = (user: User) => {
+    setUserToResetPassword(user)
+    setNewPassword("")
+    setShowResetPasswordDialog(true)
+  }
+
+  const confirmResetPassword = async () => {
+    if (!userToResetPassword || !newPassword || newPassword.length < 6) {
+      toast({
+        title: "Error",
+        description: "La nueva contraseña debe tener al menos 6 caracteres",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      await dispatch(resetPasswordAsync({
+        userId: userToResetPassword.id,
+        newPassword: newPassword
+      })).unwrap()
+
+      toast({
+        title: "Contraseña reseteada",
+        description: `La contraseña de ${userToResetPassword.username} ha sido reseteada correctamente`
+      })
+
+      setShowResetPasswordDialog(false)
+      setUserToResetPassword(null)
+      setNewPassword("")
+    } catch (error: any) {
+      toast({
+        title: "Error al resetear contraseña",
+        description: error || "Error al resetear la contraseña",
+        variant: "destructive"
+      })
+    }
   }
 
   const confirmDelete = async () => {
@@ -650,6 +693,14 @@ export function UsersManagement() {
                       <Button
                         variant="outline"
                         size="sm"
+                        onClick={() => handleResetPassword(user)}
+                        title="Resetear contraseña"
+                      >
+                        <Key className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => handleToggleStatus(user)}
                         disabled={user.id === currentUser?.id}
                       >
@@ -753,6 +804,58 @@ export function UsersManagement() {
             >
               <Trash2 className="mr-2 h-4 w-4" />
               Eliminar {selectedUsers.size} Usuario(s)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de confirmación para reset de contraseña */}
+      <Dialog open={showResetPasswordDialog} onOpenChange={setShowResetPasswordDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Resetear Contraseña</DialogTitle>
+            <DialogDescription>
+              Estás a punto de resetear la contraseña de <span className="font-semibold">{userToResetPassword?.username || userToResetPassword?.email}</span>.
+              <br />
+              <span className="text-destructive">Esta acción cambiará la contraseña del usuario inmediatamente.</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="newPassword">Nueva Contraseña</Label>
+              <Input
+                id="newPassword"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Ingresa la nueva contraseña"
+                className="mt-1"
+              />
+              <p className="text-sm text-muted-foreground mt-1">
+                La contraseña debe tener al menos 6 caracteres
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => {
+                setShowResetPasswordDialog(false)
+                setUserToResetPassword(null)
+                setNewPassword("")
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              type="button" 
+              variant="destructive" 
+              onClick={confirmResetPassword}
+              disabled={!newPassword || newPassword.length < 6}
+            >
+              <Key className="mr-2 h-4 w-4" />
+              Resetear Contraseña
             </Button>
           </DialogFooter>
         </DialogContent>
