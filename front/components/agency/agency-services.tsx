@@ -48,6 +48,7 @@ interface ServiceFormData {
   currency?: string       // Moneda (USD por defecto)
   passengerCount?: number // Número de pasajeros para cálculo
   clientId: string        // Cliente seleccionado (requerido)
+  serviceCode: string     // Código de servicio (free text)
 }
 
 const initialFormData: ServiceFormData = {
@@ -68,7 +69,8 @@ const initialFormData: ServiceFormData = {
   price: 0,                   // Precio inicial
   currency: 'USD',            // Moneda por defecto
   passengerCount: 1,          // Un pasajero por defecto
-  clientId: ''                // Cliente vacío inicialmente
+  clientId: '',               // Cliente vacío inicialmente
+  serviceCode: ''             // Código de servicio vacío inicialmente
 }
 
 const initialCrewMember: CrewMember = {
@@ -625,6 +627,7 @@ export function AgencyServices() {
         comments: formData.comments,
         crewMembers: formData.crewMembers,
         clientId: formData.clientId, // Cliente seleccionado
+        serviceCode: formData.serviceCode, // Código de servicio
         // Incluir campos de pricing (no waiting time in creation)
         waitingTime: 0, // No waiting time in creation form
         price: pricing?.currentPrice || formData.price || 0,
@@ -1088,6 +1091,22 @@ export function AgencyServices() {
                     placeholder="alfanumérico"
                   />
                   <p className="text-xs text-yellow-600">Voyage puede quedar en blanco.</p>
+                </div>
+
+                {/* Service Code */}
+                <div className="space-y-2">
+                  <Label htmlFor="serviceCode" className="text-sm font-medium">
+                    Service Code
+                  </Label>
+                  <Input
+                    id="serviceCode"
+                    value={formData.serviceCode}
+                    onChange={(e) => handleInputChange('serviceCode', e.target.value)}
+                    placeholder="Código del servicio (opcional)"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Este código se mostrará en la factura PDF
+                  </p>
                 </div>
 
                 {/* Transport Company */}

@@ -221,7 +221,18 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
         : svc.crewName || 'N/A'
       
       const moveTypeLabel = svc.moveType ? getMoveTypeLabel(svc.moveType) : '';
-      const description = moveTypeLabel ? `${moveTypeLabel} - ${route}\n${crewInfo}` : `${route}\n${crewInfo}`
+      
+      // Construir la descripción con Service Code si existe
+      let description = moveTypeLabel ? `${moveTypeLabel} - ${route}` : route;
+      
+      // Agregar Service Code si existe
+      if (svc.serviceCode && svc.serviceCode.trim()) {
+        description += ` (${svc.serviceCode})`;
+      }
+      
+      // Agregar crew info en nueva línea
+      description += `\n${crewInfo}`;
+      
       const price = svc.price || 0
       
       rows.push([formattedDate, description, price.toFixed(2)])
