@@ -248,7 +248,7 @@ const agencyServiceSchema = new Schema<IAgencyService>(
     // Move type
     moveType: {
       type: String,
-      enum: ['RT', 'SINGLE'],
+      enum: ['RT', 'SINGLE', 'INTERNAL', 'BAGS_CLAIM', 'DOCUMENTATION', 'NO_SHOW'],
       trim: true
     },
     

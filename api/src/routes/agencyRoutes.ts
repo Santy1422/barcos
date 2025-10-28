@@ -51,7 +51,7 @@ const validateServiceData = [
   body('crewName').optional().trim(),
   // clientId es requerido (se valida en el controlador)
   body('clientId').optional().isMongoId().withMessage('Valid client ID required'),
-  body('moveType').optional().isIn(['RT', 'SINGLE', 'INTERNAL', 'BAGS_CLAIM', 'DOCUMENTATION']).withMessage('Move type must be RT, SINGLE, INTERNAL, BAGS_CLAIM or DOCUMENTATION'),
+  body('moveType').optional().isIn(['RT', 'SINGLE', 'INTERNAL', 'BAGS_CLAIM', 'DOCUMENTATION', 'NO_SHOW']).withMessage('Move type must be RT, SINGLE, INTERNAL, BAGS_CLAIM, DOCUMENTATION or NO_SHOW'),
   body('approve').optional().isBoolean().withMessage('Approve must be boolean'),
   body('passengerCount').optional().isInt({ min: 1 }).withMessage('Passenger count must be positive integer'),
   body('waitingTime').optional().isNumeric().withMessage('Waiting time must be numeric'),

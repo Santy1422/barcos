@@ -1,7 +1,7 @@
 import { Schema, model, Document, Types, Model } from 'mongoose';
 
 // Tipos de ruta
-export type RouteType = 'single' | 'roundtrip' | 'internal' | 'bags_claim' | 'documentation';
+export type RouteType = 'single' | 'roundtrip' | 'internal' | 'bags_claim' | 'documentation' | 'no_show';
 
 // Interface para intervalos de precios por pasajeros
 export interface PassengerPriceRange {
@@ -96,7 +96,7 @@ const passengerPriceRangeSchema = new Schema<PassengerPriceRange>({
 const routePricingSchema = new Schema<RoutePricing>({
   routeType: {
     type: String,
-    enum: ['single', 'roundtrip', 'internal', 'bags_claim', 'documentation'],
+    enum: ['single', 'roundtrip', 'internal', 'bags_claim', 'documentation', 'no_show'],
     required: true
   },
   passengerRanges: {

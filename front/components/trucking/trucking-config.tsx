@@ -105,7 +105,7 @@ export function TruckingConfig() {
   const services = useAppSelector(selectAllServices)
   const servicesLoading = useAppSelector(selectServicesLoading)
 
-  const [activeTab, setActiveTab] = useState<"navieras" | "routes" | "services" | "containers">("navieras")
+  const [activeTab, setActiveTab] = useState<"routes" | "services" | "containers">("routes")
 
   // Form: Naviera
   const [showAddNavieraForm, setShowAddNavieraForm] = useState(false)
@@ -587,14 +587,6 @@ export function TruckingConfig() {
         <CardContent>
           <div className="flex space-x-2">
             <Button
-              variant={activeTab === "navieras" ? "default" : "outline"}
-              className={activeTab === "navieras" ? "bg-blue-600 hover:bg-blue-700" : ""}
-              onClick={() => setActiveTab("navieras")}
-            >
-              <Ship className="h-4 w-4 mr-2" />
-              Navieras
-            </Button>
-            <Button
               variant={activeTab === "routes" ? "default" : "outline"}
               className={activeTab === "routes" ? "bg-blue-600 hover:bg-blue-700" : ""}
               onClick={() => setActiveTab("routes")}
@@ -623,7 +615,8 @@ export function TruckingConfig() {
         </CardContent>
       </Card>
 
-      {activeTab === "navieras" && (
+      {/* Sección de Navieras oculta temporalmente */}
+      {/* {activeTab === "navieras" && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -730,7 +723,7 @@ export function TruckingConfig() {
             </div>
           </CardContent>
         </Card>
-      )}
+      )} */}
 
       {activeTab === "routes" && (
         <Card>
@@ -1443,8 +1436,8 @@ export function TruckingConfig() {
       )}
 
       {/* Dialogs */}
-      {/* Delete Naviera */}
-      <DialogLike open={!!navieraToDelete} onOpenChange={() => setNavieraToDelete(null)}>
+      {/* Delete Naviera - Oculto temporalmente */}
+      {/* <DialogLike open={!!navieraToDelete} onOpenChange={() => setNavieraToDelete(null)}>
         <DialogCard>
           <CardHeader>
             <CardTitle>Confirmar eliminación</CardTitle>
@@ -1462,7 +1455,7 @@ export function TruckingConfig() {
             </div>
           </CardContent>
         </DialogCard>
-      </DialogLike>
+      </DialogLike> */}
 
       {/* Delete Route */}
       <DialogLike open={!!routeToDelete} onOpenChange={() => setRouteToDelete(null)}>

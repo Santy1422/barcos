@@ -57,7 +57,7 @@ export interface AgencyService {
   }>;
   
   // Move type
-  moveType?: 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION';
+  moveType?: 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION' | 'NO_SHOW';
   passengerCount?: number;
   
   // Información del transporte
@@ -128,7 +128,7 @@ export interface AgencyServiceInput {
   }>;
   
   // Move type
-  moveType?: 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION';
+  moveType?: 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION' | 'NO_SHOW';
   passengerCount?: number;
   
   // Client (required)

@@ -25,7 +25,8 @@ const ROUTE_TYPES = [
   { value: 'roundtrip', label: 'Round Trip (Ida y Vuelta)' },
   { value: 'internal', label: 'Internal (Interno)' },
   { value: 'bags_claim', label: 'Bags Claim (Reclamo de Equipaje)' },
-  { value: 'documentation', label: 'Documentation (Documentación)' }
+  { value: 'documentation', label: 'Documentation (Documentación)' },
+  { value: 'no_show', label: 'No Show (No Se Presentó)' }
 ] as const
 
 // Plantilla de rangos de pasajeros por defecto
@@ -99,6 +100,10 @@ export function AgencyRoutesManagement() {
       {
         routeType: 'documentation',
         passengerRanges: JSON.parse(JSON.stringify(DEFAULT_PASSENGER_RANGES))
+      },
+      {
+        routeType: 'no_show',
+        passengerRanges: JSON.parse(JSON.stringify(DEFAULT_PASSENGER_RANGES))
       }
     ],
     currency: 'USD',
@@ -146,6 +151,10 @@ export function AgencyRoutesManagement() {
         },
         {
           routeType: 'documentation',
+          passengerRanges: JSON.parse(JSON.stringify(DEFAULT_PASSENGER_RANGES))
+        },
+        {
+          routeType: 'no_show',
           passengerRanges: JSON.parse(JSON.stringify(DEFAULT_PASSENGER_RANGES))
         }
       ],
@@ -383,7 +392,7 @@ export function AgencyRoutesManagement() {
 
       {/* Quick Stats */}
       {statistics && (
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-6 lg:grid-cols-9">
           <Card>
             <CardContent className="p-4">
               <div className="text-2xl font-bold">{statistics.totalRoutes}</div>
@@ -405,13 +414,37 @@ export function AgencyRoutesManagement() {
           <Card>
             <CardContent className="p-4">
               <div className="text-2xl font-bold text-blue-600">{statistics.routesWithSingle}</div>
-              <p className="text-xs text-muted-foreground">With Single Pricing</p>
+              <p className="text-xs text-muted-foreground">Single Pricing</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
               <div className="text-2xl font-bold text-purple-600">{statistics.routesWithRoundtrip}</div>
-              <p className="text-xs text-muted-foreground">With Roundtrip Pricing</p>
+              <p className="text-xs text-muted-foreground">Roundtrip Pricing</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold text-orange-600">{statistics.routesWithInternal || 0}</div>
+              <p className="text-xs text-muted-foreground">Internal Pricing</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold text-yellow-600">{statistics.routesWithBagsClaim || 0}</div>
+              <p className="text-xs text-muted-foreground">Bags Claim Pricing</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold text-indigo-600">{statistics.routesWithDocumentation || 0}</div>
+              <p className="text-xs text-muted-foreground">Documentation Pricing</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold text-gray-600">{statistics.routesWithNoShow || 0}</div>
+              <p className="text-xs text-muted-foreground">No Show Pricing</p>
             </CardContent>
           </Card>
         </div>
@@ -621,15 +654,16 @@ export function AgencyRoutesManagement() {
               <Label className="text-lg font-semibold">Pricing Configuration</Label>
               
               <Tabs defaultValue="single" className="w-full">
-                <TabsList className="grid w-full grid-cols-5">
+                <TabsList className="grid w-full grid-cols-6">
                   <TabsTrigger value="single">Single</TabsTrigger>
                   <TabsTrigger value="roundtrip">Roundtrip</TabsTrigger>
                   <TabsTrigger value="internal">Internal</TabsTrigger>
                   <TabsTrigger value="bags_claim">Bags Claim</TabsTrigger>
                   <TabsTrigger value="documentation">Documentation</TabsTrigger>
+                  <TabsTrigger value="no_show">No Show</TabsTrigger>
                 </TabsList>
 
-                {(['single', 'roundtrip', 'internal', 'bags_claim', 'documentation'] as const).map((routeType) => {
+                {(['single', 'roundtrip', 'internal', 'bags_claim', 'documentation', 'no_show'] as const).map((routeType) => {
                   const pricing = formData.pricing.find(p => p.routeType === routeType)
                   if (!pricing) return null
 
@@ -731,15 +765,16 @@ export function AgencyRoutesManagement() {
               </div>
 
               <Tabs defaultValue="single" className="w-full">
-                <TabsList className="grid w-full grid-cols-5">
+                <TabsList className="grid w-full grid-cols-6">
                   <TabsTrigger value="single">Single</TabsTrigger>
                   <TabsTrigger value="roundtrip">Roundtrip</TabsTrigger>
                   <TabsTrigger value="internal">Internal</TabsTrigger>
                   <TabsTrigger value="bags_claim">Bags Claim</TabsTrigger>
                   <TabsTrigger value="documentation">Documentation</TabsTrigger>
+                  <TabsTrigger value="no_show">No Show</TabsTrigger>
                 </TabsList>
 
-                {(['single', 'roundtrip', 'internal', 'bags_claim', 'documentation'] as const).map((routeType) => {
+                {(['single', 'roundtrip', 'internal', 'bags_claim', 'documentation', 'no_show'] as const).map((routeType) => {
                   const pricing = selectedRoute.pricing.find((p: any) => p.routeType === routeType)
                   if (!pricing) return null
 

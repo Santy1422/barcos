@@ -787,6 +787,30 @@ export const getRouteStatistics = async (req: Request, res: Response) => {
       isActive: true
     });
 
+    // Contar rutas con pricing de internal
+    const routesWithInternal = await AgencyRoute.countDocuments({
+      'pricing.routeType': 'internal',
+      isActive: true
+    });
+
+    // Contar rutas con pricing de bags_claim
+    const routesWithBagsClaim = await AgencyRoute.countDocuments({
+      'pricing.routeType': 'bags_claim',
+      isActive: true
+    });
+
+    // Contar rutas con pricing de documentation
+    const routesWithDocumentation = await AgencyRoute.countDocuments({
+      'pricing.routeType': 'documentation',
+      isActive: true
+    });
+
+    // Contar rutas con pricing de no_show
+    const routesWithNoShow = await AgencyRoute.countDocuments({
+      'pricing.routeType': 'no_show',
+      isActive: true
+    });
+
     return res.status(200).json({
       success: true,
       payload: {
@@ -795,7 +819,11 @@ export const getRouteStatistics = async (req: Request, res: Response) => {
           activeRoutes,
           inactiveRoutes,
           routesWithRoundtrip,
-          routesWithSingle
+          routesWithSingle,
+          routesWithInternal,
+          routesWithBagsClaim,
+          routesWithDocumentation,
+          routesWithNoShow
         }
       }
     });

@@ -37,7 +37,7 @@ interface ServiceFormData {
   returnDropoffLocation: string  // Solo para Round Trip
   vessel: string
   voyage: string
-  moveType: 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION'
+  moveType: 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION' | 'NO_SHOW'
   transportCompany: string
   driver: string
   approve: boolean
@@ -308,7 +308,8 @@ export function AgencyServices() {
         const routeType = formData.moveType === 'SINGLE' ? 'single' :
                          formData.moveType === 'INTERNAL' ? 'internal' :
                          formData.moveType === 'BAGS_CLAIM' ? 'bags_claim' :
-                         formData.moveType === 'DOCUMENTATION' ? 'documentation' : 'single';
+                         formData.moveType === 'DOCUMENTATION' ? 'documentation' :
+                         formData.moveType === 'NO_SHOW' ? 'no_show' : 'single';
         
         console.log('Calculating price with:', {
           pickupLocation: formData.pickupLocation,
@@ -724,7 +725,7 @@ export function AgencyServices() {
                   </Label>
                   <Select
                     value={formData.moveType}
-                    onValueChange={(value) => handleInputChange('moveType', value as 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION')}
+                    onValueChange={(value) => handleInputChange('moveType', value as 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION' | 'NO_SHOW')}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccione tipo de movimiento" />
@@ -735,6 +736,7 @@ export function AgencyServices() {
                       <SelectItem value="INTERNAL">Internal</SelectItem>
                       <SelectItem value="BAGS_CLAIM">Bags Claim</SelectItem>
                       <SelectItem value="DOCUMENTATION">Documentation</SelectItem>
+                      <SelectItem value="NO_SHOW">No Show</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1252,7 +1254,8 @@ export function AgencyServices() {
                                      formData.moveType === 'SINGLE' ? 'Single' :
                                      formData.moveType === 'INTERNAL' ? 'Internal' :
                                      formData.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
-                                     formData.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}
+                                     formData.moveType === 'DOCUMENTATION' ? 'Documentation' :
+                                     formData.moveType === 'NO_SHOW' ? 'No Show' : 'Single'}
                             </div>
                           </div>
                         </CardContent>
@@ -1285,7 +1288,8 @@ export function AgencyServices() {
                                            formData.moveType === 'SINGLE' ? 'Single' :
                                            formData.moveType === 'INTERNAL' ? 'Internal' :
                                            formData.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
-                                           formData.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}</div>
+                                           formData.moveType === 'DOCUMENTATION' ? 'Documentation' :
+                                           formData.moveType === 'NO_SHOW' ? 'No Show' : 'Single'}</div>
                             <div>• Ruta: {(() => {
                               const pickupLoc = locations.find(loc => loc.name === formData.pickupLocation);
                               const dropoffLoc = locations.find(loc => loc.name === formData.dropoffLocation);

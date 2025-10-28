@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/tool
 import { createApiUrl } from '@/lib/api-config';
 
 // Types
-export type RouteType = 'single' | 'roundtrip' | 'internal' | 'bags_claim' | 'documentation';
+export type RouteType = 'single' | 'roundtrip' | 'internal' | 'bags_claim' | 'documentation' | 'no_show';
 
 export interface PassengerPriceRange {
   minPassengers: number;
