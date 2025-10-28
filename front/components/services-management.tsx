@@ -218,9 +218,9 @@ export function ServicesManagement({ module, title }: ServicesManagementProps) {
     // Filtrar por módulo
     if (service.module !== module) return false
     
-    // Para el módulo trucking, excluir los impuestos especiales (Customs y Administration Fee)
+    // Para el módulo trucking, excluir los impuestos especiales (Aduana y Administration Fee)
     if (module === 'trucking') {
-      if (service.name === 'Customs' || service.name === 'Administration Fee') {
+      if (service.name === 'Aduana' || service.name === 'Administration Fee') {
         return false
       }
     }

@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
 
-export type UserRole = 'administrador' | 'operaciones' | 'facturacion' | 'pendiente' | 'clientes'
+export type UserRole = 'administrador' | 'operaciones' | 'facturacion' | 'pendiente' | 'clientes' | 'catalogos'
 export type UserModule = 'trucking' | 'shipchandler' | 'agency'
 
 export interface User {
@@ -745,6 +745,7 @@ export const hasModuleAccess = (user: User | null, requiredModule: UserModule): 
   
   // Si el usuario es administrador, tiene acceso a todos los módulos
   if (userRoles.includes('administrador')) return true
+  
   return user.modules?.includes(requiredModule) || false
 }
 
@@ -766,6 +767,13 @@ export const hasSectionAccess = (user: User | null, module: UserModule, section:
   
   // Admin has access to everything
   if (userRoles.includes('administrador')) return true
+  
+  // Verificar acceso especial para secciones de catálogos
+  const catalogSections = ['config', 'catalogs']
+  if (catalogSections.includes(section)) {
+    // Solo usuarios con rol 'catalogos' pueden acceder a catálogos
+    return userRoles.includes('catalogos')
+  }
   
   // User must have access to the module first
   if (!hasModuleAccess(user, module)) return false

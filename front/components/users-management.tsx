@@ -34,6 +34,7 @@ const roleLabels: Record<UserRole, string> = {
   "operaciones": "Operaciones",
   "facturacion": "Facturación",
   "clientes": "Administrar Clientes",
+  "catalogos": "Administrar Catálogos",
   "pendiente": "Pendiente"
 }
 
@@ -42,6 +43,7 @@ const roleColors: Record<UserRole, "default" | "secondary" | "destructive" | "ou
   "operaciones": "default",
   "facturacion": "secondary",
   "clientes": "secondary",
+  "catalogos": "outline",
   "pendiente": "outline"
 }
 

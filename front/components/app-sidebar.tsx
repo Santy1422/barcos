@@ -113,7 +113,7 @@ export function AppSidebar() {
           { title: "Facturas", href: "/trucking/records", icon: ListOrdered }
         ] : []),
         ...(hasSectionAccess(currentUser, "trucking", "config") ? [
-          { title: "Configuración", href: "/trucking/config", icon: Settings2 }
+          { title: "Catálogos", href: "/trucking/config", icon: BookOpen }
         ] : []),
       ].filter(Boolean),
     }] : []),
@@ -136,7 +136,7 @@ export function AppSidebar() {
           { title: "Historial", href: "/ptyss/historial", icon: History }
         ] : []),
         ...(hasSectionAccess(currentUser, "shipchandler", "config") ? [
-          { title: "Configuración", href: "/ptyss/config", icon: Settings2 }
+          { title: "Catálogos", href: "/ptyss/config", icon: BookOpen }
         ] : []),
       ].filter(Boolean),
     }] : []),
