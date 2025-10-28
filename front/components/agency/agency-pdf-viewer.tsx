@@ -208,7 +208,21 @@ export function AgencyPdfViewer({ open, onOpenChange, service }: AgencyPdfViewer
         }).join(', ')
       : serviceData.crewName || 'N/A'
     
-    const description = `${route}\n${crewInfo}`
+    // Función para obtener el label del move type
+    const getMoveTypeLabel = (moveType: string) => {
+      const moveTypes: { [key: string]: string } = {
+        'SINGLE': 'Single',
+        'RT': 'Round Trip',
+        'INTERNAL': 'Internal',
+        'BAGS_CLAIM': 'Bags Claim',
+        'DOCUMENTATION': 'Documentation',
+        'NO_SHOW': 'No Show'
+      };
+      return moveTypes[moveType] || moveType;
+    };
+    
+    const moveTypeLabel = serviceData.moveType ? getMoveTypeLabel(serviceData.moveType) : '';
+    const description = moveTypeLabel ? `${moveTypeLabel} - ${route}\n${crewInfo}` : `${route}\n${crewInfo}`
     const price = serviceData.price || 0
     
     bodyRows.push([formattedDate, description, price.toFixed(2)])
