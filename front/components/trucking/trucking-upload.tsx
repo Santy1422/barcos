@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
+import { selectCurrentUser } from "@/lib/features/auth/authSlice"
 import { createTruckingRecords, selectCreatingRecords, selectRecordsError } from "@/lib/features/records/recordsSlice"
 import { addExcelFile } from "@/lib/features/excel/excelSlice"
 import { parseTruckingExcel, TruckingExcelData, matchTruckingDataWithRoutes } from "@/lib/excel-parser"
@@ -88,6 +89,11 @@ export function TruckingUpload() {
 
   const dispatch = useAppDispatch()
   const { toast } = useToast()
+  const currentUser = useAppSelector(selectCurrentUser)
+  
+  // Verificar permisos para gestionar clientes
+  const userRoles = currentUser?.roles || (currentUser?.role ? [currentUser.role] : [])
+  const canManageClients = userRoles.includes('administrador') || userRoles.includes('clientes')
   
   // Add this line to get the creating records state from Redux
   const isCreatingRecords = useAppSelector(selectCreatingRecords)
@@ -154,9 +160,9 @@ export function TruckingUpload() {
     dispatch(fetchContainerTypes())
   }, [dispatch])
 
-  // Load clients
+  // Load clients - cargar todos los clientes para poder buscar por SAP code
   useEffect(() => {
-    dispatch(fetchClients())
+    dispatch(fetchClients()) // Sin parámetro para cargar todos los clientes
   }, [dispatch])
 
   // Debug: Monitorear cuando las rutas se cargan
@@ -238,6 +244,25 @@ export function TruckingUpload() {
     )
   }
 
+  const findClientByNameInModule = (name: string, module: string): Client | null => {
+    return (
+      clients.find((client: any) => {
+        if (!name) return false
+        
+        // Verificar que el cliente esté asignado al módulo especificado
+        const clientModules = client.module || []
+        if (!clientModules.includes(module)) return false
+        
+        if (client.type === "juridico") {
+          // Para clientes jurídicos, buscar por nombre corto (name) en lugar de companyName
+          return client.name?.toLowerCase() === name.toLowerCase()
+        }
+        if (client.type === "natural") return client.fullName?.toLowerCase() === name.toLowerCase()
+        return false
+      }) || null
+    )
+  }
+
   const checkClientCompleteness = (client: any): { isComplete: boolean; missingFields: string[] } => {
     const missing: string[] = []
     if (client.type === "juridico") {
@@ -255,15 +280,15 @@ export function TruckingUpload() {
   }
 
   const updateClientCompleteness = (clientName: string) => {
-    const updated = findClientByName(clientName)
+    const updated = findClientByNameInModule(clientName, 'trucking')
     if (updated) {
       const completeness = checkClientCompleteness(updated)
       setClientCompleteness(prev => new Map(prev).set(clientName, completeness))
-      console.log(`Cliente ${clientName} actualizado:`, completeness)
+      console.log(`Cliente ${clientName} actualizado en módulo trucking:`, completeness)
     } else {
-      // Si el cliente no se encuentra, marcarlo como incompleto
-      setClientCompleteness(prev => new Map(prev).set(clientName, { isComplete: false, missingFields: ["Cliente no encontrado"] }))
-      console.log(`Cliente ${clientName} no encontrado, marcado como incompleto`)
+      // Si el cliente no se encuentra en el módulo trucking, marcarlo como incompleto
+      setClientCompleteness(prev => new Map(prev).set(clientName, { isComplete: false, missingFields: ["No asignado al módulo trucking"] }))
+      console.log(`Cliente ${clientName} no encontrado en módulo trucking, marcado como incompleto`)
     }
   }
 
@@ -462,6 +487,15 @@ export function TruckingUpload() {
   const handleClientClick = (clientName: string) => {
     if (!clientName) return
     
+    if (!canManageClients) {
+      toast({
+        title: "Sin permiso",
+        description: "No tienes permiso para gestionar clientes.",
+        variant: "destructive"
+      })
+      return
+    }
+    
     const existing = findClientByName(clientName)
     if (existing) {
       // Cliente existe, abrir modal de edición
@@ -485,7 +519,7 @@ export function TruckingUpload() {
 
   // When completeness map changes, refresh clients to recalc
   useEffect(() => {
-    if (clientCompleteness.size > 0) dispatch(fetchClients())
+    if (clientCompleteness.size > 0) dispatch(fetchClients()) // Cargar todos los clientes
   }, [clientCompleteness.size, dispatch])
 
   // Recompute completeness when clients list updates
@@ -493,8 +527,12 @@ export function TruckingUpload() {
     if (clients.length > 0 && clientCompleteness.size > 0) {
       const newMap = new Map<string, { isComplete: boolean; missingFields: string[] }>()
       for (const [clientName] of clientCompleteness) {
-        const c = findClientByName(clientName)
-        if (c) newMap.set(clientName, checkClientCompleteness(c))
+        const c = findClientByNameInModule(clientName, 'trucking')
+        if (c) {
+          newMap.set(clientName, checkClientCompleteness(c))
+        } else {
+          newMap.set(clientName, { isComplete: false, missingFields: ["No asignado al módulo trucking"] })
+        }
       }
       setClientCompleteness(newMap)
     }
@@ -517,14 +555,15 @@ export function TruckingUpload() {
     
     // Verificar cada cliente encontrado en el Excel
     for (const [name, recs] of grouped) {
-      const existing = findClientByName(name)
-      if (!existing) {
-        // Cliente no existe en la base de datos
+      // Buscar cliente en el módulo trucking específicamente
+      const existingInModule = findClientByNameInModule(name, 'trucking')
+      if (!existingInModule) {
+        // Cliente no existe en el módulo trucking, agregarlo a la lista de faltantes
         missingList.push({ name, records: recs })
-        newCompleteness.set(name, { isComplete: false, missingFields: ["Todos los campos"] })
+        newCompleteness.set(name, { isComplete: false, missingFields: ["No asignado al módulo trucking"] })
       } else {
-        // Cliente existe, verificar si está completo
-        newCompleteness.set(name, checkClientCompleteness(existing))
+        // Cliente existe en el módulo trucking, verificar si está completo
+        newCompleteness.set(name, checkClientCompleteness(existingInModule))
       }
     }
     
@@ -1258,11 +1297,11 @@ export function TruckingUpload() {
                     previewData.forEach((record) => {
                       const clientName = record.line?.trim()
                       if (clientName && record.isMatched) {
-                        const existing = findClientByName(clientName)
+                        const existing = findClientByNameInModule(clientName, 'trucking')
                         if (existing) {
                           newCompleteness.set(clientName, checkClientCompleteness(existing))
                         } else {
-                          newCompleteness.set(clientName, { isComplete: false, missingFields: ["Cliente no existe"] })
+                          newCompleteness.set(clientName, { isComplete: false, missingFields: ["No asignado al módulo trucking"] })
                         }
                       }
                     })
@@ -1294,11 +1333,12 @@ export function TruckingUpload() {
         </Card>
       )}
 
-      {/* Modal de Clientes (crear/editar) */}
+      {/* Modal de Clientes (crear/editar) - usar módulo trucking */}
       <ClientModal
         isOpen={!!editingClient}
         onClose={() => setEditingClient(null)}
         editingClient={editingClient}
+        module="trucking"
         onClientCreated={(client) => {
           // Recalcular completitud
           const clientName = client.type === 'juridico' ? (client as any).companyName : (client as any).fullName
@@ -1306,7 +1346,7 @@ export function TruckingUpload() {
           setEditingClient(null)
           
           // Refrescar la lista de clientes
-          dispatch(fetchClients())
+          dispatch(fetchClients()) // Cargar todos los clientes
           
           // Si veníamos del flujo de faltantes, avanzar al siguiente automáticamente
           if (missingClients.length > 0) {
@@ -1388,6 +1428,17 @@ export function TruckingUpload() {
                 </div>
                 <Button
                   onClick={() => {
+                    if (!canManageClients) {
+                      toast({
+                        title: "Sin permiso",
+                        description: "No tienes permiso para gestionar clientes.",
+                        variant: "destructive"
+                      })
+                      return
+                    }
+                    
+                    // Siempre crear un cliente nuevo con datos parciales para que el usuario ingrese el SAP code
+                    // El modal de edición permitirá buscar por SAP code y completar los datos
                     setEditingClient({
                       type: "juridico",
                       companyName: clientToEdit.name, // Usar el nombre del Excel como companyName por defecto
@@ -1397,7 +1448,7 @@ export function TruckingUpload() {
                       email: "",
                       phone: "",
                       address: "",
-                      sapCode: "",
+                      sapCode: "", // Vacío para que el usuario lo ingrese y busque
                       isActive: true,
                     } as any)
                     // cerrar modal para abrir editor

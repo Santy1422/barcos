@@ -8,13 +8,13 @@ const usersSchema = new mongoose.Schema({
   // Campos principales del usuario - ROLES CORREGIDOS SEGÚN FRONTEND
   role: {
     type: String,
-    enum: ["administrador", "operaciones", "facturacion", "pendiente"],
+    enum: ["administrador", "operaciones", "facturacion", "clientes", "pendiente"],
     default: "pendiente"
   },
   // Nuevo campo para múltiples roles
   roles: [{
     type: String,
-    enum: ["administrador", "operaciones", "facturacion", "pendiente"]
+    enum: ["administrador", "operaciones", "facturacion", "clientes", "pendiente"]
   }],
   username: {
     type: String,

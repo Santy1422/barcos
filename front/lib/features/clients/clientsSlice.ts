@@ -118,9 +118,17 @@ const initialState: ClientsState = {
 // Async thunks para conectar con API
 export const fetchClients = createAsyncThunk(
   'clients/fetchClients',
-  async () => {
-    console.log('🔍 fetchClients - Iniciando fetch de clientes...')
-          const response = await fetch(createApiUrl('/api/clients'))
+  async (module?: string) => {
+    console.log('🔍 fetchClients - Iniciando fetch de clientes...', module ? `para módulo ${module}` : 'todos')
+    
+    // Construir URL con parámetro de módulo si se proporciona
+    let url = createApiUrl('/api/clients')
+    if (module) {
+      url = createApiUrl(`/api/clients?module=${module}`)
+    }
+    
+    console.log('🔍 fetchClients - URL:', url)
+    const response = await fetch(url)
     console.log('🔍 fetchClients - Response status:', response.status)
     
     if (!response.ok) {
@@ -143,12 +151,24 @@ export const fetchClients = createAsyncThunk(
 
 export const createClientAsync = createAsyncThunk(
   'clients/createClient',
-  async (clientData: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>, { rejectWithValue }) => {
+  async (clientData: Omit<Client, 'id' | 'createdAt' | 'updatedAt'> & { module?: string | string[] }, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem('token')
       
       if (!token) {
         throw new Error('No se encontró token de autenticación')
+      }
+      
+      // Normalizar módulo: convertir string a array si es necesario
+      let module = clientData.module || 'ptyss'
+      if (typeof module === 'string') {
+        module = [module] // Convertir a array
+      }
+      
+      // Asegurar que el módulo sea un array
+      const dataToSend = {
+        ...clientData,
+        module: module
       }
       
       const response = await fetch(createApiUrl('/api/clients'), {
@@ -157,7 +177,7 @@ export const createClientAsync = createAsyncThunk(
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(clientData),
+        body: JSON.stringify(dataToSend),
       })
       
       if (!response.ok) {

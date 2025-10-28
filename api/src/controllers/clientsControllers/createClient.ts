@@ -6,19 +6,38 @@ export default async (req, res) => {
     console.log("Datos recibidos:", req.body);
     console.log("Usuario autenticado:", req.user);
     
+    // Normalizar módulos: convertir string a array si es necesario
+    let modules = req.body.module || ["ptyss"]; // Por defecto ["ptyss"]
+    if (typeof modules === 'string') {
+      modules = [modules]; // Convertir string único a array
+    }
+    
+    // Normalizar SAP code: quitar espacios en blanco
+    const normalizedSapCode = req.body.sapCode ? req.body.sapCode.trim() : undefined;
+    
     // Validar que el código SAP sea único si se proporciona
-    if (req.body.sapCode) {
-      console.log("Buscando cliente con SAP:", req.body.sapCode);
-      const existingClient = await clients.findOne({ sapCode: req.body.sapCode });
+    if (normalizedSapCode) {
+      console.log("Buscando cliente con SAP:", normalizedSapCode);
+      
+      // Buscar con múltiples variantes de espacios para capturar duplicados
+      const existingClient = await clients.findOne({ 
+        $or: [
+          { sapCode: normalizedSapCode },
+          { sapCode: normalizedSapCode.toLowerCase() },
+          { sapCode: normalizedSapCode.toUpperCase() }
+        ]
+      });
       console.log("Cliente existente encontrado:", existingClient);
       if (existingClient) {
-        return response(res, 400, { error: "El código SAP ya está en uso" });
+        return response(res, 400, { error: "El código SAP ya está en uso. Use un código SAP único." });
       }
     }
     
-    // Agregar el usuario que crea el cliente
+    // Agregar el usuario que crea el cliente y los módulos
     const clientData = {
       ...req.body,
+      sapCode: normalizedSapCode, // Usar el SAP code normalizado
+      module: modules, // Array de módulos
       createdBy: req.user._id
     };
     
@@ -37,10 +56,7 @@ export default async (req, res) => {
     });
     
     if (error.code === 11000) {
-      if (error.keyPattern?.sapCode) {
-        return response(res, 400, { error: "El código SAP ya está en uso" });
-      }
-      return response(res, 400, { error: "Cliente ya existe" });
+      return response(res, 400, { error: "Cliente ya existe (probablemente duplicado)" });
     }
     return response(res, 500, { error: "Error al crear cliente" });
   }

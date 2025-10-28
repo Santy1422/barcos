@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
 
-export type UserRole = 'administrador' | 'operaciones' | 'facturacion' | 'pendiente'
+export type UserRole = 'administrador' | 'operaciones' | 'facturacion' | 'pendiente' | 'clientes'
 export type UserModule = 'trucking' | 'shipchandler' | 'agency'
 
 export interface User {
@@ -724,7 +724,8 @@ export const hasPermission = (user: User | null, requiredRole: UserRole): boolea
   const roleHierarchy = {
     'administrador': 3,
     'operaciones': 2,
-    'facturacion': 1,
+    'facturacion': 2,
+    'clientes': 2,
     'pendiente': 0,
   }
   

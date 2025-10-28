@@ -27,9 +27,12 @@ import {
   MapPin,
   Filter,
   Download,
-  Upload
+  Upload,
+  CheckCircle,
+  Loader2
 } from "lucide-react"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
+import { selectCurrentUser } from "@/lib/features/auth/authSlice"
 import { 
   selectAllClients, 
   selectActiveClients,
@@ -90,17 +93,140 @@ export function ClientModal({
   isOpen, 
   onClose, 
   onClientCreated,
-  editingClient = null
+  editingClient = null,
+  module = "ptyss"
 }: { 
   isOpen: boolean
   onClose: () => void
   onClientCreated?: (client: Client) => void
   editingClient?: Client | null
+  module?: string | string[] // Soporta string único o array de módulos
 }) {
   const dispatch = useAppDispatch()
+  const allClients = useAppSelector(selectAllClients)
+  const currentUser = useAppSelector(selectCurrentUser)
   const { toast } = useToast()
   
+  // Verificar permisos para gestionar clientes
+  const userRoles = currentUser?.roles || (currentUser?.role ? [currentUser.role] : [])
+  const canManageClients = userRoles.includes('administrador') || userRoles.includes('clientes')
+  
+  // Si no tiene permisos, cerrar el modal y mostrar error
+  useEffect(() => {
+    if (isOpen && !canManageClients) {
+      toast({
+        title: "Sin permiso",
+        description: "No tienes permiso para gestionar clientes.",
+        variant: "destructive"
+      })
+      onClose()
+    }
+  }, [isOpen, canManageClients, onClose, toast])
+  
   const [formData, setFormData] = useState<ClientFormData>(initialFormData)
+  const [existingClient, setExistingClient] = useState<Client | null>(null)
+  const [sapCodeChecked, setSapCodeChecked] = useState(false)
+  const [isCheckingSap, setIsCheckingSap] = useState(false)
+
+  // Función helper: verificar si estamos creando un cliente nuevo (sin _id real en la DB)
+  const isCreatingNewClient = () => {
+    return !editingClient || !editingClient._id
+  }
+
+  // Función helper: verificar si los campos deben estar deshabilitados
+  const shouldDisableFields = () => {
+    // Si tenemos un cliente (existe o parcial), los campos están habilitados
+    if (editingClient) {
+      return false
+    }
+    
+    // Si no hay cliente y no hemos verificado el SAP, deshabilitar campos
+    if (!existingClient && !sapCodeChecked) {
+      return true
+    }
+    
+    // Los campos están habilitados en todos los demás casos
+    return false
+  }
+
+  // Función para verificar si existe un cliente con el SAP code ingresado
+  const checkSapCode = async (sapCode: string) => {
+    if (!sapCode.trim()) {
+      setExistingClient(null)
+      setSapCodeChecked(false)
+      return
+    }
+
+    setIsCheckingSap(true)
+    
+    // Normalizar SAP code eliminando espacios y convirtiendo a minúsculas
+    const normalizedSapCode = sapCode.trim().toLowerCase()
+    
+    // Buscar cliente existente por SAP code (comparando ambos normalizados)
+    const found = allClients.find((c: Client) => c.sapCode?.trim().toLowerCase() === normalizedSapCode)
+    
+    if (found) {
+      setExistingClient(found)
+      setSapCodeChecked(true)
+      
+      // Cargar datos del cliente existente
+      setFormData({
+        type: found.type,
+        fullName: found.type === "natural" ? found.fullName : "",
+        documentType: found.type === "natural" ? found.documentType : "cedula",
+        documentNumber: found.type === "natural" ? found.documentNumber : "",
+        companyName: found.type === "juridico" ? found.companyName : "",
+        name: found.type === "juridico" ? found.name || "" : "",
+        ruc: found.type === "juridico" ? found.ruc : "",
+        contactName: found.type === "juridico" ? found.contactName || "" : "",
+        email: found.email || "",
+        phone: found.phone || "",
+        address: typeof found.address === "string" ? found.address : "",
+        sapCode: found.sapCode || ""
+      })
+      
+      const clientModules = (found as any).module || []
+      const moduleArray = Array.isArray(module) ? module : [module]
+      const isModuleAlreadyAssigned = moduleArray.some((m: string) => clientModules.includes(m))
+      
+      const moduleNames = moduleArray.map((m: string) => {
+        if (m === 'ptyss') return 'PTYSS'
+        if (m === 'trucking') return 'Trucking'
+        if (m === 'agency') return 'Agency'
+        return m
+      })
+      
+      if (!isModuleAlreadyAssigned) {
+        toast({
+          title: "✅ Cliente encontrado",
+          description: `Se agregará el cliente al módulo: ${moduleNames.join(", ")}`,
+        })
+      } else {
+        toast({
+          title: "Cliente ya asignado a este módulo",
+          description: "Estás editando un cliente que ya está asignado a este módulo.",
+        })
+      }
+    } else {
+      setExistingClient(null)
+      setSapCodeChecked(true)
+      
+      const moduleArray = Array.isArray(module) ? module : [module]
+      const moduleNames = moduleArray.map((m: string) => {
+        if (m === 'ptyss') return 'PTYSS'
+        if (m === 'trucking') return 'Trucking'
+        if (m === 'agency') return 'Agency'
+        return m
+      })
+      
+      toast({
+        title: "❌ Cliente no encontrado",
+        description: `Se creará un nuevo cliente en el módulo: ${moduleNames.join(", ")}`,
+      })
+    }
+    
+    setIsCheckingSap(false)
+  }
 
   // Cargar datos del cliente cuando se abre en modo edición
   useEffect(() => {
@@ -111,7 +237,7 @@ export function ClientModal({
         documentType: editingClient.type === "natural" ? editingClient.documentType : "cedula",
         documentNumber: editingClient.type === "natural" ? editingClient.documentNumber : "",
         companyName: editingClient.type === "juridico" ? editingClient.companyName : "",
-        name: editingClient.type === "juridico" ? editingClient.name : "",
+        name: editingClient.type === "juridico" ? editingClient.name || "" : "",
         ruc: editingClient.type === "juridico" ? editingClient.ruc : "",
         contactName: editingClient.type === "juridico" ? editingClient.contactName || "" : "",
         email: editingClient.email || "",
@@ -119,9 +245,13 @@ export function ClientModal({
         address: typeof editingClient.address === "string" ? editingClient.address : "",
         sapCode: editingClient.sapCode || ""
       })
+      setExistingClient(editingClient)
+      setSapCodeChecked(true)
     } else if (!editingClient && isOpen) {
       // Resetear formulario cuando se abre para crear nuevo cliente
       setFormData(initialFormData)
+      setExistingClient(null)
+      setSapCodeChecked(false)
     }
   }, [editingClient, isOpen])
 
@@ -132,14 +262,69 @@ export function ClientModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // Validar campos requeridos
-    if (!formData.sapCode.trim()) {
+    // Validar campos requeridos y normalizar SAP code
+    const normalizedSapCode = formData.sapCode.trim()
+    if (!normalizedSapCode) {
       toast({ 
         title: "Campo requerido", 
         description: "El código SAP del cliente es obligatorio.", 
         variant: "destructive" 
       })
       return
+    }
+
+    // Normalizar el SAP code en el formData
+    const formDataWithNormalizedSap = {
+      ...formData,
+      sapCode: normalizedSapCode
+    }
+
+    // Si existe un cliente con este SAP, actualizar sus módulos en lugar de crear uno nuevo
+    if (existingClient && existingClient.sapCode?.trim().toLowerCase() === normalizedSapCode.toLowerCase()) {
+      try {
+        const clientModules = (existingClient as any).module || []
+        const moduleArray = Array.isArray(module) ? module : [module]
+        const updatedModules = [...new Set([...clientModules, ...moduleArray])] // Evitar duplicados
+        
+        // Usar el ID real del cliente existente
+        const clientId = existingClient._id || existingClient.id
+        
+        // Actualizar el cliente agregando los módulos y actualizando los datos
+        await dispatch(updateClientAsync({
+          id: clientId,
+          ...existingClient,
+          module: updatedModules,
+          ...(formDataWithNormalizedSap.type === "natural" ? {
+            fullName: formDataWithNormalizedSap.fullName,
+            documentType: formDataWithNormalizedSap.documentType,
+            documentNumber: formDataWithNormalizedSap.documentNumber
+          } : {
+            companyName: formDataWithNormalizedSap.companyName,
+            name: formDataWithNormalizedSap.name,
+            ruc: formDataWithNormalizedSap.ruc,
+            contactName: formDataWithNormalizedSap.contactName
+          }),
+          email: formDataWithNormalizedSap.email,
+          phone: formDataWithNormalizedSap.phone,
+          address: formDataWithNormalizedSap.address,
+          sapCode: normalizedSapCode
+        } as any)).unwrap()
+        
+        toast({ 
+          title: "Cliente actualizado", 
+          description: `Cliente actualizado y agregado al módulo ${moduleArray.join(", ")}.` 
+        })
+        handleCloseDialog()
+        onClientCreated?.(existingClient) // Pasar el cliente actualizado al callback
+        return
+      } catch (error) {
+        toast({ 
+          title: "Error", 
+          description: "Ocurrió un error al actualizar el cliente.", 
+          variant: "destructive" 
+        })
+        return
+      }
     }
     
     try {
@@ -155,7 +340,7 @@ export function ClientModal({
             address: formData.address || undefined,
             email: formData.email || undefined,
             phone: formData.phone || undefined,
-            sapCode: formData.sapCode,
+            sapCode: normalizedSapCode,
             createdAt: editingClient?.createdAt || now,
             updatedAt: now,
             isActive: true
@@ -169,8 +354,9 @@ export function ClientModal({
           })).unwrap()
           toast({ title: "Cliente actualizado", description: "El cliente natural ha sido actualizado exitosamente." })
         } else {
-          // Cliente nuevo o temporal - crear
-          await dispatch(createClientAsync(naturalClient)).unwrap()
+          // Cliente nuevo o temporal - crear con módulo (convertir a array si es string)
+          const moduleArray = Array.isArray(module) ? module : [module]
+          await dispatch(createClientAsync({ ...naturalClient, module: moduleArray })).unwrap()
           toast({ title: "Cliente creado", description: "El cliente natural ha sido creado exitosamente." })
           onClientCreated?.(naturalClient)
         }
@@ -185,7 +371,7 @@ export function ClientModal({
             email: formData.email,
             phone: formData.phone || undefined,
             address: formData.address || undefined,
-            sapCode: formData.sapCode,
+            sapCode: normalizedSapCode,
             createdAt: editingClient?.createdAt || now,
             updatedAt: now,
             isActive: true
@@ -199,8 +385,9 @@ export function ClientModal({
           })).unwrap()
           toast({ title: "Cliente actualizado", description: "El cliente jurídico ha sido actualizado exitosamente." })
         } else {
-          // Cliente nuevo o temporal - crear
-          await dispatch(createClientAsync(juridicalClient)).unwrap()
+          // Cliente nuevo o temporal - crear con módulo (convertir a array si es string)
+          const moduleArray = Array.isArray(module) ? module : [module]
+          await dispatch(createClientAsync({ ...juridicalClient, module: moduleArray })).unwrap()
           toast({ title: "Cliente creado", description: "El cliente jurídico ha sido creado exitosamente." })
           onClientCreated?.(juridicalClient)
         }
@@ -232,6 +419,78 @@ export function ClientModal({
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Código SAP - PRIMERO */}
+          <div className="space-y-2">
+            <Label htmlFor="sapCode">Código SAP Cliente *</Label>
+            <div className="flex gap-2">
+              <Input
+                id="sapCode"
+                value={formData.sapCode}
+                onChange={(e) => {
+                  setFormData({...formData, sapCode: e.target.value})
+                  setSapCodeChecked(false)
+                  setExistingClient(null)
+                  // Resetear otros campos
+                  if (editingClient === null) {
+                    setFormData(prev => ({
+                      ...prev,
+                      sapCode: e.target.value,
+                      fullName: "",
+                      documentNumber: "",
+                      companyName: "",
+                      name: "",
+                      ruc: "",
+                      email: "",
+                      phone: "",
+                      address: ""
+                    }))
+                  }
+                }}
+                placeholder="Ingresa el código SAP"
+                required
+                disabled={!!(editingClient && editingClient._id)} // Deshabilitar solo si está editando un cliente existente (con _id)
+                className="flex-1"
+              />
+              {!(editingClient && editingClient._id) && ( // Mostrar botón de buscar si no está editando un cliente existente
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => checkSapCode(formData.sapCode)}
+                  disabled={!formData.sapCode.trim() || isCheckingSap}
+                >
+                  {isCheckingSap ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Buscando...
+                    </>
+                  ) : "Buscar"}
+                </Button>
+              )}
+            </div>
+            {existingClient && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="flex items-center space-x-2">
+                  <CheckCircle className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm text-blue-800 font-medium">
+                    Cliente encontrado. Al guardar, asociaremos el cliente encontrado en el módulo actual.
+                  </span>
+                </div>
+              </div>
+            )}
+            {!existingClient && sapCodeChecked && !editingClient && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                <div className="flex items-center space-x-2">
+                  <Plus className="h-4 w-4 text-orange-600" />
+                  <span className="text-sm text-orange-800 font-medium">
+                    Cliente no encontrado. Se creará un nuevo cliente con el codigo SAP ingresado. Por favor completar todos los campos restantes.
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <Separator />
+
           {/* Tipo de Cliente */}
           <div className="space-y-2">
             <Label>Tipo de Cliente</Label>
@@ -239,12 +498,12 @@ export function ClientModal({
               value={formData.type} 
               onValueChange={(value) => setFormData({...formData, type: value as ClientType})}
             >
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="natural" className="flex items-center space-x-2">
+              <TabsList className="grid w-full grid-cols-2" disabled={shouldDisableFields()}>
+                <TabsTrigger value="natural" className="flex items-center space-x-2" disabled={shouldDisableFields()}>
                   <User className="h-4 w-4" />
                   <span>Natural</span>
                 </TabsTrigger>
-                <TabsTrigger value="juridico" className="flex items-center space-x-2">
+                <TabsTrigger value="juridico" className="flex items-center space-x-2" disabled={shouldDisableFields()}>
                   <Building className="h-4 w-4" />
                   <span>Jurídico</span>
                 </TabsTrigger>
@@ -261,6 +520,7 @@ export function ClientModal({
                       onChange={(e) => setFormData({...formData, fullName: e.target.value})}
                       placeholder="Nombres y apellidos"
                       required
+                      disabled={shouldDisableFields()}
                     />
                   </div>
                   
@@ -269,6 +529,7 @@ export function ClientModal({
                     <Select 
                       value={formData.documentType} 
                       onValueChange={(value) => setFormData({...formData, documentType: value as "cedula" | "pasaporte"})}
+                      disabled={shouldDisableFields()}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -288,6 +549,7 @@ export function ClientModal({
                       onChange={(e) => setFormData({...formData, documentNumber: e.target.value})}
                       placeholder="8-123-456 o PA123456789"
                       required
+                      disabled={shouldDisableFields()}
                     />
                   </div>
                 </div>
@@ -304,6 +566,7 @@ export function ClientModal({
                       onChange={(e) => setFormData({...formData, companyName: e.target.value})}
                       placeholder="Razón social"
                       required={formData.type === "juridico"}
+                      disabled={shouldDisableFields()}
                     />
                   </div>
                   
@@ -314,6 +577,7 @@ export function ClientModal({
                       value={formData.name}
                       onChange={(e) => setFormData({...formData, name: e.target.value})}
                       placeholder="Nombre corto para referencias"
+                      disabled={shouldDisableFields()}
                     />
                   </div>
 
@@ -325,6 +589,7 @@ export function ClientModal({
                       onChange={(e) => setFormData({...formData, ruc: e.target.value})}
                       placeholder="155678901-2-2020"
                       required={formData.type === "juridico"}
+                      disabled={shouldDisableFields()}
                     />
                   </div>
                   
@@ -335,6 +600,7 @@ export function ClientModal({
                       value={formData.contactName}
                       onChange={(e) => setFormData({...formData, contactName: e.target.value})}
                       placeholder="Persona de contacto"
+                      disabled={shouldDisableFields()}
                     />
                   </div>
                 </div>
@@ -349,27 +615,29 @@ export function ClientModal({
             <h3 className="text-lg font-medium">Información de Contacto</h3>
             
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="email">Correo Electrónico {formData.type === "juridico" && "*"}</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({...formData, email: e.target.value})}
-                  placeholder="correo@ejemplo.com"
-                  required={formData.type === "juridico"}
-                />
-              </div>
+            <div>
+              <Label htmlFor="email">Correo Electrónico {formData.type === "juridico" && "*"}</Label>
+              <Input
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                placeholder="correo@ejemplo.com"
+                required={formData.type === "juridico"}
+                disabled={shouldDisableFields()}
+              />
+            </div>
               
-              <div>
-                <Label htmlFor="phone">Teléfono</Label>
-                <Input
-                  id="phone"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                  placeholder="6001-2345"
-                />
-              </div>
+            <div>
+              <Label htmlFor="phone">Teléfono</Label>
+              <Input
+                id="phone"
+                value={formData.phone}
+                onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                placeholder="6001-2345"
+                disabled={shouldDisableFields()}
+              />
+            </div>
             </div>
             
             <div>
@@ -380,17 +648,7 @@ export function ClientModal({
                 onChange={(e) => setFormData({...formData, address: e.target.value})}
                 placeholder="Dirección completa del cliente"
                 rows={3}
-              />
-            </div>
-            
-            <div>
-              <Label htmlFor="sapCode">Código SAP Cliente *</Label>
-              <Input
-                id="sapCode"
-                value={formData.sapCode}
-                onChange={(e) => setFormData({...formData, sapCode: e.target.value})}
-                placeholder="Código SAP del cliente"
-                required
+                disabled={shouldDisableFields()}
               />
             </div>
           </div>
@@ -400,8 +658,8 @@ export function ClientModal({
             <Button type="button" variant="outline" onClick={handleCloseDialog}>
               Cancelar
             </Button>
-            <Button type="submit">
-              {editingClient ? "Actualizar" : "Crear"} Cliente
+            <Button type="submit" disabled={(shouldDisableFields() && !existingClient) || !formData.sapCode.trim()}>
+              {existingClient ? "Agregar al Cliente Existente" : editingClient ? "Actualizar" : "Crear Cliente"}
             </Button>
           </div>
         </form>
@@ -412,12 +670,57 @@ export function ClientModal({
 
 export function ClientsManagement() {
   const dispatch = useAppDispatch()
+  const currentUser = useAppSelector(selectCurrentUser)
   const { toast } = useToast()
   
   const allClients = useAppSelector(selectAllClients)
-  const activeClients = useAppSelector(selectActiveClients)
-  const naturalClients = useAppSelector(selectNaturalClients)
-  const juridicalClients = useAppSelector(selectJuridicalClients)
+  
+  // Mapeo entre módulos del usuario y módulos de clientes
+  // Los módulos del usuario son: trucking, shipchandler, agency
+  // Los módulos de clientes son: trucking, ptyss, agency
+  const moduleMapping: Record<string, string> = {
+    'trucking': 'trucking',
+    'shipchandler': 'ptyss',  // PTYSS en usuario es "shipchandler", en clientes es "ptyss"
+    'agency': 'agency'
+  }
+
+  // Filtrar clientes por módulos del usuario
+  const filteredClientsByModule = useMemo(() => {
+    if (!currentUser || !currentUser.modules || currentUser.modules.length === 0) {
+      return allClients
+    }
+    
+    // Obtener roles del usuario para verificar si es admin
+    const userRoles = currentUser.roles || (currentUser.role ? [currentUser.role] : [])
+    const isAdmin = userRoles.includes('administrador')
+    
+    // Si es admin, ver todos los clientes
+    if (isAdmin) {
+      return allClients
+    }
+    
+    // Mapear los módulos del usuario a los módulos de los clientes
+    const userClientModules = currentUser.modules?.map(m => moduleMapping[m] || m) || []
+    
+    // Si no es admin, filtrar por módulos del usuario
+    return allClients.filter((client: any) => {
+      if (!client.module || !Array.isArray(client.module)) {
+        return false // Clientes sin módulo asignado no se muestran
+      }
+      
+      // Verificar si el cliente tiene al menos uno de los módulos del usuario (mapeados)
+      const hasOverlap = client.module.some((clientModule: string) => 
+        userClientModules.includes(clientModule)
+      )
+      
+      return hasOverlap
+    })
+  }, [allClients, currentUser])
+  
+  // Calcular estadísticas basadas en clientes filtrados
+  const activeClients = useMemo(() => filteredClientsByModule.filter(c => c.isActive), [filteredClientsByModule])
+  const naturalClients = useMemo(() => filteredClientsByModule.filter(c => c.type === "natural" && c.isActive), [filteredClientsByModule])
+  const juridicalClients = useMemo(() => filteredClientsByModule.filter(c => c.type === "juridico" && c.isActive), [filteredClientsByModule])
   
   const [searchTerm, setSearchTerm] = useState("")
   const [filterType, setFilterType] = useState<"all" | "natural" | "juridico">("all")
@@ -435,7 +738,8 @@ export function ClientsManagement() {
 
   // Filtrar clientes
   const filteredClients = useMemo(() => {
-    let filtered = allClients
+    // Usar los clientes ya filtrados por módulos
+    let filtered = filteredClientsByModule
     
     // Filtrar por estado
     if (filterStatus === "active") {
@@ -475,7 +779,7 @@ export function ClientsManagement() {
     }
     
     return filtered
-  }, [allClients, searchTerm, filterType, filterStatus])
+  }, [filteredClientsByModule, searchTerm, filterType, filterStatus])
 
   // Eliminar cliente
   const handleDelete = async (clientId: string) => {
@@ -644,7 +948,7 @@ export function ClientsManagement() {
               <Users className="h-4 w-4 text-blue-500" />
               <div>
                 <p className="text-sm text-muted-foreground">Total Clientes</p>
-                <p className="text-2xl font-bold">{allClients.length}</p>
+                <p className="text-2xl font-bold">{filteredClientsByModule.length}</p>
               </div>
             </div>
           </CardContent>
@@ -735,7 +1039,7 @@ export function ClientsManagement() {
           {/* Resumen de filtros */}
           <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
             <span>
-              Mostrando {filteredClients.length} de {allClients.length} clientes
+              Mostrando {filteredClients.length} de {filteredClientsByModule.length} clientes
             </span>
             
             {(searchTerm || filterType !== "all" || filterStatus !== "all") && (

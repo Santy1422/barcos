@@ -164,8 +164,8 @@ export function AppSidebar() {
         // Configuración removida - no se usa por ahora
       ].filter(Boolean),
     }] : []),
-    // Clientes - Solo facturación y administradores
-    ...(hasAnyRole(["facturacion", "administrador"]) ? [{
+    // Clientes - Solo clientes y administradores (no facturación sin rol clientes)
+    ...(hasAnyRole(["clientes", "administrador"]) ? [{
       title: "Clientes",
       href: "/clientes",
       icon: Users,

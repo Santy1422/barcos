@@ -13,24 +13,37 @@ export default function ClientsPage() {
   const router = useRouter()
 
   useEffect(() => {
-    // Solo facturación y administradores pueden acceder
-    if (currentUser && currentUser.role !== 'facturacion' && currentUser.role !== 'administrador') {
-      router.push('/')
+    // Solo clientes y administradores pueden acceder
+    if (currentUser) {
+      const userRoles = currentUser.roles || (currentUser.role ? [currentUser.role] : [])
+      const hasAccess = userRoles.some(role => 
+        role === 'administrador' || role === 'clientes'
+      )
+      if (!hasAccess) {
+        router.push('/')
+      }
     }
   }, [currentUser, router])
 
   // Si no tiene acceso, mostrar mensaje
-  if (!currentUser || (currentUser.role !== 'facturacion' && currentUser.role !== 'administrador')) {
-    return (
-      <div className="container mx-auto py-6">
-        <Alert variant="destructive">
-          <Shield className="h-4 w-4" />
-          <AlertDescription>
-            No tienes acceso a la gestión de clientes. Solo usuarios de facturación y administradores pueden acceder.
-          </AlertDescription>
-        </Alert>
-      </div>
+  if (currentUser) {
+    const userRoles = currentUser.roles || (currentUser.role ? [currentUser.role] : [])
+    const hasAccess = userRoles.some(role => 
+      role === 'administrador' || role === 'clientes'
     )
+    
+    if (!hasAccess) {
+      return (
+        <div className="container mx-auto py-6">
+          <Alert variant="destructive">
+            <Shield className="h-4 w-4" />
+            <AlertDescription>
+              No tienes acceso a la gestión de clientes. Solo usuarios con el rol "Administrar Clientes" o administradores pueden acceder.
+            </AlertDescription>
+          </Alert>
+        </div>
+      )
+    }
   }
 
   return (

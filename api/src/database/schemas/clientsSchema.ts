@@ -55,12 +55,18 @@ const clientsSchema = new mongoose.Schema({
   // Campo para código SAP
   sapCode: {
     type: String,
-    required: true,
-    unique: true
+    required: true
+    // Nota: unique se maneja con un índice compuesto con module más abajo
   },
   isActive: {
     type: Boolean,
     default: true
+  },
+  // Campo para identificar los módulos del cliente (puede pertenecer a varios)
+  module: {
+    type: [String],
+    enum: ["ptyss", "trucking", "agency"],
+    default: ["ptyss"] // Por defecto ptyss para mantener compatibilidad
   },
   
   // Relaciones
@@ -86,9 +92,10 @@ const clientsSchema = new mongoose.Schema({
 // Índices
 clientsSchema.index({ type: 1 });
 clientsSchema.index({ isActive: 1 });
+clientsSchema.index({ module: 1 }); // Índice para búsquedas con $in
 clientsSchema.index({ ruc: 1 }, { sparse: true });
 clientsSchema.index({ documentNumber: 1 }, { sparse: true });
-clientsSchema.index({ sapCode: 1 }, { sparse: true });
+clientsSchema.index({ sapCode: 1 }); // Índice simple para sapCode
 clientsSchema.index({ name: 1 }, { sparse: true });
 clientsSchema.index({ createdBy: 1 });
 clientsSchema.index({ createdAt: -1 });

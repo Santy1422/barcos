@@ -4,7 +4,14 @@ import { response } from "../../utils";
 export default async (req, res) => {
   try {
     const { id } = req.params;
-    const client = await clients.findByIdAndUpdate(id, req.body, { new: true });
+    
+    // Normalizar SAP code si está presente en el body
+    const updateData = { ...req.body };
+    if (updateData.sapCode && typeof updateData.sapCode === 'string') {
+      updateData.sapCode = updateData.sapCode.trim();
+    }
+    
+    const client = await clients.findByIdAndUpdate(id, updateData, { new: true });
     
     if (!client) {
       return response(res, 404, { error: "Cliente no encontrado" });
