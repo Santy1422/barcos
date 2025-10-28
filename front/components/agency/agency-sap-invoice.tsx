@@ -7,9 +7,12 @@ import { fetchClients, selectAllClients } from '@/lib/features/clients/clientsSl
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Ship, 
   Search, 
@@ -49,10 +52,16 @@ export const AgencySapInvoice: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'facturado' | 'nota_de_credito'>('all');
   const [clientFilter, setClientFilter] = useState('all');
   const [vesselFilter, setVesselFilter] = useState('');
+  const [crewRankFilter, setCrewRankFilter] = useState<'all' | 'security_guard' | 'seal_check' | 'both'>('all');
   const [activePeriodFilter, setActivePeriodFilter] = useState<'none' | 'today' | 'week' | 'month' | 'advanced'>('none');
   const [isUsingPeriodFilter, setIsUsingPeriodFilter] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [isDateModalOpen, setIsDateModalOpen] = useState(false);
+
+  // Estado para selección múltiple
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
   // Estado de modales (simplificado para servicios)
   const [selectedService, setSelectedService] = useState<any | null>(null);
@@ -63,6 +72,8 @@ export const AgencySapInvoice: React.FC = () => {
   const [serviceForXml, setServiceForXml] = useState<any | null>(null);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [serviceForPdf, setServiceForPdf] = useState<any | null>(null);
+  const [servicesForPdf, setServicesForPdf] = useState<any[]>([]);
+  const [isPdfMultipleServices, setIsPdfMultipleServices] = useState(false);
 
   useEffect(() => {
     dispatch(fetchClients());
@@ -102,6 +113,28 @@ export const AgencySapInvoice: React.FC = () => {
     }
     
     return 'N/A';
+  };
+
+  const getClientIdForService = (service: any) => {
+    // Si tiene clientId directo, extraer solo el ID
+    if (service.clientId) {
+      // Si es un objeto, extraer el _id o id
+      if (typeof service.clientId === 'object') {
+        return service.clientId._id || service.clientId.id || null;
+      }
+      // Si es un string, usarlo directamente
+      return service.clientId;
+    }
+    
+    // Si solo tiene clientName, buscar el ID en la lista de clientes
+    if (service.clientName) {
+      const client = clients.find(c => 
+        (c.type === 'natural' ? c.fullName : c.companyName) === service.clientName
+      );
+      return client ? (client._id || client.id) : null;
+    }
+    
+    return null;
   };
 
   const getCrewMembersForService = (service: any) => {
@@ -154,7 +187,8 @@ export const AgencySapInvoice: React.FC = () => {
       case 'week': { const d = getCurrentWeekDates(); setStartDate(d.start); setEndDate(d.end); break; }
       case 'month': { const d = getCurrentMonthDates(); setStartDate(d.start); setEndDate(d.end); break; }
       case 'advanced':
-        // TODO: Abrir modal de fechas avanzadas
+        // Abrir modal de fechas avanzadas
+        setIsDateModalOpen(true);
         break;
     }
   };
@@ -169,6 +203,81 @@ export const AgencySapInvoice: React.FC = () => {
     return 'Período personalizado';
   };
 
+  const handleApplyDateFilter = (start: string, end: string) => {
+    setStartDate(start);
+    setEndDate(end);
+    setIsUsingPeriodFilter(true);
+    setActivePeriodFilter('advanced');
+    setIsDateModalOpen(false);
+  };
+
+  const handleCancelDateFilter = () => {
+    setIsDateModalOpen(false);
+    // Si no hay fechas establecidas, desactivar el filtro avanzado
+    if (!startDate || !endDate) {
+      setIsUsingPeriodFilter(false);
+      setActivePeriodFilter('none');
+    } else {
+      // Si hay fechas pero se cancela, mantener el filtro avanzado activo
+      setActivePeriodFilter('advanced');
+    }
+  };
+
+  // Funciones para manejar selección múltiple
+  const handleServiceSelection = (serviceId: string, clientId: string | null) => {
+    console.log('handleServiceSelection called:', { 
+      serviceId, 
+      clientId, 
+      selectedClientId, 
+      selectedServices,
+      clientIdType: typeof clientId,
+      selectedClientIdType: typeof selectedClientId,
+      areEqual: selectedClientId === clientId
+    });
+    
+    // Si no hay clientId, no permitir selección
+    if (!clientId) {
+      toast.error('No se puede determinar el cliente para este servicio');
+      return;
+    }
+    
+    // Si no hay cliente seleccionado o es el mismo cliente
+    if (!selectedClientId || selectedClientId === clientId) {
+      // Solo establecer el cliente si no hay ninguno seleccionado
+      if (!selectedClientId) {
+        setSelectedClientId(clientId);
+      }
+      
+      if (selectedServices.includes(serviceId)) {
+        // Deseleccionar servicio
+        const newSelection = selectedServices.filter(id => id !== serviceId);
+        setSelectedServices(newSelection);
+        
+        // Si no quedan servicios seleccionados, limpiar cliente
+        if (newSelection.length === 0) {
+          setSelectedClientId(null);
+        }
+      } else {
+        // Seleccionar servicio
+        setSelectedServices([...selectedServices, serviceId]);
+      }
+    } else {
+      // Si es un cliente diferente, mostrar mensaje de error
+      toast.error('Solo puedes seleccionar servicios del mismo cliente');
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedServices([]);
+    setSelectedClientId(null);
+  };
+
+  const getSelectedClientName = () => {
+    if (!selectedClientId) return '';
+    const client = clients.find(c => (c._id || c.id) === selectedClientId);
+    return client ? (client.type === 'natural' ? client.fullName : client.companyName) : '';
+  };
+
   const filteredServices = useMemo(() => {
     const q = search.toLowerCase();
     
@@ -178,14 +287,10 @@ export const AgencySapInvoice: React.FC = () => {
         return false;
       }
       
-      // Búsqueda
+      // Búsqueda - Solo por cliente y ubicaciones
       const clientName = getClientForService(service).toLowerCase();
-      const crewName = getCrewMembersForService(service).toLowerCase();
-      const vessel = (service.vessel || '').toLowerCase();
       
       const matchesSearch = clientName.includes(q) || 
-                           crewName.includes(q) || 
-                           vessel.includes(q) ||
                            (service.pickupLocation || '').toLowerCase().includes(q) ||
                            (service.dropoffLocation || '').toLowerCase().includes(q);
       
@@ -198,6 +303,33 @@ export const AgencySapInvoice: React.FC = () => {
       // Filtro de vessel
       const matchesVessel = !vesselFilter || (service.vessel || '').toLowerCase().includes(vesselFilter.toLowerCase());
       
+      // Filtro de crew rank
+      let matchesCrewRank = true;
+      if (crewRankFilter !== 'all' && service.crewMembers && service.crewMembers.length > 0) {
+        const crewRanks = service.crewMembers.map((member: any) => 
+          (member.crewRank || '').toLowerCase()
+        );
+        
+        switch (crewRankFilter) {
+          case 'security_guard':
+            matchesCrewRank = crewRanks.some(rank => 
+              rank.includes('security guard') || rank.includes('security')
+            );
+            break;
+          case 'seal_check':
+            matchesCrewRank = crewRanks.some(rank => 
+              rank.includes('seal check') || rank.includes('seal')
+            );
+            break;
+          case 'both':
+            matchesCrewRank = crewRanks.some(rank => 
+              rank.includes('security guard') || rank.includes('security') ||
+              rank.includes('seal check') || rank.includes('seal')
+            );
+            break;
+        }
+      }
+      
       // Filtro de fecha
       let matchesDate = true;
       if (isUsingPeriodFilter && startDate && endDate) {
@@ -208,9 +340,9 @@ export const AgencySapInvoice: React.FC = () => {
         matchesDate = d >= s && d <= e;
       }
       
-      return matchesSearch && matchesStatus && matchesClient && matchesVessel && matchesDate;
+      return matchesSearch && matchesStatus && matchesClient && matchesVessel && matchesCrewRank && matchesDate;
     });
-  }, [services, search, statusFilter, clientFilter, vesselFilter, isUsingPeriodFilter, startDate, endDate, clients]);
+  }, [services, search, statusFilter, clientFilter, vesselFilter, crewRankFilter, isUsingPeriodFilter, startDate, endDate, clients]);
 
   const handleDeleteService = async (service: any) => {
     if (!confirm(`¿Está seguro de eliminar el servicio?`)) return;
@@ -240,6 +372,12 @@ export const AgencySapInvoice: React.FC = () => {
     setFacturarModalOpen(true);
   };
 
+  const handleOpenFacturarMultipleModal = () => {
+    // Para facturación múltiple, no establecer un servicio específico
+    setServiceToFacturar(null);
+    setFacturarModalOpen(true);
+  };
+
   const handleOpenXmlModal = (service: any) => {
     setServiceForXml(service);
     setXmlModalOpen(true);
@@ -247,6 +385,19 @@ export const AgencySapInvoice: React.FC = () => {
 
   const handleOpenPdfModal = (service: any) => {
     setServiceForPdf(service);
+    setServicesForPdf([]);
+    setIsPdfMultipleServices(false);
+    setPdfModalOpen(true);
+  };
+
+  const handleOpenPdfMultipleModal = () => {
+    // Obtener los servicios seleccionados completos
+    const selectedServicesData = services.filter((s: any) => 
+      selectedServices.includes(s._id || s.id)
+    );
+    setServicesForPdf(selectedServicesData);
+    setServiceForPdf(null);
+    setIsPdfMultipleServices(true);
     setPdfModalOpen(true);
   };
 
@@ -291,6 +442,51 @@ export const AgencySapInvoice: React.FC = () => {
     }
   };
 
+  const handleFacturarMultipleServices = async (serviceIds: string, invoiceNumber: string, invoiceDate: string, xmlData: any, waitingTimePrice?: number) => {
+    try {
+      // Convertir el string de IDs separados por comas en array
+      const serviceIdArray = serviceIds.split(',');
+      
+      console.log('Facturando múltiples servicios:', { 
+        serviceIds: serviceIdArray, 
+        invoiceNumber, 
+        invoiceDate, 
+        xmlData, 
+        waitingTimePrice 
+      });
+      
+      // Facturar cada servicio seleccionado
+      const promises = serviceIdArray.map(serviceId => 
+        updateService({
+          id: serviceId,
+          updateData: {
+            status: 'facturado' as any,
+            invoiceNumber: invoiceNumber,
+            invoiceDate: invoiceDate,
+            xmlData: xmlData,
+            waitingTimePrice: waitingTimePrice || 0
+          }
+        })
+      );
+      
+      await Promise.all(promises);
+      
+      toast.success(`${serviceIdArray.length} servicios facturados: ${invoiceNumber}`);
+      
+      // Limpiar selección
+      clearSelection();
+      
+      // Refresh services list
+      fetchServices({ page: 1, limit: 100 }).catch(err => {
+        console.error('Error refreshing services:', err);
+      });
+    } catch (e: any) {
+      console.error('Error in handleFacturarMultipleServices:', e);
+      toast.error(e.message || 'Error al facturar servicios múltiples');
+      throw e;
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -311,7 +507,7 @@ export const AgencySapInvoice: React.FC = () => {
                     <Input
                 value={search} 
                 onChange={(e) => setSearch(e.target.value)} 
-                placeholder="Buscar por cliente, crew, vessel, ubicación..." 
+                placeholder="Buscar por cliente o ubicación..." 
                 className="pl-9" 
                   />
                 </div>
@@ -324,6 +520,17 @@ export const AgencySapInvoice: React.FC = () => {
                 <SelectItem value="completed">Completado</SelectItem>
                 <SelectItem value="facturado">Facturado</SelectItem>
                 <SelectItem value="nota_de_credito">Nota de Crédito</SelectItem>
+                    </SelectContent>
+                  </Select>
+            <Select value={crewRankFilter} onValueChange={(v) => setCrewRankFilter(v as any)}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Crew Rank" />
+                    </SelectTrigger>
+                    <SelectContent>
+                <SelectItem value="all">Todos los Ranks</SelectItem>
+                <SelectItem value="security_guard">Security Guard</SelectItem>
+                <SelectItem value="seal_check">Seal Check</SelectItem>
+                <SelectItem value="both">Security Guard + Seal Check</SelectItem>
                     </SelectContent>
                   </Select>
                   <Input
@@ -410,10 +617,53 @@ export const AgencySapInvoice: React.FC = () => {
               </div>
           )}
 
+          {/* Información de selección múltiple */}
+          {selectedServices.length > 0 && (
+            <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-md">
+              <Badge variant="default" className="bg-green-600 text-white text-xs">
+                {selectedServices.length} servicio{selectedServices.length !== 1 ? 's' : ''} seleccionado{selectedServices.length !== 1 ? 's' : ''}
+              </Badge>
+              <span className="text-sm text-green-700">
+                Cliente: {getSelectedClientName()}
+              </span>
+              {/* Mostrar botón Facturar solo si hay servicios completados */}
+              {services.filter((s: any) => selectedServices.includes(s._id || s.id) && s.status === 'completed').length > 0 && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleOpenFacturarMultipleModal} 
+                  className="h-8 px-3 text-green-700 border-green-600 hover:bg-green-50"
+                >
+                  Facturar Todos
+                </Button>
+              )}
+              {/* Mostrar botón Ver PDF solo si todos los servicios están facturados */}
+              {services.filter((s: any) => selectedServices.includes(s._id || s.id)).every((s: any) => s.status === 'facturado') && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleOpenPdfMultipleModal} 
+                  className="h-8 px-3 text-purple-700 border-purple-600 hover:bg-purple-50"
+                >
+                  Ver PDF
+                </Button>
+              )}
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={clearSelection} 
+                className="h-6 w-6 p-0 ml-auto"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+
           <div className="rounded-md border">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                  <TableHead className="w-12">Sel.</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead>Crew</TableHead>
@@ -426,7 +676,7 @@ export const AgencySapInvoice: React.FC = () => {
                   <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center">
+                    <TableCell colSpan={8} className="py-8 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         Cargando…
@@ -435,13 +685,20 @@ export const AgencySapInvoice: React.FC = () => {
                   </TableRow>
                 ) : filteredServices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                       No hay servicios que coincidan con los filtros
                         </TableCell>
                   </TableRow>
                 ) : (
                   filteredServices.map((service: any) => (
                     <TableRow key={service._id || service.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedServices.includes(service._id || service.id)}
+                            onCheckedChange={() => handleServiceSelection(service._id || service.id, getClientIdForService(service))}
+                            disabled={service.status !== 'completed'}
+                          />
+                        </TableCell>
                         <TableCell>
                           <div>
                             <div className="font-medium">
@@ -618,7 +875,11 @@ export const AgencySapInvoice: React.FC = () => {
         open={facturarModalOpen}
         onOpenChange={setFacturarModalOpen}
         service={serviceToFacturar}
-        onFacturar={handleFacturarService}
+        onFacturar={serviceToFacturar ? handleFacturarService : handleFacturarMultipleServices}
+        isMultipleServices={!serviceToFacturar && selectedServices.length > 0}
+        selectedServices={selectedServices}
+        selectedClientName={getSelectedClientName()}
+        allServices={services.filter((s: any) => selectedServices.includes(s._id || s.id))}
       />
 
       {/* Modal de XML */}
@@ -636,7 +897,100 @@ export const AgencySapInvoice: React.FC = () => {
         open={pdfModalOpen}
         onOpenChange={setPdfModalOpen}
         service={serviceForPdf}
+        services={servicesForPdf}
+        isMultipleServices={isPdfMultipleServices}
       />
+
+      {/* Modal de Selección de Fechas Avanzadas */}
+      <Dialog open={isDateModalOpen} onOpenChange={setIsDateModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Seleccionar Rango de Fechas
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Fecha desde:</Label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Fecha hasta:</Label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+            </div>
+            
+            {/* Botones de período rápido dentro del modal */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-600">Períodos rápidos:</Label>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const todayDates = getTodayDates();
+                    setStartDate(todayDates.start);
+                    setEndDate(todayDates.end);
+                  }}
+                  className="text-xs"
+                >
+                  Hoy
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const weekDates = getCurrentWeekDates();
+                    setStartDate(weekDates.start);
+                    setEndDate(weekDates.end);
+                  }}
+                  className="text-xs"
+                >
+                  Semana
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const monthDates = getCurrentMonthDates();
+                    setStartDate(monthDates.start);
+                    setEndDate(monthDates.end);
+                  }}
+                  className="text-xs"
+                >
+                  Mes
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={handleCancelDateFilter}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => handleApplyDateFilter(startDate, endDate)}
+              disabled={!startDate || !endDate}
+            >
+              Aplicar Filtro
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

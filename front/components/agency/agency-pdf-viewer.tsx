@@ -17,9 +17,11 @@ interface AgencyPdfViewerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   service: any;
+  services?: any[]; // Para facturación múltiple
+  isMultipleServices?: boolean;
 }
 
-export function AgencyPdfViewer({ open, onOpenChange, service }: AgencyPdfViewerProps) {
+export function AgencyPdfViewer({ open, onOpenChange, service, services = [], isMultipleServices = false }: AgencyPdfViewerProps) {
   const { toast } = useToast();
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -41,7 +43,7 @@ export function AgencyPdfViewer({ open, onOpenChange, service }: AgencyPdfViewer
     });
   };
 
-  const generateAgencyInvoicePDF = (serviceData: any, pdfTitle: string) => {
+  const generateAgencyInvoicePDF = (serviceData: any, pdfTitle: string, allServices?: any[]) => {
     const issuer = getClient('PTYSS')
     const doc = new jsPDF()
 
@@ -181,33 +183,6 @@ export function AgencyPdfViewer({ open, onOpenChange, service }: AgencyPdfViewer
     doc.text('DESCRIPTION', 70, startY + 5)
     doc.text('TOTAL', 170, startY + 5)
 
-    // Crear filas para el PDF con información de crew members
-    const bodyRows: any[] = []
-    
-    // Formatear fecha del servicio
-    const serviceDate = formatInvoiceDate(serviceData.pickupDate)
-    const formattedDate = `${serviceDate.getDate().toString().padStart(2, '0')}/${(serviceDate.getMonth() + 1).toString().padStart(2, '0')}/${serviceDate.getFullYear()}`
-    
-    // Descripción del servicio principal
-    let route = `${serviceData.pickupLocation} TO ${serviceData.dropoffLocation}`
-    
-    // Si es Round Trip, agregar el Return Drop-off
-    if (serviceData.moveType === 'RT' && serviceData.returnDropoffLocation) {
-      route += ` TO ${serviceData.returnDropoffLocation}`
-    }
-    
-    const vessel = serviceData.vessel || 'N/A'
-    
-    // Crew members - solo nombre y taulia code del rank
-    const crewInfo = serviceData.crewMembers && serviceData.crewMembers.length > 0
-      ? serviceData.crewMembers.map((cm: any) => {
-          // Buscar el rank en el catálogo para obtener el taulia code
-          const rank = ranks.find((r: any) => r.name === cm.crewRank);
-          const rankCode = rank?.code || cm.crewRank || 'N/A';
-          return `${cm.name} (${rankCode})`;
-        }).join(', ')
-      : serviceData.crewName || 'N/A'
-    
     // Función para obtener el label del move type
     const getMoveTypeLabel = (moveType: string) => {
       const moveTypes: { [key: string]: string } = {
@@ -220,18 +195,55 @@ export function AgencyPdfViewer({ open, onOpenChange, service }: AgencyPdfViewer
       };
       return moveTypes[moveType] || moveType;
     };
+
+    // Función para procesar un servicio y agregarlo a bodyRows
+    const processService = (svc: any, rows: any[]) => {
+      // Formatear fecha del servicio
+      const serviceDate = formatInvoiceDate(svc.pickupDate)
+      const formattedDate = `${serviceDate.getDate().toString().padStart(2, '0')}/${(serviceDate.getMonth() + 1).toString().padStart(2, '0')}/${serviceDate.getFullYear()}`
+      
+      // Descripción del servicio principal
+      let route = `${svc.pickupLocation} TO ${svc.dropoffLocation}`
+      
+      // Si es Round Trip, agregar el Return Drop-off
+      if (svc.moveType === 'RT' && svc.returnDropoffLocation) {
+        route += ` TO ${svc.returnDropoffLocation}`
+      }
+      
+      // Crew members - solo nombre y taulia code del rank
+      const crewInfo = svc.crewMembers && svc.crewMembers.length > 0
+        ? svc.crewMembers.map((cm: any) => {
+            // Buscar el rank en el catálogo para obtener el taulia code
+            const rank = ranks.find((r: any) => r.name === cm.crewRank);
+            const rankCode = rank?.code || cm.crewRank || 'N/A';
+            return `${cm.name} (${rankCode})`;
+          }).join(', ')
+        : svc.crewName || 'N/A'
+      
+      const moveTypeLabel = svc.moveType ? getMoveTypeLabel(svc.moveType) : '';
+      const description = moveTypeLabel ? `${moveTypeLabel} - ${route}\n${crewInfo}` : `${route}\n${crewInfo}`
+      const price = svc.price || 0
+      
+      rows.push([formattedDate, description, price.toFixed(2)])
+      
+      // Agregar waiting time si existe
+      if (svc.waitingTime > 0 && svc.waitingTimePrice > 0) {
+        const hours = (svc.waitingTime / 60).toFixed(2)
+        const wtDescription = `Waiting Time (${hours} hours)`
+        rows.push(['', wtDescription, svc.waitingTimePrice.toFixed(2)])
+      }
+    };
+
+    // Crear filas para el PDF con información de crew members
+    const bodyRows: any[] = []
+    const vessel = serviceData.vessel || 'N/A'
     
-    const moveTypeLabel = serviceData.moveType ? getMoveTypeLabel(serviceData.moveType) : '';
-    const description = moveTypeLabel ? `${moveTypeLabel} - ${route}\n${crewInfo}` : `${route}\n${crewInfo}`
-    const price = serviceData.price || 0
-    
-    bodyRows.push([formattedDate, description, price.toFixed(2)])
-    
-    // Agregar waiting time si existe
-    if (serviceData.waitingTime > 0 && serviceData.waitingTimePrice > 0) {
-      const hours = (serviceData.waitingTime / 60).toFixed(2)
-      const wtDescription = `Waiting Time (${hours} hours)`
-      bodyRows.push(['', wtDescription, serviceData.waitingTimePrice.toFixed(2)])
+    // Si hay múltiples servicios, procesar todos
+    if (allServices && allServices.length > 0) {
+      allServices.forEach(svc => processService(svc, bodyRows))
+    } else {
+      // Procesar solo el servicio individual
+      processService(serviceData, bodyRows)
     }
 
     autoTable(doc, {
@@ -274,8 +286,13 @@ export function AgencyPdfViewer({ open, onOpenChange, service }: AgencyPdfViewer
 
     y += 5
 
-    // TOTAL alineado a la derecha
-    const totalAmount = (serviceData.price || 0) + (serviceData.waitingTimePrice || 0)
+    // TOTAL alineado a la derecha - sumar todos los servicios si hay múltiples
+    let totalAmount = 0;
+    if (allServices && allServices.length > 0) {
+      totalAmount = allServices.reduce((sum, svc) => sum + (svc.price || 0) + (svc.waitingTimePrice || 0), 0);
+    } else {
+      totalAmount = (serviceData.price || 0) + (serviceData.waitingTimePrice || 0);
+    }
     doc.setFont(undefined, 'bold')
     doc.setFontSize(12)
     doc.text('TOTAL:', 120, y)
@@ -337,11 +354,13 @@ export function AgencyPdfViewer({ open, onOpenChange, service }: AgencyPdfViewer
   }
 
   useEffect(() => {
-    if (open && service) {
+    if (open && (service || (isMultipleServices && services.length > 0))) {
       setIsGenerating(true)
       try {
-        const pdfTitle = service.status === 'facturado' ? 'INVOICE' : 'PRE-INVOICE'
-        const doc = generateAgencyInvoicePDF(service, pdfTitle)
+        // Para múltiples servicios, usar el primer servicio como base para datos del cliente
+        const baseService = isMultipleServices && services.length > 0 ? services[0] : service;
+        const pdfTitle = baseService.status === 'facturado' ? 'INVOICE' : 'PRE-INVOICE'
+        const doc = generateAgencyInvoicePDF(baseService, pdfTitle, isMultipleServices ? services : undefined)
         const blob = doc.output('blob')
         setPdfBlob(blob)
       } catch (error) {
@@ -351,11 +370,13 @@ export function AgencyPdfViewer({ open, onOpenChange, service }: AgencyPdfViewer
         setIsGenerating(false)
       }
     }
-  }, [open, service, toast])
+  }, [open, service, services, isMultipleServices, toast, ranks])
 
   const handleDownload = () => {
-    if (!pdfBlob || !service) return
-    const fileName = `agency_invoice_${service.invoiceNumber || service._id}.pdf`
+    if (!pdfBlob) return
+    const baseService = isMultipleServices && services.length > 0 ? services[0] : service;
+    if (!baseService) return;
+    const fileName = `agency_invoice_${baseService.invoiceNumber || baseService._id}.pdf`
     saveAs(pdfBlob, fileName)
     toast({ title: "PDF descargado", description: `El archivo ${fileName} ha sido descargado` })
   }
@@ -366,14 +387,14 @@ export function AgencyPdfViewer({ open, onOpenChange, service }: AgencyPdfViewer
     window.open(url, '_blank')
   }
 
-  if (!service) return null
+  if (!service && !isMultipleServices) return null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Eye className="h-5 w-5" /> Vista Previa PDF - {service.invoiceNumber || 'Servicio'}
+            <Eye className="h-5 w-5" /> Vista Previa PDF - {isMultipleServices ? `${services.length} Servicios` : (service?.invoiceNumber || 'Servicio')}
           </DialogTitle>
         </DialogHeader>
 
@@ -394,7 +415,7 @@ export function AgencyPdfViewer({ open, onOpenChange, service }: AgencyPdfViewer
                     <p className="text-sm text-green-700">El PDF está listo para descargar o visualizar</p>
                   </div>
                   <Badge variant="secondary" className="bg-green-100 text-green-800">
-                    {service.status === 'facturado' ? 'Factura' : 'Pre-factura'}
+                    {(isMultipleServices && services.length > 0 ? services[0].status : service?.status) === 'facturado' ? 'Factura' : 'Pre-factura'}
                   </Badge>
                 </div>
               </div>

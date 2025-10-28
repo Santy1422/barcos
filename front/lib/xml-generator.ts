@@ -1167,10 +1167,53 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
   const totalAmount = ship242Total + trk137Total
   
   console.log('=== DEBUG: generateAgencyInvoiceXML ===')
+  console.log('Number of services:', invoice.services.length)
   console.log('SHP242 Total:', ship242Total)
   console.log('TRK137 Total (Waiting Time):', trk137Total)
   console.log('Total Amount:', totalAmount)
-  console.log('Services with waiting time:', invoice.services.filter(s => s.waitingTime > 0))
+  console.log('Services with waiting time:', invoice.services.filter(s => (s.waitingTime || 0) > 0).length)
+  
+  // Crear array de OtherItems dinámicamente
+  const otherItems: any[] = [];
+  
+  // Agregar un SHP242 por cada servicio
+  invoice.services.forEach((service, index) => {
+    otherItems.push({
+      "IncomeRebateCode": "I",
+      "AmntTransacCur": (-(service.price || 0)).toFixed(2),
+      "BaseUnitMeasure": "EA",
+      "Qty": "1.00",
+      "ProfitCenter": "PAPANC440",
+      "ReferencePeriod": formatReferencePeriod(invoice.invoiceDate),
+      "Service": "SHP242",
+      "Activity": "SHP",
+      "Pillar": "NOPS",
+      "BUCountry": "PA",
+      "ServiceCountry": "PA",
+      "ClientType": "MSCGVA"
+    });
+    
+    // Si el servicio tiene waiting time, agregar un TRK137
+    if (service.waitingTimePrice && service.waitingTimePrice > 0) {
+      otherItems.push({
+        "IncomeRebateCode": "I",
+        "AmntTransacCur": (-(service.waitingTimePrice || 0)).toFixed(2),
+        "BaseUnitMeasure": "EA",
+        "Qty": "1.00",
+        "ProfitCenter": "PAPANC430",
+        "ReferencePeriod": formatReferencePeriod(invoice.invoiceDate),
+        "Service": "TRK137",
+        "Activity": "TRK",
+        "Pillar": "TRSP",
+        "BUCountry": "PA",
+        "ServiceCountry": "PA",
+        "ClientType": "MSCGVA",
+        "FullEmpty": "FULL"
+      });
+    }
+  });
+  
+  console.log('Total OtherItems generated:', otherItems.length)
 
   const xmlObject = {
     "ns1:LogisticARInvoices": {
@@ -1204,41 +1247,9 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
           "BaselineDate": formatDateForXML(invoice.invoiceDate),
           "DueDate": calculateDueDate(invoice.invoiceDate)
         },
-        // OtherItems Section - siempre 2 items en NEGATIVO
+        // OtherItems Section - items dinámicos según servicios
         "OtherItems": {
-          "OtherItem": [
-            // Primer OtherItem: SHP242 - Crew Transportation
-            {
-              "IncomeRebateCode": "I",
-              "AmntTransacCur": (-ship242Total).toFixed(2),
-              "BaseUnitMeasure": "EA",
-              "Qty": "1.00",
-              "ProfitCenter": "PAPANC440",
-              "ReferencePeriod": formatReferencePeriod(invoice.invoiceDate),
-              "Service": "SHP242",
-              "Activity": "SHP",
-              "Pillar": "NOPS",
-              "BUCountry": "PA",
-              "ServiceCountry": "PA",
-              "ClientType": "MSCGVA"
-            },
-            // Segundo OtherItem: TRK137 - Transportation
-            {
-              "IncomeRebateCode": "I",
-              "AmntTransacCur": (-trk137Total).toFixed(2),
-              "BaseUnitMeasure": "EA",
-              "Qty": "1.00",
-              "ProfitCenter": "PAPANC430",
-              "ReferencePeriod": formatReferencePeriod(invoice.invoiceDate),
-              "Service": "TRK137",
-              "Activity": "TRK",
-              "Pillar": "TRSP",
-              "BUCountry": "PA",
-              "ServiceCountry": "PA",
-              "ClientType": "MSCGVA",
-              "FullEmpty": "FULL"
-            }
-          ]
+          "OtherItem": otherItems
         }
       }
     }
