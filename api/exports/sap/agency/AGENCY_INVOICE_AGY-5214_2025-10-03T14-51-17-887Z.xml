@@ -13,7 +13,7 @@
       <TransactionCurrency>USD</TransactionCurrency>
       <Reference>AGY-5214</Reference> 
       <EntityDocNbr>AGY-5214</EntityDocNbr>
-    </Header>
+    </Header> 
     <AdditionalTexts>
       <LongHeaderTextLangKey>EN</LongHeaderTextLangKey>
     </AdditionalTexts>
