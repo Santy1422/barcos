@@ -17,10 +17,11 @@ interface AgencyServiceXmlModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   service: any;
+  services?: any[]; // Para múltiples servicios de una factura
   onXmlSentToSap?: () => void;
 }
 
-export function AgencyServiceXmlModal({ open, onOpenChange, service, onXmlSentToSap }: AgencyServiceXmlModalProps) {
+export function AgencyServiceXmlModal({ open, onOpenChange, service, services = [], onXmlSentToSap }: AgencyServiceXmlModalProps) {
   const { toast } = useToast();
   const clients = useAppSelector(selectAllClients);
   
@@ -62,52 +63,55 @@ export function AgencyServiceXmlModal({ open, onOpenChange, service, onXmlSentTo
     
     setIsGeneratingXml(true);
     try {
-      // Obtener el SAP code del cliente
-      console.log('🔍 Buscando cliente para XML:', {
-        serviceClientId: service.clientId,
-        isObject: typeof service.clientId === 'object',
-        totalClients: clients.length,
-        clientsWithSapCode: clients.filter(c => c.sapCode).length
+      // Determinar si es múltiple o individual
+      const isMultiple = services && services.length > 0;
+      const servicesToProcess = isMultiple ? services : [service];
+      
+      console.log('🔍 Generando XML para:', {
+        isMultiple,
+        serviceCount: servicesToProcess.length,
+        invoiceNumber: service.invoiceNumber
       });
       
-      // Verificar si clientId es un objeto (ya poblado) o un string (ID)
+      // Obtener el SAP code del cliente (del primer servicio)
+      const firstService = servicesToProcess[0];
       let client;
       let clientSapNumber;
       
-      if (typeof service.clientId === 'object' && service.clientId !== null) {
-        // Cliente ya está poblado desde el backend
-        client = service.clientId;
+      if (typeof firstService.clientId === 'object' && firstService.clientId !== null) {
+        client = firstService.clientId;
         clientSapNumber = client.sapCode || 'N/A';
-        console.log('🔍 Cliente ya poblado desde backend:', client);
       } else {
-        // Cliente es solo el ID, buscar en el array
-        client = clients.find(c => (c._id || c.id) === service.clientId);
+        client = clients.find(c => (c._id || c.id) === firstService.clientId);
         clientSapNumber = client?.sapCode || 'N/A';
-        console.log('🔍 Cliente encontrado en array:', client);
       }
       
       console.log('🔍 SAP Code del cliente:', clientSapNumber);
+      
+      // Construir array de servicios para el XML
+      const servicesForXml = servicesToProcess.map(svc => ({
+        _id: svc._id || svc.id,
+        pickupDate: svc.pickupDate,
+        vessel: svc.vessel,
+        crewMembers: svc.crewMembers || [],
+        pickupLocation: svc.pickupLocation,
+        dropoffLocation: svc.dropoffLocation,
+        moveType: svc.moveType || 'SINGLE',
+        price: svc.price || 0,
+        currency: svc.currency || 'USD',
+        waitingTime: svc.waitingTime || 0,
+        waitingTimePrice: svc.waitingTimePrice || 0
+      }));
       
       const xmlPayload = {
         invoiceNumber: service.invoiceNumber || `AGY-SERVICE-${service._id || service.id}`,
         invoiceDate: service.invoiceDate || new Date().toISOString().split('T')[0],
         clientSapNumber: clientSapNumber,
-        services: [{
-          _id: service._id || service.id,
-          pickupDate: service.pickupDate,
-          vessel: service.vessel,
-          crewMembers: service.crewMembers || [],
-          pickupLocation: service.pickupLocation,
-          dropoffLocation: service.dropoffLocation,
-          moveType: service.moveType || 'SINGLE',
-          price: service.price || 0,
-          currency: service.currency || 'USD',
-          waitingTime: service.waitingTime || 0,
-          waitingTimePrice: service.waitingTimePrice || 0
-        }]
+        services: servicesForXml
       };
       
       console.log('📦 XML Payload completo:', JSON.stringify(xmlPayload, null, 2));
+      console.log(`📊 Generando XML con ${servicesForXml.length} servicio(s)`);
       
       const xml = generateAgencyInvoiceXML(xmlPayload);
       console.log('📄 XML generado (primeras 800 caracteres):', xml.substring(0, 800));
@@ -159,6 +163,14 @@ export function AgencyServiceXmlModal({ open, onOpenChange, service, onXmlSentTo
 
       const fileName = sapFileName || generateXmlFileName('9326'); // Usar el mismo formato que PTYSS con código 9326 para Agency
       
+      // Determinar los IDs de los servicios a enviar
+      const isMultiple = services && services.length > 0;
+      const serviceIds = isMultiple 
+        ? services.map(s => s._id || s.id)
+        : [service._id || service.id];
+      
+      console.log('📤 Enviando XML a SAP con serviceIds:', serviceIds);
+      
       const response = await fetch(createApiUrl('/api/agency/sap/send-to-sap'), {
         method: 'POST',
         headers: {
@@ -166,7 +178,7 @@ export function AgencyServiceXmlModal({ open, onOpenChange, service, onXmlSentTo
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          serviceIds: [service._id || service.id],
+          serviceIds: serviceIds,
           xmlContent: xml,
           fileName: fileName
         })

@@ -228,11 +228,11 @@ export function AgencyServiceFacturarModal({
       }
       
       if (isMultipleServices) {
-        // Para facturación múltiple, pasar los IDs de los servicios seleccionados
-        await onFacturar(selectedServices.join(','), invoiceNumber, invoiceDate, xmlData, waitingTimePrice);
+        // Para facturación múltiple, pasar el hourly rate para que se calcule individualmente
+        await onFacturar(selectedServices.join(','), invoiceNumber, invoiceDate, xmlData, hourlyRate);
         toast({ title: "Servicios facturados", description: `${selectedServices.length} servicios han sido marcados como facturados.` });
       } else {
-        // Para facturación individual
+        // Para facturación individual, pasar el waiting time price calculado
         await onFacturar(service._id || service.id, invoiceNumber, invoiceDate, xmlData, waitingTimePrice);
         toast({ title: "Servicio facturado", description: `El servicio ha sido marcado como facturado.` });
       }

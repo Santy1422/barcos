@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAgencyServices } from '@/lib/features/agencyServices/useAgencyServices';
 import { useAppDispatch, useAppSelector } from '@/lib/hooks';
 import { fetchClients, selectAllClients } from '@/lib/features/clients/clientsSlice';
@@ -26,7 +26,10 @@ import {
   Users,
   Code,
   FileText,
-  Receipt
+  Receipt,
+  ChevronDown,
+  ChevronRight,
+  CheckCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgencyServiceDetailModal } from './agency-service-detail-modal';
@@ -53,6 +56,7 @@ export const AgencySapInvoice: React.FC = () => {
   const [clientFilter, setClientFilter] = useState('all');
   const [vesselFilter, setVesselFilter] = useState('');
   const [crewRankFilter, setCrewRankFilter] = useState<'all' | 'security_guard' | 'seal_check' | 'both'>('all');
+  const [viewMode, setViewMode] = useState<'completed' | 'invoiced'>('completed'); // Vista por defecto: completados
   const [activePeriodFilter, setActivePeriodFilter] = useState<'none' | 'today' | 'week' | 'month' | 'advanced'>('none');
   const [isUsingPeriodFilter, setIsUsingPeriodFilter] = useState(false);
   const [startDate, setStartDate] = useState('');
@@ -62,6 +66,9 @@ export const AgencySapInvoice: React.FC = () => {
   // Estado para selección múltiple
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  
+  // Estado para facturas expandidas
+  const [expandedInvoices, setExpandedInvoices] = useState<Set<string>>(new Set());
 
   // Estado de modales (simplificado para servicios)
   const [selectedService, setSelectedService] = useState<any | null>(null);
@@ -70,6 +77,7 @@ export const AgencySapInvoice: React.FC = () => {
   const [serviceToFacturar, setServiceToFacturar] = useState<any | null>(null);
   const [xmlModalOpen, setXmlModalOpen] = useState(false);
   const [serviceForXml, setServiceForXml] = useState<any | null>(null);
+  const [servicesForXml, setServicesForXml] = useState<any[]>([]); // Para múltiples servicios en XML
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [serviceForPdf, setServiceForPdf] = useState<any | null>(null);
   const [servicesForPdf, setServicesForPdf] = useState<any[]>([]);
@@ -278,13 +286,33 @@ export const AgencySapInvoice: React.FC = () => {
     return client ? (client.type === 'natural' ? client.fullName : client.companyName) : '';
   };
 
+  const toggleInvoiceExpansion = (invoiceNumber: string) => {
+    setExpandedInvoices(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(invoiceNumber)) {
+        newSet.delete(invoiceNumber);
+      } else {
+        newSet.add(invoiceNumber);
+      }
+      return newSet;
+    });
+  };
+
   const filteredServices = useMemo(() => {
     const q = search.toLowerCase();
     
     return (services || []).filter((service: any) => {
-      // Filtrar solo servicios completados, facturados o nota de credito
-      if (!['completed', 'facturado', 'nota_de_credito'].includes(service.status)) {
-        return false;
+      // Filtrar por modo de vista primero
+      if (viewMode === 'completed') {
+        // Solo mostrar servicios completados
+        if (service.status !== 'completed') {
+          return false;
+        }
+      } else {
+        // Solo mostrar servicios facturados o nota de crédito
+        if (!['facturado', 'nota_de_credito'].includes(service.status)) {
+          return false;
+        }
       }
       
       // Búsqueda - Solo por cliente y ubicaciones
@@ -342,7 +370,28 @@ export const AgencySapInvoice: React.FC = () => {
       
       return matchesSearch && matchesStatus && matchesClient && matchesVessel && matchesCrewRank && matchesDate;
     });
-  }, [services, search, statusFilter, clientFilter, vesselFilter, crewRankFilter, isUsingPeriodFilter, startDate, endDate, clients]);
+  }, [services, search, statusFilter, clientFilter, vesselFilter, crewRankFilter, isUsingPeriodFilter, startDate, endDate, clients, viewMode]);
+
+  // Agrupar servicios por número de factura
+  const groupedServices = useMemo(() => {
+    const groups: { [key: string]: any[] } = {};
+    const ungrouped: any[] = [];
+    
+    filteredServices.forEach((service: any) => {
+      // Solo agrupar servicios facturados o nota de crédito con número de factura
+      if ((service.status === 'facturado' || service.status === 'nota_de_credito') && service.invoiceNumber) {
+        if (!groups[service.invoiceNumber]) {
+          groups[service.invoiceNumber] = [];
+        }
+        groups[service.invoiceNumber].push(service);
+      } else {
+        // Servicios completados o sin número de factura van sin agrupar
+        ungrouped.push(service);
+      }
+    });
+    
+    return { groups, ungrouped };
+  }, [filteredServices]);
 
   const handleDeleteService = async (service: any) => {
     if (!confirm(`¿Está seguro de eliminar el servicio?`)) return;
@@ -378,8 +427,9 @@ export const AgencySapInvoice: React.FC = () => {
     setFacturarModalOpen(true);
   };
 
-  const handleOpenXmlModal = (service: any) => {
+  const handleOpenXmlModal = (service: any, allServicesForInvoice?: any[]) => {
     setServiceForXml(service);
+    setServicesForXml(allServicesForInvoice || []);
     setXmlModalOpen(true);
   };
 
@@ -442,7 +492,7 @@ export const AgencySapInvoice: React.FC = () => {
     }
   };
 
-  const handleFacturarMultipleServices = async (serviceIds: string, invoiceNumber: string, invoiceDate: string, xmlData: any, waitingTimePrice?: number) => {
+  const handleFacturarMultipleServices = async (serviceIds: string, invoiceNumber: string, invoiceDate: string, xmlData: any, hourlyRate?: number) => {
     try {
       // Convertir el string de IDs separados por comas en array
       const serviceIdArray = serviceIds.split(',');
@@ -452,22 +502,41 @@ export const AgencySapInvoice: React.FC = () => {
         invoiceNumber, 
         invoiceDate, 
         xmlData, 
-        waitingTimePrice 
+        hourlyRate 
       });
       
-      // Facturar cada servicio seleccionado
-      const promises = serviceIdArray.map(serviceId => 
-        updateService({
-          id: serviceId,
+      // Obtener los servicios completos para calcular waiting time price individual
+      const servicesToInvoice = services.filter((s: any) => 
+        serviceIdArray.includes(s._id || s.id)
+      );
+      
+      console.log('Servicios a facturar con waiting time:', servicesToInvoice.map((s: any) => ({
+        id: s._id || s.id,
+        waitingTime: s.waitingTime,
+        waitingTimeMinutes: s.waitingTime || 0
+      })));
+      
+      // Facturar cada servicio seleccionado con su waiting time price individual
+      const promises = servicesToInvoice.map(service => {
+        // Calcular waiting time price individual para este servicio
+        let individualWaitingTimePrice = 0;
+        if (service.waitingTime && service.waitingTime > 0 && hourlyRate && hourlyRate > 0) {
+          const hours = service.waitingTime / 60; // Convertir minutos a horas
+          individualWaitingTimePrice = hours * hourlyRate;
+          console.log(`Servicio ${service._id}: ${service.waitingTime} min = ${hours.toFixed(2)} hrs × $${hourlyRate}/hr = $${individualWaitingTimePrice.toFixed(2)}`);
+        }
+        
+        return updateService({
+          id: service._id || service.id,
           updateData: {
             status: 'facturado' as any,
             invoiceNumber: invoiceNumber,
             invoiceDate: invoiceDate,
             xmlData: xmlData,
-            waitingTimePrice: waitingTimePrice || 0
+            waitingTimePrice: individualWaitingTimePrice
           }
-        })
-      );
+        });
+      });
       
       await Promise.all(promises);
       
@@ -497,6 +566,32 @@ export const AgencySapInvoice: React.FC = () => {
           <h1 className="text-2xl font-bold">Servicios Listos para Facturar - Agency</h1>
           <p className="text-muted-foreground">Servicios completados, facturados y notas de crédito de Crew Transportation</p>
         </div>
+      </div>
+
+      {/* Botones de Toggle de Vista */}
+      <div className="flex items-center gap-3">
+        <Button
+          variant={viewMode === 'completed' ? 'default' : 'outline'}
+          onClick={() => setViewMode('completed')}
+          className="flex items-center gap-2"
+        >
+          <CheckCircle className="h-4 w-4" />
+          Servicios Completados
+          <Badge variant="secondary" className={`ml-2 ${viewMode === 'completed' ? 'bg-white text-blue-600' : 'bg-gray-200'}`}>
+            {services.filter((s: any) => s.status === 'completed').length}
+          </Badge>
+        </Button>
+        <Button
+          variant={viewMode === 'invoiced' ? 'default' : 'outline'}
+          onClick={() => setViewMode('invoiced')}
+          className="flex items-center gap-2"
+        >
+          <Receipt className="h-4 w-4" />
+          Facturados y N/C
+          <Badge variant="secondary" className={`ml-2 ${viewMode === 'invoiced' ? 'bg-white text-blue-600' : 'bg-gray-200'}`}>
+            {services.filter((s: any) => ['facturado', 'nota_de_credito'].includes(s.status)).length}
+          </Badge>
+        </Button>
       </div>
 
           <Card>
@@ -670,13 +765,14 @@ export const AgencySapInvoice: React.FC = () => {
                       <TableHead>Vessel</TableHead>
                   <TableHead>Ruta</TableHead>
                   <TableHead>Estado</TableHead>
+                  <TableHead>N° Factura</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-8 text-center">
+                    <TableCell colSpan={9} className="py-8 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         Cargando…
@@ -685,12 +781,240 @@ export const AgencySapInvoice: React.FC = () => {
                   </TableRow>
                 ) : filteredServices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                       No hay servicios que coincidan con los filtros
                         </TableCell>
                   </TableRow>
                 ) : (
-                  filteredServices.map((service: any) => (
+                  <>
+                    {/* Renderizar facturas agrupadas primero */}
+                    {Object.entries(groupedServices.groups).map(([invoiceNumber, invoiceServices]) => {
+                      const isExpanded = expandedInvoices.has(invoiceNumber);
+                      const firstService = invoiceServices[0];
+                      const totalServices = invoiceServices.length;
+                      const totalAmount = invoiceServices.reduce((sum: number, s: any) => sum + (s.price || 0) + (s.waitingTimePrice || 0), 0);
+                      
+                      return (
+                        <React.Fragment key={`invoice-${invoiceNumber}`}>
+                          {/* Fila principal de la factura agrupada */}
+                          <TableRow className="bg-blue-50 hover:bg-blue-100 cursor-pointer" onClick={() => toggleInvoiceExpansion(invoiceNumber)}>
+                            <TableCell>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                              </Button>
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">
+                                  {formatDate(firstService.invoiceDate || firstService.pickupDate)}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {totalServices} servicio{totalServices !== 1 ? 's' : ''}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <User className="h-4 w-4 text-muted-foreground" />
+                                {getClientForService(firstService)}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-sm text-muted-foreground">
+                                {totalServices} crew member{totalServices !== 1 ? 's' : ''}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-sm text-muted-foreground">
+                                Múltiples
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-sm text-muted-foreground">
+                                Múltiples rutas
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {firstService.status === 'facturado' ? (
+                                <Badge variant="outline" className="text-green-600 border-green-600">
+                                  Facturado
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-orange-600 border-orange-600">
+                                  Nota de Crédito
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-medium text-blue-700">
+                                {invoiceNumber}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                ${totalAmount.toFixed(2)}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                {/* Botón Ver PDF */}
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  title="Ver PDF" 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setServicesForPdf(invoiceServices);
+                                    setServiceForPdf(null);
+                                    setIsPdfMultipleServices(true);
+                                    setPdfModalOpen(true);
+                                  }} 
+                                  className="h-8 w-8 text-purple-600 hover:bg-purple-50"
+                                >
+                                  <FileText className="h-4 w-4" />
+                                </Button>
+                                {/* Botón XML - Solo para facturado */}
+                                {firstService.status === 'facturado' && (
+                                  <Button 
+                                    variant="ghost"
+                                    size="sm"
+                                    title={firstService.sentToSap ? 'XML enviado a SAP' : 'Ver/Enviar XML a SAP'}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenXmlModal(firstService, invoiceServices);
+                                    }}
+                                    className={`h-8 w-8 ${firstService.sentToSap ? 'text-green-600 hover:text-green-700 hover:bg-green-50' : 'text-orange-600 hover:text-orange-700 hover:bg-orange-50'}`}
+                                  >
+                                    <Code className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                {/* Botón Nota de Crédito - Solo para facturado */}
+                                {firstService.status === 'facturado' && (
+                                  <Button 
+                                    variant="outline"
+                                    size="sm"
+                                    title="Cambiar todos a Nota de Crédito"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (confirm(`¿Está seguro de cambiar los ${totalServices} servicios de esta factura a Nota de Crédito? Esta acción no se puede deshacer.`)) {
+                                        try {
+                                          for (const svc of invoiceServices) {
+                                            await updateStatus({ id: svc._id || svc.id, status: 'nota_de_credito' as any });
+                                          }
+                                          toast.success(`${totalServices} servicios cambiados a Nota de Crédito`);
+                                          fetchServices({ page: 1, limit: 100 });
+                                        } catch (e: any) {
+                                          toast.error(e.message || 'Error al cambiar estado');
+                                        }
+                                      }
+                                    }}
+                                    className="h-8 px-2 text-orange-700 border-orange-600 hover:bg-orange-50"
+                                  >
+                                    <Receipt className="h-3 w-3 mr-1" />
+                                    N/C
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          
+                          {/* Filas expandidas con los servicios individuales */}
+                          {isExpanded && invoiceServices.map((service: any, index: number) => (
+                            <TableRow key={service._id || service.id} className="bg-blue-25">
+                              <TableCell className="pl-12">
+                                <div className="text-xs text-muted-foreground">#{index + 1}</div>
+                              </TableCell>
+                              <TableCell>
+                                <div>
+                                  <div className="font-medium text-sm">
+                                    {formatDate(service.pickupDate)}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {service.pickupTime || 'N/A'}
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  {getClientForService(service)}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div>
+                                  {service.crewMembers && service.crewMembers.length > 0 ? (
+                                    <>
+                                      <div className="font-medium text-sm">
+                                        {service.crewMembers[0].name}
+                                        {service.crewMembers.length > 1 && (
+                                          <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                                            +{service.crewMembers.length - 1} más
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {service.crewMembers[0].crewRank}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="font-medium text-sm">{service.crewName || 'N/A'}</div>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium text-sm">{service.vessel || 'N/A'}</div>
+                                {service.voyage && (
+                                  <div className="text-xs text-muted-foreground">V. {service.voyage}</div>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  <div>{service.pickupLocation}</div>
+                                  <div className="text-muted-foreground">→ {service.dropoffLocation}</div>
+                                </div>
+                                {service.moveType === 'RT' && service.returnDropoffLocation && (
+                                  <div className="text-xs text-blue-600 mt-1">
+                                    Return: {service.dropoffLocation} → {service.returnDropoffLocation}
+                                  </div>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-xs text-muted-foreground">
+                                  ${((service.price || 0) + (service.waitingTimePrice || 0)).toFixed(2)}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-xs text-muted-foreground">
+                                  {invoiceNumber}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    title="Ver detalles" 
+                                    onClick={() => handleViewServiceDetails(service)} 
+                                    className="h-8 w-8 text-blue-600 hover:bg-blue-50"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    title="Eliminar" 
+                                    onClick={() => handleDeleteService(service)} 
+                                    className="h-8 w-8 text-red-600 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </React.Fragment>
+                      );
+                    })}
+                    
+                    {/* Renderizar servicios no agrupados (completados o sin factura) */}
+                    {groupedServices.ungrouped.map((service: any) => (
                     <TableRow key={service._id || service.id}>
                         <TableCell>
                           <Checkbox
@@ -767,6 +1091,11 @@ export const AgencySapInvoice: React.FC = () => {
                             Nota de Crédito
                           </Badge>
                         )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm text-muted-foreground">
+                            {service.invoiceNumber || '-'}
+                          </div>
                         </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -850,7 +1179,8 @@ export const AgencySapInvoice: React.FC = () => {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))
+                  ))}
+                  </>
                 )}
                   </TableBody>
                 </Table>
@@ -887,6 +1217,7 @@ export const AgencySapInvoice: React.FC = () => {
         open={xmlModalOpen}
         onOpenChange={setXmlModalOpen}
         service={serviceForXml}
+        services={servicesForXml}
         onXmlSentToSap={() => {
           fetchServices({ page: 1, limit: 100 });
         }}
