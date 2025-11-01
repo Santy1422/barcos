@@ -649,11 +649,16 @@ export function PTYSSConfig() {
         })).unwrap()
         
         // Actualizar el estado local después de guardar
-        setLocalServices(prev => prev.map(service => 
-          service.name === serviceCode 
-            ? { ...service, price: newPrice }
-            : service
-        ))
+        setLocalServices(prev => {
+          const updatedServices = prev.map(service =>
+            service._id === serviceToUpdate._id
+              ? { ...service, price: newPrice }
+              : service
+          )
+
+          const hasChanges = updatedServices.some((service, index) => service !== prev[index])
+          return hasChanges ? updatedServices : prev
+        })
         
         toast({
           title: "Precio actualizado",
