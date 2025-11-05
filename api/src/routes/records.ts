@@ -5,6 +5,7 @@ import { createAutoridadesRecord } from '../controllers/recordsControllers/creat
 import { getAllAutoridadesRecords } from '../controllers/recordsControllers/getAllAutoridadesRecords';
 import { deleteAutoridadesRecord } from '../controllers/recordsControllers/deleteAutoridadesRecord';
 import recordsAutoridadesControllers from '../controllers/recordsControllers/recordsAutoridadesControllers';
+import { requireShipchandlerModule, requireAnyRole } from '../middlewares/authorization';
 
 const { catchedAsync } = require('../utils');
 
@@ -23,7 +24,7 @@ router.post('/ptyss/bulk', jwtUtils, catchedAsync(recordsControllers.createPTYSS
 router.post('/agency/bulk', jwtUtils, catchedAsync(recordsControllers.createAgencyRecords));
 
 // Crear múltiples registros de ShipChandler desde Excel
-router.post('/shipchandler/bulk', jwtUtils, catchedAsync(recordsControllers.createShipChandlerRecords));
+router.post('/shipchandler/bulk', jwtUtils, requireShipchandlerModule, requireAnyRole, catchedAsync(recordsControllers.createShipChandlerRecords));
 
 // Gastos Autoridades
 router.post('/autoridades', jwtUtils, catchedAsync(recordsAutoridadesControllers.createAutoridadesRecord));

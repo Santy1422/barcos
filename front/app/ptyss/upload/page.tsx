@@ -3,7 +3,7 @@ import { SectionGuard } from "@/components/section-guard"
 
 export default function PTYSSUploadPage() {
   return (
-    <SectionGuard module="shipchandler" section="upload">
+    <SectionGuard module="ptyss" section="upload">
       <PTYSSUpload />
     </SectionGuard>
   )

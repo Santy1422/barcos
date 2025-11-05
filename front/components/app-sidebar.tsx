@@ -118,24 +118,24 @@ export function AppSidebar() {
       ].filter(Boolean),
     }] : []),
     // PTYSS module - filtered by role
-    ...(hasModuleAccess(currentUser, "shipchandler") ? [{
+    ...(hasModuleAccess(currentUser, "ptyss") ? [{
       title: "PTYSS",
       href: "/ptyss",
       icon: Ship,
       children: [
-        ...(hasSectionAccess(currentUser, "shipchandler", "upload") ? [
+        ...(hasSectionAccess(currentUser, "ptyss", "upload") ? [
           { title: "Crear Registros", href: "/ptyss/upload", icon: Plus }
         ] : []),
-        ...(hasSectionAccess(currentUser, "shipchandler", "invoice") ? [
+        ...(hasSectionAccess(currentUser, "ptyss", "invoice") ? [
           { title: "Crear Prefactura", href: "/ptyss/invoice", icon: FilePlus2 }
         ] : []),
-        ...(hasSectionAccess(currentUser, "shipchandler", "records") ? [
+        ...(hasSectionAccess(currentUser, "ptyss", "records") ? [
           { title: "Facturas", href: "/ptyss/records", icon: ListOrdered }
         ] : []),
-        ...(hasSectionAccess(currentUser, "shipchandler", "historial") ? [
+        ...(hasSectionAccess(currentUser, "ptyss", "historial") ? [
           { title: "Historial", href: "/ptyss/historial", icon: History }
         ] : []),
-        ...(hasSectionAccess(currentUser, "shipchandler", "config") ? [
+        ...(hasSectionAccess(currentUser, "ptyss", "config") ? [
           { title: "Catálogos", href: "/ptyss/config", icon: BookOpen }
         ] : []),
       ].filter(Boolean),

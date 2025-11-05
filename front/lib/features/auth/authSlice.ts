@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
 
 export type UserRole = 'administrador' | 'operaciones' | 'facturacion' | 'pendiente' | 'clientes' | 'catalogos'
-export type UserModule = 'trucking' | 'shipchandler' | 'agency'
+export type UserModule = 'trucking' | 'ptyss' | 'shipchandler' | 'agency'
 
 export interface User {
   id: string
@@ -786,10 +786,16 @@ export const hasSectionAccess = (user: User | null, module: UserModule, section:
       'facturacion': ['prefactura', 'gastos-autoridades', 'records'], // Crear prefactura, gastos, facturas
       'pendiente': []
     },
-    shipchandler: {
+    ptyss: {
       'administrador': ['upload', 'invoice', 'records', 'historial', 'config'],
       'operaciones': ['upload'], // Solo crear registros
       'facturacion': ['invoice', 'records', 'historial'], // Crear prefactura, facturas, historial
+      'pendiente': []
+    },
+    shipchandler: {
+      'administrador': ['upload', 'prefactura', 'records'],
+      'operaciones': ['upload'], // Solo subir excel
+      'facturacion': ['prefactura', 'records'], // Crear prefactura, facturas
       'pendiente': []
     },
     agency: {

@@ -50,7 +50,7 @@ const usersSchema = new mongoose.Schema({
   // Configuraciones específicas del sistema de facturación
   modules: [{
     type: String,
-    enum: ["trucking", "shipchandler", "agency"]
+    enum: ["trucking", "ptyss", "shipchandler", "agency"]
   }],
   
   company: {

@@ -88,5 +88,6 @@ export const requireAnyRole = requireRole(['administrador', 'operaciones', 'fact
 
 // Middleware específicos por módulo
 export const requireTruckingModule = requireModule('trucking');
+export const requirePtyssModule = requireModule('ptyss');
 export const requireShipchandlerModule = requireModule('shipchandler');
 export const requireAgencyModule = requireModule('agency');

@@ -3,7 +3,7 @@ import { SectionGuard } from "@/components/section-guard"
 
 export default function PTYSSHistoryPage() {
   return (
-    <SectionGuard module="shipchandler" section="historial">
+    <SectionGuard module="ptyss" section="historial">
       <PTYSSHistory />
     </SectionGuard>
   )

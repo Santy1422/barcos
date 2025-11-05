@@ -49,7 +49,8 @@ const roleColors: Record<UserRole, "default" | "secondary" | "destructive" | "ou
 
 const moduleLabels: Record<UserModule, string> = {
   "trucking": "PTG",
-  "shipchandler": "PTYSS",
+  "ptyss": "PTYSS",
+  "shipchandler": "ShipChandler",
   "agency": "Agency"
 }
 
@@ -435,7 +436,7 @@ export function UsersManagement() {
                   Nuevo Usuario
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-5xl max-h-[95vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>
                     {editingUser ? "Editar Usuario" : "Crear Nuevo Usuario"}
@@ -448,7 +449,7 @@ export function UsersManagement() {
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="username">Usuario</Label>
                       <Input
@@ -468,74 +469,77 @@ export function UsersManagement() {
                         placeholder="usuario@empresa.com"
                       />
                     </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="fullName">Nombre Completo</Label>
-                    <Input
-                      id="fullName"
-                      value={formData.fullName}
-                      onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
-                      placeholder="Nombre y Apellido"
-                    />
+                    <div className="space-y-2">
+                      <Label htmlFor="fullName">Nombre Completo</Label>
+                      <Input
+                        id="fullName"
+                        value={formData.fullName}
+                        onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
+                        placeholder="Nombre y Apellido"
+                      />
+                    </div>
                   </div>
                   
                   {!editingUser && (
-                    <div className="space-y-2">
-                      <Label htmlFor="password">Contraseña</Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        value={formData.password}
-                        onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
-                        placeholder="Contraseña del usuario"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        La contraseña debe tener al menos 6 caracteres
-                      </p>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="password">Contraseña</Label>
+                        <Input
+                          id="password"
+                          type="password"
+                          value={formData.password}
+                          onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                          placeholder="Contraseña del usuario"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          La contraseña debe tener al menos 6 caracteres
+                        </p>
+                      </div>
                     </div>
                   )}
                   
-                  <div className="space-y-2">
-                    <Label>Roles de Usuario</Label>
-                    <div className="flex flex-col gap-3 border rounded-lg p-3">
-                      {(Object.entries(roleLabels) as [UserRole, string][]).map(([role, label]) => (
-                        <div key={role} className="flex items-center space-x-2">
-                          <Switch
-                            id={`role-${role}`}
-                            checked={formData.roles.includes(role)}
-                            onCheckedChange={() => toggleRole(role)}
-                          />
-                          <Label htmlFor={`role-${role}`} className="cursor-pointer">
-                            {label}
-                          </Label>
-                        </div>
-                      ))}
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="space-y-2 col-span-2">
+                      <Label>Roles de Usuario</Label>
+                      <div className="flex flex-col gap-2 border rounded-lg p-3 max-h-56 overflow-y-auto">
+                        {(Object.entries(roleLabels) as [UserRole, string][]).map(([role, label]) => (
+                          <div key={role} className="flex items-center space-x-2">
+                            <Switch
+                              id={`role-${role}`}
+                              checked={formData.roles.includes(role)}
+                              onCheckedChange={() => toggleRole(role)}
+                            />
+                            <Label htmlFor={`role-${role}`} className="cursor-pointer text-sm">
+                              {label}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Puedes asignar múltiples roles al mismo usuario
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Puedes asignar múltiples roles al mismo usuario
-                    </p>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label>Módulos de Acceso</Label>
-                    <div className="flex flex-wrap gap-2 border rounded-lg p-3">
-                      {(Object.entries(moduleLabels) as [UserModule, string][]).map(([module, label]) => (
-                        <div key={module} className="flex items-center space-x-2">
-                          <Switch
-                            id={`module-${module}`}
-                            checked={formData.modules.includes(module)}
-                            onCheckedChange={() => toggleModule(module)}
-                          />
-                          <Label htmlFor={`module-${module}`} className="cursor-pointer">
-                            {label}
-                          </Label>
-                        </div>
-                      ))}
+                    
+                    <div className="space-y-2 col-span-2">
+                      <Label>Módulos de Acceso</Label>
+                      <div className="flex flex-col gap-2 border rounded-lg p-3 max-h-56 overflow-y-auto">
+                        {(Object.entries(moduleLabels) as [UserModule, string][]).map(([module, label]) => (
+                          <div key={module} className="flex items-center space-x-2">
+                            <Switch
+                              id={`module-${module}`}
+                              checked={formData.modules.includes(module)}
+                              onCheckedChange={() => toggleModule(module)}
+                            />
+                            <Label htmlFor={`module-${module}`} className="cursor-pointer text-sm">
+                              {label}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Los administradores tienen acceso a todos los módulos automáticamente
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Los administradores tienen acceso a todos los módulos automáticamente
-                    </p>
                   </div>
                   
                   <div className="flex items-center space-x-2">

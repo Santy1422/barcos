@@ -24,7 +24,7 @@ export default async (req, res) => {
     
     // Si el usuario no tiene módulos y es admin, asignarle todos
     if (isAdmin && modules.length === 0) {
-      user.modules = ['trucking', 'shipchandler', 'agency'];
+      user.modules = ['trucking', 'ptyss', 'shipchandler', 'agency'];
       user.isActive = true;
       await user.save();
     }

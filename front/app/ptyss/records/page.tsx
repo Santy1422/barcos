@@ -3,7 +3,7 @@ import { SectionGuard } from "@/components/section-guard"
 
 export default function PTYSSRecordsPage() {
   return (
-    <SectionGuard module="shipchandler" section="records">
+    <SectionGuard module="ptyss" section="records">
       <PTYSSRecords />
     </SectionGuard>
   )
