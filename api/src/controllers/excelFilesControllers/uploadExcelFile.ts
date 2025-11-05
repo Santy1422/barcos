@@ -1,12 +1,22 @@
 import { Request, Response } from "express";
 import multer from "multer";
 import path from "path";
+import fs from "fs";
 import { excelFiles } from "../../database";
+
+// Configurar directorio de subida
+const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'excel');
+
+// Asegurar que el directorio existe
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  console.log('Created Excel upload directory:', UPLOAD_DIR);
+}
 
 // Configuración de multer para subida de archivos
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/excel/');
+    cb(null, UPLOAD_DIR);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -48,35 +58,35 @@ const uploadExcelFile = async (req: Request, res: Response) => {
       }
 
       const { module, description } = req.body;
-    // @ts-ignore
-
-      const excelFile = new ExcelFile({
-            // @ts-ignore
-
+      
+      // Validar que el módulo sea válido
+      const validModules = ['trucking', 'shipchandler', 'agency', 'ptyss'];
+      if (!module || !validModules.includes(module)) {
+        return res.status(400).json({
+          success: false,
+          message: `Módulo inválido. Debe ser uno de: ${validModules.join(', ')}`
+        });
+      }
+      
+      // @ts-ignore
+      const excelFile = new excelFiles({
+        // @ts-ignore
         filename: req.file.filename,
-    // @ts-ignore
-
-        originalName: req.file.originalname,
-    // @ts-ignore
-
-        path: req.file.path,
-    // @ts-ignore
-
-        size: req.file.size,
+        // @ts-ignore
+        fileSize: req.file.size,
+        type: `${module}-data`, // Tipo según el módulo
         module,
-        description,
-    // @ts-ignore
-
-        uploadedBy: req.user?.id,
-        status: 'uploaded'
+        // @ts-ignore
+        uploadedBy: req.user?._id || req.user?.id,
+        status: 'processing' // Estado inicial: processing, completed, error
       });
 
-      await excelFile.save();
+      const savedFile = await excelFile.save();
 
       res.status(201).json({
         success: true,
         message: "Archivo Excel subido exitosamente",
-        data: excelFile
+        data: savedFile
       });
     });
   } catch (error) {

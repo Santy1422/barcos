@@ -660,6 +660,218 @@ export interface PTYSSExcelData {
   isMatched?: boolean
 }
 
+// Interface para datos de ShipChandler Excel
+export interface ShipChandlerExcelData {
+  customerName: string;
+  invoiceNo: string;
+  invoiceType: string;
+  vessel: string;
+  date: string;
+  referenceNo: string;
+  deliveryAddress: string;
+  discount: number;
+  deliveryExpenses: number;
+  portEntryFee: number;
+  customsFee: number;
+  authorities: number;
+  otherExpenses: number;
+  overTime: number;
+  total: number;
+  // Campos agregados para el guardado
+  clientId?: string;
+  isMatched?: boolean;
+}
+
+// Función para parsear Excel de ShipChandler
+export const parseShipChandlerExcel = async (file: File): Promise<ShipChandlerExcelData[]> => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      if (!file) {
+        reject(new Error('No se seleccionó ningún archivo'));
+        return;
+      }
+
+      if (file.size === 0) {
+        reject(new Error('El archivo seleccionado está vacío'));
+        return;
+      }
+
+      const reader = new FileReader();
+      
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          
+          // Obtener la primera hoja
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          
+          // Convertir a JSON
+          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+          
+          if (rawData.length < 2) {
+            reject(new Error('El archivo debe tener al menos una fila de encabezados y una fila de datos'));
+            return;
+          }
+          
+          // Obtener encabezados (primera fila)
+          const headers = rawData[0] as string[];
+          
+          // Normalizar nombres de columnas (case-insensitive y flexible)
+          const normalizeHeader = (header: string): string => {
+            return header?.toString().toLowerCase().trim().replace(/\s+/g, ' ') || '';
+          };
+          
+          // Mapear índices de columnas
+          const columnIndexes: Record<string, number> = {};
+          
+          headers.forEach((header, index) => {
+            const normalized = normalizeHeader(header);
+            
+            // Mapear diferentes variaciones de nombres de columnas
+            if (normalized.includes('customer name') || normalized.includes('customer') || normalized.includes('cliente')) {
+              columnIndexes.customerName = index;
+            } else if (normalized.includes('invoice no') || normalized.includes('invoice number') || normalized.includes('factura')) {
+              columnIndexes.invoiceNo = index;
+            } else if (normalized.includes('invoice type') || normalized.includes('tipo factura')) {
+              columnIndexes.invoiceType = index;
+            } else if (normalized.includes('vessel') || normalized.includes('barco') || normalized.includes('embarcacion')) {
+              columnIndexes.vessel = index;
+            } else if (normalized.includes('date') || normalized.includes('fecha')) {
+              columnIndexes.date = index;
+            } else if (normalized.includes('reference no') || normalized.includes('reference number') || normalized.includes('referencia')) {
+              columnIndexes.referenceNo = index;
+            } else if (normalized.includes('delivery address') || normalized.includes('direccion entrega')) {
+              columnIndexes.deliveryAddress = index;
+            } else if (normalized.includes('discount') || normalized.includes('descuento')) {
+              columnIndexes.discount = index;
+            } else if (normalized.includes('delivery expenses') || normalized.includes('gastos entrega')) {
+              columnIndexes.deliveryExpenses = index;
+            } else if (normalized.includes('port entry fee') || normalized.includes('tarifa entrada puerto')) {
+              columnIndexes.portEntryFee = index;
+            } else if (normalized.includes('customs fee') || normalized.includes('tarifa aduana')) {
+              columnIndexes.customsFee = index;
+            } else if (normalized.includes('authorities') || normalized.includes('autoridades')) {
+              columnIndexes.authorities = index;
+            } else if (normalized.includes('other expenses') || normalized.includes('otros gastos')) {
+              columnIndexes.otherExpenses = index;
+            } else if (normalized.includes('over time') || normalized.includes('tiempo extra') || normalized.includes('overtime')) {
+              columnIndexes.overTime = index;
+            } else if (normalized === 'total' || (normalized.includes('total') && !normalized.includes('entry') && !normalized.includes('fee'))) {
+              if (!columnIndexes.total) {
+                columnIndexes.total = index;
+              }
+            }
+          });
+          
+          // Verificar que se encontraron las columnas requeridas
+          const requiredColumns = ['customerName', 'invoiceNo', 'total'];
+          const missingColumns = requiredColumns.filter(col => columnIndexes[col] === undefined);
+          
+          if (missingColumns.length > 0) {
+            reject(new Error(`No se encontraron las siguientes columnas requeridas: ${missingColumns.join(', ')}`));
+            return;
+          }
+          
+          // Procesar filas de datos
+          const parsedData: ShipChandlerExcelData[] = [];
+          
+          for (let i = 1; i < rawData.length; i++) {
+            const row = rawData[i] as any[];
+            
+            // Verificar si la fila tiene datos
+            const hasData = row.some((cell: any) => cell !== null && cell !== undefined && String(cell).trim() !== '');
+            if (!hasData) {
+              console.log(`Fila ${i + 1} vacía, saltando...`);
+              continue;
+            }
+            
+            // Función helper para obtener valor de celda
+            const getValue = (colName: string): any => {
+              const index = columnIndexes[colName];
+              if (index === undefined || index >= row.length) return '';
+              const value = row[index];
+              return value !== null && value !== undefined ? value : '';
+            };
+            
+            // Función helper para obtener valor numérico
+            const getNumber = (colName: string): number => {
+              const value = getValue(colName);
+              if (typeof value === 'number') return value;
+              if (typeof value === 'string') {
+                const cleaned = value.replace(/[^0-9.-]/g, '');
+                return cleaned ? parseFloat(cleaned) : 0;
+              }
+              return 0;
+            };
+            
+            const invoiceType = String(getValue('invoiceType')).trim();
+            
+            // Solo procesar registros con Invoice Type = "Invoice"
+            const normalizedInvoiceType = invoiceType.toLowerCase();
+            if (normalizedInvoiceType !== 'invoice') {
+              console.log(`Fila ${i + 1} ignorada: Invoice Type = "${invoiceType}" (solo se procesan registros con tipo "Invoice")`);
+              continue;
+            }
+            
+            const record: ShipChandlerExcelData = {
+              customerName: String(getValue('customerName')).trim(),
+              invoiceNo: String(getValue('invoiceNo')).trim(),
+              invoiceType: invoiceType,
+              vessel: String(getValue('vessel')).trim(),
+              date: String(getValue('date')).trim(),
+              referenceNo: String(getValue('referenceNo')).trim(),
+              deliveryAddress: String(getValue('deliveryAddress')).trim(),
+              discount: getNumber('discount'),
+              deliveryExpenses: getNumber('deliveryExpenses'),
+              portEntryFee: getNumber('portEntryFee'),
+              customsFee: getNumber('customsFee'),
+              authorities: getNumber('authorities'),
+              otherExpenses: getNumber('otherExpenses'),
+              overTime: getNumber('overTime'),
+              total: getNumber('total'),
+              isMatched: true, // Todos los registros de ShipChandler se consideran válidos
+            };
+            
+            // Validar que al menos tenga customerName, invoiceNo y total
+            if (record.customerName && record.invoiceNo && record.total !== undefined) {
+              parsedData.push(record);
+              console.log(`Fila ${i + 1} procesada:`, record);
+            } else {
+              console.warn(`Fila ${i + 1} no tiene datos suficientes, saltando:`, record);
+            }
+          }
+          
+          console.log('=== RESUMEN DEL PROCESAMIENTO SHIPCHANDLER ===');
+          console.log('Total de filas procesadas:', rawData.length - 1);
+          console.log('Registros con Invoice Type = "Invoice" extraídos:', parsedData.length);
+          console.log(`(Notas de crédito y retornos fueron filtrados)`);
+          
+          if (parsedData.length === 0) {
+            reject(new Error('No se encontraron registros válidos con Invoice Type = "Invoice" en el archivo Excel. Solo se procesan facturas, no notas de crédito ni retornos.'));
+            return;
+          }
+          
+          resolve(parsedData);
+          
+        } catch (error: any) {
+          console.error('Error al procesar el archivo Excel:', error);
+          reject(new Error(`Error al procesar el archivo: ${error.message}`));
+        }
+      };
+      
+      reader.onerror = () => {
+        reject(new Error('Error al leer el archivo'));
+      };
+      
+      reader.readAsArrayBuffer(file);
+    } catch (error: any) {
+      reject(new Error(`Error al procesar el archivo: ${error.message}`));
+    }
+  });
+};
+
 // Agency Excel Data Interface
 export interface AgencyExcelData {
   serviceDate: string

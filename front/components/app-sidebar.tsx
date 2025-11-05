@@ -117,7 +117,7 @@ export function AppSidebar() {
         ] : []),
       ].filter(Boolean),
     }] : []),
-    // PTYSS/Shipchandler module - filtered by role
+    // PTYSS module - filtered by role
     ...(hasModuleAccess(currentUser, "shipchandler") ? [{
       title: "PTYSS",
       href: "/ptyss",
@@ -137,6 +137,23 @@ export function AppSidebar() {
         ] : []),
         ...(hasSectionAccess(currentUser, "shipchandler", "config") ? [
           { title: "Catálogos", href: "/ptyss/config", icon: BookOpen }
+        ] : []),
+      ].filter(Boolean),
+    }] : []),
+    // ShipChandler module - filtered by role
+    ...(hasModuleAccess(currentUser, "shipchandler") ? [{
+      title: "ShipChandler",
+      href: "/shipchandler",
+      icon: Anchor,
+      children: [
+        ...(hasSectionAccess(currentUser, "shipchandler", "upload") ? [
+          { title: "Subir Excel", href: "/shipchandler/upload", icon: UploadCloud }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "shipchandler", "prefactura") ? [
+          { title: "Crear Prefactura", href: "/shipchandler/prefactura", icon: FilePlus2 }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "shipchandler", "records") ? [
+          { title: "Facturas", href: "/shipchandler/invoice", icon: ListOrdered }
         ] : []),
       ].filter(Boolean),
     }] : []),

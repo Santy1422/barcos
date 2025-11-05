@@ -2,6 +2,7 @@ import createRecord from "./createRecord";
 import createTruckingRecords from "./createTruckingRecords";
 import createPTYSSRecords from "./createPTYSSRecords";
 import createAgencyRecords from "./createAgencyRecords";
+import createShipChandlerRecords from "./createShipChandlerRecords";
 import getAllRecords from "./getAllRecords";
 import getRecordById from "./getRecordById";
 import updateRecord from "./updateRecord";
@@ -15,6 +16,7 @@ const recordsControllers = {
   createTruckingRecords,
   createPTYSSRecords,
   createAgencyRecords,
+  createShipChandlerRecords,
   getAllRecords,
   getRecordById,
   updateRecord,

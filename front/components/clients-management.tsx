@@ -245,14 +245,29 @@ export function ClientModal({
         address: typeof editingClient.address === "string" ? editingClient.address : "",
         sapCode: editingClient.sapCode || ""
       })
-      setExistingClient(editingClient)
-      setSapCodeChecked(true)
+      // Solo setear existingClient si el cliente tiene _id (existe en la base de datos)
+      if (editingClient._id) {
+        setExistingClient(editingClient)
+        setSapCodeChecked(true)
+      } else {
+        // Cliente nuevo sin _id, no setear existingClient
+        setExistingClient(null)
+        setSapCodeChecked(false)
+        // Si tiene SAP code, buscar automáticamente después de un pequeño delay
+        if (editingClient.sapCode && editingClient.sapCode.trim()) {
+          // Usar setTimeout para evitar problemas de dependencias
+          setTimeout(() => {
+            checkSapCode(editingClient.sapCode || "")
+          }, 100)
+        }
+      }
     } else if (!editingClient && isOpen) {
       // Resetear formulario cuando se abre para crear nuevo cliente
       setFormData(initialFormData)
       setExistingClient(null)
       setSapCodeChecked(false)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingClient, isOpen])
 
   // Generar ID único

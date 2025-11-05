@@ -243,6 +243,56 @@ export const createTruckingRecords = createAsyncThunk(
   }
 )
 
+export const createShipChandlerRecords = createAsyncThunk(
+  'records/createShipChandler',
+  async ({ excelId, recordsData }: {
+    excelId: string
+    recordsData: any[]
+  }, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token')
+      console.log("Token presente:", !!token);
+      console.log("Token (primeros 20 chars):", token ? token.substring(0, 20) + "..." : "NO HAY TOKEN");
+      console.log("Payload enviado a backend ShipChandler:", { excelId, recordsData });
+      const response = await fetch('/api/records/shipchandler/bulk', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          excelId,
+          recordsData
+        })
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Error backend - Status:", response.status);
+        console.error("Error backend - Data:", JSON.stringify(errorData, null, 2));
+        throw new Error(errorData.error || `Error al crear registros (${response.status})`);
+      }
+      
+      console.log("✅ Response OK - Status:", response.status);
+      const data = await response.json()
+      console.log("Respuesta del backend:", data);
+      console.log("data.payload:", data.payload);
+      console.log("data.payload.records:", data.payload?.records);
+      console.log("data.payload.records length:", data.payload?.records?.length);
+      
+      // Retornar toda la respuesta del backend para que el frontend pueda acceder a duplicates, count, etc.
+      const result = data.payload || {};
+      console.log("Resultado final a retornar:", result);
+      console.log("Resultado final length:", result.records?.length || 0);
+      return result
+    } catch (error) {
+                                       //@ts-ignore
+
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
 export const createPTYSSRecords = createAsyncThunk(
   'records/createPTYSS',
   async ({ excelId, recordsData }: {
@@ -1031,6 +1081,24 @@ const recordsSlice = createSlice({
         }
       })
       .addCase(createPTYSSRecords.rejected, (state, action) => {
+        state.creatingRecords = false
+        state.error = action.payload as string
+      })
+      
+      // Create ShipChandler records
+      .addCase(createShipChandlerRecords.pending, (state) => {
+        state.creatingRecords = true
+        state.error = null
+      })
+      .addCase(createShipChandlerRecords.fulfilled, (state, action) => {
+        state.creatingRecords = false
+        // action.payload ahora es un objeto con { count, duplicates, records, totalProcessed, message }
+        // Solo agregar los records al estado
+        if (action.payload.records && Array.isArray(action.payload.records)) {
+          state.individualRecords.push(...action.payload.records)
+        }
+      })
+      .addCase(createShipChandlerRecords.rejected, (state, action) => {
         state.creatingRecords = false
         state.error = action.payload as string
       })

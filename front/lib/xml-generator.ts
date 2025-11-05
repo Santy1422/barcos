@@ -919,6 +919,176 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
   return '<?xml version="1.0" encoding="UTF-8"?>\n' + xmlContent
 }
 
+// Tipos para ShipChandler XML
+export interface ShipChandlerInvoiceForXml {
+  id: string
+  invoiceNumber: string
+  client: string
+  clientName: string
+  date: string
+  sapDate?: string
+  currency: string
+  total: number
+  records: ShipChandlerRecordForXml[]
+  sapDocumentNumber?: string
+}
+
+export interface ShipChandlerRecordForXml {
+  id: string
+  data: {
+    customerName: string
+    invoiceNo: string
+    invoiceType: string
+    vessel: string
+    date: string
+    referenceNo: string
+    deliveryAddress: string
+    discount: number
+    deliveryExpenses: number
+    portEntryFee: number
+    customsFee: number
+    authorities: number
+    otherExpenses: number
+    overTime: number
+    total: number
+    clientId?: string
+    clientSapCode?: string
+    [key: string]: any
+  }
+  totalValue: number
+}
+
+// Función para generar XML de ShipChandler
+export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXml): string {
+  // Validar datos requeridos
+  if (!invoice.invoiceNumber || !invoice.client || !invoice.date) {
+    throw new Error("Datos requeridos faltantes para generar XML ShipChandler")
+  }
+
+  // Calcular el monto total sumando todos los servicios de todos los registros
+  // Los servicios a sumar son: deliveryExpenses, portEntryFee, customsFee, authorities, otherExpenses, overTime, total
+  const totalAmount = invoice.records.reduce((sum, record) => {
+    const data = record.data
+    const recordTotal = 
+      Number(data.deliveryExpenses || 0) +
+      Number(data.portEntryFee || 0) +
+      Number(data.customsFee || 0) +
+      Number(data.authorities || 0) +
+      Number(data.otherExpenses || 0) +
+      Number(data.overTime || 0) +
+      Number(data.total || 0)
+    return sum + recordTotal
+  }, 0)
+
+  const xmlObject = {
+    "ns1:LogisticARInvoices": {
+      _attributes: {
+        "xmlns:ns1": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00"
+      },
+      "CustomerInvoice": {
+        // Protocol Section
+        "Protocol": {
+          "TechnicalContact": "almeida.kant@ptyrmgmt.com;renee.taylor@ptyrmgmt.com"
+        },
+        // Header Section
+        "Header": {
+          "CompanyCode": "9326",
+          "DocumentType": "XL",
+          "DocumentDate": formatDateForXML(invoice.date),
+          "PostingDate": invoice.sapDate ? formatDateForXML(invoice.sapDate) : formatDateForXML(invoice.date),
+          "TransactionCurrency": "USD",
+          "TranslationDate": formatDateForXML(invoice.date),
+          "Reference": invoice.invoiceNumber,
+          "EntityDocNbr": invoice.sapDocumentNumber || invoice.invoiceNumber
+        },
+        // AdditionalTexts Section
+        "AdditionalTexts": {
+          "LongHeaderTextLangKey": "EN"
+        },
+        // CustomerOpenItem Section
+        "CustomerOpenItem": {
+          "CustomerNbr": invoice.client,
+          "AmntTransactCur": totalAmount.toFixed(2),
+          "BaselineDate": formatDateForXML(invoice.date),
+          "DueDate": calculateDueDate(invoice.date)
+        },
+        // OtherItems Section - crear una línea por cada servicio que tenga valor
+        "OtherItems": {
+          "OtherItem": (function() {
+            const otherItems: any[] = []
+            let lineNbr = 1
+            
+            // Mapeo de campos a service codes
+            const serviceCodeMap: Record<string, string> = {
+              deliveryExpenses: 'TRK237',
+              portEntryFee: 'CLG096',
+              customsFee: 'CHB123',
+              authorities: 'TRK130',
+              otherExpenses: 'CHB122',
+              overTime: 'WRH156',
+              total: 'SHP243'
+            }
+            
+            // Procesar cada registro
+            invoice.records.forEach((record: ShipChandlerRecordForXml) => {
+              const data = record.data
+              const invoiceNo = data.invoiceNo || ''
+              
+              // Crear una línea por cada campo que tenga valor mayor a 0
+              Object.entries(serviceCodeMap).forEach(([fieldName, serviceCode]) => {
+                const value = Number(data[fieldName] || 0)
+                if (value > 0) {
+                  // Determinar el nombre del servicio para la descripción
+                  const serviceNames: Record<string, string> = {
+                    deliveryExpenses: 'Delivery Expenses',
+                    portEntryFee: 'Port Entry Fee',
+                    customsFee: 'Customs Fee',
+                    authorities: 'Authorities',
+                    otherExpenses: 'Other Expenses',
+                    overTime: 'Over Time',
+                    total: 'Total'
+                  }
+                  
+                  const serviceName = serviceNames[fieldName] || fieldName
+                  
+                  // Para el service code SHP243 (campo "total"), usar valores específicos
+                  const isTotalService = serviceCode === 'SHP243'
+                  
+                  otherItems.push({
+                    "IncomeRebateCode": "I",
+                    "AmntTransacCur": (-value).toFixed(3),
+                    "BaseUnitMeasure": "EA", // Each - unidad por cada servicio
+                    "Qty": "1",
+                    "ProfitCenter": isTotalService ? "PAPANC441" : "PAPANB110",
+                    "ReferencePeriod": formatReferencePeriod(invoice.date),
+                    "Service": serviceCode,
+                    "Activity": "SHP", // Activity para ShipChandler
+                    "Pillar": isTotalService ? "NOPS" : "TRSP",
+                    "BUCountry": "PA",
+                    "ServiceCountry": "PA",
+                    "ClientType": "MEDLOG",
+                    "BusinessType": "I", // Siempre IMPORT para ShipChandler
+                    "SubContracting": "YES"
+                  })
+                  
+                  lineNbr++
+                }
+              })
+            })
+            
+            return otherItems
+          })()
+        }
+      }
+    }
+  }
+  
+  const xmlContent = js2xml(xmlObject, { compact: true, spaces: 2 })
+  
+  // Agregar la declaración XML al principio
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' + xmlContent
+}
+
 // Función para validar el XML generado
 export function validateXMLForSAP(xmlString: string): { isValid: boolean; errors: string[] } {
   const errors: string[] = []
