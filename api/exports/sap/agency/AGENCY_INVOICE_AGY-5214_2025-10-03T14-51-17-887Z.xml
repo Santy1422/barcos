@@ -23,7 +23,7 @@
       <BaselineDate>20251003</BaselineDate>
       <DueDate>20251102</DueDate>
     </CustomerOpenItem>
-    <OtherItems>
+    <OtherItems> 
       <OtherItem>
         <IncomeRebateCode>I</IncomeRebateCode>
         <AmntTransacCur>-35.00</AmntTransacCur>
