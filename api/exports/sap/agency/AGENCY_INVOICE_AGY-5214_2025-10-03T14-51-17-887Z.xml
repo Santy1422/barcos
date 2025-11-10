@@ -18,7 +18,7 @@
       <LongHeaderTextLangKey>EN</LongHeaderTextLangKey>
     </AdditionalTexts>
     <CustomerOpenItem>
-      <CustomerNbr>9999999</CustomerNbr>
+      <CustomerNbr>9999999</CustomerNbr>  
       <AmntTransacCur>45.00</AmntTransacCur>
       <BaselineDate>20251003</BaselineDate>
       <DueDate>20251102</DueDate>
