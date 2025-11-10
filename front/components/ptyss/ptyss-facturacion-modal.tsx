@@ -24,7 +24,7 @@ import { PTYSSRecordsViewModal } from "./ptyss-records-view-modal"
 import { generatePTYSSInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSapFtp, type PTYSSInvoiceForXml } from "@/lib/xml-generator"
 import { useAppSelector } from "@/lib/hooks"
 import { selectAllIndividualRecords } from "@/lib/features/records/recordsSlice"
-import { saveAs } from "file-saver"
+import saveAs from "file-saver"
 
 interface PTYSSFacturacionModalProps {
   open: boolean
@@ -45,9 +45,6 @@ export function PTYSSFacturacionModal({
   const [invoiceDate, setInvoiceDate] = useState(() => {
     const today = new Date()
     return today.toISOString().split('T')[0] // Formato YYYY-MM-DD
-  })
-  const [actions, setActions] = useState({
-    sendToSAP: false
   })
   const [showRecordsModal, setShowRecordsModal] = useState(false)
   const [generatedXml, setGeneratedXml] = useState<string>("")
@@ -84,9 +81,6 @@ export function PTYSSFacturacionModal({
     setShowSapLogs(false)
     const today = new Date()
     setInvoiceDate(today.toISOString().split('T')[0])
-         setActions({
-       sendToSAP: false
-     })
   }, [invoice?.id])
   
   // Función para generar XML de PTYSS
@@ -371,35 +365,6 @@ export function PTYSSFacturacionModal({
       
       console.log("🔍 PTYSSFacturacionModal - xmlData final que se enviará:", xmlData)
       
-      // Si se marcó la opción de enviar a SAP, enviar antes de facturar para actualizar el estado
-      if (actions.sendToSAP && xmlData && xmlData.xml && invoice?.id) {
-        console.log("📤 Enviando a SAP antes de facturar para marcar estado...")
-        try {
-          const fileName = generateXmlFileName('9326')
-          const result = await sendXmlToSapFtp(invoice.id, xmlData.xml, fileName)
-          
-          if (result.success) {
-            // Marcar el xmlData como enviado a SAP
-            xmlData = {
-              ...xmlData,
-              sentToSap: true,
-              sentToSapAt: new Date().toISOString()
-            }
-            console.log("✅ XML enviado a SAP exitosamente, estado actualizado")
-          } else {
-            throw new Error(result.message || "Error al enviar XML")
-          }
-        } catch (sapError: any) {
-          console.error("❌ Error al enviar XML a SAP:", sapError)
-          toast({
-            title: "Error al enviar XML a SAP",
-            description: sapError.message || "Error al conectar con SAP",
-            variant: "destructive"
-          })
-          // Continuar con la facturación aunque falle el envío a SAP
-        }
-      }
-      
       await onFacturar(newInvoiceNumber, xmlData, invoiceDate)
       
       const xmlMessage = xmlData?.isValid 
@@ -408,11 +373,9 @@ export function PTYSSFacturacionModal({
           ? " XML generado con advertencias."
           : " Error al generar XML."
       
-      const sapMessage = actions.sendToSAP ? " Enviado a SAP." : ""
-      
       toast({
         title: "Facturación completada",
-        description: `La prefactura ha sido facturada como ${newInvoiceNumber}.${xmlMessage}${sapMessage}`,
+        description: `La prefactura ha sido facturada como ${newInvoiceNumber}.${xmlMessage}`,
         className: "bg-green-600 text-white"
       })
       
@@ -428,12 +391,6 @@ export function PTYSSFacturacionModal({
     }
   }
 
-  const handleActionChange = (action: keyof typeof actions, checked: boolean) => {
-    setActions(prev => ({
-      ...prev,
-      [action]: checked
-    }))
-  }
 
   // Función para descargar XML
   const handleDownloadXml = () => {
@@ -563,46 +520,6 @@ export function PTYSSFacturacionModal({
                 </div>
               </div>
             )}
-
-            {/* Acciones de facturación */}
-            <div className="space-y-4">
-              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                <FileText className="h-4 w-4" /> Acciones Adicionales
-              </h3>
-                             <div className="space-y-3">
-                 <div className="flex items-center space-x-3 p-3 border border-gray-200">
-                  <Checkbox
-                    id="send-to-sap"
-                    checked={actions.sendToSAP}
-                    onCheckedChange={(checked) => handleActionChange('sendToSAP', checked as boolean)}
-                  />
-                  <div className="flex items-center gap-2 flex-1">
-                    <Code className="h-4 w-4 text-green-600" />
-                    <Label htmlFor="send-to-sap" className="font-medium">
-                      Enviar XML a SAP (XML se genera automáticamente)
-                    </Label>
-                  </div>
-                  {generatedXml && (
-                    <div className="flex items-center gap-2">
-                      <Badge 
-                        variant={xmlValidation?.isValid ? "default" : "destructive"} 
-                        className="text-xs"
-                      >
-                        {xmlValidation?.isValid ? "✓ Válido" : "⚠ Con errores"}
-                      </Badge>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleDownloadXml}
-                        className="h-8 w-8 p-0"
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
 
             {/* Información del XML generado */}
             {generatedXml && xmlValidation && (

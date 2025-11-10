@@ -24,7 +24,7 @@ import { useToast } from "@/hooks/use-toast"
 import { generateShipChandlerInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSapFtp, type ShipChandlerInvoiceForXml } from "@/lib/xml-generator"
 import { useAppSelector } from "@/lib/hooks"
 import { selectAllIndividualRecords } from "@/lib/features/records/recordsSlice"
-import { saveAs } from "file-saver"
+import saveAs from "file-saver"
 
 interface ShipChandlerFacturacionModalProps {
   open: boolean
@@ -45,9 +45,6 @@ export function ShipChandlerFacturacionModal({
   const [invoiceDate, setInvoiceDate] = useState(() => {
     const today = new Date()
     return today.toISOString().split('T')[0] // Formato YYYY-MM-DD
-  })
-  const [actions, setActions] = useState({
-    sendToSAP: false
   })
   const [generatedXml, setGeneratedXml] = useState<string>("")
   const [xmlValidation, setXmlValidation] = useState<{ isValid: boolean; errors: string[] } | null>(null)
@@ -264,9 +261,6 @@ export function ShipChandlerFacturacionModal({
     setIsSendingToSap(false)
     setSapLogs([])
     setShowSapLogs(false)
-    setActions({
-      sendToSAP: false
-    })
     
     // Función para establecer valores desde los registros
     const setValuesFromRecords = () => {
@@ -621,33 +615,6 @@ export function ShipChandlerFacturacionModal({
       
       console.log("🔍 ShipChandlerFacturacionModal - xmlData final que se enviará:", xmlData)
       
-      // Si se marcó la opción de enviar a SAP, enviar antes de facturar
-      if (actions.sendToSAP && xmlData && xmlData.xml && invoice?.id) {
-        console.log("📤 Enviando a SAP antes de facturar para marcar estado...")
-        try {
-          const fileName = generateXmlFileName('9326')
-          const result = await sendXmlToSapFtp(invoice.id, xmlData.xml, fileName)
-          
-          if (result.success) {
-            xmlData = {
-              ...xmlData,
-              sentToSap: true,
-              sentToSapAt: new Date().toISOString()
-            }
-            console.log("✅ XML enviado a SAP exitosamente, estado actualizado")
-          } else {
-            throw new Error(result.message || "Error al enviar XML")
-          }
-        } catch (sapError: any) {
-          console.error("❌ Error al enviar XML a SAP:", sapError)
-          toast({
-            title: "Error al enviar XML a SAP",
-            description: sapError.message || "Error al conectar con SAP",
-            variant: "destructive"
-          })
-        }
-      }
-      
       await onFacturar(newInvoiceNumber, xmlData, invoiceDate)
       
       const xmlMessage = xmlData?.isValid 
@@ -656,11 +623,9 @@ export function ShipChandlerFacturacionModal({
           ? " XML generado con advertencias."
           : " Error al generar XML."
       
-      const sapMessage = actions.sendToSAP ? " Enviado a SAP." : ""
-      
       toast({
         title: "Facturación completada",
-        description: `La prefactura ha sido facturada como ${newInvoiceNumber}.${xmlMessage}${sapMessage}`,
+        description: `La prefactura ha sido facturada como ${newInvoiceNumber}.${xmlMessage}`,
         className: "bg-green-600 text-white"
       })
       
@@ -675,12 +640,6 @@ export function ShipChandlerFacturacionModal({
     }
   }
 
-  const handleActionChange = (action: keyof typeof actions, checked: boolean) => {
-    setActions(prev => ({
-      ...prev,
-      [action]: checked
-    }))
-  }
 
   // Función para descargar XML
   const handleDownloadXml = () => {
@@ -787,46 +746,56 @@ export function ShipChandlerFacturacionModal({
               </div>
             </div>
 
-
-            {/* Vista previa del XML generado */}
-            {generatedXml && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-semibold">Vista previa del XML:</Label>
-                  <div className="flex gap-2">
-                    {xmlValidation && (
-                      <Badge variant={xmlValidation.isValid ? "default" : "destructive"}>
-                        {xmlValidation.isValid ? "Válido" : `${xmlValidation.errors.length} error(es)`}
+            {/* Vista previa del XML */}
+            <div className="space-y-4">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Code className="h-4 w-4" /> Vista Previa del XML
+              </h3>
+              
+              {!generatedXml ? (
+                <div className="flex flex-col items-center space-y-2 p-4 border border-dashed border-gray-300 rounded-lg">
+                  <Button 
+                    variant="outline" 
+                    onClick={generateXMLForInvoice} 
+                    disabled={!newInvoiceNumber.trim() || !invoiceDate} 
+                    className="flex items-center gap-2 text-blue-600 border-blue-600 hover:bg-blue-50 disabled:text-gray-400 disabled:border-gray-300"
+                  >
+                    <Code className="h-4 w-4" /> Generar Vista Previa del XML
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg bg-gray-50">
+                    <div className="flex items-center gap-2">
+                      <Code className="h-4 w-4 text-green-600" />
+                      <span className="text-sm font-medium">XML Generado</span>
+                      <Badge variant={xmlValidation?.isValid ? "default" : "destructive"} className="text-xs">
+                        {xmlValidation?.isValid ? "✓ Válido" : "⚠ Con errores"}
                       </Badge>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleDownloadXml}
-                      className="h-8"
-                    >
-                      <Download className="h-4 w-4 mr-2" />
+                    </div>
+                    <Button variant="outline" size="sm" onClick={handleDownloadXml} className="flex items-center gap-2">
+                      <Download className="h-4 w-4" />
                       Descargar XML
                     </Button>
                   </div>
+                  {xmlValidation && !xmlValidation.isValid && (
+                    <Alert variant="destructive">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        <ul className="list-disc list-inside mt-2">
+                          {xmlValidation.errors.map((error, index) => (
+                            <li key={index} className="text-xs">{error}</li>
+                          ))}
+                        </ul>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <div className="bg-slate-900 text-green-400 p-4 rounded-lg font-mono text-xs overflow-x-auto max-h-64 overflow-y-auto">
+                    <pre>{generatedXml}</pre>
+                  </div>
                 </div>
-                {xmlValidation && !xmlValidation.isValid && (
-                  <Alert variant="destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription>
-                      <ul className="list-disc list-inside mt-2">
-                        {xmlValidation.errors.map((error, index) => (
-                          <li key={index} className="text-xs">{error}</li>
-                        ))}
-                      </ul>
-                    </AlertDescription>
-                  </Alert>
-                )}
-                <div className="bg-slate-900 text-green-400 p-4 rounded-lg font-mono text-xs overflow-x-auto max-h-64 overflow-y-auto">
-                  <pre>{generatedXml}</pre>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Botones de acción */}
             <div className="flex justify-end space-x-2 pt-4 border-t">

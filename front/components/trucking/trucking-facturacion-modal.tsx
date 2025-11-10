@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { FileText, Code, AlertTriangle, CheckCircle, Calendar, DollarSign, User, Eye, Download } from "lucide-react"
@@ -14,7 +13,7 @@ import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { selectAllIndividualRecords, selectAutoridadesRecords, fetchAutoridadesRecords } from "@/lib/features/records/recordsSlice"
 import { selectAllServices, fetchServices } from "@/lib/features/services/servicesSlice"
 import { generateInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSapFtp } from "@/lib/xml-generator"
-import { saveAs } from "file-saver"
+import saveAs from "file-saver"
 
 interface TruckingFacturacionModalProps {
   open: boolean
@@ -29,7 +28,6 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
   const [isProcessing, setIsProcessing] = useState(false)
   const [newInvoiceNumber, setNewInvoiceNumber] = useState("")
   const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().split('T')[0])
-  const [actions, setActions] = useState({ sendToSAP: false })
   const [generatedXml, setGeneratedXml] = useState<string>("")
   const [xmlValidation, setXmlValidation] = useState<{ isValid: boolean; errors: string[] } | null>(null)
   const [isSendingToSap, setIsSendingToSap] = useState(false)
@@ -63,7 +61,6 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
       setNewInvoiceNumber(suggestedNumber)
     }
     const today = new Date(); setInvoiceDate(today.toISOString().split('T')[0])
-    setActions({ sendToSAP: false })
   }, [invoice?.id, open, dispatch])
 
   // Cargar registros de autoridades cuando se abre el modal
@@ -578,16 +575,6 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
       console.log("=== DEBUG: XML generado ===")
       console.log("XmlData a pasar:", xmlData)
       
-      // Enviar a SAP si está marcado
-      if (actions.sendToSAP && xmlData.xml && invoice?.id) {
-        try {
-          await handleSendToSap(invoice.id, xmlData.xml)
-        } catch (error) {
-          console.error("Error enviando a SAP:", error)
-          // Continuar con la facturación aunque falle el envío a SAP
-        }
-      }
-      
       console.log("=== DEBUG: Llamando a onFacturar ===")
       console.log("XmlData a pasar:", xmlData)
       
@@ -688,7 +675,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
           </div>
 
           <div className="space-y-4">
-            <h3 className="font-semibold text-gray-900 flex items-center gap-2"><FileText className="h-4 w-4" /> Acciones Adicionales</h3>
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2"><Code className="h-4 w-4" /> Vista Previa del XML</h3>
             {isAuthInvoice && (
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <div className="flex items-center gap-2">
@@ -702,27 +689,31 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
                 </p>
               </div>
             )}
-            <div className="space-y-3">
-              <div className="flex items-center space-x-3 p-3 border border-gray-200">
-                <Checkbox id="send-to-sap" checked={actions.sendToSAP} onCheckedChange={(checked) => setActions(prev => ({ ...prev, sendToSAP: checked as boolean }))} />
-                <div className="flex items-center gap-2 flex-1"><Code className="h-4 w-4 text-green-600" /><Label htmlFor="send-to-sap" className="font-medium">Enviar XML a SAP (XML se genera automáticamente)</Label></div>
-                {generatedXml && (
-                  <div className="flex items-center gap-2">
-                    <Badge variant={xmlValidation?.isValid ? "default" : "destructive"} className="text-xs">{xmlValidation?.isValid ? "✓ Válido" : "⚠ Con errores"}</Badge>
-                    <Button variant="ghost" size="sm" onClick={handleDownloadXml} className="h-8 w-8 p-0"><Download className="h-4 w-4" /></Button>
-                  </div>
-                )}
+            
+            {!generatedXml ? (
+              <div className="flex flex-col items-center space-y-2 p-4 border border-dashed border-gray-300 rounded-lg">
+                <Button variant="outline" onClick={generateXMLForInvoice} disabled={!newInvoiceNumber.trim() || !invoiceDate} className="flex items-center gap-2 text-blue-600 border-blue-600 hover:bg-blue-50 disabled:text-gray-400 disabled:border-gray-300">
+                  <Code className="h-4 w-4" /> Generar Vista Previa del XML
+                </Button>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg bg-gray-50">
+                  <div className="flex items-center gap-2">
+                    <Code className="h-4 w-4 text-green-600" />
+                    <span className="text-sm font-medium">XML Generado</span>
+                    <Badge variant={xmlValidation?.isValid ? "default" : "destructive"} className="text-xs">
+                      {xmlValidation?.isValid ? "✓ Válido" : "⚠ Con errores"}
+                    </Badge>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleDownloadXml} className="flex items-center gap-2">
+                    <Download className="h-4 w-4" />
+                    Descargar XML
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
-
-          {!generatedXml && (
-            <div className="flex flex-col items-center space-y-2">
-              <Button variant="outline" onClick={generateXMLForInvoice} disabled={!newInvoiceNumber.trim() || !invoiceDate} className="flex items-center gap-2 text-blue-600 border-blue-600 hover:bg-blue-50 disabled:text-gray-400 disabled:border-gray-300">
-                <Code className="h-4 w-4" /> Vista previa del XML
-              </Button>
-            </div>
-          )}
 
           {showSapLogs && sapLogs.length > 0 && (
             <div className="mt-4 p-4 border rounded-lg bg-gray-50">

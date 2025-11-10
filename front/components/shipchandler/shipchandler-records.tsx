@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast"
 import { selectInvoicesByModule, fetchInvoicesAsync, deleteInvoiceAsync, selectRecordsLoading, selectRecordsError, updateInvoiceAsync, selectAllIndividualRecords, fetchAllRecordsByModule, updateMultipleRecordsStatusAsync } from "@/lib/features/records/recordsSlice"
 import { ShipChandlerFacturacionModal } from "./shipchandler-facturacion-modal"
 import { ShipChandlerXmlViewerModal } from "./shipchandler-xml-viewer-modal"
+import { ShipChandlerPdfViewer } from "./shipchandler-pdf-viewer"
 import { fetchClients } from "@/lib/features/clients/clientsSlice"
 import saveAs from "file-saver"
 import { generateXmlFileName } from "@/lib/xml-generator"
@@ -561,6 +562,18 @@ export function ShipChandlerRecords() {
           })
         }}
       />
+
+      {/* Modal de visor de PDF */}
+      <ShipChandlerPdfViewer
+        open={isPdfModalOpen}
+        onOpenChange={(open) => {
+          setIsPdfModalOpen(open)
+          if (!open) setPdfInvoice(null)
+        }}
+        invoice={pdfInvoice}
+        clients={clients}
+        allRecords={allRecords}
+      />
       
       <Card>
         <CardHeader>
@@ -817,6 +830,19 @@ export function ShipChandlerRecords() {
                         <TableCell>{getStatusBadge(invoice.status)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end space-x-2">
+                            {/* Botón Ver PDF */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              onClick={() => {
+                                setPdfInvoice(invoice)
+                                setIsPdfModalOpen(true)
+                              }}
+                              title="Ver PDF"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
                             {invoice.status === "facturada" && invoice.xmlData && (
                               <Button
                                 variant="ghost"

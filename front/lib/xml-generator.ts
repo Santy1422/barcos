@@ -713,6 +713,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
       "CustomerInvoice": {
         // Protocol Section
         "Protocol": {
+          "SourceSystem": "Trucking",
           "TechnicalContact": "almeida.kant@ptyrmgmt.com;renee.taylor@ptyrmgmt.com"
         },
         // Header Section
@@ -988,6 +989,7 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
       "CustomerInvoice": {
         // Protocol Section
         "Protocol": {
+          "SourceSystem": "ShipChandler",
           "TechnicalContact": "almeida.kant@ptyrmgmt.com;renee.taylor@ptyrmgmt.com"
         },
         // Header Section

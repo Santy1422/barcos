@@ -463,7 +463,6 @@ export function ClientModal({
                 }}
                 placeholder="Ingresa el código SAP"
                 required
-                disabled={!!(editingClient && editingClient._id)} // Deshabilitar solo si está editando un cliente existente (con _id)
                 className="flex-1"
               />
               {!(editingClient && editingClient._id) && ( // Mostrar botón de buscar si no está editando un cliente existente
@@ -482,7 +481,7 @@ export function ClientModal({
                 </Button>
               )}
             </div>
-            {existingClient && (
+            {existingClient && !editingClient?._id && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <div className="flex items-center space-x-2">
                   <CheckCircle className="h-4 w-4 text-blue-600" />

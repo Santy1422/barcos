@@ -6,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { FileText, Calendar, DollarSign, User, Ship, Users, Loader2 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { FileText, Calendar, DollarSign, User, Ship, Users, Loader2, Code, Download, AlertTriangle, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAppSelector } from "@/lib/hooks";
 import { selectAllClients } from "@/lib/features/clients/clientsSlice";
-import { generateXmlFileName } from "@/lib/xml-generator";
+import { generateXmlFileName, validateXMLForSAP, generateAgencyInvoiceXML } from "@/lib/xml-generator";
+import saveAs from "file-saver";
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs";
 
 interface AgencyServiceFacturarModalProps {
@@ -41,9 +42,10 @@ export function AgencyServiceFacturarModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [generateXml, setGenerateXml] = useState(false);
   const [waitingTimePrice, setWaitingTimePrice] = useState(0);
   const [hourlyRate, setHourlyRate] = useState(0);
+  const [generatedXml, setGeneratedXml] = useState<string>("");
+  const [xmlValidation, setXmlValidation] = useState<{ isValid: boolean; errors: string[] } | null>(null);
 
   // Load catalogs to get waiting time rate
   useEffect(() => {
@@ -87,7 +89,8 @@ export function AgencyServiceFacturarModal({
       
       const today = new Date();
       setInvoiceDate(today.toISOString().split('T')[0]);
-      setGenerateXml(false);
+      setGeneratedXml("");
+      setXmlValidation(null);
     }
   }, [open, service]);
 
@@ -106,8 +109,27 @@ export function AgencyServiceFacturarModal({
     try {
       let xmlData = null;
       
-      // Generar XML si está marcado
-      if (generateXml) {
+      // Usar XML ya generado si existe, sino generarlo si estaba habilitado
+      if (generatedXml && xmlValidation) {
+        xmlData = {
+          xml: generatedXml,
+          fileName: generateXmlFileName('9326'),
+          generatedAt: new Date().toISOString(),
+          isValid: xmlValidation.isValid
+        };
+      } else if (generatedXml) {
+        // Si hay XML generado, usar ese
+        xmlData = {
+          xml: generatedXml,
+          fileName: generateXmlFileName('9326'),
+          generatedAt: new Date().toISOString(),
+          isValid: xmlValidation?.isValid ?? true
+        };
+      }
+      
+      // Legacy code removed - XML generation through checkbox
+      /*
+      } else if (generateXml) {
         const { generateAgencyInvoiceXML } = await import('@/lib/xml-generator');
         
         let clientSapNumber;
@@ -226,6 +248,7 @@ export function AgencyServiceFacturarModal({
           };
         }
       }
+      */
       
       if (isMultipleServices) {
         // Para facturación múltiple, pasar el hourly rate para que se calcule individualmente
@@ -242,6 +265,136 @@ export function AgencyServiceFacturarModal({
       toast({ title: "Error", description: error.message || "No se pudo facturar el servicio", variant: "destructive" });
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  // Función para generar vista previa del XML
+  const generateXMLPreview = async () => {
+    if (!invoiceNumber.trim()) {
+      toast({ title: "Error", description: "Debe ingresar un número de factura antes de generar el XML", variant: "destructive" });
+      return;
+    }
+    
+    if (!invoiceDate) {
+      toast({ title: "Error", description: "Debe seleccionar la fecha de factura antes de generar el XML", variant: "destructive" });
+      return;
+    }
+
+    try {
+      let clientSapNumber;
+      
+      if (isMultipleServices) {
+        const client = clients.find(c => {
+          const clientName = c.type === 'natural' ? c.fullName : c.companyName;
+          return clientName === selectedClientName;
+        });
+        
+        clientSapNumber = client?.sapCode || 'N/A';
+        
+        if (!clientSapNumber || clientSapNumber === 'N/A') {
+          toast({ title: "Error", description: "El cliente no tiene código SAP asignado", variant: "destructive" });
+          return;
+        }
+        
+        const xmlPayload = {
+          invoiceNumber: invoiceNumber,
+          invoiceDate: invoiceDate,
+          clientSapNumber: clientSapNumber,
+          services: allServices.map(svc => ({
+            _id: svc._id || svc.id,
+            pickupDate: svc.pickupDate,
+            vessel: svc.vessel,
+            crewMembers: svc.crewMembers || [],
+            pickupLocation: svc.pickupLocation,
+            dropoffLocation: svc.dropoffLocation,
+            moveType: svc.moveType || 'SINGLE',
+            price: svc.price || 0,
+            currency: svc.currency || 'USD',
+            waitingTime: svc.waitingTime || 0,
+            waitingTimePrice: svc.waitingTimePrice || 0
+          }))
+        };
+        
+        const xml = generateAgencyInvoiceXML(xmlPayload);
+        const validation = validateXMLForSAP(xml);
+        
+        setGeneratedXml(xml);
+        setXmlValidation(validation);
+        
+        toast({
+          title: validation.isValid ? "XML generado exitosamente" : "XML generado con advertencias",
+          description: validation.isValid ? "El XML cumple con todos los requisitos para SAP." : `Se encontraron ${validation.errors.length} problema(s).`,
+          className: validation.isValid ? "bg-green-600 text-white" : undefined,
+          variant: validation.isValid ? undefined : "destructive"
+        });
+      } else {
+        let client;
+        
+        if (typeof service.clientId === 'object' && service.clientId !== null) {
+          client = service.clientId;
+          clientSapNumber = client.sapCode || 'N/A';
+        } else {
+          client = clients.find(c => (c._id || c.id) === service.clientId);
+          clientSapNumber = client?.sapCode || 'N/A';
+        }
+        
+        if (!clientSapNumber || clientSapNumber === 'N/A') {
+          toast({ title: "Error", description: "El cliente no tiene código SAP asignado", variant: "destructive" });
+          return;
+        }
+        
+        const xmlPayload = {
+          invoiceNumber: invoiceNumber,
+          invoiceDate: invoiceDate,
+          clientSapNumber: clientSapNumber,
+          services: [{
+            _id: service._id || service.id,
+            pickupDate: service.pickupDate,
+            vessel: service.vessel,
+            crewMembers: service.crewMembers || [],
+            pickupLocation: service.pickupLocation,
+            dropoffLocation: service.dropoffLocation,
+            moveType: service.moveType || 'SINGLE',
+            price: service.price || 0,
+            currency: service.currency || 'USD',
+            waitingTime: service.waitingTime || 0,
+            waitingTimePrice: waitingTimePrice || 0
+          }]
+        };
+        
+        const xml = generateAgencyInvoiceXML(xmlPayload);
+        const validation = validateXMLForSAP(xml);
+        
+        setGeneratedXml(xml);
+        setXmlValidation(validation);
+        
+        toast({
+          title: validation.isValid ? "XML generado exitosamente" : "XML generado con advertencias",
+          description: validation.isValid ? "El XML cumple con todos los requisitos para SAP." : `Se encontraron ${validation.errors.length} problema(s).`,
+          className: validation.isValid ? "bg-green-600 text-white" : undefined,
+          variant: validation.isValid ? undefined : "destructive"
+        });
+      }
+    } catch (error: any) {
+      console.error("Error al generar XML:", error);
+      toast({
+        title: "Error al generar XML",
+        description: error.message || "No se pudo generar el XML",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Función para descargar XML
+  const handleDownloadXml = () => {
+    if (generatedXml) {
+      const blob = new Blob([generatedXml], { type: "application/xml;charset=utf-8" });
+      const filename = generateXmlFileName('9326');
+      saveAs(blob, filename);
+      toast({ 
+        title: "XML Descargado", 
+        description: `Descargado como ${filename}` 
+      });
     }
   };
 
@@ -389,26 +542,56 @@ export function AgencyServiceFacturarModal({
             )}
           </div>
 
-          {/* Generate XML Option - Ocultado temporalmente */}
-          {/* 
+          {/* Vista previa del XML */}
           <div className="space-y-4">
-            <div className="flex items-center space-x-3 p-3 border border-gray-200 rounded-md">
-              <Checkbox 
-                id="generate-xml" 
-                checked={generateXml} 
-                onCheckedChange={(checked) => setGenerateXml(checked as boolean)} 
-              />
-              <div className="flex-1">
-                <Label htmlFor="generate-xml" className="font-medium cursor-pointer">
-                  Generar XML para SAP
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Se generará un archivo XML para enviar a SAP
-                </p>
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <Code className="h-4 w-4" /> Vista Previa del XML
+            </h3>
+            
+            {!generatedXml ? (
+              <div className="flex flex-col items-center space-y-2 p-4 border border-dashed border-gray-300 rounded-lg">
+                <Button 
+                  variant="outline" 
+                  onClick={generateXMLPreview} 
+                  disabled={!invoiceNumber.trim() || !invoiceDate} 
+                  className="flex items-center gap-2 text-blue-600 border-blue-600 hover:bg-blue-50 disabled:text-gray-400 disabled:border-gray-300"
+                >
+                  <Code className="h-4 w-4" /> Generar Vista Previa del XML
+                </Button>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg bg-gray-50">
+                  <div className="flex items-center gap-2">
+                    <Code className="h-4 w-4 text-green-600" />
+                    <span className="text-sm font-medium">XML Generado</span>
+                    <Badge variant={xmlValidation?.isValid ? "default" : "destructive"} className="text-xs">
+                      {xmlValidation?.isValid ? "✓ Válido" : "⚠ Con errores"}
+                    </Badge>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleDownloadXml} className="flex items-center gap-2">
+                    <Download className="h-4 w-4" />
+                    Descargar XML
+                  </Button>
+                </div>
+                {xmlValidation && !xmlValidation.isValid && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      <ul className="list-disc list-inside mt-2">
+                        {xmlValidation.errors.slice(0, 3).map((error, index) => (
+                          <li key={index} className="text-xs">{error}</li>
+                        ))}
+                        {xmlValidation.errors.length > 3 && (
+                          <li className="text-xs">... y {xmlValidation.errors.length - 3} más</li>
+                        )}
+                      </ul>
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
           </div>
-          */}
 
           {/* Actions */}
           <DialogFooter>
