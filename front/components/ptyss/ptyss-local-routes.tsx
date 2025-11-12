@@ -250,7 +250,20 @@ export function PTYSSLocalRoutes() {
     }
 
     try {
-      await dispatch(createPTYSSLocalRoute(newRoute)).unwrap()
+      // Obtener el cliente real asociado al esquema seleccionado
+      const associatedClient = clientAssociations[selectedClient]
+      const realClientId = associatedClient?._id || undefined
+      
+      // Crear la ruta incluyendo el realClientId si existe
+      const routeToCreate = {
+        ...newRoute,
+        realClientId
+      }
+      
+      await dispatch(createPTYSSLocalRoute(routeToCreate)).unwrap()
+      
+      // Refrescar las rutas para mostrar la nueva ruta
+      await dispatch(fetchPTYSSLocalRoutes())
       
       setNewRoute({
         clientName: selectedClient,
@@ -286,7 +299,20 @@ export function PTYSSLocalRoutes() {
     }
 
     try {
-      await dispatch(updatePTYSSLocalRoute({ id: editingRoute._id, routeData: newRoute })).unwrap()
+      // Obtener el cliente real asociado al esquema seleccionado
+      const associatedClient = clientAssociations[selectedClient]
+      const realClientId = associatedClient?._id || undefined
+      
+      // Actualizar la ruta incluyendo el realClientId si existe
+      const routeToUpdate = {
+        ...newRoute,
+        realClientId
+      }
+      
+      await dispatch(updatePTYSSLocalRoute({ id: editingRoute._id, routeData: routeToUpdate })).unwrap()
+      
+      // Refrescar las rutas para mostrar los cambios
+      await dispatch(fetchPTYSSLocalRoutes())
       
       setNewRoute({
         clientName: selectedClient,
@@ -314,6 +340,10 @@ export function PTYSSLocalRoutes() {
   const handleDeleteRoute = async (routeId: string) => {
     try {
       await dispatch(deletePTYSSLocalRoute(routeId)).unwrap()
+      
+      // Refrescar las rutas para actualizar la lista
+      await dispatch(fetchPTYSSLocalRoutes())
+      
       toast({
         title: "Ruta eliminada",
         description: "La ruta ha sido eliminada del sistema",
@@ -824,7 +854,11 @@ export function PTYSSLocalRoutes() {
           )}
 
           {availableSchemas.length > 0 ? (
-            <Tabs defaultValue={availableSchemas[0] || ""} className="w-full">
+            <Tabs 
+              value={selectedClient || availableSchemas[0]} 
+              onValueChange={handleClientChange}
+              className="w-full"
+            >
               <TabsList className="grid w-full h-auto" style={{ gridTemplateColumns: `repeat(${Math.min(availableSchemas.length, 6)}, 1fr)` }}>
                 {availableSchemas.map(client => {
                   const totalRoutes = routesByClient[client]?.length || 0

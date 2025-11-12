@@ -983,7 +983,7 @@ export function PTYSSUpload() {
     }
   }
 
-  const handleEditRecord = (record: ExcelRecord) => {
+  const handleEditRecord = async (record: ExcelRecord) => {
     const data = record.data as Record<string, any>
     
     // Precargar los datos en el formulario
@@ -1013,6 +1013,9 @@ export function PTYSSUpload() {
       localRouteId: data.localRouteId || "",
       localRoutePrice: data.localRoutePrice || 0
     })
+    
+    // Refrescar las rutas locales antes de abrir el diálogo y esperar a que termine
+    await dispatch(fetchPTYSSLocalRoutes())
     
     // Guardar el ID del registro que se está editando
     setEditingRecordId(record._id || record.id || "")
@@ -1618,7 +1621,10 @@ export function PTYSSUpload() {
                     Agrega registros marítimos locales uno por uno para luego generar facturas
                   </p>
                 </div>
-                <Button onClick={() => {
+                <Button onClick={async () => {
+                  // Refrescar las rutas locales antes de abrir el diálogo
+                  await dispatch(fetchPTYSSLocalRoutes())
+                  
                   setCurrentRecord({
                     ...initialRecordData,
                     localRouteId: "",
