@@ -1,27 +1,28 @@
 import { Router } from 'express';
 import clientsControllers from '../controllers/clientsControllers/clientsControllers';
 import { jwtUtils } from "../middlewares/jwtUtils";
+import { requireAdminOrCatalogos, requireAnyRole } from '../middlewares/authorization';
 
 const { catchedAsync } = require('../utils');
 
 const router = Router();
 
-// Crear cliente
-router.post('/', jwtUtils, catchedAsync(clientsControllers.createClient));
+// Crear cliente - Solo admin o catalogos
+router.post('/', jwtUtils, requireAdminOrCatalogos, catchedAsync(clientsControllers.createClient));
 
-// Obtener todos los clientes
-router.get('/', catchedAsync(clientsControllers.getAllClients));
+// Obtener todos los clientes - Cualquier usuario autenticado con algún rol activo
+router.get('/', jwtUtils, requireAnyRole, catchedAsync(clientsControllers.getAllClients));
 
-// Obtener clientes activos
-router.get('/active', catchedAsync(clientsControllers.getActiveClients));
+// Obtener clientes activos - Cualquier usuario autenticado con algún rol activo
+router.get('/active', jwtUtils, requireAnyRole, catchedAsync(clientsControllers.getActiveClients));
 
-// Obtener cliente por ID
-router.get('/:id', catchedAsync(clientsControllers.getClientById));
+// Obtener cliente por ID - Cualquier usuario autenticado con algún rol activo
+router.get('/:id', jwtUtils, requireAnyRole, catchedAsync(clientsControllers.getClientById));
 
-// Actualizar cliente
-router.put('/:id', jwtUtils, catchedAsync(clientsControllers.updateClient));
+// Actualizar cliente - Solo admin o catalogos
+router.put('/:id', jwtUtils, requireAdminOrCatalogos, catchedAsync(clientsControllers.updateClient));
 
-// Eliminar cliente
-router.delete('/:id', jwtUtils, catchedAsync(clientsControllers.deleteClient));
+// Eliminar cliente - Solo admin o catalogos
+router.delete('/:id', jwtUtils, requireAdminOrCatalogos, catchedAsync(clientsControllers.deleteClient));
 
 export default router;

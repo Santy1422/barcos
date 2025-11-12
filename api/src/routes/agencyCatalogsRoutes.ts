@@ -25,7 +25,7 @@ import {
   getPricingStats
 } from '../controllers/agencyControllers/agencyPricingControllers';
 import { jwtUtils } from "../middlewares/jwtUtils";
-import { requireAdminOrOperations } from '../middlewares/authorization';
+import { requireAdminOrOperations, requireAdminOrCatalogos } from '../middlewares/authorization';
 import { body, param, query, validationResult } from 'express-validator';
 
 const { catchedAsync } = require('../utils');
@@ -261,14 +261,14 @@ router.use(jwtUtils);
 
 // GET /api/agency/catalogs - Get all catalogs grouped by type
 router.get('/',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   queryValidation,
   catchedAsync(getAllCatalogs)
 );
 
 // GET /api/agency/catalogs/grouped - Get all catalogs grouped by type (alias for main endpoint)
 router.get('/grouped',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   queryValidation,
   catchedAsync(getAllCatalogs)
 );
@@ -276,7 +276,7 @@ router.get('/grouped',
 
 // GET /api/agency/catalogs/search - Search across all catalog types
 router.get('/search',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   searchValidation,
   catchedAsync(searchCatalogs)
 );
@@ -306,7 +306,7 @@ router.post('/seed',
 
 // GET /api/agency/catalogs/:type - Get catalogs by type
 router.get('/:type',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   [
     param('type').isIn(VALID_CATALOG_TYPES)
       .withMessage(`Type must be one of: ${VALID_CATALOG_TYPES.join(', ')}`),
@@ -319,7 +319,7 @@ router.get('/:type',
 
 // POST /api/agency/catalogs - Create new catalog entry
 router.post('/',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   createCatalogLimiter,
   catalogValidation,
   validateCatalogType,
@@ -329,7 +329,7 @@ router.post('/',
 
 // PUT /api/agency/catalogs/:id - Update catalog entry
 router.put('/:id',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   [
     param('id').isMongoId()
       .withMessage('Invalid ID format'),
@@ -342,7 +342,7 @@ router.put('/:id',
 
 // PUT /api/agency/catalogs/:id/reactivate - Reactivate catalog entry
 router.put('/:id/reactivate',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   [
     param('id').isMongoId()
       .withMessage('Invalid ID format'),
@@ -353,7 +353,7 @@ router.put('/:id/reactivate',
 
 // DELETE /api/agency/catalogs/:id - Delete catalog entry (soft delete)
 router.delete('/:id',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   [
     param('id').isMongoId()
       .withMessage('Invalid ID format'),
@@ -377,7 +377,7 @@ const pricingLimiter = rateLimit({
 
 // POST /api/agency/catalogs/pricing/calculate - Calculate service price
 router.post('/pricing/calculate',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   pricingLimiter,
   [
     body('pickupLocation').notEmpty().trim()
@@ -397,7 +397,7 @@ router.post('/pricing/calculate',
 
 // GET /api/agency/catalogs/pricing/routes - Get all route pricing
 router.get('/pricing/routes',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   [
     query('active').optional().isBoolean()
       .withMessage('active must be boolean'),
@@ -410,7 +410,7 @@ router.get('/pricing/routes',
 
 // POST /api/agency/catalogs/pricing/routes - Create route pricing
 router.post('/pricing/routes',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   createCatalogLimiter,
   [
     body('fromLocation').notEmpty().trim()
@@ -434,7 +434,7 @@ router.post('/pricing/routes',
 
 // PUT /api/agency/catalogs/pricing/routes/:id - Update route pricing
 router.put('/pricing/routes/:id',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   [
     param('id').isMongoId()
       .withMessage('Invalid ID format'),
@@ -457,7 +457,7 @@ router.put('/pricing/routes/:id',
 
 // DELETE /api/agency/catalogs/pricing/routes/:id - Delete route pricing
 router.delete('/pricing/routes/:id',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   [
     param('id').isMongoId()
       .withMessage('Invalid ID format'),
@@ -480,7 +480,7 @@ router.post('/pricing/seed',
 
 // GET /api/agency/catalogs/pricing/stats - Get pricing statistics
 router.get('/pricing/stats',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   getPricingStats
 );
 
@@ -488,7 +488,7 @@ router.get('/pricing/stats',
 
 // GET /api/agency/catalogs/export - Export catalogs to JSON
 router.get('/export',
-  requireAdminOrOperations,
+  requireAdminOrCatalogos,
   [
     query('type').optional().isIn(VALID_CATALOG_TYPES)
       .withMessage(`Type must be one of: ${VALID_CATALOG_TYPES.join(', ')}`),

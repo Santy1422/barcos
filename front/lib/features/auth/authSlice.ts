@@ -726,6 +726,7 @@ export const hasPermission = (user: User | null, requiredRole: UserRole): boolea
     'operaciones': 2,
     'facturacion': 2,
     'clientes': 2,
+    'catalogos': 2,
     'pendiente': 0,
   }
   

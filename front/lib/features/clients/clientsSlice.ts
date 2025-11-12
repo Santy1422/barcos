@@ -121,6 +121,13 @@ export const fetchClients = createAsyncThunk(
   async (module?: string) => {
     console.log('🔍 fetchClients - Iniciando fetch de clientes...', module ? `para módulo ${module}` : 'todos')
     
+    // Obtener token de autenticación
+    const token = localStorage.getItem('token')
+    if (!token) {
+      console.error('🔍 fetchClients - No hay token de autenticación')
+      throw new Error('No hay token de autenticación')
+    }
+    
     // Construir URL con parámetro de módulo si se proporciona
     let url = createApiUrl('/api/clients')
     if (module) {
@@ -128,7 +135,14 @@ export const fetchClients = createAsyncThunk(
     }
     
     console.log('🔍 fetchClients - URL:', url)
-    const response = await fetch(url)
+    console.log('🔍 fetchClients - Token presente:', !!token)
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    })
     console.log('🔍 fetchClients - Response status:', response.status)
     
     if (!response.ok) {

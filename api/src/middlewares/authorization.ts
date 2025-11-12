@@ -84,7 +84,8 @@ export const requireModule = (requiredModule: string) => {
 // Middleware específicos por rol
 export const requireAdmin = requireRole(['administrador']);
 export const requireAdminOrOperations = requireRole(['administrador', 'operaciones']);
-export const requireAnyRole = requireRole(['administrador', 'operaciones', 'facturacion']);
+export const requireAnyRole = requireRole(['administrador', 'operaciones', 'facturacion', 'catalogos']);
+export const requireAdminOrCatalogos = requireRole(['administrador', 'catalogos']);
 
 // Middleware específicos por módulo
 export const requireTruckingModule = requireModule('trucking');

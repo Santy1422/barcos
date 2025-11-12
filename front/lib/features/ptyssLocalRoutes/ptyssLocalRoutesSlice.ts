@@ -1,4 +1,4 @@
-import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/toolkit"
+import { createSlice, createAsyncThunk, createSelector, type PayloadAction } from "@reduxjs/toolkit"
 
 // Interface para clientes reales
 export interface RealClient {
@@ -573,47 +573,50 @@ export const selectPTYSSLocalRoutesLoading = (state: { ptyssLocalRoutes: PTYSSLo
 export const selectPTYSSLocalRoutesError = (state: { ptyssLocalRoutes: PTYSSLocalRoutesState }) => 
   state.ptyssLocalRoutes?.error || null
 
-// Helper function to group routes by client (excluding placeholders)
-export const selectPTYSSLocalRoutesByClient = (state: { ptyssLocalRoutes: PTYSSLocalRoutesState }) => {
-  const routes = state.ptyssLocalRoutes?.routes || []
-  
-  // Filtrar rutas placeholder
-  const realRoutes = routes.filter(route => 
-    route.from !== '__PLACEHOLDER__' && route.to !== '__PLACEHOLDER__'
-  )
-  
-  const grouped = realRoutes.reduce((acc, route) => {
-    if (!acc[route.clientName]) {
-      acc[route.clientName] = []
-    }
-    acc[route.clientName].push(route)
-    return acc
-  }, {} as Record<string, PTYSSLocalRoute[]>)
-  
-  return grouped
-}
+// Helper function to group routes by client (excluding placeholders) - MEMOIZED
+export const selectPTYSSLocalRoutesByClient = createSelector(
+  [selectPTYSSLocalRoutes],
+  (routes) => {
+    // Filtrar rutas placeholder
+    const realRoutes = routes.filter(route => 
+      route.from !== '__PLACEHOLDER__' && route.to !== '__PLACEHOLDER__'
+    )
+    
+    const grouped = realRoutes.reduce((acc, route) => {
+      if (!acc[route.clientName]) {
+        acc[route.clientName] = []
+      }
+      acc[route.clientName].push(route)
+      return acc
+    }, {} as Record<string, PTYSSLocalRoute[]>)
+    
+    return grouped
+  }
+)
 
 // Helper function to get real client name
 export const getRealClientName = (client: RealClient): string => {
   return client.type === 'natural' ? (client.fullName || '') : (client.companyName || '')
 }
 
-// Selector to get client associations
-export const selectClientAssociations = (state: { ptyssLocalRoutes: PTYSSLocalRoutesState }) => {
-  const routes = state.ptyssLocalRoutes?.routes || []
-  const associations: Record<string, RealClient | null> = {}
-  
-  // Agrupar por clientName y obtener el cliente real asociado (si existe)
-  routes.forEach(route => {
-    if (route.realClientId && typeof route.realClientId === 'object') {
-      associations[route.clientName] = route.realClientId as RealClient
-    } else if (!associations[route.clientName]) {
-      associations[route.clientName] = null
-    }
-  })
-  
-  return associations
-}
+// Selector to get client associations - MEMOIZED
+export const selectClientAssociations = createSelector(
+  [selectPTYSSLocalRoutes],
+  (routes) => {
+    const associations: Record<string, RealClient | null> = {}
+    
+    // Agrupar por clientName y obtener el cliente real asociado (si existe)
+    routes.forEach(route => {
+      if (route.realClientId && typeof route.realClientId === 'object') {
+        associations[route.clientName] = route.realClientId as RealClient
+      } else if (!associations[route.clientName]) {
+        associations[route.clientName] = null
+      }
+    })
+    
+    return associations
+  }
+)
 
 // Selector to get unique schema names from routes
 export const selectUniqueSchemaNames = (state: { ptyssLocalRoutes: PTYSSLocalRoutesState }) => {
@@ -621,15 +624,18 @@ export const selectUniqueSchemaNames = (state: { ptyssLocalRoutes: PTYSSLocalRou
   return [...new Set(routes.map(route => route.clientName))].sort()
 }
 
-// Selector to get all available schema names (from both summary and routes)
-export const selectAllAvailableSchemas = (state: { ptyssLocalRoutes: PTYSSLocalRoutesState }) => {
-  const routeSchemas = state.ptyssLocalRoutes?.routes?.map(route => route.clientName) || []
-  const summarySchemas = state.ptyssLocalRoutes?.schemaSummary?.schemas?.map(schema => schema.schemaName) || []
-  
-  // Combinar ambos y eliminar duplicados
-  const allSchemas = [...new Set([...routeSchemas, ...summarySchemas])]
-  return allSchemas.sort()
-}
+// Selector to get all available schema names (from both summary and routes) - MEMOIZED
+export const selectAllAvailableSchemas = createSelector(
+  [selectPTYSSLocalRoutes, selectSchemaSummary],
+  (routes, schemaSummary) => {
+    const routeSchemas = routes?.map(route => route.clientName) || []
+    const summarySchemas = schemaSummary?.schemas?.map(schema => schema.schemaName) || []
+    
+    // Combinar ambos y eliminar duplicados
+    const allSchemas = [...new Set([...routeSchemas, ...summarySchemas])]
+    return allSchemas.sort()
+  }
+)
 
 export const { clearError } = ptyssLocalRoutesSlice.actions
 export default ptyssLocalRoutesSlice.reducer 

@@ -1,5 +1,6 @@
 import express from 'express'
 import { jwtUtils } from '../middlewares/jwtUtils'
+import { requireAdminOrCatalogos } from '../middlewares/authorization'
 import {
   createNaviera,
   getAllNavieras,
@@ -13,6 +14,7 @@ const router = express.Router()
 
 // Aplicar middleware de autenticación a todas las rutas
 router.use(jwtUtils)
+router.use(requireAdminOrCatalogos)
 
 // Rutas para navieras
 router.route('/')
