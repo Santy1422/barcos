@@ -66,6 +66,7 @@ import {
 } from "@/lib/features/containerTypes/containerTypesSlice"
 import { parseTruckingExcel, matchTruckingDataWithRoutes, type TruckingExcelData } from "@/lib/excel-parser"
 import { ClientModal } from "@/components/clients-management"
+import { createApiUrl } from "@/lib/api-config"
 
 interface PTYSSRecordData {
   clientId: string
@@ -375,7 +376,7 @@ export function PTYSSUpload() {
       try {
         const token = localStorage.getItem('token')
         
-        const response = await fetch('http://localhost:8080/api/local-services', {
+        const response = await fetch(createApiUrl('/api/local-services'), {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'

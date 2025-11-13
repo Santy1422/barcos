@@ -74,6 +74,7 @@ import { Separator } from "@/components/ui/separator"
 import { Loader2, Search, Upload, RefreshCw } from "lucide-react"
 import { PTYSSPriceImporter } from "./ptyss-price-importer"
 import { Pagination } from "@/components/ui/pagination"
+import { createApiUrl } from "@/lib/api-config"
 
 export function PTYSSConfig() {
   const dispatch = useAppDispatch()
@@ -206,7 +207,7 @@ export function PTYSSConfig() {
         console.log('🔍 Fetching local services...')
         console.log('🔍 Token:', token ? 'Present' : 'Missing')
         
-        const response = await fetch('http://localhost:8080/api/local-services', {
+        const response = await fetch(createApiUrl('/api/local-services'), {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'

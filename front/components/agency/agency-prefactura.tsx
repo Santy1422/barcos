@@ -37,6 +37,7 @@ import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSl
 import { selectActiveNavieras, fetchNavieras } from "@/lib/features/naviera/navieraSlice"
 import { selectServicesByModule, fetchServices, selectServicesLoading } from "@/lib/features/services/servicesSlice"
 import { selectAllLocalServices, selectLocalServicesLoading, fetchLocalServices } from "@/lib/features/localServices/localServicesSlice"
+import { createApiUrl } from "@/lib/api-config"
 
 export function PTYSSPrefactura() {
   const dispatch = useAppDispatch()
@@ -137,7 +138,7 @@ export function PTYSSPrefactura() {
       try {
         const token = localStorage.getItem('token')
         
-        const response = await fetch('http://localhost:8080/api/local-services', {
+        const response = await fetch(createApiUrl('/api/local-services'), {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'

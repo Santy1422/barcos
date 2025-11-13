@@ -52,6 +52,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { Loader2 } from "lucide-react"
+import { createApiUrl } from "@/lib/api-config"
 
 export function AgencyConfig() {
   const dispatch = useAppDispatch()
@@ -132,7 +133,7 @@ export function AgencyConfig() {
         console.log('🔍 Fetching local services...')
         console.log('🔍 Token:', token ? 'Present' : 'Missing')
         
-        const response = await fetch('http://localhost:8080/api/local-services', {
+        const response = await fetch(createApiUrl('/api/local-services'), {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
