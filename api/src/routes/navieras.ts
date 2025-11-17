@@ -1,6 +1,6 @@
 import express from 'express'
 import { jwtUtils } from '../middlewares/jwtUtils'
-import { requireAdminOrCatalogos } from '../middlewares/authorization'
+import { requireAdminOrCatalogos, requireAdminOrCatalogosOrOperations } from '../middlewares/authorization'
 import {
   createNaviera,
   getAllNavieras,
@@ -12,18 +12,14 @@ const { catchedAsync } = require('../utils')
 
 const router = express.Router()
 
-// Aplicar middleware de autenticación a todas las rutas
-router.use(jwtUtils)
-router.use(requireAdminOrCatalogos)
-
 // Rutas para navieras
-router.route('/')
-  .get(catchedAsync(getAllNavieras))
-  .post(catchedAsync(createNaviera))
+// Operaciones de lectura: permite admin, catalogos y operaciones
+router.get('/', jwtUtils, requireAdminOrCatalogosOrOperations, catchedAsync(getAllNavieras))
+router.get('/:id', jwtUtils, requireAdminOrCatalogosOrOperations, catchedAsync(getNavieraById))
 
-router.route('/:id')
-  .get(catchedAsync(getNavieraById))
-  .patch(catchedAsync(updateNaviera))
-  .delete(catchedAsync(deleteNaviera))
+// Operaciones de escritura: solo admin o catalogos
+router.post('/', jwtUtils, requireAdminOrCatalogos, catchedAsync(createNaviera))
+router.patch('/:id', jwtUtils, requireAdminOrCatalogos, catchedAsync(updateNaviera))
+router.delete('/:id', jwtUtils, requireAdminOrCatalogos, catchedAsync(deleteNaviera))
 
 export default router 

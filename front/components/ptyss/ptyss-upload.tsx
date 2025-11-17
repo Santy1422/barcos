@@ -1623,8 +1623,11 @@ export function PTYSSUpload() {
                   </p>
                 </div>
                 <Button onClick={async () => {
-                  // Refrescar las rutas locales antes de abrir el diálogo
-                  await dispatch(fetchPTYSSLocalRoutes())
+                  // Refrescar las rutas locales y navieras antes de abrir el diálogo
+                  await Promise.all([
+                    dispatch(fetchPTYSSLocalRoutes()),
+                    dispatch(fetchNavieras('active'))
+                  ])
                   
                   setCurrentRecord({
                     ...initialRecordData,
@@ -2219,12 +2222,18 @@ export function PTYSSUpload() {
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar naviera" />
                     </SelectTrigger>
-                    <SelectContent>
-                      {navieras.map((naviera) => (
-                        <SelectItem key={naviera._id} value={naviera._id}>
-                          {naviera.name} ({naviera.code})
+                    <SelectContent className="max-h-48" side="bottom" sideOffset={4}>
+                      {navieras.length === 0 ? (
+                        <SelectItem value="no-navieras" disabled>
+                          No hay navieras disponibles
                         </SelectItem>
-                      ))}
+                      ) : (
+                        navieras.map((naviera) => (
+                          <SelectItem key={naviera._id} value={naviera._id}>
+                            {naviera.name} ({naviera.code})
+                          </SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
