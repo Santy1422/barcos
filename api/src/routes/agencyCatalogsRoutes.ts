@@ -25,7 +25,7 @@ import {
   getPricingStats
 } from '../controllers/agencyControllers/agencyPricingControllers';
 import { jwtUtils } from "../middlewares/jwtUtils";
-import { requireAdminOrOperations, requireAdminOrCatalogos } from '../middlewares/authorization';
+import { requireAdminOrOperations, requireAdminOrCatalogos, requireAdminOrCatalogosOrOperations } from '../middlewares/authorization';
 import { body, param, query, validationResult } from 'express-validator';
 
 const { catchedAsync } = require('../utils');
@@ -260,23 +260,26 @@ const searchValidation = [
 router.use(jwtUtils);
 
 // GET /api/agency/catalogs - Get all catalogs grouped by type
+// Permite lectura a admin, catalogos y operaciones (necesario para crear servicios)
 router.get('/',
-  requireAdminOrCatalogos,
+  requireAdminOrCatalogosOrOperations,
   queryValidation,
   catchedAsync(getAllCatalogs)
 );
 
 // GET /api/agency/catalogs/grouped - Get all catalogs grouped by type (alias for main endpoint)
+// Permite lectura a admin, catalogos y operaciones (necesario para crear servicios)
 router.get('/grouped',
-  requireAdminOrCatalogos,
+  requireAdminOrCatalogosOrOperations,
   queryValidation,
   catchedAsync(getAllCatalogs)
 );
 
 
 // GET /api/agency/catalogs/search - Search across all catalog types
+// Permite lectura a admin, catalogos y operaciones (necesario para crear servicios)
 router.get('/search',
-  requireAdminOrCatalogos,
+  requireAdminOrCatalogosOrOperations,
   searchValidation,
   catchedAsync(searchCatalogs)
 );
@@ -305,8 +308,9 @@ router.post('/seed',
 );
 
 // GET /api/agency/catalogs/:type - Get catalogs by type
+// Permite lectura a admin, catalogos y operaciones (necesario para crear servicios)
 router.get('/:type',
-  requireAdminOrCatalogos,
+  requireAdminOrCatalogosOrOperations,
   [
     param('type').isIn(VALID_CATALOG_TYPES)
       .withMessage(`Type must be one of: ${VALID_CATALOG_TYPES.join(', ')}`),
@@ -376,8 +380,9 @@ const pricingLimiter = rateLimit({
 });
 
 // POST /api/agency/catalogs/pricing/calculate - Calculate service price
+// Permite cálculo de precios a admin, catalogos y operaciones (necesario para crear servicios)
 router.post('/pricing/calculate',
-  requireAdminOrCatalogos,
+  requireAdminOrCatalogosOrOperations,
   pricingLimiter,
   [
     body('pickupLocation').notEmpty().trim()
@@ -396,8 +401,9 @@ router.post('/pricing/calculate',
 );
 
 // GET /api/agency/catalogs/pricing/routes - Get all route pricing
+// Permite lectura a admin, catalogos y operaciones (necesario para crear servicios)
 router.get('/pricing/routes',
-  requireAdminOrCatalogos,
+  requireAdminOrCatalogosOrOperations,
   [
     query('active').optional().isBoolean()
       .withMessage('active must be boolean'),
@@ -479,8 +485,9 @@ router.post('/pricing/seed',
 );
 
 // GET /api/agency/catalogs/pricing/stats - Get pricing statistics
+// Permite lectura a admin, catalogos y operaciones (necesario para crear servicios)
 router.get('/pricing/stats',
-  requireAdminOrCatalogos,
+  requireAdminOrCatalogosOrOperations,
   getPricingStats
 );
 

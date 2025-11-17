@@ -14,6 +14,7 @@ import {
   getRouteStatistics
 } from '../controllers/agencyRouteController';
 import { jwtUtils } from '../middlewares/jwtUtils';
+import { requireAgencyModule } from '../middlewares/authorization';
 
 const router = Router();
 
@@ -32,8 +33,9 @@ router.get('/test', (req, res) => {
   res.json({ message: 'Test endpoint working', timestamp: new Date().toISOString() });
 });
 
-// Todas las rutas requieren autenticación
+// Todas las rutas requieren autenticación y acceso al módulo Agency
 router.use(jwtUtils);
+router.use(requireAgencyModule);
 
 // GET routes
 router.get('/', getRoutes);
