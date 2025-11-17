@@ -14,6 +14,7 @@ import {
   User, Loader2, Trash2, Edit, RefreshCw, MapPin, ArrowRight, Paperclip,
   Clock, Save, X, Ship, Users, Plane, Building, Plus, CheckCircle, AlertTriangle
 } from "lucide-react"
+import { TimeInput } from "@/components/ui/time-input"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
 import { useAgencyRoutes } from "@/lib/features/agencyServices/useAgencyRoutes"
@@ -1153,19 +1154,22 @@ export function AgencyRecords() {
                     <Label htmlFor="pickupTime" className="text-sm font-medium">
                       Pickup Time *
                     </Label>
-                    <Input
+                    <TimeInput
                       id="pickupTime"
-                      type="time"
                       value={editFormData.pickupTime}
-                      onChange={(e) => setEditFormData(prev => ({ 
+                      onChange={(value) => setEditFormData(prev => ({ 
                         ...prev, 
-                        pickupTime: e.target.value 
+                        pickupTime: value 
                       }))}
                       className={editFormErrors.pickupTime ? 'border-red-500' : ''}
+                      placeholder="HH:MM (24 horas)"
                     />
                     {editFormErrors.pickupTime && (
                       <p className="text-xs text-red-500">{editFormErrors.pickupTime}</p>
                     )}
+                    <p className="text-xs text-muted-foreground">
+                      Formato 24 horas (ej: 14:30 para 2:30 PM)
+                    </p>
                   </div>
                 </div>
 

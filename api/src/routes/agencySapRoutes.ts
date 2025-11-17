@@ -9,7 +9,7 @@ import {
   sendXmlToSap
 } from '../controllers/agencyControllers/agencySapControllers';
 import { jwtUtils } from "../middlewares/jwtUtils";
-import { requireAdminOrOperations } from '../middlewares/authorization';
+import { requireAdminOrOperations, requireRole } from '../middlewares/authorization';
 import { body, param, query, validationResult } from 'express-validator';
 
 const { catchedAsync } = require('../utils');
@@ -175,16 +175,32 @@ const fileNameValidation = [
 ];
 
 // Middleware de autorización específico para operaciones SAP críticas
+// Permite administrador, operaciones y facturacion
 const requireSapPermissions = (req: Request, res: Response, next: NextFunction) => {
   const user = (req as any).user;
-  const allowedRoles = ['admin', 'administrador', 'operations', 'finance'];
+  // Soportar tanto roles múltiples como rol único
+  const userRoles = user?.roles || (user?.role ? [user?.role] : []);
+  const allowedRoles = ['administrador', 'operaciones', 'facturacion'];
   
-  if (!user || !allowedRoles.includes(user.role)) {
+  if (!user || userRoles.length === 0) {
+    return res.status(403).json({
+      success: false,
+      error: 'Usuario no autenticado',
+      requiredRoles: allowedRoles,
+      userRole: 'unknown'
+    });
+  }
+  
+  // Verificar si alguno de los roles del usuario está en los roles permitidos
+  const hasPermission = userRoles.some(role => allowedRoles.includes(role));
+  
+  if (!hasPermission) {
     return res.status(403).json({
       success: false,
       error: 'Insufficient permissions for SAP operations',
       requiredRoles: allowedRoles,
-      userRole: user?.role || 'unknown'
+      userRoles: userRoles,
+      userRole: userRoles.join(', ') || 'unknown'
     });
   }
   
@@ -195,8 +211,9 @@ const requireSapPermissions = (req: Request, res: Response, next: NextFunction) 
 router.use(jwtUtils);
 
 // GET /api/agency/sap/ready-for-invoice - Servicios listos para facturar
+// Permite admin, operaciones y facturacion (necesario para facturación)
 router.get('/ready-for-invoice',
-  requireAdminOrOperations,
+  requireRole(['administrador', 'operaciones', 'facturacion']),
   queryValidation,
   logSapOperation('QUERY_READY_SERVICES'),
   catchedAsync(getServicesReadyForInvoice)
@@ -236,9 +253,10 @@ router.post('/send-to-sap',
 );
 
 // GET /api/agency/sap/download/:fileName - Descargar XML generado
+// Permite admin, operaciones y facturacion (necesario para facturación)
 router.get('/download/:fileName',
   jwtUtils,
-  requireAdminOrOperations,
+  requireRole(['administrador', 'operaciones', 'facturacion']),
   downloadLimiter,
   fileNameValidation,
   logSapOperation('DOWNLOAD_XML'),
@@ -246,9 +264,10 @@ router.get('/download/:fileName',
 );
 
 // GET /api/agency/sap/history - Historial de XMLs generados
+// Permite admin, operaciones y facturacion (necesario para facturación)
 router.get('/history',
   jwtUtils,
-  requireAdminOrOperations,
+  requireRole(['administrador', 'operaciones', 'facturacion']),
   historyValidation,
   logSapOperation('QUERY_HISTORY'),
   catchedAsync(getSapXmlHistory)
@@ -291,8 +310,9 @@ router.post('/validate-xml',
 );
 
 // GET /api/agency/sap/statistics - Estadísticas de facturación SAP
+// Permite admin, operaciones y facturacion (necesario para facturación)
 router.get('/statistics',
-  requireAdminOrOperations,
+  requireRole(['administrador', 'operaciones', 'facturacion']),
   [
     query('period')
       .optional()

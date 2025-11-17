@@ -11,6 +11,7 @@ import {
   Plus, Save, Send, 
   MapPin, Ship, User, Calendar, Clock, Plane, Users, DollarSign, X, AlertTriangle, CheckCircle, Search
 } from "lucide-react"
+import { TimeInput } from "@/components/ui/time-input"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
 import { useAgencyRoutes } from "@/lib/features/agencyServices/useAgencyRoutes"
@@ -769,19 +770,19 @@ export function AgencyServices() {
                   <Label htmlFor="pickupTime" className="text-sm font-medium">
                     PICK UP TIME <span className="text-red-500">*</span>
                   </Label>
-                  <div className="relative">
-                    <Clock className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="pickupTime"
-                      type="time"
-                      value={formData.pickupTime}
-                      onChange={(e) => handleInputChange('pickupTime', e.target.value)}
-                      className={`pl-8 ${formErrors.pickupTime ? 'border-red-500' : ''}`}
-                    />
-                  </div>
+                  <TimeInput
+                    id="pickupTime"
+                    value={formData.pickupTime}
+                    onChange={(value) => handleInputChange('pickupTime', value)}
+                    className={formErrors.pickupTime ? 'border-red-500' : ''}
+                    placeholder="HH:MM (24 horas)"
+                  />
                   {formErrors.pickupTime && (
                     <p className="text-xs text-red-500">{formErrors.pickupTime}</p>
                   )}
+                  <p className="text-xs text-muted-foreground">
+                    Formato 24 horas (ej: 14:30 para 2:30 PM)
+                  </p>
                 </div>
 
                 {/* Pick Up Location */}

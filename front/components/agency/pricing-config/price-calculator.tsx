@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { TimeInput } from "@/components/ui/time-input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Select,
@@ -170,11 +171,14 @@ export function PriceCalculator({ open, onClose, configId }: PriceCalculatorProp
               </div>
               <div>
                 <Label>Hora</Label>
-                <Input
-                  type="time"
+                <TimeInput
                   value={form.serviceTime}
-                  onChange={(e) => setForm({ ...form, serviceTime: e.target.value })}
+                  onChange={(value) => setForm({ ...form, serviceTime: value })}
+                  placeholder="HH:MM (24 horas)"
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Formato 24 horas (ej: 14:30 para 2:30 PM)
+                </p>
               </div>
             </div>
 

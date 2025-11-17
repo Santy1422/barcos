@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { TimeInput } from "@/components/ui/time-input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
@@ -642,12 +643,15 @@ export function AgencyUpload() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="pickup-time">Hora de Recogida*</Label>
-                  <Input
+                  <TimeInput
                     id="pickup-time"
-                    type="time"
                     value={manualEntry.pickupTime}
-                    onChange={(e) => setManualEntry(prev => ({ ...prev, pickupTime: e.target.value }))}
+                    onChange={(value) => setManualEntry(prev => ({ ...prev, pickupTime: value }))}
+                    placeholder="HH:MM (24 horas)"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Formato 24 horas (ej: 14:30 para 2:30 PM)
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="pickup-location">Lugar de Recogida*</Label>
