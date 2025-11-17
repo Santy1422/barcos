@@ -25,6 +25,7 @@ import {
   type PersistedInvoiceRecord
 } from "@/lib/features/records/recordsSlice";
 import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSlice";
+import { selectCurrentUser } from "@/lib/features/auth/authSlice";
 
 export function TruckingGastosAutoridadesPage() {
   const { toast } = useToast();
@@ -67,11 +68,20 @@ export function TruckingGastosAutoridadesPage() {
   // Estado para crear prefactura
   const [isCreatingPrefactura, setIsCreatingPrefactura] = useState(false)
   
+  // Estados para eliminación masiva
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false)
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false)
+  
   // Redux state
   const records = useAppSelector(selectAutoridadesRecords);
   const loading = useAppSelector(selectRecordsLoading);
   const error = useAppSelector(selectRecordsError);
   const clients = useAppSelector(selectAllClients);
+  const currentUser = useAppSelector(selectCurrentUser);
+  
+  // Verificar si el usuario es administrador
+  const userRoles = currentUser?.roles || (currentUser?.role ? [currentUser.role] : [])
+  const isAdmin = userRoles.includes('administrador')
 
   useEffect(() => {
     dispatch(fetchAutoridadesRecords());
@@ -315,10 +325,91 @@ export function TruckingGastosAutoridadesPage() {
     try {
       await dispatch(deleteAutoridadesRecord(id)).unwrap();
       toast({ title: "Registro eliminado" });
+      // Remover el BL Number de la selección si ya no tiene registros
+      dispatch(fetchAutoridadesRecords());
     } catch (e: any) {
       toast({ title: "Error al eliminar", description: e.message, variant: "destructive" });
     }
   };
+
+  const handleDeleteSelectedRecords = async () => {
+    if (selectedBLNumbers.length === 0) return
+    
+    // Verificación de seguridad: solo administradores pueden eliminar múltiples registros
+    if (!isAdmin) {
+      toast({ 
+        title: "Sin permisos", 
+        description: "Solo los administradores pueden eliminar múltiples registros", 
+        variant: "destructive" 
+      })
+      setShowBulkDeleteDialog(false)
+      return
+    }
+    
+    setIsDeletingBulk(true)
+    let successCount = 0
+    let errorCount = 0
+    
+    // Guardar valores antes de limpiar la selección
+    const blNumbersCount = selectedBLNumbers.length
+    const recordsCount = selectedRecords.length
+    
+    try {
+      // Obtener todos los registros de los BL Numbers seleccionados
+      const recordsToDelete: any[] = []
+      selectedBLNumbers.forEach(blNumber => {
+        const groupRecords = groupedByBL.get(blNumber) || []
+        recordsToDelete.push(...groupRecords)
+      })
+      
+      // Eliminar todos los registros
+      for (const record of recordsToDelete) {
+        try {
+          await dispatch(deleteAutoridadesRecord(record._id || record.id)).unwrap()
+          successCount++
+        } catch (error: any) {
+          console.error(`Error eliminando registro ${record._id || record.id}:`, error)
+          errorCount++
+        }
+      }
+      
+      // Limpiar selección
+      setSelectedBLNumbers([])
+      
+      // Recargar datos
+      dispatch(fetchAutoridadesRecords())
+      
+      // Mostrar resultado
+      if (successCount > 0 && errorCount === 0) {
+        toast({ 
+          title: "Registros eliminados", 
+          description: `${successCount} registro${successCount !== 1 ? 's' : ''} eliminado${successCount !== 1 ? 's' : ''} exitosamente de ${blNumbersCount} BL Number${blNumbersCount !== 1 ? 's' : ''}` 
+        })
+      } else if (successCount > 0 && errorCount > 0) {
+        toast({ 
+          title: "Eliminación parcial", 
+          description: `${successCount} eliminado${successCount !== 1 ? 's' : ''}, ${errorCount} error${errorCount !== 1 ? 'es' : ''}`,
+          variant: "destructive"
+        })
+      } else {
+        toast({ 
+          title: "Error al eliminar registros", 
+          description: `No se pudieron eliminar los ${errorCount} registro${errorCount !== 1 ? 's' : ''}`,
+          variant: "destructive"
+        })
+      }
+      
+      setShowBulkDeleteDialog(false)
+    } catch (error: any) {
+      toast({ 
+        title: "Error", 
+        description: error?.message || "Ocurrió un error al eliminar los registros", 
+        variant: "destructive" 
+      })
+    } finally {
+      setIsDeletingBulk(false)
+    }
+  }
 
   // Generar PDF de gastos de autoridades
   const generateAutoridadesPdf = () => {
@@ -707,6 +798,17 @@ export function TruckingGastosAutoridadesPage() {
               <Button variant="outline" disabled={selectedBLNumbers.length === 0} onClick={clearSelection} className="bg-white/10 hover:bg-white/20 border-white/30 text-white">
                 Limpiar Selección
               </Button>
+              {isAdmin && (
+                <Button 
+                  variant="destructive" 
+                  disabled={selectedBLNumbers.length === 0} 
+                  onClick={() => setShowBulkDeleteDialog(true)} 
+                  className="bg-red-600/90 hover:bg-red-700/90 border-red-500/50 text-white"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Eliminar Seleccionados ({selectedBLNumbers.length})
+                </Button>
+              )}
             </div>
           </div>
 
@@ -1250,8 +1352,75 @@ export function TruckingGastosAutoridadesPage() {
               Aplicar Filtro
             </Button>
           </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog de confirmación para eliminación múltiple */}
+        <Dialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirmar eliminación múltiple</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">
+              <p className="text-sm text-muted-foreground mb-4">
+                ¿Estás seguro de que deseas eliminar todos los registros de <span className="font-bold text-destructive">{selectedBLNumbers.length} BL Number{selectedBLNumbers.length !== 1 ? 's' : ''}</span> seleccionado{selectedBLNumbers.length !== 1 ? 's' : ''}?
+              </p>
+              <p className="text-sm font-semibold text-destructive mb-4">
+                Esta acción eliminará <span className="font-bold">{selectedRecords.length} registro{selectedRecords.length !== 1 ? 's' : ''}</span> y no se puede deshacer.
+              </p>
+              {selectedBLNumbers.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs font-medium text-slate-600 mb-2">BL Numbers que serán eliminados:</p>
+                  <div className="max-h-48 overflow-y-auto space-y-1 bg-slate-50 p-3 rounded-md">
+                    {selectedBLNumbers.slice(0, 5).map((blNumber) => {
+                      const groupRecords = groupedByBL.get(blNumber) || []
+                      const customerName = groupRecords[0]?.customer || 'N/A'
+                      return (
+                        <div key={blNumber} className="text-xs text-slate-700 flex items-center gap-2">
+                          <span className="font-mono font-semibold">{blNumber}</span>
+                          <span className="text-slate-500">-</span>
+                          <span className="truncate">{customerName}</span>
+                          <span className="text-slate-400">({groupRecords.length} registro{groupRecords.length !== 1 ? 's' : ''})</span>
+                        </div>
+                      )
+                    })}
+                    {selectedBLNumbers.length > 5 && (
+                      <div className="text-xs text-slate-500 italic">
+                        ...y {selectedBLNumbers.length - 5} BL Number{selectedBLNumbers.length - 5 !== 1 ? 's' : ''} más
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowBulkDeleteDialog(false)}
+                disabled={isDeletingBulk}
+              >
+                Cancelar
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={handleDeleteSelectedRecords}
+                disabled={isDeletingBulk}
+              >
+                {isDeletingBulk ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Eliminando...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Eliminar {selectedRecords.length} Registro{selectedRecords.length !== 1 ? 's' : ''}
+                  </>
+                )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
     </div>
   );
 }

@@ -37,6 +37,7 @@ import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSl
 import { selectActiveNavieras, fetchNavieras } from "@/lib/features/naviera/navieraSlice"
 import { selectServicesByModule, fetchServices, selectServicesLoading } from "@/lib/features/services/servicesSlice"
 import { selectAllLocalServices, selectLocalServicesLoading, fetchLocalServices } from "@/lib/features/localServices/localServicesSlice"
+import { selectCurrentUser } from "@/lib/features/auth/authSlice"
 import { createApiUrl } from "@/lib/api-config"
 
 export function PTYSSPrefactura() {
@@ -98,6 +99,17 @@ export function PTYSSPrefactura() {
   const [generatedPdf, setGeneratedPdf] = useState<Blob | null>(null)
   const [previewPdf, setPreviewPdf] = useState<Blob | null>(null)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  
+  // Estados para eliminación masiva
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false)
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false)
+  
+  // Redux state para usuario
+  const currentUser = useAppSelector(selectCurrentUser)
+  
+  // Verificar si el usuario es administrador
+  const userRoles = currentUser?.roles || (currentUser?.role ? [currentUser.role] : [])
+  const isAdmin = userRoles.includes('administrador')
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
   const [selectedRecordForView, setSelectedRecordForView] = useState<IndividualExcelRecord | null>(null)
@@ -1117,6 +1129,77 @@ export function PTYSSPrefactura() {
     }
   }
 
+  const handleDeleteSelectedRecords = async () => {
+    if (selectedRecordIds.length === 0) return
+    
+    // Verificación de seguridad: solo administradores pueden eliminar múltiples registros
+    if (!isAdmin) {
+      toast({ 
+        title: "Sin permisos", 
+        description: "Solo los administradores pueden eliminar múltiples registros", 
+        variant: "destructive" 
+      })
+      setShowBulkDeleteDialog(false)
+      return
+    }
+    
+    setIsDeletingBulk(true)
+    let successCount = 0
+    let errorCount = 0
+    
+    // Guardar valores antes de limpiar la selección
+    const recordsCount = selectedRecordIds.length
+    
+    try {
+      // Eliminar todos los registros seleccionados
+      for (const recordId of selectedRecordIds) {
+        try {
+          await dispatch(deleteRecordAsync(recordId)).unwrap()
+          successCount++
+        } catch (error: any) {
+          console.error(`Error eliminando registro ${recordId}:`, error)
+          errorCount++
+        }
+      }
+      
+      // Limpiar selección
+      setSelectedRecordIds([])
+      
+      // Recargar datos
+      dispatch(fetchRecordsByModule("ptyss"))
+      
+      // Mostrar resultado
+      if (successCount > 0 && errorCount === 0) {
+        toast({ 
+          title: "Registros eliminados", 
+          description: `${successCount} registro${successCount !== 1 ? 's' : ''} eliminado${successCount !== 1 ? 's' : ''} exitosamente` 
+        })
+      } else if (successCount > 0 && errorCount > 0) {
+        toast({ 
+          title: "Eliminación parcial", 
+          description: `${successCount} eliminado${successCount !== 1 ? 's' : ''}, ${errorCount} error${errorCount !== 1 ? 'es' : ''}`,
+          variant: "destructive"
+        })
+      } else {
+        toast({ 
+          title: "Error al eliminar registros", 
+          description: `No se pudieron eliminar los ${errorCount} registro${errorCount !== 1 ? 's' : ''}`,
+          variant: "destructive"
+        })
+      }
+      
+      setShowBulkDeleteDialog(false)
+    } catch (error: any) {
+      toast({ 
+        title: "Error", 
+        description: error?.message || "Ocurrió un error al eliminar los registros", 
+        variant: "destructive" 
+      })
+    } finally {
+      setIsDeletingBulk(false)
+    }
+  }
+
   const handleAddAdditionalService = (service: any) => {
     const isAlreadySelected = selectedAdditionalServices.some(s => s.serviceId === service._id)
     if (!isAlreadySelected) {
@@ -2058,6 +2141,18 @@ export function PTYSSPrefactura() {
                 >
                   Limpiar Selección
                 </Button>
+                {isAdmin && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={selectedRecordIds.length === 0}
+                    onClick={() => setShowBulkDeleteDialog(true)}
+                    className="bg-red-600/90 hover:bg-red-700/90 border-red-500/50 text-white"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Eliminar Seleccionados ({selectedRecordIds.length})
+                  </Button>
+                )}
               </div>
             </CardTitle>
           </CardHeader>
@@ -3756,6 +3851,83 @@ export function PTYSSPrefactura() {
               disabled={!startDate || !endDate}
             >
               Aplicar Filtro
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de confirmación para eliminación múltiple */}
+      <Dialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar eliminación múltiple</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground mb-4">
+              ¿Estás seguro de que deseas eliminar <span className="font-bold text-destructive">{selectedRecordIds.length} registro{selectedRecordIds.length !== 1 ? 's' : ''}</span>?
+            </p>
+            <p className="text-sm font-semibold text-destructive mb-4">
+              Esta acción no se puede deshacer.
+            </p>
+            {selectedRecordIds.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <p className="text-xs font-medium text-slate-600 mb-2">Registros que serán eliminados:</p>
+                <div className="max-h-48 overflow-y-auto space-y-1 bg-slate-50 p-3 rounded-md">
+                  {ptyssRecords
+                    .filter((rec: IndividualExcelRecord) => selectedRecordIds.includes(getRecordId(rec)))
+                    .slice(0, 5)
+                    .map((rec: IndividualExcelRecord) => {
+                      const container = (rec as any).data?.container || (rec as any).container || 'N/A'
+                      const clientName = (() => {
+                        const d = (rec as any).data || {}
+                        const byId = d.clientId || (rec as any).clientId
+                        if (byId) {
+                          const c = clients.find((x: any) => (x._id || x.id) === byId)
+                          if (c) return c.type === 'natural' ? c.fullName : c.companyName
+                        }
+                        return d.customer || d.clientName || 'N/A'
+                      })()
+                      return (
+                        <div key={getRecordId(rec)} className="text-xs text-slate-700 flex items-center gap-2">
+                          <span className="font-mono">{container}</span>
+                          <span className="text-slate-500">-</span>
+                          <span className="truncate">{clientName}</span>
+                        </div>
+                      )
+                    })}
+                  {selectedRecordIds.length > 5 && (
+                    <div className="text-xs text-slate-500 italic">
+                      ...y {selectedRecordIds.length - 5} más
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => setShowBulkDeleteDialog(false)}
+              disabled={isDeletingBulk}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleDeleteSelectedRecords}
+              disabled={isDeletingBulk}
+            >
+              {isDeletingBulk ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Eliminar {selectedRecordIds.length} Registro{selectedRecordIds.length !== 1 ? 's' : ''}
+                </>
+              )}
             </Button>
           </div>
         </DialogContent>
