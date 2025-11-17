@@ -65,7 +65,7 @@ const clientsSchema = new mongoose.Schema({
   // Campo para identificar los módulos del cliente (puede pertenecer a varios)
   module: {
     type: [String],
-    enum: ["ptyss", "trucking", "agency"],
+    enum: ["ptyss", "trucking", "agency", "shipchandler"],
     default: ["ptyss"] // Por defecto ptyss para mantener compatibilidad
   },
   

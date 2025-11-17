@@ -52,9 +52,9 @@ export function ShipChandlerUpload() {
   const [currentMissingIndex, setCurrentMissingIndex] = useState<number>(0)
   const [clientCompleteness, setClientCompleteness] = useState<Map<string, { isComplete: boolean; missingFields: string[] }>>(new Map())
 
-  // Load clients
+  // Load clients - Solo clientes del módulo shipchandler
   useEffect(() => {
-    dispatch(fetchClients())
+    dispatch(fetchClients('shipchandler'))
   }, [dispatch])
 
   // Helper function to find client by name (busca por campo 'name' para jurídicos, no 'companyName')
@@ -641,8 +641,8 @@ export function ShipChandlerUpload() {
           updateClientCompleteness(clientName)
           setEditingClient(null)
           
-          // Refrescar la lista de clientes
-          await dispatch(fetchClients()) // Cargar todos los clientes
+          // Refrescar la lista de clientes - Solo clientes del módulo shipchandler
+          await dispatch(fetchClients('shipchandler'))
           
           // Si hay más clientes faltantes, continuar con el siguiente
           if (showClientModal && missingClients.length > 0) {

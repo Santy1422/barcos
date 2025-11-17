@@ -22,12 +22,7 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
 
   // Función para generar el PDF (basada en la lógica de ShipChandler prefactura)
   const generateShipChandlerPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string) => {
-    console.log('🔍 PDF Viewer - Generating ShipChandler PDF')
-    console.log('🔍 PDF Viewer - selectedRecords:', selectedRecords)
-    console.log('🔍 PDF Viewer - invoiceData:', invoiceData)
-
     if (selectedRecords.length === 0) {
-      console.log('🔍 PDF Viewer - No hay registros seleccionados')
       return new Blob([], { type: 'application/pdf' })
     }
 
@@ -68,9 +63,64 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
     doc.setFont(undefined, 'bold')
     doc.text(`${pdfTitle} No. ${invoiceData.invoiceNumber}`, 195, 20, { align: 'right' })
 
+    // Función para obtener la fecha del primer registro relacionado
+    const getDateFromFirstRecord = (records: any[]): Date | null => {
+      if (!records || records.length === 0) {
+        return null
+      }
+      
+      const firstRecord = records[0]
+      const data = firstRecord?.data || {}
+      const recordDate = data?.date
+      
+      if (!recordDate) {
+        return null
+      }
+      
+      // Si es string en formato DD-MM-YYYY
+      if (typeof recordDate === 'string' && recordDate.match(/^\d{2}-\d{2}-\d{4}$/)) {
+        const [day, month, year] = recordDate.split('-').map(Number)
+        return new Date(year, month - 1, day)
+      }
+      
+      // Si es string en formato YYYY-MM-DD
+      if (typeof recordDate === 'string' && recordDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [year, month, day] = recordDate.split('-').map(Number)
+        return new Date(year, month - 1, day)
+      }
+      
+      // Si es string con formato DD/MM/YYYY
+      if (typeof recordDate === 'string' && recordDate.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+        const parts = recordDate.split('/')
+        if (parts.length === 3) {
+          const [day, month, year] = parts.map(Number)
+          return new Date(year, month - 1, day)
+        }
+      }
+      
+      // Si es número (serie de Excel)
+      if (typeof recordDate === 'number') {
+        const excelEpoch = new Date(1900, 0, 1)
+        const millisecondsPerDay = 24 * 60 * 60 * 1000
+        const adjustedSerialNumber = recordDate > 59 ? recordDate - 1 : recordDate
+        const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
+        if (!isNaN(date.getTime())) {
+          return date
+        }
+      }
+      
+      // Intentar parsear como fecha ISO o cualquier otro formato
+      const date = new Date(recordDate)
+      if (!isNaN(date.getTime())) {
+        return date
+      }
+      
+      return null
+    }
+    
     // Fecha
     const formatInvoiceDate = (dateString: string) => {
-      if (!dateString) return new Date()
+      if (!dateString) return null
 
       if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
         const [year, month, day] = dateString.split('-').map(Number)
@@ -83,10 +133,28 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
         return new Date(year, month - 1, day)
       }
 
-      return new Date(dateString)
+      const parsed = new Date(dateString)
+      return isNaN(parsed.getTime()) ? null : parsed
     }
 
-    const invoiceDate = formatInvoiceDate(invoiceData.issueDate)
+    // Obtener fecha: primero intentar fecha del primer registro (invoice date), luego issueDate, finalmente fecha de hoy
+    let invoiceDate: Date
+    
+    // Prioridad 1: Obtener la fecha del primer registro relacionado (esta es la fecha real del invoice)
+    const recordDate = getDateFromFirstRecord(selectedRecords)
+    
+    if (recordDate) {
+      invoiceDate = recordDate
+    } else {
+      // Prioridad 2: Intentar usar issueDate si existe
+      const issueDateParsed = invoiceData.issueDate ? formatInvoiceDate(invoiceData.issueDate) : null
+      if (issueDateParsed) {
+        invoiceDate = issueDateParsed
+      } else {
+        // Prioridad 3: Solo usar fecha de hoy como último recurso
+        invoiceDate = new Date()
+      }
+    }
     const day = invoiceDate.getDate().toString().padStart(2, '0')
     const month = (invoiceDate.getMonth() + 1).toString().padStart(2, '0')
     const year = invoiceDate.getFullYear()

@@ -86,6 +86,8 @@ export const requireAdmin = requireRole(['administrador']);
 export const requireAdminOrOperations = requireRole(['administrador', 'operaciones']);
 export const requireAnyRole = requireRole(['administrador', 'operaciones', 'facturacion', 'catalogos']);
 export const requireAdminOrCatalogos = requireRole(['administrador', 'catalogos']);
+// Middleware para gestión de clientes: permite admin, catalogos y clientes
+export const requireAdminOrCatalogosOrClientes = requireRole(['administrador', 'catalogos', 'clientes']);
 // Middleware para lectura de catálogos: permite admin, catalogos y operaciones
 export const requireAdminOrCatalogosOrOperations = requireRole(['administrador', 'catalogos', 'operaciones']);
 

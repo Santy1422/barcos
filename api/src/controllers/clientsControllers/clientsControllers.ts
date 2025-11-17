@@ -4,6 +4,7 @@ import getClientById from "./getClientById";
 import updateClient from "./updateClient";
 import deleteClient from "./deleteClient";
 import getActiveClients from "./getActiveClients";
+import getClientBySapCode from "./getClientBySapCode";
 
 const clientsControllers = {
   createClient,
@@ -11,7 +12,8 @@ const clientsControllers = {
   getClientById,
   updateClient,
   deleteClient,
-  getActiveClients
+  getActiveClients,
+  getClientBySapCode
 };
 
 export default clientsControllers;

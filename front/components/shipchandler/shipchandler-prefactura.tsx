@@ -86,14 +86,91 @@ export function ShipChandlerPrefactura() {
 
   useEffect(() => {
     dispatch(fetchRecordsByModule("shipchandler"))
-    dispatch(fetchClients())
+    dispatch(fetchClients('shipchandler'))
   }, [dispatch])
 
   // Selección de registros
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([])
-  const toggleRecord = (recordId: string, checked: boolean) =>
-    setSelectedRecordIds(prev => checked ? [...prev, recordId] : prev.filter(id => id !== recordId))
+  
+  // Función helper para obtener el clientId de un registro
+  const getRecordClientId = (record: any): string | null => {
+    const d = record?.data || {}
+    const byId = d.clientId || record?.clientId
+    if (byId) return byId
+    
+    const bySap = d.clientSapCode || record?.clientSapCode
+    if (bySap) {
+      const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
+      if (c) return c._id || c.id
+    }
+    
+    // Si no hay clientId ni SAP code, usar customerName como identificador único
+    if (d.customerName) {
+      const c = clients.find((x: any) => {
+        const cName = x.type === 'natural' ? x.fullName : x.companyName
+        return cName === d.customerName
+      })
+      if (c) return c._id || c.id
+    }
+    
+    return null
+  }
+  
+  const toggleRecord = (recordId: string, checked: boolean) => {
+    if (!checked) {
+      // Deseleccionar siempre está permitido
+      setSelectedRecordIds(prev => prev.filter(id => id !== recordId))
+      return
+    }
+    
+    // Obtener el registro que se está intentando seleccionar
+    const recordToSelect = visibleRecords.find((r: any) => (r._id || r.id) === recordId)
+    if (!recordToSelect) return
+    
+    const newRecordClientId = getRecordClientId(recordToSelect)
+    
+    // Si ya hay registros seleccionados, verificar que sean del mismo cliente
+    if (selectedRecordIds.length > 0) {
+      const firstSelectedRecord = visibleRecords.find((r: any) => selectedRecordIds.includes(r._id || r.id))
+      if (firstSelectedRecord) {
+        const firstClientId = getRecordClientId(firstSelectedRecord)
+        
+        // Si los clientes no coinciden, mostrar error y no permitir selección
+        if (firstClientId !== newRecordClientId) {
+          toast({
+            title: "Error de selección",
+            description: "Solo puedes seleccionar registros del mismo cliente. Deselecciona los registros actuales para seleccionar registros de otro cliente.",
+            variant: "destructive"
+          })
+          return
+        }
+      }
+    }
+    
+    // Si no hay registros seleccionados o el cliente coincide, permitir selección
+    setSelectedRecordIds(prev => [...prev, recordId])
+  }
+  
   const isSelected = (recordId: string) => selectedRecordIds.includes(recordId)
+  
+  // Función para verificar si un registro puede ser seleccionado
+  const canSelectRecord = (record: any): boolean => {
+    // Si no hay registros seleccionados, todos pueden ser seleccionados
+    if (selectedRecordIds.length === 0) return true
+    
+    // Obtener el cliente del registro actual
+    const recordClientId = getRecordClientId(record)
+    if (!recordClientId) return false
+    
+    // Obtener el cliente del primer registro seleccionado
+    const firstSelectedRecord = visibleRecords.find((r: any) => selectedRecordIds.includes(r._id || r.id))
+    if (!firstSelectedRecord) return true
+    
+    const firstClientId = getRecordClientId(firstSelectedRecord)
+    
+    // Solo puede ser seleccionado si es del mismo cliente
+    return recordClientId === firstClientId
+  }
 
   // Paso actual
   type Step = 'select' | 'services'
@@ -1140,11 +1217,38 @@ export function ShipChandlerPrefactura() {
                   <TableRow>
                     <TableHead>
                       <Checkbox
-                        checked={selectedRecordIds.length > 0 && selectedRecordIds.length === visibleRecords.length}
+                        checked={(() => {
+                          if (selectedRecordIds.length === 0) return false
+                          // Verificar si todos los registros seleccionables están seleccionados
+                          const selectableRecords = visibleRecords.filter((r: any) => canSelectRecord(r))
+                          return selectableRecords.length > 0 && 
+                                 selectableRecords.every((r: any) => selectedRecordIds.includes(r._id || r.id))
+                        })()}
                         onCheckedChange={(c: boolean) => {
-                          if (c) setSelectedRecordIds(visibleRecords.map((r: any) => r._id || r.id))
-                          else setSelectedRecordIds([])
+                          if (c) {
+                            // Si hay registros seleccionados, solo seleccionar los del mismo cliente
+                            if (selectedRecordIds.length > 0) {
+                              const selectableRecords = visibleRecords.filter((r: any) => canSelectRecord(r))
+                              setSelectedRecordIds(selectableRecords.map((r: any) => r._id || r.id))
+                            } else {
+                              // Si no hay selección previa, seleccionar todos los registros del primer cliente visible
+                              if (visibleRecords.length > 0) {
+                                const firstRecord = visibleRecords[0]
+                                const firstClientId = getRecordClientId(firstRecord)
+                                if (firstClientId) {
+                                  const sameClientRecords = visibleRecords.filter((r: any) => {
+                                    const rClientId = getRecordClientId(r)
+                                    return rClientId === firstClientId
+                                  })
+                                  setSelectedRecordIds(sameClientRecords.map((r: any) => r._id || r.id))
+                                }
+                              }
+                            }
+                          } else {
+                            setSelectedRecordIds([])
+                          }
                         }}
+                        disabled={visibleRecords.length === 0}
                       />
                     </TableHead>
                     <TableHead>Invoice No</TableHead>
@@ -1281,7 +1385,11 @@ export function ShipChandlerPrefactura() {
                       return (
                         <TableRow key={(rec as any)._id || rec.id}>
                           <TableCell>
-                            <Checkbox checked={isSelected((rec as any)._id || rec.id)} onCheckedChange={(c: boolean) => toggleRecord((rec as any)._id || rec.id, !!c)} />
+                            <Checkbox 
+                              checked={isSelected((rec as any)._id || rec.id)} 
+                              onCheckedChange={(c: boolean) => toggleRecord((rec as any)._id || rec.id, !!c)}
+                              disabled={!canSelectRecord(rec)}
+                            />
                           </TableCell>
                           <TableCell className="font-mono text-sm">{(rec as any).data?.invoiceNo || ''}</TableCell>
                           <TableCell>{convertExcelDateToReadable((rec as any).data?.date || (rec as any).createdAt) || '-'}</TableCell>

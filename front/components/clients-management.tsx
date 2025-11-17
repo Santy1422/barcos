@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -52,6 +52,7 @@ import {
   type ClientType
 } from "@/lib/features/clients/clientsSlice"
 import { useToast } from "@/hooks/use-toast"
+import { createApiUrl } from "@/lib/api-config"
 
 interface ClientFormData {
   type: ClientType
@@ -159,55 +160,112 @@ export function ClientModal({
 
     setIsCheckingSap(true)
     
-    // Normalizar SAP code eliminando espacios y convirtiendo a minúsculas
-    const normalizedSapCode = sapCode.trim().toLowerCase()
-    
-    // Buscar cliente existente por SAP code (comparando ambos normalizados)
-    const found = allClients.find((c: Client) => c.sapCode?.trim().toLowerCase() === normalizedSapCode)
-    
-    if (found) {
-      setExistingClient(found)
-      setSapCodeChecked(true)
+    try {
+      // Buscar cliente por SAP code en el backend (sin filtrar por módulo)
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
       
-      // Cargar datos del cliente existente
-      setFormData({
-        type: found.type,
-        fullName: found.type === "natural" ? found.fullName : "",
-        documentType: found.type === "natural" ? found.documentType : "cedula",
-        documentNumber: found.type === "natural" ? found.documentNumber : "",
-        companyName: found.type === "juridico" ? found.companyName : "",
-        name: found.type === "juridico" ? found.name || "" : "",
-        ruc: found.type === "juridico" ? found.ruc : "",
-        contactName: found.type === "juridico" ? found.contactName || "" : "",
-        email: found.email || "",
-        phone: found.phone || "",
-        address: typeof found.address === "string" ? found.address : "",
-        sapCode: found.sapCode || ""
+      const normalizedSapCode = sapCode.trim()
+      const response = await fetch(createApiUrl(`/api/clients/search/sap-code?sapCode=${encodeURIComponent(normalizedSapCode)}`), {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       })
       
-      const clientModules = (found as any).module || []
-      const moduleArray = Array.isArray(module) ? module : [module]
-      const isModuleAlreadyAssigned = moduleArray.some((m: string) => clientModules.includes(m))
-      
-      const moduleNames = moduleArray.map((m: string) => {
-        if (m === 'ptyss') return 'PTYSS'
-        if (m === 'trucking') return 'Trucking'
-        if (m === 'agency') return 'Agency'
-        return m
-      })
-      
-      if (!isModuleAlreadyAssigned) {
+      if (response.ok) {
+        const data = await response.json()
+        const found = data.payload?.client || data.client
+        
+        if (found) {
+          setExistingClient(found)
+          setSapCodeChecked(true)
+          
+          // Cargar datos del cliente existente
+          setFormData({
+            type: found.type,
+            fullName: found.type === "natural" ? found.fullName : "",
+            documentType: found.type === "natural" ? found.documentType : "cedula",
+            documentNumber: found.type === "natural" ? found.documentNumber : "",
+            companyName: found.type === "juridico" ? found.companyName : "",
+            name: found.type === "juridico" ? found.name || "" : "",
+            ruc: found.type === "juridico" ? found.ruc : "",
+            contactName: found.type === "juridico" ? found.contactName || "" : "",
+            email: found.email || "",
+            phone: found.phone || "",
+            address: typeof found.address === "string" ? found.address : "",
+            sapCode: found.sapCode || ""
+          })
+          
+          const clientModules = (found as any).module || []
+          const moduleArray = Array.isArray(module) ? module : [module]
+          const isModuleAlreadyAssigned = moduleArray.some((m: string) => clientModules.includes(m))
+          
+          const moduleNames = moduleArray.map((m: string) => {
+            if (m === 'ptyss') return 'PTYSS'
+            if (m === 'trucking') return 'Trucking'
+            if (m === 'agency') return 'Agency'
+            if (m === 'shipchandler') return 'ShipChandler'
+            return m
+          })
+          
+          if (!isModuleAlreadyAssigned) {
+            toast({
+              title: "✅ Cliente encontrado",
+              description: `Se agregará el cliente al módulo: ${moduleNames.join(", ")}`,
+            })
+          } else {
+            toast({
+              title: "Cliente ya asignado a este módulo",
+              description: "Estás editando un cliente que ya está asignado a este módulo.",
+            })
+          }
+        } else {
+          // Cliente no encontrado en la respuesta
+          setExistingClient(null)
+          setSapCodeChecked(true)
+          
+          const moduleArray = Array.isArray(module) ? module : [module]
+          const moduleNames = moduleArray.map((m: string) => {
+            if (m === 'ptyss') return 'PTYSS'
+            if (m === 'trucking') return 'Trucking'
+            if (m === 'agency') return 'Agency'
+            if (m === 'shipchandler') return 'ShipChandler'
+            return m
+          })
+          
+          toast({
+            title: "❌ Cliente no encontrado",
+            description: `Se creará un nuevo cliente en el módulo: ${moduleNames.join(", ")}`,
+          })
+        }
+      } else if (response.status === 404) {
+        // Cliente no encontrado (404)
+        setExistingClient(null)
+        setSapCodeChecked(true)
+        
+        const moduleArray = Array.isArray(module) ? module : [module]
+        const moduleNames = moduleArray.map((m: string) => {
+          if (m === 'ptyss') return 'PTYSS'
+          if (m === 'trucking') return 'Trucking'
+          if (m === 'agency') return 'Agency'
+          if (m === 'shipchandler') return 'ShipChandler'
+          return m
+        })
+        
         toast({
-          title: "✅ Cliente encontrado",
-          description: `Se agregará el cliente al módulo: ${moduleNames.join(", ")}`,
+          title: "❌ Cliente no encontrado",
+          description: `Se creará un nuevo cliente en el módulo: ${moduleNames.join(", ")}`,
         })
       } else {
-        toast({
-          title: "Cliente ya asignado a este módulo",
-          description: "Estás editando un cliente que ya está asignado a este módulo.",
-        })
+        // Error en la búsqueda
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Error al buscar cliente')
       }
-    } else {
+    } catch (error) {
+      console.error('Error al buscar cliente por SAP code:', error)
       setExistingClient(null)
       setSapCodeChecked(true)
       
@@ -216,16 +274,18 @@ export function ClientModal({
         if (m === 'ptyss') return 'PTYSS'
         if (m === 'trucking') return 'Trucking'
         if (m === 'agency') return 'Agency'
+        if (m === 'shipchandler') return 'ShipChandler'
         return m
       })
       
       toast({
-        title: "❌ Cliente no encontrado",
-        description: `Se creará un nuevo cliente en el módulo: ${moduleNames.join(", ")}`,
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error al buscar cliente. Se creará uno nuevo.",
+        variant: "destructive"
       })
+    } finally {
+      setIsCheckingSap(false)
     }
-    
-    setIsCheckingSap(false)
   }
 
   // Cargar datos del cliente cuando se abre en modo edición
@@ -691,11 +751,12 @@ export function ClientsManagement() {
   
   // Mapeo entre módulos del usuario y módulos de clientes
   // Los módulos del usuario son: trucking, shipchandler, agency
-  // Los módulos de clientes son: trucking, ptyss, agency
+  // Los módulos de clientes son: trucking, shipchandler, agency, ptyss
   const moduleMapping: Record<string, string> = {
     'trucking': 'trucking',
-    'shipchandler': 'ptyss',  // PTYSS en usuario es "shipchandler", en clientes es "ptyss"
-    'agency': 'agency'
+    'shipchandler': 'shipchandler',
+    'agency': 'agency',
+    'ptyss': 'ptyss' // Mantener compatibilidad con ptyss
   }
 
   // Filtrar clientes por módulos del usuario
@@ -745,10 +806,41 @@ export function ClientsManagement() {
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null)
   const [clientToToggle, setClientToToggle] = useState<Client | null>(null)
 
-  // Cargar clientes al montar el componente
+  // Función helper para cargar clientes según los módulos del usuario
+  const loadClientsForUser = useCallback(() => {
+    if (!currentUser || !currentUser.modules || currentUser.modules.length === 0) {
+      // Si no hay usuario o módulos, cargar todos los clientes
+      dispatch(fetchClients())
+      return
+    }
+    
+    // Obtener roles del usuario para verificar si es admin
+    const userRoles = currentUser.roles || (currentUser.role ? [currentUser.role] : [])
+    const isAdmin = userRoles.includes('administrador')
+    
+    // Si es admin, cargar todos los clientes
+    if (isAdmin) {
+      dispatch(fetchClients())
+      return
+    }
+    
+    // Mapear los módulos del usuario a los módulos de los clientes
+    const userClientModules = currentUser.modules?.map(m => moduleMapping[m] || m) || []
+    
+    // Si el usuario tiene múltiples módulos, cargar clientes de todos ellos
+    if (userClientModules.length > 1) {
+      dispatch(fetchClients(userClientModules))
+    } else if (userClientModules.length === 1) {
+      dispatch(fetchClients(userClientModules[0]))
+    } else {
+      dispatch(fetchClients())
+    }
+  }, [dispatch, currentUser, moduleMapping])
+
+  // Cargar clientes al montar el componente - Filtrar por módulos del usuario
   useEffect(() => {
-    dispatch(fetchClients())
-  }, [dispatch])
+    loadClientsForUser()
+  }, [loadClientsForUser])
 
   // Filtrar clientes
   const filteredClients = useMemo(() => {
@@ -801,7 +893,7 @@ export function ClientsManagement() {
       await dispatch(deleteClientAsync(clientId)).unwrap()
       toast({ title: "Cliente eliminado", description: "El cliente ha sido eliminado." })
       // Recargar clientes después de eliminar
-      dispatch(fetchClients())
+      loadClientsForUser()
       setClientToDelete(null)
     } catch (error: any) {
       toast({ 
@@ -825,7 +917,7 @@ export function ClientsManagement() {
         } as any)).unwrap()
         toast({ title: "Estado cambiado", description: "El estado del cliente ha sido actualizado." })
         // Recargar clientes después de cambiar estado
-        dispatch(fetchClients())
+        loadClientsForUser()
         setClientToToggle(null)
       }
     } catch (error: any) {
@@ -866,9 +958,16 @@ export function ClientsManagement() {
             setEditingClient(null)
           }}
           editingClient={editingClient}
+          module={
+            currentUser?.modules && currentUser.modules.length > 0
+              ? (currentUser.modules.length > 1 
+                  ? currentUser.modules.map(m => moduleMapping[m] || m)
+                  : moduleMapping[currentUser.modules[0]] || currentUser.modules[0])
+              : "ptyss"
+          }
           onClientCreated={(client) => {
             // Recargar clientes después de crear/editar
-            dispatch(fetchClients())
+            loadClientsForUser()
           }}
         />
 

@@ -6,14 +6,15 @@ export default async (req, res) => {
     const { module } = req.query;
     
     // Construir query basado en el módulo si se especifica
-    // Si module es un string, buscar clientes que incluyan ese módulo
+    // Buscar clientes que tengan el módulo en su array de módulos
     const query: any = {};
     if (module) {
-      // Si module es un array, usar $in, si no, usar directamente
+      // Si module es un array, buscar clientes que tengan cualquiera de esos módulos
       if (Array.isArray(module)) {
         query.module = { $in: module };
       } else {
-        query.module = module;
+        // Si es un string, buscar clientes que incluyan ese módulo en su array usando $in
+        query.module = { $in: [module] };
       }
     }
     

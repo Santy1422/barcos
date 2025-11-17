@@ -213,7 +213,7 @@ export function ShipChandlerRecords() {
 
   // Cargar clientes
   useEffect(() => {
-    dispatch(fetchClients())
+    dispatch(fetchClients('shipchandler'))
   }, [dispatch])
 
   const handleDeleteInvoice = async (invoice: any) => {
