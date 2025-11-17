@@ -15,6 +15,7 @@ import {
 } from "@/lib/features/records/recordsSlice"
 import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSlice"
 import { fetchServices, selectAllServices, selectServicesLoading } from "@/lib/features/services/servicesSlice"
+import { selectCurrentUser } from "@/lib/features/auth/authSlice"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -103,6 +104,11 @@ export function TruckingPrefactura() {
   const clients = useAppSelector(selectAllClients)
   const services = useAppSelector(selectAllServices)
   const servicesLoading = useAppSelector(selectServicesLoading)
+  const currentUser = useAppSelector(selectCurrentUser)
+  
+  // Verificar si el usuario es administrador
+  const userRoles = currentUser?.roles || (currentUser?.role ? [currentUser.role] : [])
+  const isAdmin = userRoles.includes('administrador')
 
   useEffect(() => {
     dispatch(fetchPendingRecordsByModule("trucking"))
@@ -136,6 +142,8 @@ export function TruckingPrefactura() {
   const [isDateModalOpen, setIsDateModalOpen] = useState(false)
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false)
   const [selectedRecordForView, setSelectedRecordForView] = useState<IndividualExcelRecord | null>(null)
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false)
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false)
 
   const getTodayDates = () => {
     const today = new Date()
@@ -566,6 +574,75 @@ export function TruckingPrefactura() {
       dispatch(fetchRecordsByModule("trucking"))
     } catch (error: any) {
       toast({ title: "Error al eliminar registro", description: error?.message || "No se pudo eliminar el registro", variant: "destructive" })
+    }
+  }
+
+  const handleDeleteSelectedRecords = async () => {
+    if (selectedRecordIds.length === 0) return
+    
+    // Verificación de seguridad: solo administradores pueden eliminar múltiples registros
+    if (!isAdmin) {
+      toast({ 
+        title: "Sin permisos", 
+        description: "Solo los administradores pueden eliminar múltiples registros", 
+        variant: "destructive" 
+      })
+      setShowBulkDeleteDialog(false)
+      return
+    }
+    
+    setIsDeletingBulk(true)
+    let successCount = 0
+    let errorCount = 0
+    
+    try {
+      // Eliminar todos los registros seleccionados
+      for (const recordId of selectedRecordIds) {
+        try {
+          await dispatch(deleteRecordAsync(recordId)).unwrap()
+          successCount++
+        } catch (error: any) {
+          console.error(`Error eliminando registro ${recordId}:`, error)
+          errorCount++
+        }
+      }
+      
+      // Limpiar selección
+      setSelectedRecordIds([])
+      
+      // Recargar datos
+      dispatch(fetchPendingRecordsByModule("trucking"))
+      dispatch(fetchRecordsByModule("trucking"))
+      
+      // Mostrar resultado
+      if (successCount > 0 && errorCount === 0) {
+        toast({ 
+          title: "Registros eliminados", 
+          description: `${successCount} registro${successCount !== 1 ? 's' : ''} eliminado${successCount !== 1 ? 's' : ''} exitosamente` 
+        })
+      } else if (successCount > 0 && errorCount > 0) {
+        toast({ 
+          title: "Eliminación parcial", 
+          description: `${successCount} eliminado${successCount !== 1 ? 's' : ''}, ${errorCount} error${errorCount !== 1 ? 'es' : ''}`,
+          variant: "destructive"
+        })
+      } else {
+        toast({ 
+          title: "Error al eliminar registros", 
+          description: `No se pudieron eliminar los ${errorCount} registro${errorCount !== 1 ? 's' : ''}`,
+          variant: "destructive"
+        })
+      }
+      
+      setShowBulkDeleteDialog(false)
+    } catch (error: any) {
+      toast({ 
+        title: "Error", 
+        description: error?.message || "Ocurrió un error al eliminar los registros", 
+        variant: "destructive" 
+      })
+    } finally {
+      setIsDeletingBulk(false)
     }
   }
 
@@ -1009,9 +1086,25 @@ export function TruckingPrefactura() {
               </div>
                   <div className="flex items-center gap-3">
                 <div className="text-sm opacity-90">{selectedRecordIds.length} de {visibleRecords.length} seleccionados</div>
-                <Button variant="outline" disabled={selectedRecordIds.length === 0} onClick={clearSelection} className="bg-white/10 hover:bg-white/20 border-white/30 text-white">
+                <Button 
+                  variant="outline" 
+                  disabled={selectedRecordIds.length === 0} 
+                  onClick={clearSelection} 
+                  className="bg-white/10 hover:bg-white/20 border-white/30 text-white"
+                >
                   Limpiar Selección
                 </Button>
+                {isAdmin && (
+                  <Button 
+                    variant="destructive" 
+                    disabled={selectedRecordIds.length === 0} 
+                    onClick={() => setShowBulkDeleteDialog(true)} 
+                    className="bg-red-600/90 hover:bg-red-700/90 border-red-500/50 text-white"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Eliminar Seleccionados ({selectedRecordIds.length})
+                  </Button>
+                )}
               </div>
             </div>
           )}
@@ -1809,6 +1902,85 @@ export function TruckingPrefactura() {
                 disabled={!startDate || !endDate}
               >
                 Aplicar Filtro
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog de confirmación para eliminación múltiple */}
+        <Dialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirmar eliminación múltiple</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">
+              <p className="text-sm text-muted-foreground mb-4">
+                ¿Estás seguro de que deseas eliminar <span className="font-bold text-destructive">{selectedRecordIds.length} registro{selectedRecordIds.length !== 1 ? 's' : ''}</span>?
+              </p>
+              <p className="text-sm font-semibold text-destructive mb-4">
+                Esta acción no se puede deshacer.
+              </p>
+              {selectedRecordIds.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs font-medium text-slate-600 mb-2">Registros que serán eliminados:</p>
+                  <div className="max-h-48 overflow-y-auto space-y-1 bg-slate-50 p-3 rounded-md">
+                    {selectedRecords.slice(0, 5).map((rec: any) => {
+                      const container = rec?.data?.container || 'N/A'
+                      const clientName = (() => {
+                        const d = rec?.data || {}
+                        const byId = d.clientId || rec?.clientId
+                        if (byId) {
+                          const c = clients.find((x: any) => (x._id || x.id) === byId)
+                          if (c) return c.type === 'natural' ? c.fullName : c.companyName
+                        }
+                        const bySap = d.clientSapCode || rec?.clientSapCode
+                        if (bySap) {
+                          const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
+                          if (c) return c.type === 'natural' ? c.fullName : c.companyName
+                        }
+                        return 'PTY SHIP SUPPLIERS, S.A.'
+                      })()
+                      return (
+                        <div key={rec._id || rec.id} className="text-xs text-slate-700 flex items-center gap-2">
+                          <span className="font-mono">{container}</span>
+                          <span className="text-slate-500">-</span>
+                          <span className="truncate">{clientName}</span>
+                        </div>
+                      )
+                    })}
+                    {selectedRecordIds.length > 5 && (
+                      <div className="text-xs text-slate-500 italic">
+                        ...y {selectedRecordIds.length - 5} más
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowBulkDeleteDialog(false)}
+                disabled={isDeletingBulk}
+              >
+                Cancelar
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={handleDeleteSelectedRecords}
+                disabled={isDeletingBulk}
+              >
+                {isDeletingBulk ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Eliminando...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Eliminar {selectedRecordIds.length} Registro{selectedRecordIds.length !== 1 ? 's' : ''}
+                  </>
+                )}
               </Button>
             </div>
           </DialogContent>
