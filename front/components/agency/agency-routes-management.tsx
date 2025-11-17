@@ -223,9 +223,7 @@ export function AgencyRoutesManagement() {
 
     if (!formData.pickupSiteType) errors.pickupSiteType = 'Pickup site type is required'
     if (!formData.dropoffSiteType) errors.dropoffSiteType = 'Dropoff site type is required'
-    if (formData.pickupSiteType === formData.dropoffSiteType) {
-      errors.dropoffSiteType = 'Dropoff site type must be different from pickup site type'
-    }
+    // Permitir que pickup y dropoff site types sean iguales (para rutas internas del mismo sitio)
 
     // Validate pricing
     formData.pricing.forEach((pricing, pIndex) => {

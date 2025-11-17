@@ -270,24 +270,10 @@ agencyRouteSchema.pre('save', function(next) {
   next();
 });
 
-// Validación: pickup y dropoff deben ser diferentes
+// Validación: Permitir que pickup y dropoff site types sean iguales (para rutas internas del mismo sitio)
+// Se eliminó la validación que impedía que fueran iguales
 agencyRouteSchema.pre('save', function(next) {
-  // Si usamos site types, validar que sean diferentes
-  if (this.pickupSiteType && this.dropoffSiteType) {
-    if (this.pickupSiteType.toUpperCase() === this.dropoffSiteType.toUpperCase()) {
-      next(new Error('Pickup site type and dropoff site type must be different'));
-      return;
-    }
-  }
-  
-  // Si usamos locations, validar que sean diferentes
-  if (this.pickupLocation && this.dropoffLocation) {
-    if (this.pickupLocation.toUpperCase() === this.dropoffLocation.toUpperCase()) {
-      next(new Error('Pickup location and dropoff location must be different'));
-      return;
-    }
-  }
-  
+  // No validar que sean diferentes - permitir rutas con mismo sitio de origen y destino
   next();
 });
 

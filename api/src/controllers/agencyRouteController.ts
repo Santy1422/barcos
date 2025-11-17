@@ -567,13 +567,8 @@ export const updateRoute = async (req: Request, res: Response) => {
       const pickupLocation = updateData.pickupLocation || route.pickupLocation;
       const dropoffLocation = updateData.dropoffLocation || route.dropoffLocation;
 
-      // Validar que no sean iguales
-      if (pickupLocation === dropoffLocation) {
-        return res.status(400).json({
-          success: false,
-          message: 'Pickup and dropoff locations cannot be the same'
-        });
-      }
+      // Permitir que pickup y dropoff sean iguales (para rutas internas del mismo sitio)
+      // Se eliminó la validación que impedía que fueran iguales
 
       // Verificar que las ubicaciones existan en el catálogo
       const pickupLocationCatalog = await AgencyCatalog.findActiveByName('location', pickupLocation);
