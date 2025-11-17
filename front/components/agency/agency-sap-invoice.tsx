@@ -154,30 +154,48 @@ export const AgencySapInvoice: React.FC = () => {
     return service.crewName || 'N/A';
   };
 
+  // Función auxiliar para formatear fecha a YYYY-MM-DD usando hora local
+  const formatDateToLocalString = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const getTodayDates = () => {
     const today = new Date();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
-    return { start: startOfDay.toISOString().split('T')[0], end: endOfDay.toISOString().split('T')[0] };
+    return { 
+      start: formatDateToLocalString(startOfDay), 
+      end: formatDateToLocalString(endOfDay) 
+    };
   };
 
   const getCurrentWeekDates = () => {
     const today = new Date();
     const dayOfWeek = today.getDay();
+    // Calcular el lunes de la semana actual (lunes = 1, domingo = 0)
     const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
     const startOfWeek = new Date(today.getFullYear(), today.getMonth(), diff);
     startOfWeek.setHours(0, 0, 0, 0);
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 6);
     endOfWeek.setHours(23, 59, 59, 999);
-    return { start: startOfWeek.toISOString().split('T')[0], end: endOfWeek.toISOString().split('T')[0] };
+    return { 
+      start: formatDateToLocalString(startOfWeek), 
+      end: formatDateToLocalString(endOfWeek) 
+    };
   };
 
   const getCurrentMonthDates = () => {
     const today = new Date();
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
-    return { start: startOfMonth.toISOString().split('T')[0], end: endOfMonth.toISOString().split('T')[0] };
+    return { 
+      start: formatDateToLocalString(startOfMonth), 
+      end: formatDateToLocalString(endOfMonth) 
+    };
   };
 
   const handleFilterByPeriod = (period: 'today' | 'week' | 'month' | 'advanced') => {
@@ -359,13 +377,36 @@ export const AgencySapInvoice: React.FC = () => {
       }
       
       // Filtro de fecha
+      // En vista "completados" usar pickupDate, en vista "facturados" usar invoiceDate
       let matchesDate = true;
       if (isUsingPeriodFilter && startDate && endDate) {
-        const d = new Date(service.pickupDate || service.createdAt);
-        const s = new Date(startDate);
-        const e = new Date(endDate);
-        e.setHours(23, 59, 59, 999);
-        matchesDate = d >= s && d <= e;
+        // Seleccionar la fecha según el modo de vista
+        let serviceDate: string | Date | undefined;
+        if (viewMode === 'completed') {
+          // Para servicios completados, usar la fecha del servicio (pickupDate)
+          serviceDate = service.pickupDate || service.createdAt;
+        } else {
+          // Para facturados y N/C, usar la fecha de factura (invoiceDate)
+          serviceDate = service.invoiceDate || service.pickupDate || service.createdAt;
+        }
+        
+        if (serviceDate) {
+          // Convertir la fecha del servicio a formato YYYY-MM-DD para comparación
+          let serviceDateStr: string;
+          if (typeof serviceDate === 'string') {
+            // Si es string, extraer solo la parte de fecha
+            serviceDateStr = serviceDate.split('T')[0];
+          } else {
+            // Si es Date object, convertir a string
+            const date = new Date(serviceDate);
+            serviceDateStr = date.toISOString().split('T')[0];
+          }
+          
+          // Comparar strings de fecha directamente (YYYY-MM-DD)
+          matchesDate = serviceDateStr >= startDate && serviceDateStr <= endDate;
+        } else {
+          matchesDate = false;
+        }
       }
       
       return matchesSearch && matchesStatus && matchesClient && matchesVessel && matchesCrewRank && matchesDate;
