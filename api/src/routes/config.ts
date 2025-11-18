@@ -7,7 +7,7 @@ import {
   deleteContainerType 
 } from '../controllers/configControllers/containerTypesControllers';
 import { jwtUtils } from "../middlewares/jwtUtils";
-import { requireAdminOrOperations, requireAdminOrCatalogos } from '../middlewares/authorization';
+import { requireAdminOrOperations, requireAdminOrCatalogos, requireAdminOrCatalogosOrOperations } from '../middlewares/authorization';
 
 const { catchedAsync } = require('../utils');
 const router = Router();
@@ -36,8 +36,10 @@ router.post('/service-sap-codes', jwtUtils, requireAdminOrOperations, catchedAsy
 router.put('/service-sap-codes/:id', jwtUtils, requireAdminOrOperations, catchedAsync(configControllers.updateServiceSapCode));
 router.delete('/service-sap-codes/:id', jwtUtils, requireAdminOrOperations, catchedAsync(configControllers.deleteServiceSapCode));
 
-// Container Types - Accesible por administradores y usuarios con rol catalogos
-router.get('/container-types', jwtUtils, requireAdminOrCatalogos, catchedAsync(getAllContainerTypes));
+// Container Types
+// Operaciones de lectura: permite admin, catalogos y operaciones
+router.get('/container-types', jwtUtils, requireAdminOrCatalogosOrOperations, catchedAsync(getAllContainerTypes));
+// Operaciones de escritura: solo admin o catalogos
 router.post('/container-types', jwtUtils, requireAdminOrCatalogos, catchedAsync(createContainerType));
 router.put('/container-types/:id', jwtUtils, requireAdminOrCatalogos, catchedAsync(updateContainerType));
 router.delete('/container-types/:id', jwtUtils, requireAdminOrCatalogos, catchedAsync(deleteContainerType));

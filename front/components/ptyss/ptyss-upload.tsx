@@ -1623,10 +1623,11 @@ export function PTYSSUpload() {
                   </p>
                 </div>
                 <Button onClick={async () => {
-                  // Refrescar las rutas locales y navieras antes de abrir el diálogo
+                  // Refrescar las rutas locales, navieras y tipos de contenedor antes de abrir el diálogo
                   await Promise.all([
                     dispatch(fetchPTYSSLocalRoutes()),
-                    dispatch(fetchNavieras('active'))
+                    dispatch(fetchNavieras('active')),
+                    dispatch(fetchContainerTypes())
                   ])
                   
                   setCurrentRecord({
@@ -2357,15 +2358,24 @@ export function PTYSSUpload() {
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar tipo" />
                     </SelectTrigger>
-                    <SelectContent>
-                      {containerTypes
-                        .filter((ct: any) => ct.isActive)
-                        .sort((a: any, b: any) => a.code.localeCompare(b.code))
-                        .map((containerType: any) => (
-                          <SelectItem key={containerType.code} value={containerType.code}>
-                            {containerType.code} - {containerType.name}
-                          </SelectItem>
-                        ))}
+                    <SelectContent className="max-h-48" side="bottom" sideOffset={4}>
+                      {(() => {
+                        const activeContainerTypes = containerTypes.filter((ct: any) => ct.isActive)
+                        if (activeContainerTypes.length === 0) {
+                          return (
+                            <SelectItem value="no-types" disabled>
+                              No hay tipos de contenedor disponibles
+                            </SelectItem>
+                          )
+                        }
+                        return activeContainerTypes
+                          .sort((a: any, b: any) => a.code.localeCompare(b.code))
+                          .map((containerType: any) => (
+                            <SelectItem key={containerType.code} value={containerType.code}>
+                              {containerType.code} - {containerType.name}
+                            </SelectItem>
+                          ))
+                      })()}
                     </SelectContent>
                   </Select>
                 </div>
