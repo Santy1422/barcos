@@ -949,10 +949,21 @@ export function PTYSSUpload() {
           totalValue: newRecord.totalValue || 0
         }]
         
-        await dispatch(createPTYSSRecords({
+        const result = await dispatch(createPTYSSRecords({
           excelId: tempObjectId,
           recordsData
         })).unwrap()
+        
+        // Verificar que realmente se crearon registros
+        if (!result || !result.records || result.records.length === 0) {
+          const errorMessage = result?.message || "No se pudo crear el registro. Verifica que tengas los permisos necesarios."
+          toast({
+            title: "Error al guardar",
+            description: errorMessage,
+            variant: "destructive"
+          })
+          return
+        }
         
         toast({
           title: "Registro guardado",

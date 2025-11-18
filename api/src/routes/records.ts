@@ -5,7 +5,7 @@ import { createAutoridadesRecord } from '../controllers/recordsControllers/creat
 import { getAllAutoridadesRecords } from '../controllers/recordsControllers/getAllAutoridadesRecords';
 import { deleteAutoridadesRecord } from '../controllers/recordsControllers/deleteAutoridadesRecord';
 import recordsAutoridadesControllers from '../controllers/recordsControllers/recordsAutoridadesControllers';
-import { requireShipchandlerModule, requireAnyRole } from '../middlewares/authorization';
+import { requireShipchandlerModule, requirePtyssModule, requireAnyRole } from '../middlewares/authorization';
 
 const { catchedAsync } = require('../utils');
 
@@ -18,7 +18,7 @@ router.post('/', jwtUtils, catchedAsync(recordsControllers.createRecord));
 router.post('/trucking/bulk', jwtUtils, catchedAsync(recordsControllers.createTruckingRecords));
 
 // Crear múltiples registros de PTYSS desde entrada manual
-router.post('/ptyss/bulk', jwtUtils, catchedAsync(recordsControllers.createPTYSSRecords));
+router.post('/ptyss/bulk', jwtUtils, requirePtyssModule, requireAnyRole, catchedAsync(recordsControllers.createPTYSSRecords));
 
 // Crear múltiples registros de Agency desde Excel o entrada manual
 router.post('/agency/bulk', jwtUtils, catchedAsync(recordsControllers.createAgencyRecords));

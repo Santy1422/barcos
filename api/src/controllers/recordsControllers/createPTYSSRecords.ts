@@ -65,32 +65,57 @@ export default async (req, res) => {
     }
     
     // Verificar duplicados por containerConsecutive en el módulo ptyss
-    const containerConsecutives = recordsData
-      .map(record => record.data?.containerConsecutive)
-      .filter(Boolean);
+    // Para registros de trasiego: usar containerConsecutive
+    // Para registros locales: usar order como containerConsecutive
+    const containerConsecutives = recordsData.map(record => {
+      const data = record.data || {};
+      // Determinar si es trasiego
+      const isTrasiego = data.containerConsecutive || data.leg || data.moveType || data.associate;
+      // Para trasiego usar containerConsecutive, para locales usar order
+      return isTrasiego 
+        ? (data.containerConsecutive || null)
+        : (data.order || null);
+    }).filter(Boolean); // Solo incluir valores truthy (no null, undefined, o vacío)
     
-    console.log("🔍 Verificando duplicados por containerConsecutive...");
+    console.log("🔍 Verificando duplicados por containerConsecutive (o order para locales)...");
     console.log("ContainerConsecutives a verificar:", containerConsecutives);
     
-    // Buscar registros existentes con los mismos containerConsecutive en el módulo ptyss
-    const existingRecords = await records.find({
-      module: 'ptyss',
-      containerConsecutive: { $in: containerConsecutives }
-    });
+    let duplicateContainerConsecutives = [];
     
-    const existingContainerConsecutives = existingRecords.map(r => r.containerConsecutive);
-    const duplicateContainerConsecutives = containerConsecutives.filter(cc => 
-      existingContainerConsecutives.includes(cc)
-    );
-    
-    console.log("📊 Resultado de verificación de duplicados:");
-    console.log("  - Registros existentes encontrados:", existingRecords.length);
-    console.log("  - ContainerConsecutives duplicados:", duplicateContainerConsecutives);
+    // Verificar duplicados si hay valores para verificar
+    if (containerConsecutives.length > 0) {
+      // Buscar registros existentes con los mismos containerConsecutive en el módulo ptyss
+      const existingRecords = await records.find({
+        module: 'ptyss',
+        containerConsecutive: { $in: containerConsecutives }
+      });
+      
+      const existingContainerConsecutives = existingRecords.map(r => r.containerConsecutive);
+      duplicateContainerConsecutives = containerConsecutives.filter(cc => 
+        existingContainerConsecutives.includes(cc)
+      );
+      
+      console.log("📊 Resultado de verificación de duplicados:");
+      console.log("  - Registros existentes encontrados:", existingRecords.length);
+      console.log("  - ContainerConsecutives duplicados:", duplicateContainerConsecutives);
+    } else {
+      console.log("📊 No hay containerConsecutives para verificar");
+    }
     
     // Filtrar registros duplicados
-    const recordsToProcess = recordsData.filter(record => 
-      !duplicateContainerConsecutives.includes(record.data?.containerConsecutive)
-    );
+    const recordsToProcess = recordsData.filter(record => {
+      const data = record.data || {};
+      const isTrasiego = data.containerConsecutive || data.leg || data.moveType || data.associate;
+      // Determinar el valor a usar para verificación de duplicados
+      const cc = isTrasiego 
+        ? (data.containerConsecutive || null)
+        : (data.order || null);
+      
+      // Si no tiene valor, no se puede verificar duplicados (pero se procesa)
+      if (!cc) return true;
+      // Verificar que no sea duplicado
+      return !duplicateContainerConsecutives.includes(cc);
+    });
     
     console.log("📝 Registros a procesar después de filtrar duplicados:");
     console.log("  - Total original:", recordsData.length);
@@ -145,15 +170,24 @@ export default async (req, res) => {
         const isTrasiego = data.containerConsecutive || data.leg || data.moveType || data.associate;
         const recordStatus = isTrasiego ? "completado" : "pendiente";
         
-        // Extraer containerConsecutive para el campo de nivel superior
-        const containerConsecutive = data.containerConsecutive || null;
+        // Para registros locales, usar 'order' como containerConsecutive para evitar problemas con el índice único
+        // Para registros de trasiego, usar el containerConsecutive original
+        const containerConsecutive = isTrasiego 
+          ? (data.containerConsecutive || null)
+          : (data.order || null);
+        
         const clientId = data.clientId || null;
         
-        console.log(`  - containerConsecutive: ${containerConsecutive}`);
         console.log(`  - Es trasiego: ${isTrasiego ? 'SÍ' : 'NO'}`);
+        console.log(`  - containerConsecutive: ${containerConsecutive} (${isTrasiego ? 'original' : 'order'})`);
+        console.log(`  - order: ${data.order || 'N/A'}`);
         console.log(`  - Estado asignado: ${recordStatus}`);
+        console.log(`  - userId: ${userId}`);
+        console.log(`  - clientId: ${clientId}`);
+        console.log(`  - Datos completos:`, JSON.stringify(data, null, 2));
         
-        const record = await records.create({
+        // Construir el objeto del registro
+        const recordData: any = {
           excelId: validExcelId,
           module: "ptyss",
           type: "maritime",
@@ -161,21 +195,47 @@ export default async (req, res) => {
           totalValue: totalValue || 0,
           data, // Datos originales completos
           sapCode: data.sapCode || null,
-          containerConsecutive, // Campo específico para consultas y validación de duplicados
-          clientId, // Campo específico para referencias del cliente
           createdBy: userId
-        });
+        };
+        
+        // Incluir containerConsecutive (que será order para registros locales o containerConsecutive para trasiego)
+        if (containerConsecutive) {
+          recordData.containerConsecutive = containerConsecutive;
+        }
+        
+        // Solo incluir clientId si tiene un valor
+        if (clientId) {
+          recordData.clientId = clientId;
+        }
+        
+        const record = await records.create(recordData);
         
         console.log(`✅ Registro PTYSS ${i + 1} guardado exitosamente:`, record._id);
         createdRecords.push(record);
       } catch (dbError) {
         console.error(`❌ Error guardando registro PTYSS ${i + 1}:`, dbError);
-        console.error(`  - Error details:`, dbError.message);
+        console.error(`  - Error name:`, dbError.name);
+        console.error(`  - Error message:`, dbError.message);
+        console.error(`  - Error stack:`, dbError.stack);
+        if (dbError.errors) {
+          console.error(`  - Validation errors:`, JSON.stringify(dbError.errors, null, 2));
+        }
         // Continuar con el siguiente registro en lugar de fallar completamente
       }
     }
     
     console.log(`🎉 Proceso completado. Registros PTYSS creados: ${createdRecords.length}/${recordsToProcess.length}`);
+    
+    // Si no se creó ningún registro y había registros para procesar, es un error
+    if (createdRecords.length === 0 && recordsToProcess.length > 0) {
+      console.error("❌ No se pudo crear ningún registro PTYSS. Posibles causas: errores de validación del schema o permisos insuficientes.");
+      return response(res, 500, { 
+        error: "No se pudo crear ningún registro. Verifica los datos y permisos.",
+        message: "Error al guardar los registros en la base de datos. Verifica que todos los campos requeridos sean válidos.",
+        totalProcessed: recordsData.length,
+        recordsProcessed: recordsToProcess.length
+      });
+    }
     
     // Convertir ObjectIds a strings para la serialización JSON
     const serializedRecords = createdRecords.map(record => {
@@ -206,7 +266,9 @@ export default async (req, res) => {
     
     console.log("📤 Enviando respuesta al frontend:", responseData);
     console.log("📤 Registros en la respuesta:", responseData.records.length);
-    console.log("📤 Primer registro de ejemplo:", JSON.stringify(responseData.records[0], null, 2));
+    if (responseData.records.length > 0) {
+      console.log("📤 Primer registro de ejemplo:", JSON.stringify(responseData.records[0], null, 2));
+    }
     
     return response(res, 201, responseData);
   } catch (error) {
