@@ -309,7 +309,11 @@ export function ShipChandlerUpload() {
       })).unwrap()
       
       console.log("=== RESULTADO DEL GUARDADO ===")
-      console.log("Result:", result)
+      console.log("Result completo:", JSON.stringify(result, null, 2))
+      console.log("Result.count:", result.count)
+      console.log("Result.records:", result.records)
+      console.log("Result.records length:", result.records?.length)
+      console.log("Result.duplicates:", result.duplicates)
       
       // Manejar respuesta
       let successMessage = ""
@@ -322,16 +326,36 @@ export function ShipChandlerUpload() {
         recordsCreated = result.length
       }
       
-      successMessage = `Se guardaron ${recordsCreated} registros correctamente.`
+      console.log("Registros creados calculados:", recordsCreated)
       
-      if (result.duplicates && result.duplicates > 0) {
-        successMessage += ` ${result.duplicates} registros duplicados fueron omitidos.`
+      if (recordsCreated === 0) {
+        // Si no se guardaron registros, mostrar información detallada
+        const duplicateCount = result.duplicates?.count || 0
+        const totalProcessed = result.totalProcessed || previewData.length
+        
+        if (duplicateCount > 0) {
+          successMessage = `No se guardaron registros nuevos. ${duplicateCount} de ${totalProcessed} registros ya existen en el sistema (duplicados).`
+        } else {
+          successMessage = `No se guardaron registros. Verifica los logs del servidor para más detalles.`
+        }
+        
+        toast({
+          title: "⚠️ Sin registros guardados",
+          description: successMessage,
+          variant: "destructive",
+        })
+      } else {
+        successMessage = `Se guardaron ${recordsCreated} registros correctamente.`
+        
+        if (result.duplicates && result.duplicates.count > 0) {
+          successMessage += ` ${result.duplicates.count} registros duplicados fueron omitidos.`
+        }
+        
+        toast({
+          title: "✅ Registros guardados",
+          description: successMessage,
+        })
       }
-      
-      toast({
-        title: "✅ Registros guardados",
-        description: successMessage,
-      })
 
       // Limpiar estado
       setSelectedFile(null)

@@ -34,6 +34,7 @@ export default async (req, res) => {
     console.log("excelId:", excelId);
     console.log("recordsData length:", recordsData?.length);
     console.log("userId:", userId);
+    console.log("recordsData sample (first 2):", JSON.stringify(recordsData?.slice(0, 2), null, 2));
     
     // Convertir excelId a ObjectId válido
     let validExcelId;
@@ -60,37 +61,48 @@ export default async (req, res) => {
       });
     }
     
-    // Verificar duplicados por invoiceNo en el módulo shipchandler
-    const invoiceNos = recordsData
-      .map(record => record.data?.invoiceNo)
+    // Verificar duplicados por containerConsecutive (que será invoiceNo para ShipChandler)
+    // Normalizar invoiceNos (trim y convertir a string) para usarlos como containerConsecutive
+    const containerConsecutives = recordsData
+      .map(record => {
+        const invoiceNo = record.data?.invoiceNo;
+        return invoiceNo ? String(invoiceNo).trim() : null;
+      })
       .filter(Boolean);
     
-    console.log("🔍 Verificando duplicados por invoiceNo...");
-    console.log("InvoiceNos a verificar:", invoiceNos);
+    console.log("🔍 Verificando duplicados por containerConsecutive (invoiceNo)...");
+    console.log("ContainerConsecutives (invoiceNos) a verificar:", containerConsecutives);
+    console.log("Total containerConsecutives únicos:", new Set(containerConsecutives).size);
     
-    // Buscar registros existentes con los mismos invoiceNo en el módulo shipchandler
+    // Buscar registros existentes con los mismos containerConsecutive en el módulo shipchandler
     const existingRecords = await records.find({
       module: 'shipchandler',
-      'data.invoiceNo': { $in: invoiceNos }
+      containerConsecutive: { $in: containerConsecutives }
     });
     
-    const existingInvoiceNos = existingRecords.map(r => r.data?.invoiceNo).filter(Boolean);
-    const duplicateInvoiceNos = invoiceNos.filter(invoiceNo => 
-      existingInvoiceNos.includes(invoiceNo)
+    const existingContainerConsecutives = existingRecords
+      .map(r => r.containerConsecutive ? String(r.containerConsecutive).trim() : null)
+      .filter(Boolean);
+    
+    console.log("ContainerConsecutives existentes en BD:", existingContainerConsecutives);
+    
+    const duplicateContainerConsecutives = containerConsecutives.filter(cc => 
+      existingContainerConsecutives.includes(cc)
     );
     
     console.log("📊 Resultado de verificación de duplicados:");
     console.log("  - Registros existentes encontrados:", existingRecords.length);
-    console.log("  - InvoiceNos duplicados:", duplicateInvoiceNos);
+    console.log("  - ContainerConsecutives duplicados:", duplicateContainerConsecutives);
     
-    // Filtrar registros duplicados
-    const recordsToProcess = recordsData.filter(record => 
-      !duplicateInvoiceNos.includes(record.data?.invoiceNo)
-    );
+    // Filtrar registros duplicados (normalizando invoiceNo para comparación)
+    const recordsToProcess = recordsData.filter(record => {
+      const invoiceNo = record.data?.invoiceNo ? String(record.data.invoiceNo).trim() : null;
+      return invoiceNo && !duplicateContainerConsecutives.includes(invoiceNo);
+    });
     
     console.log("📝 Registros a procesar después de filtrar duplicados:");
     console.log("  - Total original:", recordsData.length);
-    console.log("  - Duplicados encontrados:", duplicateInvoiceNos.length);
+    console.log("  - Duplicados encontrados:", duplicateContainerConsecutives.length);
     console.log("  - Registros válidos para procesar:", recordsToProcess.length);
     
     // Si no hay registros válidos para procesar, retornar respuesta con 0 creados
@@ -102,10 +114,10 @@ export default async (req, res) => {
         totalProcessed: recordsData.length
       };
       
-      if (duplicateInvoiceNos.length > 0) {
+      if (duplicateContainerConsecutives.length > 0) {
         responseData.duplicates = {
-          count: duplicateInvoiceNos.length,
-          invoiceNos: duplicateInvoiceNos
+          count: duplicateContainerConsecutives.length,
+          invoiceNos: duplicateContainerConsecutives
         };
       }
       
@@ -116,21 +128,45 @@ export default async (req, res) => {
     
     for (let i = 0; i < recordsToProcess.length; i++) {
       const recordData = recordsToProcess[i];
+      console.log(`\n📦 Procesando registro ${i + 1}/${recordsToProcess.length}`);
+      console.log(`  - recordData:`, JSON.stringify(recordData, null, 2));
+      
       const data = recordData.data || {};
       const totalValue = recordData.totalValue || data.total || 0;
       
-      if (!data || !data.invoiceNo) {
-        console.warn(`⚠️ Registro ${i + 1} sin invoiceNo, saltando...`);
+      console.log(`  - data extraído:`, JSON.stringify(data, null, 2));
+      console.log(`  - totalValue:`, totalValue);
+      
+      // Normalizar invoiceNo
+      const invoiceNo = data.invoiceNo ? String(data.invoiceNo).trim() : null;
+      
+      if (!data || !invoiceNo) {
+        console.warn(`⚠️ Registro ${i + 1} sin invoiceNo válido, saltando...`);
+        console.warn(`  - data:`, data);
+        console.warn(`  - invoiceNo original:`, data?.invoiceNo);
         continue;
       }
       
+      // Actualizar data con invoiceNo normalizado
+      data.invoiceNo = invoiceNo;
+      
       try {
         console.log(`💾 Guardando registro ShipChandler ${i + 1} en MongoDB...`);
+        console.log(`  - invoiceNo:`, invoiceNo);
+        console.log(`  - clientId:`, data.clientId);
+        console.log(`  - excelId:`, validExcelId);
+        console.log(`  - userId:`, userId);
         
         // Extraer clientId de los datos si existe
         const clientId = data.clientId || null;
         
-        const record = await records.create({
+        // Usar invoiceNo como containerConsecutive para evitar problemas con el índice único
+        // Esto es necesario porque el índice único { module: 1, containerConsecutive: 1 } requiere valores únicos
+        const containerConsecutive = invoiceNo;
+        
+        console.log(`  - containerConsecutive (invoiceNo):`, containerConsecutive);
+        
+        const recordPayload = {
           excelId: validExcelId,
           module: "shipchandler",
           type: "supply-order",
@@ -138,14 +174,24 @@ export default async (req, res) => {
           totalValue: totalValue || 0,
           data, // Datos originales completos
           clientId, // Campo específico para referencias del cliente
+          containerConsecutive, // Usar invoiceNo como containerConsecutive para el índice único
           createdBy: userId
-        });
+        };
+        
+        console.log(`  - Payload a guardar:`, JSON.stringify(recordPayload, null, 2));
+        
+        const record = await records.create(recordPayload);
         
         console.log(`✅ Registro ShipChandler ${i + 1} guardado exitosamente:`, record._id);
         createdRecords.push(record);
-      } catch (dbError) {
+      } catch (dbError: any) {
         console.error(`❌ Error guardando registro ShipChandler ${i + 1}:`, dbError);
-        console.error(`  - Error details:`, dbError.message);
+        console.error(`  - Error name:`, dbError.name);
+        console.error(`  - Error message:`, dbError.message);
+        console.error(`  - Error stack:`, dbError.stack);
+        if (dbError.errors) {
+          console.error(`  - Error details:`, JSON.stringify(dbError.errors, null, 2));
+        }
         // Continuar con el siguiente registro en lugar de fallar completamente
       }
     }
@@ -162,6 +208,7 @@ export default async (req, res) => {
       totalValue: record.totalValue,
       data: record.data,
       clientId: record.clientId?.toString(),
+      containerConsecutive: record.containerConsecutive,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt
     }));
@@ -172,10 +219,10 @@ export default async (req, res) => {
       totalProcessed: recordsData.length
     };
     
-    if (duplicateInvoiceNos.length > 0) {
+    if (duplicateContainerConsecutives.length > 0) {
       responseData.duplicates = {
-        count: duplicateInvoiceNos.length,
-        invoiceNos: duplicateInvoiceNos
+        count: duplicateContainerConsecutives.length,
+        invoiceNos: duplicateContainerConsecutives
       };
     }
     
