@@ -20,7 +20,8 @@ export default function Home() {
         const firstModule = currentUser.modules[0]
         const moduleRoutes = {
           'trucking': '/trucking',
-          'shipchandler': '/ptyss',
+          'ptyss': '/ptyss',
+          'shipchandler': '/shipchandler',
           'agency': '/agency'
         }
         router.push(moduleRoutes[firstModule] || '/login')
