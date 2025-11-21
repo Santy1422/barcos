@@ -1020,15 +1020,15 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
             const otherItems: any[] = []
             let lineNbr = 1
             
-            // Mapeo de campos a service codes
-            const serviceCodeMap: Record<string, string> = {
-              deliveryExpenses: 'TRK237',
-              portEntryFee: 'CLG096',
-              customsFee: 'CHB123',
-              authorities: 'TRK130',
-              otherExpenses: 'CHB122',
-              overTime: 'WRH156',
-              total: 'SHP243'
+            // Mapeo de campos a service codes con sus configuraciones
+            const serviceCodeConfig: Record<string, { code: string; activity: string; pillar: string }> = {
+              deliveryExpenses: { code: 'TRK357', activity: 'TRK', pillar: 'TRSP' },
+              portEntryFee: { code: 'CLG096', activity: 'SHP', pillar: 'TRSP' },
+              customsFee: { code: 'CHB123', activity: 'SHP', pillar: 'TRSP' },
+              authorities: { code: 'TRK130', activity: 'SHP', pillar: 'TRSP' }, // Mantener configuración original
+              otherExpenses: { code: 'CHB122', activity: 'SHP', pillar: 'TRSP' },
+              overTime: { code: 'WRH156', activity: 'SHP', pillar: 'TRSP' },
+              total: { code: 'SHP243', activity: 'SHP', pillar: 'NOPS' }
             }
             
             // Procesar cada registro
@@ -1037,7 +1037,7 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
               const invoiceNo = data.invoiceNo || ''
               
               // Crear una línea por cada campo que tenga valor mayor a 0
-              Object.entries(serviceCodeMap).forEach(([fieldName, serviceCode]) => {
+              Object.entries(serviceCodeConfig).forEach(([fieldName, config]) => {
                 const value = Number(data[fieldName] || 0)
                 if (value > 0) {
                   // Determinar el nombre del servicio para la descripción
@@ -1053,8 +1053,8 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
                   
                   const serviceName = serviceNames[fieldName] || fieldName
                   
-                  // Para el service code SHP243 (campo "total"), usar valores específicos
-                  const isTotalService = serviceCode === 'SHP243'
+                  // Para el service code SHP243 (campo "total"), usar ProfitCenter específico
+                  const isTotalService = config.code === 'SHP243'
                   
                   otherItems.push({
                     "IncomeRebateCode": "I",
@@ -1063,14 +1063,14 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
                     "Qty": "1",
                     "ProfitCenter": isTotalService ? "PAPANC441" : "PAPANB110",
                     "ReferencePeriod": formatReferencePeriod(invoice.date),
-                    "Service": serviceCode,
-                    "Activity": "SHP", // Activity para ShipChandler
-                    "Pillar": isTotalService ? "NOPS" : "TRSP",
+                    "Service": config.code,
+                    "Activity": config.activity,
+                    "Pillar": config.pillar,
                     "BUCountry": "PA",
                     "ServiceCountry": "PA",
                     "ClientType": "MEDLOG",
-                    "BusinessType": "I", // Siempre IMPORT para ShipChandler
-                    "SubContracting": "YES"
+                    "BusinessType": "I" // Siempre IMPORT para ShipChandler
+                    // SubContracting eliminado según requerimientos
                   })
                   
                   lineNbr++
