@@ -859,7 +859,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                 "AmntTransacCur": (-totalPrice).toFixed(3),
                 "BaseUnitMeasure": "CTR",
                 "Qty": group.count.toString(),
-                "ProfitCenter": "PAPANB110",
+                "ProfitCenter": "PAPANC110",
                 "ReferencePeriod": formatReferencePeriod(invoice.date),
                 "Service": serviceCode,
                 "Activity": "TRK",
@@ -872,8 +872,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                 "CtrISOcode": ctrISOcode,
                 "CtrType": containerType,
                 "CtrSize": containerSize,
-                "CtrCategory": ctrCategory,
-                "SubContracting": "YES"
+                "CtrCategory": ctrCategory
               }
             })
             
@@ -897,7 +896,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                     "AmntTransacCur": (-service.amount).toFixed(3),
                     "BaseUnitMeasure": "EA", // Each (unidad) para servicios fijos
                     "Qty": "1.00",
-                    "ProfitCenter": "PAPANB110",
+                    "ProfitCenter": "PAPANC110",
                     "ReferencePeriod": formatReferencePeriod(invoice.date),
                     "Service": serviceCode,
                     "Activity": serviceCode.startsWith('CLG') ? "CLG" : serviceCode.startsWith('SLR') ? "SLR" : "TRK",
