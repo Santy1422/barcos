@@ -175,6 +175,13 @@ export function PTYSSUpload() {
 
   // Estado para filtro de estado de registros locales
   const [statusFilter, setStatusFilter] = useState<'all' | 'pendiente' | 'completado' | 'cancelado'>('all')
+  
+  // Estado para filtro por cliente
+  const [clientFilter, setClientFilter] = useState<string>('all')
+  
+  // Estado para filtro por fecha de movimiento
+  const [moveDateStart, setMoveDateStart] = useState<string>('')
+  const [moveDateEnd, setMoveDateEnd] = useState<string>('')
 
   // Estado para crear rutas desde registros sin match
   const [showCreateRouteModal, setShowCreateRouteModal] = useState(false)
@@ -238,12 +245,49 @@ export function PTYSSUpload() {
     })
     
     // Aplicar filtro de estado si no es 'all'
-    if (statusFilter === 'all') {
-      return filtered
+    let result = filtered
+    if (statusFilter !== 'all') {
+      result = result.filter(record => record.status === statusFilter)
     }
     
-    return filtered.filter(record => record.status === statusFilter)
-  }, [ptyssRecords, statusFilter])
+    // Aplicar filtro por cliente
+    if (clientFilter !== 'all') {
+      result = result.filter((record: ExcelRecord) => {
+        const data = record.data as Record<string, any>
+        const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
+        const clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
+        return clientName === clientFilter
+      })
+    }
+    
+    // Aplicar filtro por fecha de movimiento
+    if (moveDateStart || moveDateEnd) {
+      result = result.filter((record: ExcelRecord) => {
+        const data = record.data as Record<string, any>
+        const moveDate = data.moveDate
+        
+        if (!moveDate) return false
+        
+        const recordDate = new Date(moveDate)
+        
+        if (moveDateStart) {
+          const startDate = new Date(moveDateStart)
+          startDate.setHours(0, 0, 0, 0)
+          if (recordDate < startDate) return false
+        }
+        
+        if (moveDateEnd) {
+          const endDate = new Date(moveDateEnd)
+          endDate.setHours(23, 59, 59, 999)
+          if (recordDate > endDate) return false
+        }
+        
+        return true
+      })
+    }
+    
+    return result
+  }, [ptyssRecords, statusFilter, clientFilter, moveDateStart, moveDateEnd, clients])
 
   // Función para re-procesar el Excel (simula el handleFileChange pero sin seleccionar archivo)
   const reprocessExcel = useCallback(async () => {
@@ -1782,49 +1826,152 @@ export function PTYSSUpload() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Filtro de Estado */}
-            <div className="flex items-center gap-4 mb-4 p-3 bg-slate-50 rounded-lg border">
-              <Label htmlFor="status-filter" className="text-sm font-medium whitespace-nowrap">Filtrar por estado:</Label>
-              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as 'all' | 'pendiente' | 'completado' | 'cancelado')}>
-                <SelectTrigger className="w-64">
-                  <SelectValue placeholder="Seleccionar estado" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    Todos ({ptyssRecords.filter((r: ExcelRecord) => {
-                      const data = r.data as Record<string, any>
-                      return data.recordType === "local" && !r.invoiceId
-                    }).length})
-                  </SelectItem>
-                  <SelectItem value="pendiente">
-                    Pendientes ({ptyssRecords.filter((r: ExcelRecord) => {
-                      const data = r.data as Record<string, any>
-                      return data.recordType === "local" && r.status === "pendiente" && !r.invoiceId
-                    }).length})
-                  </SelectItem>
-                  <SelectItem value="completado">
-                    Completados ({ptyssRecords.filter((r: ExcelRecord) => {
-                      const data = r.data as Record<string, any>
-                      return data.recordType === "local" && r.status === "completado" && !r.invoiceId
-                    }).length})
-                  </SelectItem>
-                  <SelectItem value="cancelado">
-                    Cancelados ({ptyssRecords.filter((r: ExcelRecord) => {
-                      const data = r.data as Record<string, any>
-                      return data.recordType === "local" && r.status === "cancelado" && !r.invoiceId
-                    }).length})
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              {statusFilter !== 'all' && (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => setStatusFilter('all')}
-                  className="text-xs"
-                >
-                  Limpiar Filtro
-                </Button>
+            {/* Filtros */}
+            <div className="space-y-4 mb-4">
+              {/* Filtros de Estado y Cliente en la misma fila */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Filtro de Estado */}
+                <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border">
+                  <Label htmlFor="status-filter" className="text-sm font-medium whitespace-nowrap">Filtrar por estado:</Label>
+                  <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as 'all' | 'pendiente' | 'completado' | 'cancelado')}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Seleccionar estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        Todos ({ptyssRecords.filter((r: ExcelRecord) => {
+                          const data = r.data as Record<string, any>
+                          return data.recordType === "local" && !r.invoiceId
+                        }).length})
+                      </SelectItem>
+                      <SelectItem value="pendiente">
+                        Pendientes ({ptyssRecords.filter((r: ExcelRecord) => {
+                          const data = r.data as Record<string, any>
+                          return data.recordType === "local" && r.status === "pendiente" && !r.invoiceId
+                        }).length})
+                      </SelectItem>
+                      <SelectItem value="completado">
+                        Completados ({ptyssRecords.filter((r: ExcelRecord) => {
+                          const data = r.data as Record<string, any>
+                          return data.recordType === "local" && r.status === "completado" && !r.invoiceId
+                        }).length})
+                      </SelectItem>
+                      <SelectItem value="cancelado">
+                        Cancelados ({ptyssRecords.filter((r: ExcelRecord) => {
+                          const data = r.data as Record<string, any>
+                          return data.recordType === "local" && r.status === "cancelado" && !r.invoiceId
+                        }).length})
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {statusFilter !== 'all' && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => setStatusFilter('all')}
+                      className="text-xs"
+                    >
+                      Limpiar
+                    </Button>
+                  )}
+                </div>
+                
+                {/* Filtro por Cliente */}
+                <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border">
+                  <Label htmlFor="client-filter" className="text-sm font-medium whitespace-nowrap">Filtrar por cliente:</Label>
+                  <Select value={clientFilter} onValueChange={setClientFilter}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Seleccionar cliente" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos los clientes</SelectItem>
+                      {clients
+                        .filter((client: any) => {
+                          // Solo mostrar clientes que tienen registros locales
+                          return ptyssRecords.some((r: ExcelRecord) => {
+                            const data = r.data as Record<string, any>
+                            return data.recordType === "local" && 
+                                   data.clientId === (client._id || client.id) && 
+                                   !r.invoiceId
+                          })
+                        })
+                        .map((client: any) => {
+                          const clientName = client.type === "natural" ? client.fullName : client.companyName
+                          return (
+                            <SelectItem key={client._id || client.id} value={clientName}>
+                              {clientName}
+                            </SelectItem>
+                          )
+                        })}
+                    </SelectContent>
+                  </Select>
+                  {clientFilter !== 'all' && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => setClientFilter('all')}
+                      className="text-xs"
+                    >
+                      Limpiar
+                    </Button>
+                  )}
+                </div>
+              </div>
+              
+              {/* Filtro por Fecha de Movimiento */}
+              <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border">
+                <Label htmlFor="move-date-start" className="text-sm font-medium whitespace-nowrap">Filtrar por fecha de movimiento:</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="move-date-start"
+                    type="date"
+                    value={moveDateStart}
+                    onChange={(e) => setMoveDateStart(e.target.value)}
+                    className="w-48"
+                    placeholder="Desde"
+                  />
+                  <span className="text-sm text-muted-foreground">hasta</span>
+                  <Input
+                    id="move-date-end"
+                    type="date"
+                    value={moveDateEnd}
+                    onChange={(e) => setMoveDateEnd(e.target.value)}
+                    className="w-48"
+                    placeholder="Hasta"
+                  />
+                </div>
+                {(moveDateStart || moveDateEnd) && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      setMoveDateStart('')
+                      setMoveDateEnd('')
+                    }}
+                    className="text-xs"
+                  >
+                    Limpiar
+                  </Button>
+                )}
+              </div>
+              
+              {/* Botón para limpiar todos los filtros */}
+              {(statusFilter !== 'all' || clientFilter !== 'all' || moveDateStart || moveDateEnd) && (
+                <div className="flex justify-end">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      setStatusFilter('all')
+                      setClientFilter('all')
+                      setMoveDateStart('')
+                      setMoveDateEnd('')
+                    }}
+                    className="text-xs"
+                  >
+                    Limpiar todos los filtros
+                  </Button>
+                </div>
               )}
             </div>
             
