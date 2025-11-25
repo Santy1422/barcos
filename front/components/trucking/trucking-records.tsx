@@ -447,7 +447,7 @@ export function TruckingRecords() {
           totalPrice: customsTotal,
           unit: 'VIAJE',
           // Campos adicionales requeridos
-          IncomeRebateCode: 'N',
+          IncomeRebateCode: 'I',
           AmntTransacCur: -customsTotal,
           ProfitCenter: 'PTG',
           Activity: 'TRUCKING',
@@ -477,7 +477,7 @@ export function TruckingRecords() {
           totalPrice: adminFeeTotal,
           unit: 'VIAJE',
           // Campos adicionales requeridos
-          IncomeRebateCode: 'N',
+          IncomeRebateCode: 'I',
           AmntTransacCur: -adminFeeTotal,
           ProfitCenter: 'PTG',
           Activity: 'TRUCKING',
@@ -515,7 +515,7 @@ export function TruckingRecords() {
           totalPrice: additionalService.amount || 0,
           unit: 'VIAJE',
           // Campos adicionales requeridos
-          IncomeRebateCode: 'N',
+          IncomeRebateCode: 'I',
           AmntTransacCur: (-(additionalService.amount || 0)).toFixed(3),
           ProfitCenter: 'PTG',
           Activity: 'TRUCKING',
