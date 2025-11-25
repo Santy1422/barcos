@@ -14,6 +14,13 @@ export interface PTYSSInvoiceForXml {
   total: number
   records: PTYSSRecordForXml[]
   sapDocumentNumber?: string
+  additionalServices?: Array<{
+    serviceId: string
+    name: string
+    description: string
+    amount: number
+    isLocalService?: boolean
+  }>
 }
 
 export interface PTYSSRecordForXml {
@@ -700,49 +707,10 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
     throw new Error("Datos requeridos faltantes para generar XML PTYSS")
   }
 
-  // Calcular el monto total de los servicios
-  const totalAmount = invoice.records.reduce((sum, record) => {
-    return sum + (record.totalValue || 0)
-  }, 0)
-
-  const xmlObject = {
-    "ns1:LogisticARInvoices": {
-      _attributes: {
-        "xmlns:ns1": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00"
-      },
-      "CustomerInvoice": {
-        // Protocol Section
-        "Protocol": {
-          "SourceSystem": "Trucking",
-          "TechnicalContact": "almeida.kant@ptyrmgmt.com;renee.taylor@ptyrmgmt.com"
-        },
-        // Header Section
-        "Header": {
-          "CompanyCode": "9326",
-          "DocumentType": "XL",
-          "DocumentDate": formatDateForXML(invoice.date),
-          "PostingDate": invoice.sapDate ? formatDateForXML(invoice.sapDate) : formatDateForXML(invoice.date),
-          "TransactionCurrency": "USD",
-          "TranslationDate": formatDateForXML(invoice.date),
-          "Reference": invoice.invoiceNumber,
-          "EntityDocNbr": invoice.sapDocumentNumber || invoice.invoiceNumber
-        },
-        // AdditionalTexts Section
-        "AdditionalTexts": {
-          "LongHeaderTextLangKey": "EN"
-        },
-        // CustomerOpenItem Section
-        "CustomerOpenItem": {
-          "CustomerNbr": invoice.client,
-          "AmntTransactCur": totalAmount.toFixed(2),
-          "BaselineDate": formatDateForXML(invoice.date),
-          "DueDate": calculateDueDate(invoice.date)
-        },
-        // OtherItems Section - usar la misma lógica de agrupación que el PDF
-        "OtherItems": {
-          "OtherItem": (function() {
-            // Agrupar registros usando la misma lógica que el PDF de PTYSS
-            const groupedRecords = new Map<string, { records: any[], price: number, count: number }>()
+  // Función auxiliar para generar todos los OtherItems
+  const generateOtherItems = () => {
+    // Agrupar registros usando la misma lógica que el PDF de PTYSS
+    const groupedRecords = new Map<string, { records: any[], price: number, count: number }>()
             
             console.log("🔍 PTYSS XML - Total records to process:", invoice.records.length)
             console.log("🔍 PTYSS XML - Records:", invoice.records)
@@ -829,7 +797,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
             })
             
             // Convertir grupos a OtherItems (cada grupo = una línea del PDF)
-            return Array.from(groupedRecords.entries()).map(([groupKey, group]) => {
+            const recordItems = Array.from(groupedRecords.entries()).map(([groupKey, group]) => {
               const parts = groupKey.split('|')
               const totalPrice = group.price * group.count
               
@@ -908,7 +876,95 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                 "SubContracting": "YES"
               }
             })
-          })()
+            
+            // Agregar servicios locales fijos como otheritem adicionales
+            const localFixedServiceItems: any[] = []
+            const localFixedServiceCodes = ['CLG097', 'TRK163', 'TRK179', 'SLR168', 'TRK196', 'PESAJE']
+            
+            if (invoice.additionalServices && invoice.additionalServices.length > 0) {
+              console.log("🔍 PTYSS XML - Processing additional services:", invoice.additionalServices)
+              
+              invoice.additionalServices.forEach((service) => {
+                // Solo procesar servicios locales fijos
+                if (localFixedServiceCodes.includes(service.serviceId)) {
+                  // Mapear PESAJE a TRK196
+                  const serviceCode = service.serviceId === 'PESAJE' ? 'TRK196' : service.serviceId
+                  
+                  console.log(`🔍 PTYSS XML - Adding local fixed service: ${serviceCode} - Amount: ${service.amount}`)
+                  
+                  localFixedServiceItems.push({
+                    "IncomeRebateCode": "I",
+                    "AmntTransacCur": (-service.amount).toFixed(3),
+                    "BaseUnitMeasure": "EA", // Each (unidad) para servicios fijos
+                    "Qty": "1.00",
+                    "ProfitCenter": "PAPANB110",
+                    "ReferencePeriod": formatReferencePeriod(invoice.date),
+                    "Service": serviceCode,
+                    "Activity": serviceCode.startsWith('CLG') ? "CLG" : serviceCode.startsWith('SLR') ? "SLR" : "TRK",
+                    "Pillar": "TRSP",
+                    "BUCountry": "PA",
+                    "ServiceCountry": "PA",
+                    "ClientType": "MEDLOG",
+                    "BusinessType": "I" // Siempre IMPORT para PTYSS
+                  })
+                }
+              })
+            }
+            
+            console.log(`🔍 PTYSS XML - Total record items: ${recordItems.length}`)
+            console.log(`🔍 PTYSS XML - Total local fixed service items: ${localFixedServiceItems.length}`)
+            
+    // Combinar registros y servicios locales fijos
+    return [...recordItems, ...localFixedServiceItems]
+  }
+  
+  // Generar los OtherItems primero
+  const otherItems = generateOtherItems()
+  
+  // Calcular el total sumando los valores absolutos de todos los AmntTransacCur
+  const totalAmount = otherItems.reduce((sum, item) => {
+    const amount = Math.abs(parseFloat(item.AmntTransacCur || '0'))
+    return sum + amount
+  }, 0)
+  
+  console.log("🔍 PTYSS XML - Calculated total from OtherItems:", totalAmount)
+  
+  const xmlObject = {
+    "ns1:LogisticARInvoices": {
+      _attributes: {
+        "xmlns:ns1": "urn:medlog.com:MSC_GVA_FS:CustomerInvoice:01.00"
+      },
+      "CustomerInvoice": {
+        // Protocol Section
+        "Protocol": {
+          "SourceSystem": "Trucking",
+          "TechnicalContact": "almeida.kant@ptyrmgmt.com;renee.taylor@ptyrmgmt.com"
+        },
+        // Header Section
+        "Header": {
+          "CompanyCode": "9326",
+          "DocumentType": "XL",
+          "DocumentDate": formatDateForXML(invoice.date),
+          "PostingDate": invoice.sapDate ? formatDateForXML(invoice.sapDate) : formatDateForXML(invoice.date),
+          "TransactionCurrency": "USD",
+          "TranslationDate": formatDateForXML(invoice.date),
+          "Reference": invoice.invoiceNumber,
+          "EntityDocNbr": invoice.sapDocumentNumber || invoice.invoiceNumber
+        },
+        // AdditionalTexts Section
+        "AdditionalTexts": {
+          "LongHeaderTextLangKey": "EN"
+        },
+        // CustomerOpenItem Section - usar el total calculado de los OtherItems
+        "CustomerOpenItem": {
+          "CustomerNbr": invoice.client,
+          "AmntTransactCur": totalAmount.toFixed(2),
+          "BaselineDate": formatDateForXML(invoice.date),
+          "DueDate": calculateDueDate(invoice.date)
+        },
+        // OtherItems Section
+        "OtherItems": {
+          "OtherItem": otherItems
         }
       }
     }

@@ -233,7 +233,9 @@ export function PTYSSFacturacionModal({
             ...record.data
           },
           totalValue: record.totalValue || 0
-        }))
+        })),
+        // Incluir servicios adicionales locales fijos
+        additionalServices: invoice.details?.additionalServices || []
       }
 
       console.log("🔍 generateXMLForInvoice - Generando XML con datos:", invoiceForXml)
