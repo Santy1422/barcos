@@ -1078,7 +1078,7 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
             
             // Mapeo de campos a service codes con sus configuraciones
             const serviceCodeConfig: Record<string, { code: string; activity: string; pillar: string }> = {
-              deliveryExpenses: { code: 'TRK357', activity: 'TRK', pillar: 'TRSP' },
+              deliveryExpenses: { code: 'TRK237', activity: 'TRK', pillar: 'TRSP' },
               portEntryFee: { code: 'CLG096', activity: 'SHP', pillar: 'TRSP' },
               customsFee: { code: 'CHB123', activity: 'SHP', pillar: 'TRSP' },
               authorities: { code: 'TRK130', activity: 'SHP', pillar: 'TRSP' }, // Mantener configuración original
@@ -1109,15 +1109,12 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
                   
                   const serviceName = serviceNames[fieldName] || fieldName
                   
-                  // Para el service code SHP243 (campo "total"), usar ProfitCenter específico
-                  const isTotalService = config.code === 'SHP243'
-                  
                   otherItems.push({
                     "IncomeRebateCode": "I",
                     "AmntTransacCur": (-value).toFixed(3),
                     "BaseUnitMeasure": "EA", // Each - unidad por cada servicio
                     "Qty": "1",
-                    "ProfitCenter": isTotalService ? "PAPANC441" : "PAPANB110",
+                    "ProfitCenter": "PAPANC441", // Todos los servicios usan PAPANC441
                     "ReferencePeriod": formatReferencePeriod(invoice.date),
                     "Service": config.code,
                     "Activity": config.activity,
