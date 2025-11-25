@@ -598,15 +598,19 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 if (record.containerSize && record.containerSize.trim()) {
                   otherItem.CtrSize = record.containerSize
                 }
-                if (record.ctrCategory && record.ctrCategory.trim()) {
-                  otherItem.CtrCategory = record.ctrCategory
-                }
+                // CtrCategory siempre es "A" para PTG facturas
+                // Mantenemos la lógica dinámica comentada por si se necesita volver a valores dinámicos
+                otherItem.CtrCategory = "A"
+                // Lógica dinámica comentada:
+                // if (record.ctrCategory && record.ctrCategory.trim()) {
+                //   otherItem.CtrCategory = record.ctrCategory
+                // }
                 
                 // Si no hay campos de contenedor especificados, usar valores por defecto para trasiego
                 if (!record.containerType && !record.containerSize && !record.ctrCategory) {
                   otherItem.CtrType = "DV"
                   otherItem.CtrSize = "40"
-                  otherItem.CtrCategory = "D"
+                  otherItem.CtrCategory = "A" // Cambiado de "D" a "A"
                   otherItem.CtrISOcode = "42G1" // Valor por defecto para 40' DV
                 }
                 
@@ -677,9 +681,13 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 if (taxItem.containerSize && taxItem.containerSize.trim()) {
                   otherItem.CtrSize = taxItem.containerSize
                 }
-                if (taxItem.ctrCategory && taxItem.ctrCategory.trim()) {
-                  otherItem.CtrCategory = taxItem.ctrCategory
-                }
+                // CtrCategory siempre es "A" para PTG facturas (impuestos)
+                // Mantenemos la lógica dinámica comentada por si se necesita volver a valores dinámicos
+                otherItem.CtrCategory = "A"
+                // Lógica dinámica comentada:
+                // if (taxItem.ctrCategory && taxItem.ctrCategory.trim()) {
+                //   otherItem.CtrCategory = taxItem.ctrCategory
+                // }
                 
                 console.log("Generated grouped tax XML item:", otherItem)
                 return otherItem
@@ -814,38 +822,40 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
               // Extraer información del contenedor
               let containerSize = "40"
               let containerType = "DV"
-              let ctrCategory = "D"
+              // CtrCategory siempre es "A" para PTYSS (trasiegos y locales)
+              // Mantenemos la lógica dinámica comentada por si se necesita volver a valores dinámicos
+              let ctrCategory = "A"
               
               if (parts[0] === 'TRASIEGO') {
                 containerSize = parts[4] || "40" // size
                 containerType = parts[5] || "DV" // type
-                // Determinar categoría basada en el tipo
-                if (containerType.includes('HR') || containerType.includes('HC')) {
-                  ctrCategory = 'H'
-                } else if (containerType.includes('RF')) {
-                  ctrCategory = 'R'
-                } else if (containerType.includes('CA')) {
-                  ctrCategory = 'C'
-                } else if (containerType.includes('DV')) {
-                  ctrCategory = 'D'
-                } else if (containerType.includes('FL')) {
-                  ctrCategory = 'N'
-                }
+                // Lógica dinámica comentada - por ahora CtrCategory siempre es "A"
+                // if (containerType.includes('HR') || containerType.includes('HC')) {
+                //   ctrCategory = 'H'
+                // } else if (containerType.includes('RF')) {
+                //   ctrCategory = 'R'
+                // } else if (containerType.includes('CA')) {
+                //   ctrCategory = 'C'
+                // } else if (containerType.includes('DV')) {
+                //   ctrCategory = 'D'
+                // } else if (containerType.includes('FL')) {
+                //   ctrCategory = 'N'
+                // }
               } else {
                 containerSize = parts[2] || "40" // containerSize
                 containerType = parts[3] || "DV" // containerType
-                // Determinar categoría basada en el tipo
-                if (containerType.includes('HR') || containerType.includes('HC')) {
-                  ctrCategory = 'H'
-                } else if (containerType.includes('RF')) {
-                  ctrCategory = 'R'
-                } else if (containerType.includes('CA')) {
-                  ctrCategory = 'C'
-                } else if (containerType.includes('DV')) {
-                  ctrCategory = 'D'
-                } else if (containerType.includes('FL')) {
-                  ctrCategory = 'N'
-                }
+                // Lógica dinámica comentada - por ahora CtrCategory siempre es "A"
+                // if (containerType.includes('HR') || containerType.includes('HC')) {
+                //   ctrCategory = 'H'
+                // } else if (containerType.includes('RF')) {
+                //   ctrCategory = 'R'
+                // } else if (containerType.includes('CA')) {
+                //   ctrCategory = 'C'
+                // } else if (containerType.includes('DV')) {
+                //   ctrCategory = 'D'
+                // } else if (containerType.includes('FL')) {
+                //   ctrCategory = 'N'
+                // }
               }
               
               // Calcular CtrISOcode basándose en CtrType y CtrSize
