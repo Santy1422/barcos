@@ -780,26 +780,40 @@ export function TruckingGastosAutoridadesPage() {
     setIsCreatingPrefactura(true)
     
     try {
-      // Usar PTG como cliente emisor (similar a trucking-prefactura)
-      const issuer = getClient('PTG')
-      if (!issuer) {
-        toast({ title: "Error", description: "No se encontró el cliente PTG", variant: "destructive" })
+      // Obtener el cliente del primer registro seleccionado
+      const firstRecord = selectedRecords[0]
+      const customerName = firstRecord?.customer || 'Cliente'
+      
+      // Intentar obtener cliente por clientId primero, luego por nombre como fallback
+      let customer = null
+      if (firstRecord?.clientId) {
+        // Buscar cliente por ID en la lista de clientes
+        customer = clients.find((c: any) => (c._id || c.id) === firstRecord.clientId)
+      }
+      
+      // Si no se encontró por ID, buscar por nombre
+      if (!customer) {
+        customer = getClient(customerName)
+      }
+      
+      if (!customer) {
+        toast({ title: "Error", description: `No se encontró el cliente "${customerName}" asociado a los registros seleccionados`, variant: "destructive" })
         return
       }
       
-      const displayName = issuer.type === 'natural' ? issuer.fullName : issuer.companyName
-      const displayRuc = issuer.type === 'natural' ? issuer.documentNumber : issuer.ruc
-      const address = issuer.type === 'natural'
-        ? (typeof issuer.address === 'string' ? issuer.address : `${issuer.address?.district || ''}, ${issuer.address?.province || ''}`)
-        : (typeof (issuer as any).fiscalAddress === 'string' ? (issuer as any).fiscalAddress : `${(issuer as any).fiscalAddress?.district || ''}, ${(issuer as any).fiscalAddress?.province || ''}`)
+      const displayName = customer.type === 'natural' ? customer.fullName : customer.companyName
+      const displayRuc = customer.type === 'natural' ? customer.documentNumber : customer.ruc
+      const address = customer.type === 'natural'
+        ? (typeof customer.address === 'string' ? customer.address : `${customer.address?.district || ''}, ${customer.address?.province || ''}`)
+        : (typeof (customer as any).fiscalAddress === 'string' ? (customer as any).fiscalAddress : `${(customer as any).fiscalAddress?.district || ''}, ${(customer as any).fiscalAddress?.province || ''}`)
 
       const newPrefactura: PersistedInvoiceRecord = {
         id: `AUTH-PRE-${Date.now().toString().slice(-6)}`,
         module: 'trucking',
         invoiceNumber: documentData.number,
-        clientName: displayName || 'PTG',
+        clientName: displayName || customerName,
         clientRuc: displayRuc || '',
-        clientSapNumber: issuer.sapCode || '',
+        clientSapNumber: customer.sapCode || '',
         issueDate: new Date().toISOString().split('T')[0],
         dueDate: new Date().toISOString().split('T')[0],
         currency: 'USD',
@@ -812,7 +826,7 @@ export function TruckingGastosAutoridadesPage() {
         notes: documentData.notes,
         details: {
           clientAddress: address,
-          clientPhone: issuer.phone || '',
+          clientPhone: customer.phone || '',
           documentType: 'gastos-autoridades',
           selectedBLNumbers: selectedBLNumbers,
         },
