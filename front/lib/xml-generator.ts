@@ -650,7 +650,7 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 console.log("Processing grouped tax item:", taxItem)
                 
                 const otherItem: any = {
-                  "IncomeRebateCode": taxItem.IncomeRebateCode || "N",
+                  "IncomeRebateCode": taxItem.IncomeRebateCode || "I",
                   "AmntTransacCur": (-group.totalPrice).toFixed(3),
                   "BaseUnitMeasure": "EA", // Unidad de medida para impuestos y servicios
                   "Qty": group.count.toString(),
