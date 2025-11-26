@@ -1097,11 +1097,11 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
             // Mapeo de campos a service codes con sus configuraciones
             const serviceCodeConfig: Record<string, { code: string; activity: string; pillar: string }> = {
               deliveryExpenses: { code: 'TRK237', activity: 'TRK', pillar: 'TRSP' },
-              portEntryFee: { code: 'CLG096', activity: 'SHP', pillar: 'TRSP' },
-              customsFee: { code: 'CHB123', activity: 'SHP', pillar: 'TRSP' },
-              authorities: { code: 'TRK130', activity: 'SHP', pillar: 'TRSP' }, // Mantener configuración original
-              otherExpenses: { code: 'CHB122', activity: 'SHP', pillar: 'TRSP' },
-              overTime: { code: 'WRH156', activity: 'SHP', pillar: 'TRSP' },
+              portEntryFee: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' },
+              customsFee: { code: 'CHB123', activity: 'CHB', pillar: 'LOGS' },
+              authorities: { code: 'TRK130', activity: 'TRK', pillar: 'TRSP' },
+              otherExpenses: { code: 'CHB122', activity: 'CHB', pillar: 'LOGS' },
+              overTime: { code: 'WRH156', activity: 'WRH', pillar: 'INFR' },
               total: { code: 'SHP243', activity: 'SHP', pillar: 'NOPS' }
             }
             
