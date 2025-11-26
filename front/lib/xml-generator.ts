@@ -901,6 +901,14 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                   
                   console.log(`🔍 PTYSS XML - Adding local fixed service: ${serviceCode} - Amount: ${service.amount}`)
                   
+                  // Determinar el valor de Pillar según el código de servicio para registros locales
+                  let pillarValue = "TRSP" // Valor por defecto
+                  if (serviceCode === 'CLG097') {
+                    pillarValue = "LOGS"
+                  } else if (serviceCode === 'SLR168') {
+                    pillarValue = "NOPS"
+                  }
+                  
                   localFixedServiceItems.push({
                     "IncomeRebateCode": "I",
                     "AmntTransacCur": (-service.amount).toFixed(3),
@@ -910,11 +918,12 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                     "ReferencePeriod": formatReferencePeriod(invoice.date),
                     "Service": serviceCode,
                     "Activity": serviceCode.startsWith('CLG') ? "CLG" : serviceCode.startsWith('SLR') ? "SLR" : "TRK",
-                    "Pillar": "TRSP",
+                    "Pillar": pillarValue,
                     "BUCountry": "PA",
                     "ServiceCountry": "PA",
                     "ClientType": "MEDLOG",
-                    "BusinessType": "I" // Siempre IMPORT para PTYSS
+                    "BusinessType": "I", // Siempre IMPORT para PTYSS
+                    "FullEmpty": "FULL"
                   })
                 }
               })
