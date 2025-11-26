@@ -725,11 +725,11 @@ export function ShipChandlerFacturacionModal({
                 id="invoice-date"
                 type="date"
                 value={invoiceDate}
-                readOnly
-                className="font-mono bg-gray-50 cursor-not-allowed"
+                onChange={(e) => setInvoiceDate(e.target.value)}
+                className="font-mono"
               />
               <p className="text-xs text-muted-foreground">
-                Fecha obtenida automáticamente del registro (Date)
+                Fecha obtenida automáticamente del registro (Date). Puede editarla si es necesario.
               </p>
             </div>
 
