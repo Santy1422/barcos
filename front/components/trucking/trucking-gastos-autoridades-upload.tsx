@@ -9,7 +9,7 @@ import { createAutoridadesRecords, selectCreatingRecords } from "@/lib/features/
 import { selectAllClients, fetchClients, createClientAsync, updateClientAsync, type Client } from "@/lib/features/clients/clientsSlice";
 import { ClientModal } from "@/components/clients-management";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ClientEditModal } from "./client-edit-modal";
+import { selectCurrentUser } from "@/lib/features/auth/authSlice";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 import * as XLSX from "xlsx";
@@ -52,7 +52,7 @@ export function TruckingGastosAutoridadesUpload() {
   const [missingClients, setMissingClients] = useState<Array<{ name: string; records: any[] }>>([]);
   const [showClientModal, setShowClientModal] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [clientToEdit, setClientToEdit] = useState<{ name: string; email: string; phone: string; address: string; sapCode: string; ruc: string } | null>(null);
+  const [clientToEdit, setClientToEdit] = useState<{ name: string; records: any[] } | null>(null);
   const [currentMissingIndex, setCurrentMissingIndex] = useState<number>(0);
   const [clientCompleteness, setClientCompleteness] = useState<Map<string, { isComplete: boolean; missingFields: string[] }>>(new Map());
   const [hasPendingClients, setHasPendingClients] = useState(false);
@@ -60,6 +60,11 @@ export function TruckingGastosAutoridadesUpload() {
   // Redux state para clientes
   const clients = useAppSelector(selectAllClients);
   const clientsLoading = useAppSelector((state) => state.clients.loading);
+  const currentUser = useAppSelector(selectCurrentUser);
+  
+  // Verificar permisos para gestionar clientes
+  const userRoles = currentUser?.roles || (currentUser?.role ? [currentUser.role] : []);
+  const canManageClients = userRoles.includes('administrador') || userRoles.includes('clientes');
 
   // Cargar clientes al montar el componente
   useEffect(() => {
@@ -95,6 +100,43 @@ export function TruckingGastosAutoridadesUpload() {
     }
   }, [clients])
 
+  // Función para buscar cliente por nombre en un módulo específico (verifica asignación al módulo)
+  const findClientByNameInModule = useCallback((name: string, module: string): Client | null => {
+    console.log("=== DEBUG: findClientByNameInModule ===");
+    console.log("buscando cliente con nombre:", name, "en módulo:", module);
+    console.log("total clientes disponibles:", clients.length);
+    try {
+      const found = clients.find((client: any) => {
+        if (!name) return false
+        
+        // Verificar que el cliente esté asignado al módulo especificado
+        const clientModules = client.module || []
+        if (!clientModules.includes(module)) {
+          console.log(`Cliente "${client.name || client.fullName}" no está asignado al módulo "${module}"`);
+          return false
+        }
+        
+        if (client.type === "juridico") {
+          // Para clientes jurídicos, buscar por nombre corto (name) en lugar de companyName
+          const match = client.name?.toLowerCase() === name.toLowerCase()
+          console.log(`Comparando "${client.name}" con "${name}": ${match}`);
+          return match
+        }
+        if (client.type === "natural") {
+          const match = client.fullName?.toLowerCase() === name.toLowerCase()
+          console.log(`Comparando "${client.fullName}" con "${name}": ${match}`);
+          return match
+        }
+        return false
+      }) || null
+      console.log("Cliente encontrado en módulo:", found);
+      return found
+    } catch (error) {
+      console.error("Error en findClientByNameInModule:", error);
+      return null
+    }
+  }, [clients])
+
   const checkClientCompleteness = useCallback((client: any): { isComplete: boolean; missingFields: string[] } => {
     console.log("=== DEBUG: checkClientCompleteness ===");
     console.log("cliente a verificar:", client);
@@ -124,7 +166,7 @@ export function TruckingGastosAutoridadesUpload() {
     console.log("=== DEBUG: updateClientCompleteness ===");
     console.log("clientName:", clientName);
     try {
-      const updated = findClientByName(clientName)
+      const updated = findClientByNameInModule(clientName, 'trucking')
       console.log("Cliente encontrado:", updated);
       if (updated) {
         const completeness = checkClientCompleteness(updated)
@@ -132,14 +174,14 @@ export function TruckingGastosAutoridadesUpload() {
         setClientCompleteness(prev => new Map(prev).set(clientName, completeness))
         console.log(`Cliente ${clientName} actualizado:`, completeness)
       } else {
-        // Si el cliente no se encuentra, marcarlo como incompleto
-        setClientCompleteness(prev => new Map(prev).set(clientName, { isComplete: false, missingFields: ["Cliente no encontrado"] }))
-        console.log(`Cliente ${clientName} no encontrado, marcado como incompleto`)
+        // Si el cliente no se encuentra en el módulo trucking, marcarlo como incompleto
+        setClientCompleteness(prev => new Map(prev).set(clientName, { isComplete: false, missingFields: ["No asignado al módulo trucking"] }))
+        console.log(`Cliente ${clientName} no encontrado en módulo trucking, marcado como incompleto`)
       }
     } catch (error) {
       console.error("Error en updateClientCompleteness:", error);
     }
-  }, [findClientByName, checkClientCompleteness])
+  }, [findClientByNameInModule, checkClientCompleteness])
 
   const areAllClientsComplete = useCallback((): boolean => {
     if (clientCompleteness.size === 0) return true
@@ -150,31 +192,34 @@ export function TruckingGastosAutoridadesUpload() {
   const handleClientClick = (clientName: string) => {
     if (!clientName) return
     
+    if (!canManageClients) {
+      toast({
+        title: "Sin permiso",
+        description: "No tienes permiso para gestionar clientes.",
+        variant: "destructive"
+      })
+      return
+    }
+    
     const existing = findClientByName(clientName)
     if (existing) {
       // Cliente existe, abrir modal de edición
       setEditingClient(existing)
-      setClientToEdit({
-        name: existing.name || existing.companyName || clientName,
-        email: existing.email || "",
-        phone: existing.phone || "",
-        address: existing.address || "",
-        sapCode: existing.sapCode || "",
-        ruc: existing.ruc || ""
-      })
     } else {
       // Cliente no existe, crear uno nuevo
-      setEditingClient(null)
-      setClientToEdit({
-        name: clientName,
+      setEditingClient({
+        type: "juridico",
+        companyName: clientName, // Usar el nombre del Excel como companyName por defecto
+        name: clientName, // Usar el nombre del Excel como name (nombre corto)
+        ruc: "",
+        contactName: "",
         email: "",
         phone: "",
         address: "",
         sapCode: "",
-        ruc: ""
-      })
+        isActive: true,
+      } as any)
     }
-    setShowClientModal(true)
   }
 
   // Only fetch clients once on mount (avoid excessive refetching)
@@ -188,24 +233,39 @@ export function TruckingGastosAutoridadesUpload() {
       const timeoutId = setTimeout(() => {
         const newMap = new Map<string, { isComplete: boolean; missingFields: string[] }>()
         for (const [clientName] of clientCompleteness) {
-          const c = findClientByName(clientName)
-          if (c) newMap.set(clientName, checkClientCompleteness(c))
+          const c = findClientByNameInModule(clientName, 'trucking')
+          if (c) {
+            newMap.set(clientName, checkClientCompleteness(c))
+          } else {
+            newMap.set(clientName, { isComplete: false, missingFields: ["No asignado al módulo trucking"] })
+          }
         }
         setClientCompleteness(newMap)
       }, 300) // Debounce 300ms
       
       return () => clearTimeout(timeoutId)
     }
-  }, [clients, clientCompleteness.size, findClientByName, checkClientCompleteness])
+  }, [clients, clientCompleteness.size, findClientByNameInModule, checkClientCompleteness])
 
   const processMissingClients = async (excelData: any[]): Promise<{ data: any[], hasMissingClients: boolean }> => {
     const grouped = new Map<string, any[]>()
     const newCompleteness = new Map<string, { isComplete: boolean; missingFields: string[] }>()
     
+    // Función helper para obtener el valor de customer de manera case-insensitive
+    const getCustomerValue = (record: any): string | null => {
+      // Buscar la columna customer de manera case-insensitive
+      const customerKey = Object.keys(record).find(
+        key => key.toLowerCase() === 'customer' || key.toLowerCase() === 'cliente'
+      )
+      if (!customerKey) return null
+      const value = record[customerKey]
+      return value && typeof value === 'string' ? value.trim() : null
+    }
+    
     // Agrupar registros por cliente (columna 'customer') solo si tienen customer válido
     excelData.forEach((record) => {
-      const clientName = record.customer?.trim()
-      if (clientName && clientName !== 'N/A') {
+      const clientName = getCustomerValue(record)
+      if (clientName && clientName !== 'N/A' && clientName !== '') {
         if (!grouped.has(clientName)) grouped.set(clientName, [])
         grouped.get(clientName)!.push(record)
       }
@@ -213,18 +273,39 @@ export function TruckingGastosAutoridadesUpload() {
     
     const missingList: Array<{ name: string; records: any[] }> = []
     
+    console.log(`=== PROCESANDO ${grouped.size} CLIENTES ÚNICOS DEL EXCEL ===`)
+    
     // Verificar cada cliente encontrado en el Excel
     for (const [name, recs] of grouped) {
-      const existing = findClientByName(name)
-      if (!existing) {
-        // Cliente no existe en la base de datos
+      console.log(`\n=== Verificando cliente: "${name}" (${recs.length} registros) ===`)
+      
+      // Primero verificar si el cliente existe en general
+      const existingClient = findClientByName(name)
+      console.log(`Cliente encontrado en BD (sin módulo):`, existingClient ? 'Sí' : 'No')
+      
+      if (existingClient) {
+        const clientModules = (existingClient as any).module || []
+        console.log(`Módulos asignados al cliente:`, clientModules)
+        console.log(`¿Está asignado a trucking?:`, clientModules.includes('trucking'))
+      }
+      
+      // Buscar cliente en el módulo trucking específicamente
+      const existingInModule = findClientByNameInModule(name, 'trucking')
+      console.log(`Cliente encontrado en módulo trucking:`, existingInModule ? 'Sí' : 'No')
+      
+      if (!existingInModule) {
+        // Cliente no existe o no está asignado al módulo trucking
+        console.log(`⚠️ Cliente "${name}" NO está asignado al módulo trucking - agregando a lista de faltantes`)
         missingList.push({ name, records: recs })
-        newCompleteness.set(name, { isComplete: false, missingFields: ["Todos los campos"] })
+        newCompleteness.set(name, { isComplete: false, missingFields: ["No asignado al módulo trucking"] })
       } else {
-        // Cliente existe, verificar si está completo
-        newCompleteness.set(name, checkClientCompleteness(existing))
+        // Cliente existe en el módulo trucking, verificar si está completo
+        console.log(`✅ Cliente "${name}" está asignado al módulo trucking`)
+        newCompleteness.set(name, checkClientCompleteness(existingInModule))
       }
     }
+    
+    console.log(`\n=== RESUMEN: ${missingList.length} clientes faltantes de ${grouped.size} totales ===`)
     
     setClientCompleteness(newCompleteness)
     
@@ -236,18 +317,11 @@ export function TruckingGastosAutoridadesUpload() {
       setHasPendingClients(true) // Marcar que hay clientes pendientes
       // Configurar el primer cliente faltante para edición
       const firstMissingClient = missingList[0]
-      setClientToEdit({
-        name: firstMissingClient.name,
-        email: "",
-        phone: "",
-        address: "",
-        sapCode: "",
-        ruc: ""
-      })
+      setClientToEdit(firstMissingClient)
       const total = missingList.reduce((sum, c) => sum + c.records.length, 0)
       toast({ 
         title: "Clientes faltantes detectados", 
-        description: `Se encontraron ${missingList.length} clientes faltantes para ${total} registros. Debes completar la información antes de continuar.` 
+        description: `Se encontraron ${missingList.length} clientes que no están asignados al módulo trucking para ${total} registros. Debes asignar los clientes al módulo antes de continuar.` 
       })
       
       return { data: excelData, hasMissingClients: true }
@@ -334,15 +408,35 @@ export function TruckingGastosAutoridadesUpload() {
     }
   };
 
-  const handleClientSaved = useCallback(() => {
-    // Refrescar la verificación de clientes después de guardar
-    console.log("=== DEBUG: handleClientSaved llamado ===");
-    console.log("clientToEdit:", clientToEdit);
-    if (clientToEdit) {
-      console.log("Actualizando completeness para:", clientToEdit.name);
-      updateClientCompleteness(clientToEdit.name);
+  const handleClientSaved = useCallback((client: Client) => {
+    // Recalcular completitud después de guardar
+    const clientName = client.type === 'juridico' ? (client as any).name : (client as any).fullName
+    updateClientCompleteness(clientName)
+    setEditingClient(null)
+    
+    // Refrescar la lista de clientes
+    dispatch(fetchClients())
+    
+    // Si veníamos del flujo de faltantes, avanzar al siguiente automáticamente
+    if (missingClients.length > 0) {
+      const currentIndex = missingClients.findIndex(mc => mc.name.toLowerCase() === clientName.toLowerCase())
+      const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % missingClients.length : 0
+      if (missingClients.length > 1) {
+        setClientToEdit(missingClients[nextIndex])
+        setShowClientModal(true)
+      } else {
+        // Si era el último, cerrar el modal
+        setShowClientModal(false)
+        setMissingClients([])
+        setHasPendingClients(false)
+      }
     }
-  }, [clientToEdit, updateClientCompleteness]);
+    
+    toast({ 
+      title: "Cliente actualizado", 
+      description: `Los datos del cliente "${clientName}" han sido actualizados correctamente.` 
+    })
+  }, [missingClients, updateClientCompleteness, dispatch]);
 
   const handleUpload = async () => {
     try {
@@ -467,11 +561,26 @@ export function TruckingGastosAutoridadesUpload() {
        // Enriquecer datos con clientId antes de enviar
        const enrichedData = processedData.map(record => {
          const clientName = record.customer?.trim()
-         const client = clientName && clientName !== 'N/A' ? findClientByName(clientName) : null
          
+         // Solo buscar cliente si hay un nombre válido
+         if (clientName && clientName !== 'N/A') {
+           // Buscar cliente en el módulo trucking específicamente
+           const client = findClientByNameInModule(clientName, 'trucking')
+           
+           if (!client) {
+             throw new Error(`Cliente "${clientName}" no encontrado o no está asignado al módulo trucking. Debes asignar el cliente al módulo antes de guardar los registros.`)
+           }
+           
+           return {
+             ...record,
+             clientId: client._id || client.id, // Agregar clientId para referencias
+           }
+         }
+         
+         // Si no hay cliente, permitir continuar pero sin clientId
          return {
            ...record,
-           clientId: client?._id || client?.id || null, // Agregar clientId para referencias
+           clientId: null,
          }
        })
        
@@ -840,20 +949,116 @@ export function TruckingGastosAutoridadesUpload() {
       </CardContent>
     </Card>
 
-    {/* Modal optimizado para crear/editar cliente */}
-    <ClientEditModal
-      open={showClientModal}
-      onOpenChange={setShowClientModal}
-      missingClients={missingClients}
-      currentMissingIndex={currentMissingIndex}
-      setCurrentMissingIndex={setCurrentMissingIndex}
+    {/* Modal de Clientes (crear/editar) - usar módulo trucking */}
+    <ClientModal
+      isOpen={!!editingClient}
+      onClose={() => setEditingClient(null)}
       editingClient={editingClient}
-      setEditingClient={setEditingClient}
-      clientToEdit={clientToEdit}
-      setClientToEdit={setClientToEdit}
-      onClientSaved={handleClientSaved}
-      setHasPendingClients={setHasPendingClients}
+      module="trucking"
+      onClientCreated={handleClientSaved}
     />
+
+    {/* Modal para clientes faltantes del Excel */}
+    {showClientModal && clientToEdit && (
+      <Dialog open={showClientModal} onOpenChange={setShowClientModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Cliente Faltante ({missingClients.indexOf(clientToEdit) + 1}/{missingClients.length}): {clientToEdit.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-center space-x-2">
+                <AlertCircle className="h-5 w-5 text-yellow-600" />
+                <h4 className="font-medium text-yellow-800">Cliente no asignado al módulo trucking</h4>
+              </div>
+              <p className="text-sm text-yellow-700 mt-2">
+                El cliente "{clientToEdit.name}" no está asignado al módulo trucking. Se encontraron {clientToEdit.records.length} registros para este cliente en el Excel.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <h4 className="font-medium">Registros asociados:</h4>
+              <div className="max-h-40 overflow-y-auto border rounded-lg p-2">
+                {clientToEdit.records.slice(0, 5).map((record: any, index: number) => (
+                  <div key={index} className="text-sm text-muted-foreground py-1">
+                    • {record.order || 'N/A'} - {record.container || 'N/A'} ({record.size || 'N/A'}' {record.type || 'N/A'})
+                  </div>
+                ))}
+                {clientToEdit.records.length > 5 && (
+                  <div className="text-sm text-muted-foreground py-1">
+                    ... y {clientToEdit.records.length - 5} registros más
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-between items-center space-x-2">
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const currentIndex = missingClients.indexOf(clientToEdit)
+                    const prevIndex = (currentIndex - 1 + missingClients.length) % missingClients.length
+                    setClientToEdit(missingClients[prevIndex])
+                  }}
+                  disabled={missingClients.length <= 1}
+                >
+                  ← Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const currentIndex = missingClients.indexOf(clientToEdit)
+                    const nextIndex = (currentIndex + 1) % missingClients.length
+                    setClientToEdit(missingClients[nextIndex])
+                  }}
+                  disabled={missingClients.length <= 1}
+                >
+                  Siguiente →
+                </Button>
+              </div>
+              <Button
+                onClick={() => {
+                  if (!canManageClients) {
+                    toast({
+                      title: "Sin permiso",
+                      description: "No tienes permiso para gestionar clientes.",
+                      variant: "destructive"
+                    })
+                    return
+                  }
+                  
+                  // Buscar si el cliente existe
+                  const existing = findClientByName(clientToEdit.name)
+                  if (existing) {
+                    // Cliente existe, abrir modal de edición para asignarlo al módulo
+                    setEditingClient(existing)
+                  } else {
+                    // Cliente no existe, crear uno nuevo
+                    setEditingClient({
+                      type: "juridico",
+                      companyName: clientToEdit.name, // Usar el nombre del Excel como companyName por defecto
+                      name: clientToEdit.name, // Usar el nombre del Excel como name (nombre corto)
+                      ruc: "",
+                      contactName: "",
+                      email: "",
+                      phone: "",
+                      address: "",
+                      sapCode: "", // Vacío para que el usuario lo ingrese y busque
+                      isActive: true,
+                    } as any)
+                  }
+                  // cerrar modal para abrir editor
+                  setShowClientModal(false)
+                }}
+              >
+                Editar Datos del Cliente
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
     </div>
   );
 }
