@@ -313,14 +313,78 @@ export function PTYSSRecords() {
     return "Período personalizado"
   }
 
-  // Función para determinar el tipo de una factura basándose en el cliente
-  const getInvoiceType = (invoice: any): "local" | "trasiego" => {
-    // Si el cliente es PTG, es trasiego
-    if (invoice.clientName === "PTG") {
+  // Función para determinar el tipo de registro basándose en los datos del registro
+  const getRecordType = (record: any): "local" | "trasiego" => {
+    const data = record.data as Record<string, any>
+    
+    // Si el registro tiene el campo recordType, usarlo directamente
+    if (data?.recordType === "local" || data?.recordType === "trasiego") {
+      return data.recordType
+    }
+    
+    // Los registros de trasiego tienen campos específicos del Excel de trucking
+    // como containerConsecutive, leg, moveType, associate, etc.
+    if (data?.containerConsecutive || data?.leg || data?.moveType || data?.associate || 
+        data?.from || data?.to || data?.line || data?.driverName || data?.plate) {
       return "trasiego"
     }
-    // Cualquier otro cliente es local
+    
+    // Los registros locales tienen campos específicos de PTYSS
+    // como clientId, order, naviera, etc.
+    if (data?.clientId || data?.order || data?.naviera) {
+      return "local"
+    }
+    
+    // Por defecto, si no podemos determinar, asumimos que es local
     return "local"
+  }
+
+  // Función para determinar el tipo de una factura basándose en los registros relacionados
+  const getInvoiceType = (invoice: any): "local" | "trasiego" => {
+    // Si no hay registros relacionados, intentar determinar por el nombre del cliente como fallback
+    if (!invoice.relatedRecordIds || invoice.relatedRecordIds.length === 0) {
+      // Fallback: buscar por nombre del cliente (Panama Transshipment Group o variaciones)
+      const clientName = invoice.clientName?.toString().toLowerCase().trim() || ""
+      if (clientName.includes("panama transshipment") || clientName.includes("ptg") || 
+          clientName === "ptg" || clientName.includes("transshipment group")) {
+        return "trasiego"
+      }
+      return "local"
+    }
+    
+    // Obtener los registros relacionados de la factura
+    const relatedRecords = allRecords.filter((record: any) => {
+      const recordId = record._id || record.id
+      return invoice.relatedRecordIds.includes(recordId)
+    })
+    
+    if (relatedRecords.length === 0) {
+      // Si no se encuentran los registros, usar fallback por nombre del cliente
+      const clientName = invoice.clientName?.toString().toLowerCase().trim() || ""
+      if (clientName.includes("panama transshipment") || clientName.includes("ptg") || 
+          clientName === "ptg" || clientName.includes("transshipment group")) {
+        return "trasiego"
+      }
+      return "local"
+    }
+    
+    // Determinar el tipo basándose en los registros relacionados
+    // Si todos son del mismo tipo, usar ese tipo
+    // Si hay mezcla, usar el tipo más común
+    const recordTypes = relatedRecords.map((record: any) => getRecordType(record))
+    const trasiegoCount = recordTypes.filter(t => t === "trasiego").length
+    const localCount = recordTypes.filter(t => t === "local").length
+    
+    // Si hay más registros de trasiego, es trasiego; si hay más locales, es local
+    // Si hay igual cantidad, usar el primero
+    if (trasiegoCount > localCount) {
+      return "trasiego"
+    } else if (localCount > trasiegoCount) {
+      return "local"
+    } else {
+      // Si hay igual cantidad, usar el tipo del primer registro
+      return recordTypes[0] || "local"
+    }
   }
 
   const filteredInvoices = ptyssInvoices.filter((invoice: any) => {

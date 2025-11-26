@@ -1633,9 +1633,65 @@ export function PTYSSPrefactura() {
     doc.text('TOTAL:', totalX, finalY)
     doc.text(`$${grandTotal.toFixed(2)}`, amountX, finalY, { align: 'right' })
     
-    // Términos y condiciones
-    let termsY = finalY + 15
+    // Notas adicionales de registros locales y prefactura (trasiego)
+    let notesY = finalY + 15
     const pageHeight = doc.internal.pageSize.getHeight()
+    
+    // Recopilar todas las notas de los registros locales que tienen notas
+    const notesFromRecords: string[] = []
+    selectedRecords.forEach((record) => {
+      const data = record.data as Record<string, any>
+      // Solo incluir notas de registros locales que tengan notas no vacías
+      if (data.recordType === 'local' && data.notes && data.notes.trim() !== '') {
+        const note = data.notes.trim()
+        // Evitar duplicados
+        if (!notesFromRecords.includes(note)) {
+          notesFromRecords.push(note)
+        }
+      }
+    })
+    
+    // Agregar notas de la prefactura (para registros de trasiego) si existen
+    if (prefacturaData.notes && prefacturaData.notes.trim() !== '') {
+      const prefacturaNote = prefacturaData.notes.trim()
+      // Evitar duplicados con las notas de registros locales
+      if (!notesFromRecords.includes(prefacturaNote)) {
+        notesFromRecords.push(prefacturaNote)
+      }
+    }
+    
+    // Mostrar notas si existen
+    if (notesFromRecords.length > 0) {
+      // Verificar si hay espacio suficiente, si no, agregar nueva página
+      if (notesY + (notesFromRecords.length * 10) + 20 > pageHeight) {
+        doc.addPage()
+        notesY = 20
+      }
+      
+      doc.setFontSize(9)
+      doc.setFont(undefined, 'bold')
+      doc.text('NOTAS ADICIONALES:', 15, notesY)
+      notesY += 5
+      
+      doc.setFontSize(8)
+      doc.setFont(undefined, 'normal')
+      notesFromRecords.forEach((note) => {
+        // Dividir notas largas en múltiples líneas
+        const noteLines = doc.splitTextToSize(note, 180)
+        noteLines.forEach((line: string) => {
+          if (notesY + 5 > pageHeight) {
+            doc.addPage()
+            notesY = 20
+          }
+          doc.text(`• ${line}`, 15, notesY)
+          notesY += 4
+        })
+        notesY += 2 // Espacio entre notas
+      })
+    }
+    
+    // Términos y condiciones
+    let termsY = notesY + 5
     if (termsY + 35 > pageHeight) {
       doc.addPage()
       termsY = 20
