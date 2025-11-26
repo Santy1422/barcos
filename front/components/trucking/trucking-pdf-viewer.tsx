@@ -419,16 +419,56 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
       const containers = groupRecords.map(r => r.container).join(', ')
       const auth = groupRecords[0]?.auth || ''
       
-      // NOTF: se cobra una vez por BL Number (del registro con el número de order más bajo)
-      const notfRecord = groupRecords
-        .filter(r => r.order && !isNaN(parseFloat(r.order))) // Solo registros con order válido
-        .sort((a, b) => parseFloat(a.order) - parseFloat(b.order))[0] // Ordenar por order ascendente y tomar el primero
-      const notfValue = notfRecord?.notf ? parseFloat(notfRecord.notf) || 0 : 0
+      // NOTF: se cobra una vez por BL Number (del registro con el número de order más bajo que tenga notf válido)
+      // Primero intentar encontrar el registro con order más bajo que tenga notf válido
+      let notfRecord = groupRecords
+        .filter(r => {
+          // Verificar que tenga order válido Y notf válido
+          const hasValidOrder = r.order && !isNaN(parseFloat(r.order))
+          if (!hasValidOrder) return false
+          
+          // Verificar que tenga notf válido
+          const notfStr = r.notf ? String(r.notf).trim() : ''
+          if (!notfStr || notfStr === 'N/A' || notfStr === '') return false
+          const parsed = parseFloat(notfStr)
+          return !isNaN(parsed) && parsed > 0
+        })
+        .sort((a, b) => parseFloat(a.order) - parseFloat(b.order))[0]
+      
+      // Si no se encontró con order válido, buscar cualquier registro con notf válido
+      if (!notfRecord) {
+        notfRecord = groupRecords.find(r => {
+          const notfStr = r.notf ? String(r.notf).trim() : ''
+          if (!notfStr || notfStr === 'N/A' || notfStr === '') return false
+          const parsed = parseFloat(notfStr)
+          return !isNaN(parsed) && parsed > 0
+        })
+      }
+      
+      // Mejorar parseo de notf: manejar "N/A", cadenas vacías, y valores no numéricos
+      let notfValue = 0
+      if (notfRecord?.notf) {
+        const notfStr = String(notfRecord.notf).trim()
+        if (notfStr && notfStr !== 'N/A' && notfStr !== '') {
+          const parsed = parseFloat(notfStr)
+          if (!isNaN(parsed) && parsed > 0) {
+            notfValue = parsed
+          }
+        }
+      }
       
       // SEAL: se cobra por cada contenedor que tenga valor en seal
       const sealTotal = groupRecords.reduce((sum, r) => {
-        const sealValue = r.seal ? parseFloat(r.seal) || 0 : 0
-        return sum + sealValue
+        if (r.seal) {
+          const sealStr = String(r.seal).trim()
+          if (sealStr && sealStr !== 'N/A' && sealStr !== '') {
+            const parsed = parseFloat(sealStr)
+            if (!isNaN(parsed) && parsed > 0) {
+              return sum + parsed
+            }
+          }
+        }
+        return sum
       }, 0)
       
       // Total para este BL Number
