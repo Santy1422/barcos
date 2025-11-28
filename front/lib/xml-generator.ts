@@ -1135,7 +1135,7 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
                   
                   const serviceName = serviceNames[fieldName] || fieldName
                   
-                  otherItems.push({
+                  const item: any = {
                     "IncomeRebateCode": "I",
                     "AmntTransacCur": (-value).toFixed(3),
                     "BaseUnitMeasure": "EA", // Each - unidad por cada servicio
@@ -1150,7 +1150,14 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
                     "ClientType": "MEDLOG",
                     "BusinessType": "I" // Siempre IMPORT para ShipChandler
                     // SubContracting eliminado según requerimientos
-                  })
+                  }
+                  
+                  // Agregar Commodity solo para el código WRH156 (requerimiento obligatorio)
+                  if (config.code === 'WRH156') {
+                    item["Commodity"] = "82"
+                  }
+                  
+                  otherItems.push(item)
                   
                   lineNbr++
                 }
