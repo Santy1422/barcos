@@ -568,6 +568,38 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 // Determinar si es un servicio de impuestos AUTH
                 const isAuthTaxService = ['TRK182', 'TRK175', 'TRK009'].includes(record.serviceCode || '')
                 
+                // Calcular valores de contenedor primero
+                const ctrType = record.containerType || "DV"
+                const ctrSize = record.containerSize || "40"
+                const ctrISOcode = getCtrISOcode(ctrType, ctrSize)
+                
+                // Determinar valores finales de contenedor
+                let finalCtrISOcode: string
+                let finalCtrType: string | undefined
+                let finalCtrSize: string | undefined
+                let finalCtrCategory: string
+                
+                // Si no hay campos de contenedor especificados, usar valores por defecto para trasiego
+                if (!record.containerType && !record.containerSize && !record.ctrCategory) {
+                  finalCtrISOcode = "42G1" // Valor por defecto para 40' DV
+                  finalCtrType = "DV"
+                  finalCtrSize = "40"
+                  finalCtrCategory = "A" // Cambiado de "D" a "A"
+                } else {
+                  finalCtrISOcode = ctrISOcode
+                  // Solo incluir CtrType, CtrSize si tienen valores no vacíos
+                  if (record.containerType && record.containerType.trim()) {
+                    finalCtrType = record.containerType
+                  }
+                  if (record.containerSize && record.containerSize.trim()) {
+                    finalCtrSize = record.containerSize
+                  }
+                  // CtrCategory siempre es "A" para PTG facturas
+                  finalCtrCategory = "A"
+                }
+                
+                // Construir objeto otherItem con todas las propiedades en el orden correcto
+                // Las propiedades de contenedor deben ir en este orden: CtrISOcode, CtrType, CtrSize, CtrCategory
                 const otherItem: any = {
                   "IncomeRebateCode": TRUCKING_DEFAULTS.incomeRebateCode,
                   "AmntTransacCur": (-group.totalPrice).toFixed(3),
@@ -582,36 +614,11 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                   "ServiceCountry": "PA",
                   "ClientType": TRUCKING_DEFAULTS.clientType,
                   "BusinessType": businessTypeXmlValue,
-                  "FullEmpty": record.fullEmptyStatus || "FULL"
-                }
-                
-                // Calcular y agregar CtrISOcode basándose en CtrType y CtrSize
-                const ctrType = record.containerType || "DV"
-                const ctrSize = record.containerSize || "40"
-                const ctrISOcode = getCtrISOcode(ctrType, ctrSize)
-                otherItem.CtrISOcode = ctrISOcode
-                
-                // Solo incluir CtrType, CtrSize, CtrCategory si tienen valores no vacíos
-                if (record.containerType && record.containerType.trim()) {
-                  otherItem.CtrType = record.containerType
-                }
-                if (record.containerSize && record.containerSize.trim()) {
-                  otherItem.CtrSize = record.containerSize
-                }
-                // CtrCategory siempre es "A" para PTG facturas
-                // Mantenemos la lógica dinámica comentada por si se necesita volver a valores dinámicos
-                otherItem.CtrCategory = "A"
-                // Lógica dinámica comentada:
-                // if (record.ctrCategory && record.ctrCategory.trim()) {
-                //   otherItem.CtrCategory = record.ctrCategory
-                // }
-                
-                // Si no hay campos de contenedor especificados, usar valores por defecto para trasiego
-                if (!record.containerType && !record.containerSize && !record.ctrCategory) {
-                  otherItem.CtrType = "DV"
-                  otherItem.CtrSize = "40"
-                  otherItem.CtrCategory = "A" // Cambiado de "D" a "A"
-                  otherItem.CtrISOcode = "42G1" // Valor por defecto para 40' DV
+                  "FullEmpty": record.fullEmptyStatus || "FULL",
+                  "CtrISOcode": finalCtrISOcode,
+                  ...(finalCtrType ? { "CtrType": finalCtrType } : {}),
+                  ...(finalCtrSize ? { "CtrSize": finalCtrSize } : {}),
+                  "CtrCategory": finalCtrCategory
                 }
                 
                 return otherItem
@@ -649,6 +656,26 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 const taxItem = group.taxItem
                 console.log("Processing grouped tax item:", taxItem)
                 
+                // Calcular valores de contenedor primero si están disponibles
+                let ctrISOcode: string | undefined
+                let finalCtrType: string | undefined
+                let finalCtrSize: string | undefined
+                
+                if (taxItem.containerType && taxItem.containerSize) {
+                  const ctrType = taxItem.containerType
+                  const ctrSize = taxItem.containerSize
+                  ctrISOcode = getCtrISOcode(ctrType, ctrSize)
+                  if (taxItem.containerType && taxItem.containerType.trim()) {
+                    finalCtrType = taxItem.containerType
+                  }
+                  if (taxItem.containerSize && taxItem.containerSize.trim()) {
+                    finalCtrSize = taxItem.containerSize
+                  }
+                }
+                
+                // Construir objeto otherItem con todas las propiedades en el orden correcto
+                // Las propiedades de contenedor deben ir en este orden: CtrISOcode, CtrType, CtrSize, CtrCategory
+                // Solo si tienen información de contenedor
                 const otherItem: any = {
                   "IncomeRebateCode": "I", // Siempre "I" para PTG facturas
                   "AmntTransacCur": (-group.totalPrice).toFixed(3),
@@ -663,31 +690,12 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                   "ServiceCountry": "PA",
                   "ClientType": "MEDLOG",
                   "BusinessType": "E", // Los impuestos siempre son EXPORT
-                  "FullEmpty": taxItem.FullEmpty || "FULL"
+                  "FullEmpty": taxItem.FullEmpty || "FULL",
+                  ...(ctrISOcode ? { "CtrISOcode": ctrISOcode } : {}),
+                  ...(finalCtrType ? { "CtrType": finalCtrType } : {}),
+                  ...(finalCtrSize ? { "CtrSize": finalCtrSize } : {}),
+                  ...(ctrISOcode ? { "CtrCategory": "A" } : {})
                 }
-                
-                // Calcular y agregar CtrISOcode para impuestos si tienen información de contenedor
-                if (taxItem.containerType && taxItem.containerSize) {
-                  const ctrType = taxItem.containerType
-                  const ctrSize = taxItem.containerSize
-                  const ctrISOcode = getCtrISOcode(ctrType, ctrSize)
-                  otherItem.CtrISOcode = ctrISOcode
-                }
-                
-                // Solo incluir CtrType, CtrSize, CtrCategory si están definidos
-                if (taxItem.containerType && taxItem.containerType.trim()) {
-                  otherItem.CtrType = taxItem.containerType
-                }
-                if (taxItem.containerSize && taxItem.containerSize.trim()) {
-                  otherItem.CtrSize = taxItem.containerSize
-                }
-                // CtrCategory siempre es "A" para PTG facturas (impuestos)
-                // Mantenemos la lógica dinámica comentada por si se necesita volver a valores dinámicos
-                otherItem.CtrCategory = "A"
-                // Lógica dinámica comentada:
-                // if (taxItem.ctrCategory && taxItem.ctrCategory.trim()) {
-                //   otherItem.CtrCategory = taxItem.ctrCategory
-                // }
                 
                 console.log("Generated grouped tax XML item:", otherItem)
                 return otherItem
