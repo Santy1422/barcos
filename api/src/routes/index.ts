@@ -22,6 +22,7 @@ import agencySapRoutes from './agencySapRoutes';
 import agencyPricingConfigRoutes from './agencyPricingConfigRoutes';
 import agencyRouteRoutes from './agencyRouteRoutes';
 import agencyInvoicesRoutes from './agencyInvoicesRoutes';
+import analyticsRoutes from './analyticsRoutes';
 
 router.use('/api/user', user);
 router.use('/api/clients', clients);
@@ -47,5 +48,8 @@ router.use('/api/agency/sap', agencySapRoutes);
 router.use('/api/agency/pricing-config', agencyPricingConfigRoutes);
 router.use('/api/agency/routes', agencyRouteRoutes);
 router.use('/api/agency/invoices', agencyInvoicesRoutes);
+
+// Analytics routes for Power BI
+router.use('/api/analytics', analyticsRoutes);
 
 export default router;
