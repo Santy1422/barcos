@@ -246,6 +246,44 @@ export function PTYSSPrefactura() {
     return "local"
   }
 
+  // Función para obtener el cliente de un registro
+  const getRecordClient = (record: IndividualExcelRecord) => {
+    const data = record.data as Record<string, any>
+    const clientId = data?.clientId
+    const associate = data?.associate?.trim()
+    
+    console.log('🔍 getRecordClient - ClientId:', clientId, 'Associate:', associate, 'RecordType:', data?.recordType)
+    console.log('🔍 getRecordClient - Clientes disponibles:', clients.map((c: any) => ({ name: c.name, companyName: c.companyName, fullName: c.fullName, type: c.type })))
+    
+    // Buscar por clientId primero (tanto para trasiego como locales)
+    if (clientId && clientId.trim() !== '') {
+      const clientById = clients.find((c: any) => (c._id || c.id) === clientId)
+      if (clientById) {
+        console.log('🔍 getRecordClient - Cliente encontrado por ID:', clientById?.companyName || clientById?.fullName)
+        return clientById
+      }
+    }
+    
+    // Si no hay clientId, buscar por associate (nombre del cliente de Driver Name)
+    if (associate) {
+      const clientByName = clients.find((c: any) => {
+        const name = c.name?.toLowerCase().trim() || ''
+        const companyName = c.companyName?.toLowerCase().trim() || ''
+        const fullName = c.fullName?.toLowerCase().trim() || ''
+        const associateLower = associate.toLowerCase()
+        
+        return name === associateLower || companyName === associateLower || fullName === associateLower
+      })
+      if (clientByName) {
+        console.log('🔍 getRecordClient - Cliente encontrado por nombre (associate):', clientByName?.companyName || clientByName?.fullName)
+        return clientByName
+      }
+    }
+    
+    console.log('🔍 getRecordClient - No se encontró cliente')
+    return null
+  }
+
   // Debug: Log detallado de cada registro (después de definir getRecordType)
   if (ptyssRecords.length > 0) {
     console.log('🔍 PTYSSPrefactura - Análisis detallado de registros:')
@@ -293,17 +331,9 @@ export function PTYSSPrefactura() {
     
     // Aplicar filtro por cliente
     if (clientFilter !== 'all') {
-      const recordType = getRecordType(record)
-      let clientName = ""
-      
-      if (recordType === "trasiego") {
-        // Para registros de trasiego, siempre es "PTG"
-        clientName = "PTG"
-      } else {
-        // Para registros locales, buscar por clientId
-        const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
-        clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
-      }
+      // Usar getRecordClient para obtener el cliente correcto (tanto trasiego como locales)
+      const client = getRecordClient(record)
+      const clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
       
       if (clientName !== clientFilter) {
         return false
@@ -365,18 +395,9 @@ export function PTYSSPrefactura() {
     const clientNames = new Set<string>()
     
     filteredRecords.forEach((record: IndividualExcelRecord) => {
-      const data = record.data as Record<string, any>
-      const recordType = getRecordType(record)
-      let clientName = ""
-      
-      if (recordType === "trasiego") {
-        // Para registros de trasiego, siempre es "PTG"
-        clientName = "PTG"
-      } else {
-        // Para registros locales, buscar por clientId
-        const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
-        clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
-      }
+      // Usar getRecordClient para obtener el cliente correcto (tanto trasiego como locales)
+      const client = getRecordClient(record)
+      const clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
       
       if (clientName) {
         clientNames.add(clientName)
@@ -418,44 +439,6 @@ export function PTYSSPrefactura() {
     const selectedRecords = ptyssRecords.filter((record: IndividualExcelRecord) =>
     selectedRecordIds.includes(getRecordId(record))
   )
-
-  // Función para obtener el cliente de un registro
-  const getRecordClient = (record: IndividualExcelRecord) => {
-    const data = record.data as Record<string, any>
-    const clientId = data?.clientId
-    
-    console.log('🔍 getRecordClient - ClientId:', clientId, 'Associate:', data?.associate, 'RecordType:', data?.recordType)
-    console.log('🔍 getRecordClient - Clientes disponibles:', clients.map((c: any) => ({ name: c.name, companyName: c.companyName, fullName: c.fullName, type: c.type })))
-    
-    // Para registros de trasiego, buscar siempre por "PTG" en el campo name
-    const recordType = getRecordType(record)
-    if (recordType === 'trasiego') {
-      console.log('🔍 getRecordClient - Buscando cliente PTG para registro de trasiego')
-      const ptgClient = clients.find((c: any) => {
-        const name = c.name?.toLowerCase().trim() || ''
-        const companyName = c.companyName?.toLowerCase().trim() || ''
-        const fullName = c.fullName?.toLowerCase().trim() || ''
-        
-        // Buscar por cualquiera de estos campos que contenga "ptg"
-        return name === 'ptg' || companyName === 'ptg' || fullName === 'ptg'
-      })
-      console.log('🔍 getRecordClient - Cliente PTG encontrado:', ptgClient)
-      console.log('🔍 getRecordClient - PTG name:', ptgClient?.name)
-      console.log('🔍 getRecordClient - PTG companyName:', ptgClient?.companyName)
-      console.log('🔍 getRecordClient - PTG fullName:', ptgClient?.fullName)
-      return ptgClient
-    }
-    
-    // Para registros locales, buscar por clientId si existe
-    if (clientId && clientId.trim() !== '') {
-      const clientById = clients.find((c: any) => (c._id || c.id) === clientId)
-      console.log('🔍 getRecordClient - Cliente encontrado por ID:', clientById?.companyName || clientById?.fullName)
-      return clientById
-    }
-    
-    console.log('🔍 getRecordClient - No se encontró cliente')
-    return null
-  }
 
   // Función para validar si un registro puede ser seleccionado
   const canSelectRecord = (record: IndividualExcelRecord) => {
@@ -2684,12 +2667,8 @@ export function PTYSSPrefactura() {
                           <TableCell className="py-2 px-3">
                             <div className="text-sm">
                               {(() => {
-                                // Para registros de trasiego, mostrar siempre "PTG"
-                                if (getRecordType(record) === "trasiego") {
-                                  return "PTG"
-                                }
-                                // Para registros locales, buscar por clientId
-                                const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
+                                // Usar getRecordClient para obtener el cliente correcto (tanto trasiego como locales)
+                                const client = getRecordClient(record)
                                 return client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
                               })()}
                             </div>

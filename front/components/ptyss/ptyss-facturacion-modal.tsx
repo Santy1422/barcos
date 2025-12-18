@@ -152,65 +152,45 @@ export function PTYSSFacturacionModal({
       console.log('🔍 generateXMLForInvoice - data.localRouteId:', data?.localRouteId)
       console.log('🔍 generateXMLForInvoice - invoice.clientName:', invoice.clientName)
       
-      if (isTrasiego) {
-        console.log('🔍 generateXMLForInvoice - Buscando cliente PTG para trasiego')
-        console.log('🔍 generateXMLForInvoice - Clientes disponibles:', clients.map((c: any) => ({
-          type: c.type,
-          companyName: c.companyName,
-          fullName: c.fullName,
-          name: c.name,
-          sapCode: c.sapCode
-        })))
-        
-        // Verificar que los clientes estén cargados y que PTG exista
-        if (clients.length === 0) {
-          throw new Error("Los clientes aún no han sido cargados. Por favor, espere un momento y vuelva a intentar.")
-        }
-        
-        // Buscar PTG por el campo name (así está guardado en la DB)
-        // Intentar múltiples variaciones para asegurar que lo encontramos
+      // Buscar cliente por clientId primero (tanto para trasiego como locales)
+      if (clientId && clientId.trim() !== '') {
+        client = clients.find((c: any) => (c._id || c.id) === clientId)
+        console.log('🔍 generateXMLForInvoice - Cliente encontrado por ID:', client?.companyName || client?.fullName)
+      }
+      
+      // Si no hay clientId, buscar por associate (nombre del cliente de Driver Name)
+      if (!client && associate) {
+        const associateTrimmed = associate.trim()
         client = clients.find((c: any) => {
           const name = c.name?.toLowerCase().trim() || ''
           const companyName = c.companyName?.toLowerCase().trim() || ''
           const fullName = c.fullName?.toLowerCase().trim() || ''
+          const associateLower = associateTrimmed.toLowerCase()
           
-          return name === 'ptg' || companyName === 'ptg' || fullName === 'ptg'
+          return name === associateLower || companyName === associateLower || fullName === associateLower
         })
-        
-        console.log('🔍 generateXMLForInvoice - Cliente PTG encontrado:', client)
-        
-        if (!client) {
-          console.log('❌ generateXMLForInvoice - NO SE ENCONTRÓ PTG en la lista de clientes')
-          console.log('🔍 generateXMLForInvoice - Total clientes cargados:', clients.length)
-          console.log('🔍 generateXMLForInvoice - Nombres de clientes:', clients.map((c: any) => ({
-            name: c.name,
-            companyName: c.companyName,
-            fullName: c.fullName,
-            type: c.type
-          })))
-          
-          // Mostrar un mensaje de error más descriptivo con la lista de clientes disponibles
-          const clientNames = clients.map((c: any) => c.name || c.companyName || c.fullName).filter(Boolean).slice(0, 10).join(', ')
-          throw new Error(`No se encontró el cliente PTG en la lista de ${clients.length} clientes. Clientes disponibles: ${clientNames}${clients.length > 10 ? '...' : ''}. Por favor, verifique que el cliente PTG esté configurado en el sistema.`)
-        }
-      } else {
-        // Para registros locales, buscar por ID
-        if (!clientId) {
-          throw new Error("El registro local no tiene un cliente asociado (clientId). Por favor, verifique la configuración del registro.")
-        }
-        
-        client = clients.find((c: any) => (c._id || c.id) === clientId)
-        console.log('🔍 generateXMLForInvoice - Cliente encontrado por ID:', client?.companyName || client?.fullName)
+        console.log('🔍 generateXMLForInvoice - Cliente encontrado por nombre (associate):', client?.companyName || client?.fullName)
+      }
+      
+      // Si aún no se encontró el cliente y es local, mostrar error
+      if (!client && !isTrasiego) {
+        throw new Error("El registro local no tiene un cliente asociado (clientId). Por favor, verifique la configuración del registro.")
+      }
+      
+      // Si aún no se encontró el cliente y es trasiego, mostrar error
+      if (!client && isTrasiego) {
+        console.log('❌ generateXMLForInvoice - NO SE ENCONTRÓ CLIENTE para trasiego')
+        console.log('🔍 generateXMLForInvoice - clientId:', clientId)
+        console.log('🔍 generateXMLForInvoice - associate:', associate)
+        console.log('🔍 generateXMLForInvoice - Total clientes cargados:', clients.length)
+        throw new Error(`No se encontró el cliente para el registro de trasiego. ClientId: ${clientId || 'N/A'}, Associate: ${associate || 'N/A'}. Por favor, verifique que el cliente esté configurado en el sistema.`)
       }
       
       console.log("🔍 generateXMLForInvoice - cliente final:", client)
       
       // Validar que el cliente tenga código SAP configurado
       if (!client) {
-        const errorMessage = isTrasiego 
-          ? "No se encontró el cliente PTG en la lista de clientes. Por favor, verifique que el cliente PTG esté configurado en el sistema."
-          : `No se encontró el cliente con ID ${clientId} en la lista de clientes. Por favor, verifique que el cliente esté configurado en el sistema.`
-        throw new Error(errorMessage)
+        throw new Error(`No se encontró el cliente en la lista de clientes. ClientId: ${clientId || 'N/A'}, Associate: ${associate || 'N/A'}. Por favor, verifique que el cliente esté configurado en el sistema.`)
       }
       if (!client.sapCode) {
         throw new Error(`El cliente ${client.companyName || client.fullName} no tiene código SAP configurado. Por favor, configure el código SAP del cliente antes de generar el XML.`)

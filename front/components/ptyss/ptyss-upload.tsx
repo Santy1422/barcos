@@ -327,7 +327,7 @@ export function PTYSSUpload() {
       console.log("Datos después del re-matching:", matchedData)
       
       // Verificar clientes faltantes antes de mostrar los datos
-      const processedData = await processMissingClients(matchedData)
+      const { data: processedData, hasMissingClients } = await processMissingClients(matchedData)
       
       setPreviewData(processedData)
       
@@ -337,10 +337,14 @@ export function PTYSSUpload() {
       
       console.log(`Re-procesamiento completado: ${matchedCount}/${processedData.length} con match`)
       
-      toast({
-        title: "✅ Excel re-procesado",
-        description: `${matchedCount} registros con precio asignado, ${unmatchedCount} sin coincidencia.`,
-      })
+      // Solo mostrar toast de éxito si no hay clientes faltantes
+      // Si hay clientes faltantes, el toast ya se mostró en processMissingClients
+      if (!hasMissingClients) {
+        toast({
+          title: "✅ Excel re-procesado",
+          description: `${matchedCount} registros con precio asignado, ${unmatchedCount} sin coincidencia.`,
+        })
+      }
     } catch (error) {
       console.error('Error al re-procesar archivo:', error)
       toast({
@@ -510,6 +514,11 @@ export function PTYSSUpload() {
 
   // Verificar duplicados dentro del Excel por containerConsecutive
   const duplicateContainerConsecutives = useMemo(() => {
+    // Asegurarse de que previewData sea un array
+    if (!Array.isArray(previewData) || previewData.length === 0) {
+      return []
+    }
+    
     const containerConsecutives = previewData
       .filter(record => record.isMatched)
       .map(record => record.containerConsecutive)
@@ -606,6 +615,8 @@ export function PTYSSUpload() {
 
   // Función para verificar si un cliente existe por nombre
   const findClientByName = (name: string): Client | null => {
+    if (!name || !name.trim()) return null
+    
     console.log('🔍 Buscando cliente por nombre:', name)
     console.log('🔍 Clientes disponibles:', clients.map((c: any) => ({
       type: c.type,
@@ -615,10 +626,16 @@ export function PTYSSUpload() {
       sapCode: c.sapCode
     })))
     
+    const normalizedName = name.trim().toLowerCase()
+    
     const foundClient = clients.find((client: any) => {
-      // Buscar por el campo 'name' (nombre corto) que es lo que viene del Excel
-      const match = client.name?.toLowerCase() === name.toLowerCase()
-      console.log(`🔍 Comparando name: "${client.name}" vs "${name}" = ${match}`)
+      // Buscar por name (nombre corto), companyName (para jurídicos) o fullName (para naturales)
+      const nameMatch = client.name?.toLowerCase() === normalizedName
+      const companyNameMatch = client.companyName?.toLowerCase() === normalizedName
+      const fullNameMatch = client.fullName?.toLowerCase() === normalizedName
+      
+      const match = nameMatch || companyNameMatch || fullNameMatch
+      console.log(`🔍 Comparando "${client.name || client.companyName || client.fullName}" vs "${name}" = ${match}`)
       return match
     }) || null
     
@@ -631,6 +648,7 @@ export function PTYSSUpload() {
     const tempClientData = {
       type: "juridico" as const,
       companyName: name,
+      name: name, // También establecer name para que findClientByName pueda encontrarlo
       ruc: "",
       contactName: "",
       email: "",
@@ -659,16 +677,20 @@ export function PTYSSUpload() {
   }
 
   // Función para verificar y procesar clientes faltantes del Excel
-  const processMissingClients = async (excelData: TruckingExcelData[]): Promise<TruckingExcelData[]> => {
+  const processMissingClients = async (excelData: TruckingExcelData[]): Promise<{ data: TruckingExcelData[], hasMissingClients: boolean }> => {
     const missingClientsMap = new Map<string, TruckingExcelData[]>()
     const newClientCompleteness = new Map<string, { isComplete: boolean; missingFields: string[] }>()
     
-    // Agrupar registros por cliente SOLO para registros que hicieron match
+    // Agrupar registros por cliente - usar driverName directamente si associate no está disponible
     excelData.forEach(record => {
-      const clientName = record.associate?.trim()
+      // Para registros de trasiego, usar driverName como cliente principal
+      const clientName = (record.associate || record.driverName)?.trim()
       console.log('🔍 Procesando registro - clientName del Excel:', clientName, 'isMatched:', record.isMatched)
-      console.log('🔍 record.line:', record.line, 'record.associate:', record.associate)
-      if (clientName && record.isMatched) {
+      console.log('🔍 record.driverName:', record.driverName, 'record.associate:', record.associate)
+      
+      // Procesar TODOS los registros con cliente, no solo los que hicieron match
+      // Esto permite detectar clientes faltantes incluso si no hay match de ruta
+      if (clientName) {
         if (!missingClientsMap.has(clientName)) {
           missingClientsMap.set(clientName, [])
         }
@@ -695,25 +717,31 @@ export function PTYSSUpload() {
     // Actualizar estado de completitud
     setClientCompleteness(newClientCompleteness)
 
+    console.log('🔍 Clientes únicos encontrados:', Array.from(missingClientsMap.keys()))
+    console.log('🔍 Clientes faltantes detectados:', missingClientsList.length)
+    console.log('🔍 Lista de clientes faltantes:', missingClientsList.map(c => ({ name: c.name, recordsCount: c.records.length })))
+
     if (missingClientsList.length > 0) {
+      console.log('🔍 Abriendo modal de clientes faltantes...')
       setMissingClients(missingClientsList)
-      setShowClientModal(true)
       setClientToEdit(missingClientsList[0])
+      setShowClientModal(true)
       
-      // Contar total de registros con match
-      const totalMatchedRecords = missingClientsList.reduce((total, client) => total + client.records.length, 0)
+      // Contar total de registros
+      const totalRecords = missingClientsList.reduce((total, client) => total + client.records.length, 0)
       
       // Mostrar toast informativo
       toast({
         title: "Clientes faltantes detectados",
-        description: `Se encontraron ${missingClientsList.length} clientes que no existen en la base de datos para ${totalMatchedRecords} registros con match. Completa sus datos.`,
+        description: `Se encontraron ${missingClientsList.length} clientes que no existen en la base de datos para ${totalRecords} registros. Completa sus datos.`,
       })
       
-      // Retornar los datos originales por ahora
-      return excelData
+      // Retornar los datos originales por ahora con indicador de clientes faltantes
+      return { data: excelData, hasMissingClients: true }
     }
 
-    return excelData
+    console.log('🔍 No hay clientes faltantes, continuando...')
+    return { data: excelData, hasMissingClients: false }
   }
 
   // Función para verificar si un cliente tiene todos los datos completos
@@ -771,6 +799,38 @@ export function PTYSSUpload() {
 
   // Route creation handlers
   const handleCreateRouteClick = (record: TruckingExcelData) => {
+    // Verificar que el cliente exista antes de permitir crear la ruta
+    const clientName = record.driverName?.trim() || record.associate?.trim() || ""
+    
+    if (clientName) {
+      const client = findClientByName(clientName)
+      if (!client) {
+        // Cliente no existe, mostrar aviso y abrir modal de creación
+        toast({
+          title: "Cliente no encontrado",
+          description: `Debes crear el cliente "${clientName}" antes de poder crear una ruta.`,
+          variant: "destructive"
+        })
+        
+        // Buscar el cliente en la lista de faltantes o crear uno nuevo
+        const missingClient = missingClients.find(mc => mc.name === clientName)
+        if (missingClient) {
+          setClientToEdit(missingClient)
+          setShowClientModal(true)
+        } else {
+          // Si no está en la lista de faltantes, agregarlo
+          if (Array.isArray(previewData) && previewData.length > 0) {
+            const recordsForClient = previewData.filter(r => (r.associate || r.driverName)?.trim() === clientName)
+            if (recordsForClient.length > 0) {
+              setClientToEdit({ name: clientName, records: recordsForClient })
+              setShowClientModal(true)
+            }
+          }
+        }
+        return // No continuar con la creación de la ruta
+      }
+    }
+    
     setRecordForRoute(record)
     
     // Pre-llenar el formulario con datos del registro
@@ -785,7 +845,7 @@ export function PTYSSUpload() {
       routeType: record.moveType?.toLowerCase() === 'rt' ? "RT" : "single",
       price: 0,
       status: record.fe === "E" || record.fe === "EMPTY" ? "EMPTY" : "FULL",
-      cliente: "PTG", // Usar PTG como cliente fijo para registros de trasiego
+      cliente: clientName, // Usar el cliente del Driver Name del registro
       routeArea: record.route || ""
     })
     
@@ -854,32 +914,33 @@ export function PTYSSUpload() {
 
   // Función para manejar la creación/edición de cliente desde el modal
   const handleClientCreated = (client: any) => {
-    // Actualizar completitud del cliente
-    updateClientCompleteness(client.companyName || client.fullName, client)
+    // Usar el nombre original del cliente faltante (que viene de Driver Name)
+    const originalClientName = clientToEdit?.name || client.companyName || client.fullName || client.name
     
-    // Remover el cliente de la lista de faltantes
-    setMissingClients(prev => prev.filter(c => c.name !== clientToEdit?.name))
-    
-    // Si hay más clientes faltantes, mostrar el siguiente
-    if (missingClients.length > 1) {
-      const nextClient = missingClients.find(c => c.name !== clientToEdit?.name)
-      if (nextClient) {
-        setClientToEdit(nextClient)
-        setShowClientModal(true)
-      } else {
-        setShowClientModal(false)
-        setClientToEdit(null)
-      }
-    } else {
-      // No hay más clientes faltantes, cerrar modal
-      setShowClientModal(false)
-      setClientToEdit(null)
-      
-      // Reprocesar el Excel con los clientes creados
-      if (selectedFile) {
-        handleFileChange({ target: { files: [selectedFile] } } as any)
-      }
-    }
+    // Recargar clientes para obtener el cliente recién creado
+    dispatch(fetchClients()).then(() => {
+      setTimeout(() => {
+        // Actualizar completitud del cliente usando el nombre original
+        updateClientCompleteness(originalClientName, client)
+        
+        // Remover el cliente de la lista de faltantes usando el estado actualizado
+        setMissingClients(prev => {
+          const updated = prev.filter(c => c.name !== originalClientName)
+          
+          // Si hay más clientes faltantes, mostrar el siguiente
+          if (updated.length > 0) {
+            setClientToEdit(updated[0])
+            setShowClientModal(true)
+          } else {
+            // No hay más clientes faltantes, cerrar modal
+            setShowClientModal(false)
+            setClientToEdit(null)
+          }
+          
+          return updated
+        })
+      }, 200) // Aumentar el timeout para asegurar que los clientes se hayan cargado
+    })
   }
 
   // Función para manejar clic en cliente para editarlo
@@ -1234,7 +1295,7 @@ export function PTYSSUpload() {
       console.log(`  MoveType: "${record.moveType}"`)
       console.log(`  Type: "${record.type}"`)
       console.log(`  Associate: "${record.associate}"`)
-      console.log(`  Line: "${record.line}"`)
+      console.log(`  Driver Name: "${record.driverName}"`)
       console.log(`  Route: "${record.route}"`)
       
       // Extraer from y to del campo leg (separado por "/")
@@ -1281,11 +1342,14 @@ export function PTYSSUpload() {
           (normalizedFE === 'FULL' && route.status?.toUpperCase() === 'FULL') ||
           (normalizedFE === 'EMPTY' && route.status?.toUpperCase() === 'EMPTY');
         
-        // Matching por cliente PTG - todos los registros de trasiego usan PTG
+        // Matching por cliente - usar el cliente del Driver Name del registro
+        const recordClientName = record.driverName?.trim().toUpperCase() || ''
+        const routeCliente = route.cliente?.trim().toUpperCase() || ''
         const clienteMatch = 
-          route.cliente?.toUpperCase() === 'PTG' ||
-          route.cliente?.toUpperCase().includes('PTG') ||
-          'PTG'.includes(route.cliente?.toUpperCase() || '');
+          !recordClientName || // Si no hay cliente en el registro, hacer match con cualquier ruta
+          routeCliente === recordClientName ||
+          routeCliente.includes(recordClientName) ||
+          recordClientName.includes(routeCliente);
         
         // Matching por route (routeArea de la ruta) - área de ruta
         const normalizedRoute = record.route?.trim().toUpperCase() || '';
@@ -1301,7 +1365,7 @@ export function PTYSSUpload() {
         console.log(`    MoveType normalizado: "${normalizedMoveType}" vs "${route.routeType}" = ${moveTypeMatch}`)
         console.log(`    Type normalizado: "${normalizedType}" vs "${route.containerType}" = ${containerTypeMatch}`)
         console.log(`    FE normalizado: "${normalizedFE}" vs "${route.status}" = ${statusMatch}`)
-        console.log(`    Cliente PTG vs "${route.cliente}" = ${clienteMatch}`)
+        console.log(`    Cliente "${recordClientName}" vs "${routeCliente}" = ${clienteMatch}`)
         console.log(`    Route normalizado: "${normalizedRoute}" vs "${route.routeArea}" = ${routeAreaMatch}`)
         console.log(`    Match total: ${fromMatch && toMatch && moveTypeMatch && containerTypeMatch && statusMatch && clienteMatch && routeAreaMatch}`)
         
@@ -1315,7 +1379,7 @@ export function PTYSSUpload() {
           from: from, // Agregar from extraído del leg
           to: to, // Agregar to extraído del leg
           operationType: 'import', // Siempre import para registros de trasiego
-          associate: record.line || record.associate, // Usar line como cliente principal
+          associate: record.driverName || record.associate, // Usar driverName como cliente principal para trasiegos
           matchedPrice: matchedRoute.price,
           matchedRouteId: matchedRoute._id || '',
           matchedRouteName: matchedRoute.name || '',
@@ -1329,7 +1393,7 @@ export function PTYSSUpload() {
           from: from, // Agregar from extraído del leg
           to: to, // Agregar to extraído del leg
           operationType: 'import', // Siempre import para registros de trasiego
-          associate: record.line || record.associate, // Usar line como cliente principal
+          associate: record.driverName || record.associate, // Usar driverName como cliente principal para trasiegos
           matchedPrice: 0,
           isMatched: false,
           sapCode: 'PTYSS001'
@@ -1341,20 +1405,19 @@ export function PTYSSUpload() {
   // Función para convertir datos de trucking a PTYSS
   const convertTruckingToPTYSS = (truckingData: TruckingExcelData[]): PTYSSRecordData[] => {
     return truckingData.map(record => {
-      // Para registros de trasiego, buscar el cliente PTG por el campo 'name'
-      const ptgClient = clients.find((c: any) => {
-        return c.name?.toLowerCase() === 'ptg'
-      })
+      // Para registros de trasiego, buscar el cliente por el nombre de Driver Name
+      const clientName = record.driverName?.trim() || ''
+      const foundClient = clientName ? findClientByName(clientName) : null
       
-      const clientId = ptgClient?._id || ptgClient?.id || ''
+      const clientId = foundClient?._id || foundClient?.id || ''
       
-      console.log(`Convirtiendo registro de trasiego - Cliente PTG buscado:`, ptgClient)
-      console.log(`ClientId PTG asignado: ${clientId}`)
-      console.log(`Cliente original del Excel (line): "${record.line}"`)
+      console.log(`Convirtiendo registro de trasiego - Cliente buscado por Driver Name:`, clientName)
+      console.log(`Cliente encontrado:`, foundClient)
+      console.log(`ClientId asignado: ${clientId}`)
       
       return {
-        clientId: clientId, // Usar cliente PTG para todos los registros de trasiego
-        associate: record.line || '', // Guardar el nombre del cliente original de la columna line
+        clientId: clientId, // Usar el cliente encontrado por Driver Name
+        associate: record.driverName || '', // Guardar el nombre del cliente de la columna Driver Name
         order: record.containerConsecutive || '',
         container: record.container || '',
         naviera: record.route || '',
@@ -1423,7 +1486,7 @@ export function PTYSSUpload() {
         console.log("")
         
         // Verificar clientes faltantes antes de mostrar los datos
-        const processedData = await processMissingClients(matchedData)
+        const { data: processedData, hasMissingClients } = await processMissingClients(matchedData)
         
         setPreviewData(processedData)
         
@@ -1432,11 +1495,16 @@ export function PTYSSUpload() {
         const unmatchedCount = processedData.length - matchedCount
         
         console.log(`Registros con match: ${matchedCount}/${processedData.length}`)
+        console.log(`¿Hay clientes faltantes?: ${hasMissingClients}`)
         
-        toast({
-          title: "✅ Archivo Excel procesado",
-          description: `Se han leído ${realData.length} registros. ${matchedCount} con precio asignado, ${unmatchedCount} sin coincidencia.`,
-        })
+        // Solo mostrar toast de éxito si no hay clientes faltantes
+        // Si hay clientes faltantes, el toast ya se mostró en processMissingClients
+        if (!hasMissingClients) {
+          toast({
+            title: "✅ Archivo Excel procesado",
+            description: `Se han leído ${realData.length} registros. ${matchedCount} con precio asignado, ${unmatchedCount} sin coincidencia.`,
+          })
+        }
       } catch (error) {
         console.error('Error al procesar archivo:', error)
         toast({
@@ -2780,7 +2848,7 @@ export function PTYSSUpload() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Cliente PTG</TableHead>
+                    <TableHead>Cliente</TableHead>
                     <TableHead>Ruta (Leg)</TableHead>
                     <TableHead>Área (Route)</TableHead>
                     <TableHead>Tipo Movimiento</TableHead>
@@ -2804,20 +2872,61 @@ export function PTYSSUpload() {
                         key={index}
                         className={isDuplicate ? 'bg-red-50' : ''}
                       >
-                        {/* Cliente PTG */}
+                        {/* Cliente */}
                         <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <span className="font-medium text-blue-700">
-                              PTG
-                            </span>
-                            <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
-                              <CheckCircle2 className="h-3 w-3 mr-1" />
-                              Cliente Final
-                            </Badge>
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            Line: {record.associate}
-                          </div>
+                          {(() => {
+                            const clientName = record.associate?.trim()
+                            const client = clientName ? findClientByName(clientName) : null
+                            
+                            if (!clientName) {
+                              return <span className="text-muted-foreground text-xs">Sin cliente</span>
+                            }
+                            
+                            if (!client) {
+                              return (
+                                <div>
+                                  <span className="font-medium text-red-700">{clientName}</span>
+                                  <Badge 
+                                    variant="outline" 
+                                    className="text-red-600 border-red-600 text-xs ml-2 cursor-pointer hover:bg-red-50 hover:border-red-700"
+                                    onClick={() => {
+                                      // Buscar el cliente en la lista de faltantes o crear uno nuevo
+                                      const missingClient = missingClients.find(mc => mc.name === clientName)
+                                      if (missingClient) {
+                                        setClientToEdit(missingClient)
+                                        setShowClientModal(true)
+                                      } else {
+                                        // Si no está en la lista de faltantes, agregarlo
+                                        if (Array.isArray(previewData) && previewData.length > 0) {
+                                          const recordsForClient = previewData.filter(r => (r.associate || r.driverName)?.trim() === clientName)
+                                          if (recordsForClient.length > 0) {
+                                            setClientToEdit({ name: clientName, records: recordsForClient })
+                                            setShowClientModal(true)
+                                          }
+                                        }
+                                      }
+                                    }}
+                                    title="Haz clic para crear este cliente"
+                                  >
+                                    <AlertCircle className="h-3 w-3 mr-1" />
+                                    No encontrado
+                                  </Badge>
+                                </div>
+                              )
+                            }
+                            
+                            return (
+                              <div>
+                                <span className="font-medium text-blue-700">
+                                  {client.type === 'juridico' ? client.companyName : client.fullName}
+                                </span>
+                                <Badge variant="outline" className="text-green-600 border-green-600 text-xs ml-2">
+                                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                                  Encontrado
+                                </Badge>
+                              </div>
+                            )
+                          })()}
                         </TableCell>
                         
                         {/* Ruta (Leg) - From/To */}
@@ -2987,7 +3096,15 @@ export function PTYSSUpload() {
 
       {/* Modal para clientes faltantes del Excel de trasiego */}
       {showClientModal && clientToEdit && (
-        <Dialog open={showClientModal} onOpenChange={setShowClientModal}>
+        <Dialog 
+          open={showClientModal} 
+          onOpenChange={(open) => {
+            // Si se cierra el modal, mantener los datos pero cerrar el modal
+            // Esto permite reabrirlo desde el badge "No encontrado"
+            setShowClientModal(open)
+            // No limpiar clientToEdit ni missingClients para poder reabrir el modal
+          }}
+        >
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
@@ -3003,16 +3120,16 @@ export function PTYSSUpload() {
                 </div>
                 <p className="text-sm text-yellow-700 mt-2">
                   El cliente "{clientToEdit.name}" no existe en la base de datos. 
-                  Se encontraron {clientToEdit.records.length} registros con match para este cliente en el Excel.
+                  Se encontraron {clientToEdit.records.length} registros para este cliente en el Excel.
                 </p>
               </div>
 
               <div className="space-y-2">
-                <h4 className="font-medium">Registros con match asociados:</h4>
+                <h4 className="font-medium">Registros asociados:</h4>
                 <div className="max-h-40 overflow-y-auto border rounded-lg p-2">
                   {clientToEdit.records.slice(0, 5).map((record, index) => (
                     <div key={index} className="text-sm text-muted-foreground py-1">
-                      • {record.containerConsecutive} - {record.container} ({record.size}' {record.type})
+                      • {record.containerConsecutive || record.container || 'N/A'} - {record.container || 'N/A'} ({record.size || 'N/A'}' {record.type || 'N/A'})
                     </div>
                   ))}
                   {clientToEdit.records.length > 5 && (
@@ -3022,28 +3139,18 @@ export function PTYSSUpload() {
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Solo se muestran registros que hicieron match con las rutas configuradas.
+                  Debes crear o completar los datos del cliente antes de poder guardar los registros.
                 </p>
               </div>
 
-              <div className="flex justify-end space-x-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    // Crear cliente temporal automáticamente
-                    createTemporaryClient(clientToEdit.name).then(() => {
-                      handleClientCreated({ companyName: clientToEdit.name })
-                    })
-                  }}
-                >
-                  Crear Cliente Temporal
-                </Button>
+              <div className="flex justify-end">
                 <Button
                   onClick={() => {
                     // Abrir modal de edición de cliente
                     setEditingClient({
                       type: "juridico",
                       companyName: clientToEdit.name,
+                      name: clientToEdit.name, // También establecer name para que findClientByName pueda encontrarlo
                       ruc: "",
                       contactName: "",
                       email: "",
@@ -3055,7 +3162,7 @@ export function PTYSSUpload() {
                     setShowClientModal(false)
                   }}
                 >
-                  Editar Datos del Cliente
+                  Crear Cliente
                 </Button>
               </div>
             </div>
@@ -3073,15 +3180,23 @@ export function PTYSSUpload() {
           dispatch(fetchClients()).then(() => {
             // Esperar un poco para que se actualice el estado de clientes
             setTimeout(() => {
+              // Determinar el nombre del cliente para buscar
+              // Usar name si está disponible (para clientes jurídicos), sino companyName o fullName
+              const clientName = client.type === 'juridico' 
+                ? (client.name || client.companyName) 
+                : client.fullName
+              
               // Actualizar completitud del cliente
-              const clientName = client.type === 'juridico' ? client.companyName : client.fullName
               updateClientCompleteness(clientName, client)
               
-              // Si estamos editando un cliente temporal, cerrar el modal
-              if (editingClient && !editingClient._id) {
-                setEditingClient(null)
+              // Si el cliente fue creado desde el modal de faltantes, actualizar la lista
+              if (clientToEdit && (client.name === clientToEdit.name || client.companyName === clientToEdit.name || client.fullName === clientToEdit.name)) {
+                handleClientCreated(client)
               }
-            }, 100)
+              
+              // Cerrar el modal de edición
+              setEditingClient(null)
+            }, 200) // Aumentar timeout para asegurar que los clientes se hayan cargado
           })
         }}
       />

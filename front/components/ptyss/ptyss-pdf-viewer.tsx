@@ -129,18 +129,23 @@ export function PTYSSPdfViewer({ open, onOpenChange, invoice, clients, allRecord
     const firstRecordData = firstRecord.data as Record<string, any>
     const recordType = getRecordType(firstRecord)
     
-    // Para trasiego, siempre es PTG
+    // Buscar cliente por clientId primero
     let client = null
-    if (recordType === 'trasiego') {
+    const clientId = firstRecordData?.clientId
+    if (clientId && clientId.trim() !== '') {
+      client = clients.find((c: any) => (c._id || c.id) === clientId)
+    }
+    
+    // Si no hay clientId, buscar por associate (nombre del cliente de Driver Name)
+    if (!client && firstRecordData?.associate) {
+      const associate = firstRecordData.associate.trim()
       client = clients.find((c: any) => {
         const name = c.name?.toLowerCase().trim() || ''
         const companyName = c.companyName?.toLowerCase().trim() || ''
         const fullName = c.fullName?.toLowerCase().trim() || ''
-        return name === 'ptg' || companyName === 'ptg' || fullName === 'ptg'
+        const associateLower = associate.toLowerCase()
+        return name === associateLower || companyName === associateLower || fullName === associateLower
       })
-    } else {
-      // Para locales, buscar por clientId
-      client = clients.find((c: any) => (c._id || c.id) === firstRecordData?.clientId)
     }
     
     console.log('🔍 PDF Viewer - Cliente encontrado:', client)
