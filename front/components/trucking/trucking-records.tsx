@@ -673,6 +673,7 @@ export function TruckingRecords() {
                   <TableHead>Fecha</TableHead>
                   <TableHead>Total</TableHead>
                       <TableHead>Estado</TableHead>
+                  <TableHead className="hidden md:table-cell">Notas</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -699,6 +700,18 @@ export function TruckingRecords() {
                       <TableCell><div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-muted-foreground" />{formatDate(inv.issueDate)}</div></TableCell>
                       <TableCell className="font-bold"><div className="flex items-center gap-2"><DollarSign className="h-4 w-4 text-muted-foreground" />${(inv.totalAmount || 0).toFixed(2)}</div></TableCell>
                       <TableCell>{inv.status === 'prefactura' ? <Badge variant="outline" className="text-blue-600 border-blue-600">Prefactura</Badge> : <Badge variant="outline" className="text-green-600 border-green-600">Facturada</Badge>}</TableCell>
+                      <TableCell className="max-w-32 hidden md:table-cell">
+                        {inv.notes ? (
+                          <div 
+                            className="text-sm text-gray-600 truncate cursor-help" 
+                            title={inv.notes}
+                          >
+                            {inv.notes}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-sm">-</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <Button variant="ghost" size="sm" title="Ver registros" onClick={()=>handleViewRecords(inv)} className="h-8 w-8 text-purple-600 hover:bg-purple-50"><Database className="h-4 w-4"/></Button>

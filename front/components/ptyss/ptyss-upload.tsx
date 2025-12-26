@@ -308,7 +308,7 @@ export function PTYSSUpload() {
       if (routes.length === 0) {
         toast({
           title: "No hay rutas configuradas",
-          description: "Debes configurar rutas en la sección de configuración antes de subir archivos.",
+          description: "Debes configurar rutas en la sección de catálogos antes de subir archivos.",
           variant: "destructive",
         })
         return
@@ -1462,7 +1462,7 @@ export function PTYSSUpload() {
         if (routes.length === 0) {
           toast({
             title: "No hay rutas configuradas",
-            description: "Debes configurar rutas en la sección de configuración antes de subir archivos.",
+            description: "Debes configurar rutas en la sección de catálogos antes de subir archivos.",
             variant: "destructive",
           })
           return

@@ -769,20 +769,21 @@ export function AgencyRecords() {
                   <TableHead>Route</TableHead>
                   <TableHead>Move Type</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="hidden md:table-cell">Notes</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={8} className="h-24 text-center">
                       <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                       Loading services...
                     </TableCell>
                   </TableRow>
                 ) : !services || !Array.isArray(services) || services.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={8} className="h-24 text-center">
                       No services found
                     </TableCell>
                   </TableRow>
@@ -931,6 +932,19 @@ export function AgencyRecords() {
                             )
                           })()}
                         </div>
+                      </TableCell>
+                      
+                      <TableCell className="max-w-32 hidden md:table-cell">
+                        {service.notes ? (
+                          <div 
+                            className="text-sm text-gray-600 truncate cursor-help" 
+                            title={service.notes}
+                          >
+                            {service.notes}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-sm">-</span>
+                        )}
                       </TableCell>
                       
                       <TableCell>
