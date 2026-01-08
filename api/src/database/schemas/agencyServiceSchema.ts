@@ -71,6 +71,8 @@ export interface IAgencyService extends Document {
   // Pricing
   price?: number;
   currency: string;
+  discountAmount?: number;
+  discountDescription?: string;
   
   // Client information (Opcional - se asigna al facturar)
   clientId?: Types.ObjectId;
@@ -327,6 +329,20 @@ const agencyServiceSchema = new Schema<IAgencyService>(
       default: 'USD',
       enum: ['USD', 'PAB'],
       uppercase: true
+    },
+    
+    discountAmount: {
+      type: Number,
+      required: false,
+      default: 0,
+      min: 0
+    },
+    
+    discountDescription: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 200
     },
     
     // Client information (Opcional - se asigna al facturar)

@@ -15,6 +15,18 @@ export default async (req, res) => {
       invoiceData.totalAmount = (invoiceData.totalAmount || 0) + servicesTotal;
     }
     
+    // Validación de descuento - NUEVO (agregado 2026-01-08)
+    const discountAmount = Math.max(0, invoiceData.discountAmount || 0);
+    if (discountAmount > invoiceData.totalAmount) {
+      return response(res, 400, { 
+        error: "El descuento no puede ser mayor al total de la factura",
+        details: {
+          totalAmount: invoiceData.totalAmount,
+          discountAmount: discountAmount
+        }
+      });
+    }
+    
     const invoice = await invoices.create(invoiceData);
     
     // Marcar los registros asociados como facturados

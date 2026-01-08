@@ -131,7 +131,9 @@ export const createAgencyInvoice = async (req: Request, res: Response) => {
       relatedServiceIds,
       issueDate,
       dueDate,
-      details
+      details,
+      discountAmount,
+      discountDescription
     } = req.body;
 
     // Validations
@@ -199,6 +201,15 @@ export const createAgencyInvoice = async (req: Request, res: Response) => {
       totalAmount += details.additionalServices.reduce((sum: number, service: any) => sum + (service.amount || 0), 0);
     }
 
+    // Validate discount amount
+    const finalDiscountAmount = Math.max(0, discountAmount || 0);
+    if (finalDiscountAmount > totalAmount) {
+      return response(res, 400, {
+        success: false,
+        message: 'El descuento no puede ser mayor al total de la factura'
+      });
+    }
+
     // Create invoice
     const newInvoice = new agencyInvoices({
       module: 'AGENCY',
@@ -211,6 +222,8 @@ export const createAgencyInvoice = async (req: Request, res: Response) => {
       relatedServiceIds,
       totalAmount,
       currency: 'USD',
+      discountAmount: finalDiscountAmount,
+      discountDescription: finalDiscountAmount > 0 ? (discountDescription || 'Descuento aplicado a prefactura') : undefined,
       issueDate: issueDate || new Date(),
       dueDate,
       details,

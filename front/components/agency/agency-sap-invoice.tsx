@@ -492,9 +492,9 @@ export const AgencySapInvoice: React.FC = () => {
     setPdfModalOpen(true);
   };
 
-  const handleFacturarService = async (serviceId: string, invoiceNumber: string, invoiceDate: string, xmlData: any, waitingTimePrice?: number) => {
+  const handleFacturarService = async (serviceId: string, invoiceNumber: string, invoiceDate: string, xmlData: any, waitingTimePrice?: number, discountAmount?: number) => {
     try {
-      console.log('handleFacturarService called with:', { serviceId, invoiceNumber, invoiceDate, xmlData, waitingTimePrice });
+      console.log('handleFacturarService called with:', { serviceId, invoiceNumber, invoiceDate, xmlData, waitingTimePrice, discountAmount });
       
       // Actualizar servicio a facturado con datos de factura
       console.log('Updating service with data:', {
@@ -513,7 +513,9 @@ export const AgencySapInvoice: React.FC = () => {
           invoiceNumber: invoiceNumber,
           invoiceDate: invoiceDate,
           xmlData: xmlData, // Guardar XML si se generó
-          waitingTimePrice: waitingTimePrice || 0 // Guardar precio de waiting time
+          waitingTimePrice: waitingTimePrice || 0, // Guardar precio de waiting time
+          discountAmount: discountAmount || 0,
+          discountDescription: discountAmount && discountAmount > 0 ? 'Descuento aplicado a factura' : undefined
         }
       });
       
@@ -533,7 +535,7 @@ export const AgencySapInvoice: React.FC = () => {
     }
   };
 
-  const handleFacturarMultipleServices = async (serviceIds: string, invoiceNumber: string, invoiceDate: string, xmlData: any, hourlyRate?: number) => {
+  const handleFacturarMultipleServices = async (serviceIds: string, invoiceNumber: string, invoiceDate: string, xmlData: any, hourlyRate?: number, discountAmount?: number) => {
     try {
       // Convertir el string de IDs separados por comas en array
       const serviceIdArray = serviceIds.split(',');
@@ -574,7 +576,9 @@ export const AgencySapInvoice: React.FC = () => {
             invoiceNumber: invoiceNumber,
             invoiceDate: invoiceDate,
             xmlData: xmlData,
-            waitingTimePrice: individualWaitingTimePrice
+            waitingTimePrice: individualWaitingTimePrice,
+            discountAmount: discountAmount || 0,
+            discountDescription: discountAmount && discountAmount > 0 ? 'Descuento aplicado a factura' : undefined
           }
         });
       });

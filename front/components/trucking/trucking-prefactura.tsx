@@ -29,6 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast"
 import { Database, Search, X, Edit, Eye as EyeIcon, Trash2 as TrashIcon, Calendar, Eye, Download, FileText, DollarSign, ArrowLeft, Plus, Trash2, Loader2, Filter, Check } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DiscountInput } from "@/components/ui/discount-input"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 
@@ -144,6 +145,9 @@ export function TruckingPrefactura() {
   const [selectedRecordForView, setSelectedRecordForView] = useState<IndividualExcelRecord | null>(null)
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false)
   const [isDeletingBulk, setIsDeletingBulk] = useState(false)
+  
+  // Estado para descuentos - NUEVO (agregado 2026-01-08)
+  const [discountAmount, setDiscountAmount] = useState(0)
 
   const getTodayDates = () => {
     const today = new Date()
@@ -997,11 +1001,14 @@ export function TruckingPrefactura() {
         currency: 'USD',
         subtotal: totalSelected,
         taxAmount: 0,
-        totalAmount: totalSelected,
+        totalAmount: totalSelected, // MANTENER para SAP - sin descuento aplicado
         status: 'prefactura',
         xmlData: '',
         relatedRecordIds: selectedRecords.map((r: any) => r._id || r.id),
         notes: prefacturaData.notes,
+        // Campos de descuento - NUEVO (agregado 2026-01-08)
+        discountAmount: discountAmount,
+        discountDescription: discountAmount > 0 ? 'Descuento aplicado a prefactura' : undefined,
         details: {
           clientAddress: address,
           clientPhone: client.phone || '',
@@ -1025,6 +1032,7 @@ export function TruckingPrefactura() {
         setSelectedRecordIds([])
         setPrefacturaData({ prefacturaNumber: `TRK-PRE-${Date.now().toString().slice(-5)}`, notes: '' })
         setSelectedAdditionalServices([])
+        setDiscountAmount(0) // Reset descuento
         setStep('select')
 
         toast({ title: 'Prefactura creada', description: `Prefactura ${newPrefactura.invoiceNumber} creada con ${selectedRecords.length} registros.` })
@@ -1424,9 +1432,21 @@ export function TruckingPrefactura() {
                       <span className="font-semibold text-slate-800">Servicios Adicionales:</span>
                       <span className="font-bold text-lg text-slate-900">${selectedAdditionalServices.reduce((sum, s) => sum + s.amount, 0).toFixed(2)}</span>
                     </div>
+                    
+                    {/* Componente de descuento - NUEVO (agregado 2026-01-08) */}
+                    <div className="bg-white/80 p-4 rounded-lg">
+                      <DiscountInput
+                        maxAmount={totalSelected}
+                        value={discountAmount}
+                        onChange={setDiscountAmount}
+                        currency="USD"
+                        label="Descuento a aplicar"
+                      />
+                    </div>
+                    
                     <div className="border-t-2 border-slate-300 pt-3 flex justify-between items-center bg-gradient-to-r from-slate-200 to-blue-200 p-4 rounded-lg">
-                      <span className="font-bold text-lg text-slate-900">Total:</span>
-                      <span className="font-bold text-2xl text-slate-900">${totalSelected.toFixed(2)}</span>
+                      <span className="font-bold text-lg text-slate-900">Total a pagar:</span>
+                      <span className="font-bold text-2xl text-slate-900">${(totalSelected - discountAmount).toFixed(2)}</span>
                     </div>
                   </div>
                 </div>

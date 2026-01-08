@@ -20,6 +20,8 @@ export interface IAgencyInvoice extends Document {
   // Financial information
   totalAmount: number;
   currency: string;
+  discountAmount?: number;
+  discountDescription?: string;
   
   // Dates
   issueDate: Date;
@@ -130,6 +132,20 @@ const agencyInvoiceSchema = new Schema<IAgencyInvoice>(
       default: 'USD',
       enum: ['USD', 'PAB'],
       uppercase: true
+    },
+    
+    discountAmount: {
+      type: Number,
+      required: false,
+      default: 0,
+      min: 0
+    },
+    
+    discountDescription: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 200
     },
     
     // Dates
