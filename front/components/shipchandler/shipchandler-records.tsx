@@ -773,13 +773,14 @@ export function ShipChandlerRecords() {
                   <TableHead>Invoice Date</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead>Estado</TableHead>
+                  <TableHead className="hidden md:table-cell">Notas</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">
+                    <TableCell colSpan={8} className="text-center py-8">
                       <div className="flex items-center justify-center space-x-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         <span>Cargando prefacturas...</span>
@@ -788,7 +789,7 @@ export function ShipChandlerRecords() {
                   </TableRow>
                 ) : error ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">
+                    <TableCell colSpan={8} className="text-center py-8">
                       <div className="text-red-600">
                         Error al cargar prefacturas: {error}
                       </div>
@@ -828,6 +829,18 @@ export function ShipChandlerRecords() {
                           </div>
                         </TableCell>
                         <TableCell>{getStatusBadge(invoice.status)}</TableCell>
+                        <TableCell className="max-w-32 hidden md:table-cell">
+                          {invoice.notes ? (
+                            <div 
+                              className="text-sm text-gray-600 truncate cursor-help" 
+                              title={invoice.notes}
+                            >
+                              {invoice.notes}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-sm">-</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end space-x-2">
                             {/* Botón Ver PDF */}
@@ -891,7 +904,7 @@ export function ShipChandlerRecords() {
                   })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       {shipchandlerInvoices.length === 0
                         ? "No hay prefacturas ShipChandler creadas"
                         : "No se encontraron prefacturas que coincidan con los filtros"}

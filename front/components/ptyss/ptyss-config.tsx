@@ -930,7 +930,7 @@ export function PTYSSConfig() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings2 className="h-5 w-5" />
-            Configuración PTYSS
+            Catálogos PTYSS
           </CardTitle>
         </CardHeader>
         <CardContent>

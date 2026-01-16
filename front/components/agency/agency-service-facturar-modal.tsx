@@ -14,12 +14,13 @@ import { selectAllClients } from "@/lib/features/clients/clientsSlice";
 import { generateXmlFileName, validateXMLForSAP, generateAgencyInvoiceXML } from "@/lib/xml-generator";
 import saveAs from "file-saver";
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs";
+import { DiscountInput } from "@/components/ui/discount-input";
 
 interface AgencyServiceFacturarModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   service: any;
-  onFacturar: (serviceId: string, invoiceNumber: string, invoiceDate: string, xmlData: any, waitingTimePrice?: number) => Promise<void>;
+  onFacturar: (serviceId: string, invoiceNumber: string, invoiceDate: string, xmlData: any, waitingTimePrice?: number, discountAmount?: number) => Promise<void>;
   isMultipleServices?: boolean;
   selectedServices?: string[];
   selectedClientName?: string;
@@ -46,6 +47,7 @@ export function AgencyServiceFacturarModal({
   const [hourlyRate, setHourlyRate] = useState(0);
   const [generatedXml, setGeneratedXml] = useState<string>("");
   const [xmlValidation, setXmlValidation] = useState<{ isValid: boolean; errors: string[] } | null>(null);
+  const [discountAmount, setDiscountAmount] = useState(0);
 
   // Load catalogs to get waiting time rate
   useEffect(() => {
@@ -252,11 +254,11 @@ export function AgencyServiceFacturarModal({
       
       if (isMultipleServices) {
         // Para facturación múltiple, pasar el hourly rate para que se calcule individualmente
-        await onFacturar(selectedServices.join(','), invoiceNumber, invoiceDate, xmlData, hourlyRate);
+        await onFacturar(selectedServices.join(','), invoiceNumber, invoiceDate, xmlData, hourlyRate, discountAmount);
         toast({ title: "Servicios facturados", description: `${selectedServices.length} servicios han sido marcados como facturados.` });
       } else {
         // Para facturación individual, pasar el waiting time price calculado
-        await onFacturar(service._id || service.id, invoiceNumber, invoiceDate, xmlData, waitingTimePrice);
+        await onFacturar(service._id || service.id, invoiceNumber, invoiceDate, xmlData, waitingTimePrice, discountAmount);
         toast({ title: "Servicio facturado", description: `El servicio ha sido marcado como facturado.` });
       }
       onOpenChange(false);
@@ -428,6 +430,18 @@ export function AgencyServiceFacturarModal({
                   <span className="font-medium">Cliente:</span>
                   <span className="truncate">{selectedClientName}</span>
                 </div>
+                <div className="flex items-center gap-1">
+                  <DollarSign className="h-3 w-3 text-blue-600" />
+                  <span className="font-medium">Total Base:</span>
+                  <span className="font-bold">${allServices.reduce((total, svc) => total + (svc.price || 0), 0).toFixed(2)}</span>
+                </div>
+                {discountAmount > 0 && (
+                  <div className="flex items-center gap-1">
+                    <DollarSign className="h-3 w-3 text-green-600" />
+                    <span className="font-medium text-green-700">Total Final:</span>
+                    <span className="font-bold text-green-700">${(allServices.reduce((total, svc) => total + (svc.price || 0), 0) - discountAmount).toFixed(2)}</span>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-2 text-xs">
@@ -463,10 +477,24 @@ export function AgencyServiceFacturarModal({
                 </div>
               </div>
             )}
-            {!isMultipleServices && service && service.waitingTime > 0 && waitingTimePrice > 0 && (
+            {!isMultipleServices && service && service.waitingTime === 0 && discountAmount > 0 && (
               <div className="flex items-center justify-between pt-2 mt-2 border-t border-blue-200">
-                <span className="font-medium text-blue-900 text-sm">Total con Waiting Time:</span>
-                <span className="text-lg font-bold text-blue-700">${((service.price || 0) + waitingTimePrice).toFixed(2)}</span>
+                <span className="font-medium text-blue-900 text-sm">Total Final (con descuento):</span>
+                <span className="text-lg font-bold text-green-700">${((service.price || 0) - discountAmount).toFixed(2)}</span>
+              </div>
+            )}
+            {!isMultipleServices && service && service.waitingTime > 0 && waitingTimePrice > 0 && (
+              <div className="pt-2 mt-2 border-t border-blue-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-blue-900 text-sm">Total con Waiting Time:</span>
+                  <span className="text-lg font-bold text-blue-700">${((service.price || 0) + waitingTimePrice).toFixed(2)}</span>
+                </div>
+                {discountAmount > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-blue-900 text-sm">Total Final (con descuento):</span>
+                    <span className="text-lg font-bold text-green-700">${(((service.price || 0) + waitingTimePrice) - discountAmount).toFixed(2)}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -503,6 +531,22 @@ export function AgencyServiceFacturarModal({
                   value={invoiceDate} 
                   onChange={(e) => setInvoiceDate(e.target.value)} 
                   className="font-mono" 
+                />
+              </div>
+
+              {/* Discount Input */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">
+                  Descuento
+                </Label>
+                <DiscountInput
+                  value={discountAmount}
+                  onChange={setDiscountAmount}
+                  maxAmount={isMultipleServices 
+                    ? allServices.reduce((total, svc) => total + (svc.price || 0), 0)
+                    : (service?.price || 0) + waitingTimePrice
+                  }
+                  currency="USD"
                 />
               </div>
             </div>

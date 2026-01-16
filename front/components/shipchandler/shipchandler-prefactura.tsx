@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { Database, Search, X, Edit, Eye as EyeIcon, Trash2 as TrashIcon, Calendar, Eye, Download, FileText, DollarSign, ArrowLeft, Filter, Loader2, Check } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DiscountInput } from "@/components/ui/discount-input"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 
@@ -704,6 +705,9 @@ export function ShipChandlerPrefactura() {
   const [showPdfPreview, setShowPdfPreview] = useState(false)
   const [modalPdfUrl, setModalPdfUrl] = useState<string | null>(null)
   const [isCreatingPrefactura, setIsCreatingPrefactura] = useState(false)
+  
+  // Estado para descuentos - NUEVO (agregado 2026-01-08)
+  const [discountAmount, setDiscountAmount] = useState(0)
 
   const handleGenerateRealtimePDF = () => {
     if (selectedRecords.length === 0) return
@@ -835,11 +839,14 @@ export function ShipChandlerPrefactura() {
         currency: 'USD',
         subtotal: totalSelected,
         taxAmount: 0,
-        totalAmount: totalSelected,
+        totalAmount: totalSelected, // MANTENER para SAP - sin descuento aplicado
         status: 'prefactura',
         xmlData: '',
         relatedRecordIds: selectedRecords.map((r: any) => r._id || r.id),
         notes: prefacturaData.notes,
+        // Campos de descuento - NUEVO (agregado 2026-01-08)
+        discountAmount: discountAmount,
+        discountDescription: discountAmount > 0 ? 'Descuento aplicado a prefactura' : undefined,
         details: {
           clientAddress: address,
           clientPhone: client.phone || '',
@@ -861,6 +868,7 @@ export function ShipChandlerPrefactura() {
         dispatch(fetchRecordsByModule('shipchandler'))
         setSelectedRecordIds([])
         setPrefacturaData({ prefacturaNumber: `SCH-PRE-${Date.now().toString().slice(-5)}`, notes: '' })
+        setDiscountAmount(0) // Reset descuento
         setStep('select')
 
         toast({ title: 'Prefactura creada', description: `Prefactura ${newPrefactura.invoiceNumber} creada con ${selectedRecords.length} registros.` })
@@ -1150,9 +1158,20 @@ export function ShipChandlerPrefactura() {
                 <h4 className="font-bold text-slate-900 text-lg">Detalles de la Prefactura</h4>
               </div>
               <div className="space-y-3 text-sm">
+                {/* Componente de descuento - NUEVO (agregado 2026-01-08) */}
+                <div className="bg-white/80 p-4 rounded-lg">
+                  <DiscountInput
+                    maxAmount={totalSelected}
+                    value={discountAmount}
+                    onChange={setDiscountAmount}
+                    currency="USD"
+                    label="Descuento a aplicar"
+                  />
+                </div>
+                
                 <div className="border-t-2 border-slate-300 pt-3 flex justify-between items-center bg-gradient-to-r from-slate-200 to-blue-200 p-4 rounded-lg">
-                  <span className="font-bold text-lg text-slate-900">Total:</span>
-                  <span className="font-bold text-2xl text-slate-900">${totalSelected.toFixed(2)}</span>
+                  <span className="font-bold text-lg text-slate-900">Total a pagar:</span>
+                  <span className="font-bold text-2xl text-slate-900">${(totalSelected - discountAmount).toFixed(2)}</span>
                 </div>
               </div>
             </div>

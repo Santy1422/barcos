@@ -6,6 +6,21 @@ const updateInvoice = async (req: Request, res: Response) => {
     const { id } = req.params;
     const updateData = req.body;
     
+    // Validación de descuento - NUEVO (agregado 2026-01-08)
+    if (updateData.discountAmount !== undefined && updateData.totalAmount !== undefined) {
+      const discountAmount = Math.max(0, updateData.discountAmount || 0);
+      if (discountAmount > updateData.totalAmount) {
+        return res.status(400).json({
+          success: false,
+          error: "El descuento no puede ser mayor al total de la factura",
+          details: {
+            totalAmount: updateData.totalAmount,
+            discountAmount: discountAmount
+          }
+        });
+      }
+    }
+    
     // Agregar información de auditoría
     // @ts-ignore
     updateData.updatedBy = req.user?.id;

@@ -38,6 +38,7 @@ import { selectActiveNavieras, fetchNavieras } from "@/lib/features/naviera/navi
 import { selectServicesByModule, fetchServices, selectServicesLoading } from "@/lib/features/services/servicesSlice"
 import { selectAllLocalServices, selectLocalServicesLoading, fetchLocalServices } from "@/lib/features/localServices/localServicesSlice"
 import { createApiUrl } from "@/lib/api-config"
+import { DiscountInput } from "@/components/ui/discount-input"
 
 export function PTYSSPrefactura() {
   const dispatch = useAppDispatch()
@@ -102,6 +103,7 @@ export function PTYSSPrefactura() {
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editedRecord, setEditedRecord] = useState<any>(null)
+  const [discountAmount, setDiscountAmount] = useState(0)
   
   // Estado para servicios locales fijos
   const [fixedLocalServices, setFixedLocalServices] = useState<any[]>([])
@@ -763,7 +765,8 @@ export function PTYSSPrefactura() {
   }, 0)
   
   const additionalServicesTotal = selectedAdditionalServices.reduce((sum, service) => sum + service.amount, 0)
-  const grandTotal = totalAmount + additionalServicesTotal
+  const subtotal = totalAmount + additionalServicesTotal
+  const grandTotal = subtotal - discountAmount
   
   // Debug logs para verificar cálculos
   console.log('🔍 Total Calculation - totalAmount:', totalAmount)
@@ -1632,9 +1635,11 @@ export function PTYSSPrefactura() {
         issueDate: new Date().toISOString().split("T")[0],
         dueDate: new Date().toISOString().split("T")[0],
         currency: "USD",
-        subtotal: grandTotal,
+        subtotal: subtotal,
         taxAmount: 0,
         totalAmount: grandTotal,
+        discountAmount: discountAmount,
+        discountDescription: discountAmount > 0 ? 'Descuento aplicado a prefactura' : undefined,
         status: "prefactura",
         relatedRecordIds: selectedRecords.map((r: IndividualExcelRecord) => getRecordId(r)),
         notes: prefacturaData.notes,
@@ -2551,8 +2556,13 @@ export function PTYSSPrefactura() {
                   <div className="text-sm font-semibold text-slate-900">{selectedRecords.length} registro{selectedRecords.length !== 1 ? 's' : ''}</div>
                 </div>
                 <div className="bg-white/60 p-2 rounded-md">
-                  <span className="text-slate-600 font-medium text-xs">Total:</span> 
+                  <span className="text-slate-600 font-medium text-xs">Total Final:</span> 
                   <div className="text-sm font-semibold text-slate-900">${grandTotal.toFixed(2)}</div>
+                  {discountAmount > 0 && (
+                    <div className="text-xs text-green-600">
+                      (Desc: ${discountAmount.toFixed(2)})
+                    </div>
+                  )}
                 </div>
                 <div className="bg-white/60 p-2 rounded-md">
                   <span className="text-slate-600 font-medium text-xs">Cliente:</span> 
@@ -2852,8 +2862,30 @@ export function PTYSSPrefactura() {
                   <span className="font-semibold text-slate-800">Servicios Adicionales:</span>
                   <span className="font-bold text-lg text-slate-900">${additionalServicesTotal.toFixed(2)}</span>
                 </div>
+                <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
+                  <span className="font-semibold text-slate-800">Subtotal:</span>
+                  <span className="font-bold text-lg text-slate-900">${subtotal.toFixed(2)}</span>
+                </div>
+                
+                {/* Descuento Input */}
+                <div className="bg-white/80 p-4 rounded-lg border-2 border-dashed border-gray-300">
+                  <DiscountInput
+                    value={discountAmount}
+                    onChange={setDiscountAmount}
+                    maxAmount={subtotal}
+                    currency="USD"
+                  />
+                </div>
+                
+                {discountAmount > 0 && (
+                  <div className="flex justify-between items-center bg-red-50 p-3 rounded-lg">
+                    <span className="font-semibold text-red-800">Descuento:</span>
+                    <span className="font-bold text-lg text-red-900">-${discountAmount.toFixed(2)}</span>
+                  </div>
+                )}
+                
                 <div className="border-t-2 border-slate-300 pt-3 flex justify-between items-center bg-gradient-to-r from-slate-200 to-blue-200 p-4 rounded-lg">
-                  <span className="font-bold text-lg text-slate-900">Total:</span>
+                  <span className="font-bold text-lg text-slate-900">Total Final:</span>
                   <span className="font-bold text-2xl text-slate-900">${grandTotal.toFixed(2)}</span>
                 </div>
               </div>

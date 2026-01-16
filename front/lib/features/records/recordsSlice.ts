@@ -32,6 +32,8 @@ export interface InvoiceRecord {
   subtotal: number
   taxAmount: number
   totalAmount: number
+  discountAmount?: number
+  discountDescription?: string
   status: "prefactura" | "facturada" | "anulada"
   xmlData?: string
   relatedRecordIds: string[] // IDs of individual ExcelRecord items included in this invoice
@@ -1433,6 +1435,9 @@ export interface PersistedInvoiceRecord {
   relatedRecordIds: string[]
   notes?: string
   details?: Record<string, any>
+  // Campos de descuento - NUEVO (agregado 2026-01-08)
+  discountAmount?: number
+  discountDescription?: string
   createdAt: string
   updatedAt?: string
 }

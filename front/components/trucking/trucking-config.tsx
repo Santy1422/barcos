@@ -682,7 +682,7 @@ export function TruckingConfig() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings2 className="h-5 w-5" />
-            Configuración PTG (Trucking)
+            Catálogos PTG (Trucking)
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -1222,7 +1222,7 @@ export function TruckingConfig() {
                 Gestión de Impuestos PTG
               </CardTitle>
               <CardDescription className="text-sm pt-2  ">
-                Configuración de impuestos fijos PTG
+                Catálogos de impuestos fijos PTG
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -1236,7 +1236,7 @@ export function TruckingConfig() {
               ) : ptgTaxes.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <DollarSign className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                  <p className="text-lg font-medium">No hay impuestos configurados</p>
+                  <p className="text-lg font-medium">No hay impuestos en el catálogo</p>
                 </div>
               ) : (
                 <div className="space-y-4">

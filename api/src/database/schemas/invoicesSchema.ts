@@ -106,7 +106,20 @@ const invoicesSchema = new mongoose.Schema({
       type: Number,
       required: false
     }
-  }]
+  }],
+  // Campos para descuentos - NUEVOS (agregados 2026-01-08)
+  discountAmount: {
+    type: Number,
+    required: false,
+    default: 0,
+    min: 0
+  },
+  discountDescription: {
+    type: String,
+    required: false,
+    trim: true,
+    maxlength: 200
+  }
 }, {
   timestamps: true
 });
