@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import truckingRoutesControllers from '../controllers/truckingRoutesControllers/truckingRoutesControllers';
 import importTruckingRoutes from '../controllers/truckingRoutesControllers/importTruckingRoutes';
+import exportTruckingRoutes from '../controllers/truckingRoutesControllers/exportTruckingRoutes';
 import debugImport from '../controllers/truckingRoutesControllers/debugImport';
 import clearTruckingRoutes from '../controllers/truckingRoutesControllers/clearTruckingRoutes';
 import fixIndexes from '../controllers/truckingRoutesControllers/fixIndexes';
@@ -12,6 +13,7 @@ const router = Router();
 
 // Rutas específicas (deben ir antes de las rutas con parámetros) - solo admin/operaciones
 router.post('/import', jwtUtils, requireTruckingModule, requireAdminOrOperations, catchedAsync(importTruckingRoutes));
+router.get('/export', jwtUtils, requireTruckingModule, requireAdminOrOperations, catchedAsync(exportTruckingRoutes));
 router.post('/debug-import', jwtUtils, requireTruckingModule, requireAdminOrOperations, catchedAsync(debugImport));
 router.post('/fix-indexes', jwtUtils, requireTruckingModule, requireAdminOrOperations, catchedAsync(fixIndexes));
 router.delete('/clear', jwtUtils, requireTruckingModule, requireAdminOrOperations, catchedAsync(clearTruckingRoutes));

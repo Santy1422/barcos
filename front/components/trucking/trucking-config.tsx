@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Settings2, Plus, Edit, Trash2, Ship, MapPin, Wrench, Search, DollarSign, Upload } from "lucide-react"
+import { Settings2, Plus, Edit, Trash2, Ship, MapPin, Wrench, Search, DollarSign, Upload, Download } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 
@@ -72,6 +72,8 @@ import {
 
 import { PriceImporter } from "./price-importer"
 import { Pagination } from "@/components/ui/pagination"
+import * as XLSX from 'xlsx'
+import { saveAs } from 'file-saver'
 
 export function TruckingConfig() {
   const dispatch = useAppDispatch()
@@ -566,6 +568,105 @@ export function TruckingConfig() {
     }
   }
 
+  // Handler para exportación de precios
+  const handleExportPrices = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+
+      toast({ 
+        title: "Exportando rutas", 
+        description: "Obteniendo todas las rutas..." 
+      })
+
+      // Obtener todas las rutas desde el endpoint de exportación
+      const response = await fetch('/api/trucking-routes/export', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.payload?.message || `Error ${response.status}: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      const allRoutes = data.payload?.data || []
+
+      if (allRoutes.length === 0) {
+        toast({ 
+          title: "Sin datos", 
+          description: "No hay rutas para exportar", 
+          variant: "destructive" 
+        })
+        return
+      }
+
+      // Transformar las rutas al formato de exportación (compatible con importación)
+      const exportData = allRoutes.map((route: TruckingRoute) => ({
+        'Billing': route.routeType || '',
+        'Route Area': route.routeArea || '',
+        'Origin': route.origin || '',
+        'Destino': route.destination || '',
+        'Status': route.status || '',
+        'Sz': route.sizeContenedor || '',
+        'Tipo': route.containerType || '',
+        'Cliente': route.cliente || '',
+        'Rate': route.price || 0
+      }))
+
+      // Crear un nuevo workbook
+      const wb = XLSX.utils.book_new()
+      
+      // Crear la hoja de trabajo con los datos
+      const ws = XLSX.utils.json_to_sheet(exportData)
+      
+      // Ajustar el ancho de las columnas
+      const colWidths = [
+        { wch: 10 }, // Billing
+        { wch: 12 }, // Route Area
+        { wch: 8 },  // Origin
+        { wch: 8 },  // Destino
+        { wch: 8 },  // Status
+        { wch: 6 },  // Sz
+        { wch: 8 },  // Tipo
+        { wch: 10 }, // Cliente
+        { wch: 10 }  // Rate
+      ]
+      ws['!cols'] = colWidths
+      
+      // Agregar la hoja al workbook
+      XLSX.utils.book_append_sheet(wb, ws, 'Rutas PTG')
+      
+      // Generar el archivo Excel
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+      
+      // Crear un blob y descargarlo
+      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const fileName = `rutas-ptg-export-${new Date().toISOString().split('T')[0]}.xlsx`
+      saveAs(blob, fileName)
+      
+      toast({ 
+        title: "Exportación completada", 
+        description: `Se exportaron ${allRoutes.length} rutas exitosamente` 
+      })
+
+    } catch (error) {
+      console.error('Error en exportación de precios:', error)
+      toast({ 
+        title: "Error", 
+        description: error instanceof Error ? error.message : "Error al exportar las rutas", 
+        variant: "destructive" 
+      })
+    }
+  }
+
   // Obtener impuestos PTG (Customs y Administration Fee)
   const ptgTaxes = useMemo(() => {
     return services.filter(service => 
@@ -734,6 +835,10 @@ export function TruckingConfig() {
                 <Button variant="outline" onClick={() => setShowPriceImporter(true)}>
                   <Upload className="h-4 w-4 mr-2" />
                   Importar Precios
+                </Button>
+                <Button variant="outline" onClick={handleExportPrices}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Exportar Precios
                 </Button>
                 <Button onClick={() => setShowAddRouteForm(!showAddRouteForm)}>
                   <Plus className="h-4 w-4 mr-2" />
