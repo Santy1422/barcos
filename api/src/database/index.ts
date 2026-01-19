@@ -16,6 +16,7 @@ import AgencyCatalog from './schemas/agencyCatalogSchema';
 import AgencyInvoice from './schemas/agencyInvoiceSchema';
 import recordsAutoridadesSchema from './schemas/recordsAutoridadesSchema';
 import { ContainerType } from './schemas/containerTypesSchema';
+import { ErrorLog } from './schemas/errorLogSchema';
 
 mongoose.set('strictQuery', false);
 
@@ -49,6 +50,7 @@ export const agencyCatalogs = AgencyCatalog;
 export const agencyInvoices = AgencyInvoice;
 export const recordsAutoridades = mongoose.model('recordsAutoridades', recordsAutoridadesSchema);
 export const containerTypes = ContainerType;
+export const errorLogs = ErrorLog;
 
 // Manejo de eventos de conexión
 mongoose.connection.on('connected', () => {
@@ -86,7 +88,8 @@ export const getModels = () => {
     agencyCatalogs,
     agencyInvoices,
     recordsAutoridades,
-    containerTypes
+    containerTypes,
+    errorLogs
   };
 };
 
@@ -106,4 +109,5 @@ export type Models = {
   agencyInvoices: typeof agencyInvoices;
   recordsAutoridades: typeof recordsAutoridades;
   containerTypes: typeof containerTypes;
+  errorLogs: typeof errorLogs;
 };
