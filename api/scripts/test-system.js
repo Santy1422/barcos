@@ -58,11 +58,14 @@ const Record = mongoose.model('records', recordSchema);
 async function runTests() {
   let passed = 0;
   let failed = 0;
+  const issues = []; // Guardar problemas encontrados
 
   try {
     logSection('INICIANDO PRUEBAS DEL SISTEMA');
     log(`Fecha: ${new Date().toLocaleString()}`);
     log(`Log guardado en: ${logFile}`);
+    log(`Servidor: ${process.env.NODE_ENV || 'development'}`);
+    log(`MongoDB: ${MONGO_URI ? MONGO_URI.substring(0, 30) + '...' : 'NO CONFIGURADO'}`);
 
     // Conexión
     await mongoose.connect(MONGO_URI);
@@ -186,6 +189,59 @@ async function runTests() {
       failed++;
     }
 
+    // TEST 6: Verificar clientes
+    logSection('TEST 6: CLIENTES');
+    const clientSchema = new mongoose.Schema({ name: String, sapCode: String, isActive: Boolean });
+    const Client = mongoose.models.clients || mongoose.model('clients', clientSchema);
+    const clientCount = await Client.countDocuments({ isActive: true });
+    log(`Clientes activos: ${clientCount}`);
+
+    const clientsWithoutSapCode = await Client.find({ isActive: true, sapCode: { $in: [null, '', undefined] } }).lean();
+    if (clientsWithoutSapCode.length > 0) {
+      log(`⚠️ ${clientsWithoutSapCode.length} clientes sin código SAP:`);
+      clientsWithoutSapCode.slice(0, 5).forEach(c => {
+        log(`  - ${c.name}`);
+        issues.push(`Cliente sin SAP: ${c.name}`);
+      });
+    } else {
+      log('✅ Todos los clientes tienen código SAP');
+      passed++;
+    }
+
+    // TEST 7: Verificar registros con problemas
+    logSection('TEST 7: REGISTROS CON PROBLEMAS');
+    const recordsWithNoPrice = await Record.find({
+      module: 'trucking',
+      totalValue: { $in: [0, null, undefined] }
+    }).limit(10).lean();
+
+    log(`Registros trucking sin precio: ${recordsWithNoPrice.length}`);
+    if (recordsWithNoPrice.length > 0) {
+      recordsWithNoPrice.slice(0, 3).forEach(r => {
+        log(`  - ${r.containerConsecutive || r._id}: $${r.totalValue}`);
+        issues.push(`Registro sin precio: ${r.containerConsecutive || r._id}`);
+      });
+    }
+
+    // TEST 8: Verificar códigos SAP de contenedores
+    logSection('TEST 8: CÓDIGOS SAP DE CONTENEDORES');
+    const invalidSapCodes = ['XX', '', null, undefined];
+    const ctWithBadSap = await ContainerType.find({
+      isActive: true,
+      sapCode: { $in: invalidSapCodes }
+    }).lean();
+
+    if (ctWithBadSap.length > 0) {
+      log(`⚠️ ${ctWithBadSap.length} tipos con código SAP inválido:`);
+      ctWithBadSap.forEach(ct => {
+        log(`  - ${ct.code}: sapCode="${ct.sapCode}"`);
+        issues.push(`Tipo contenedor con SAP inválido: ${ct.code}`);
+      });
+    } else {
+      log('✅ Todos los tipos de contenedor tienen código SAP válido');
+      passed++;
+    }
+
     // Resumen
     logSection('RESUMEN DE PRUEBAS');
     log(`✅ Pasaron: ${passed}`);
@@ -193,9 +249,16 @@ async function runTests() {
     log(`Total: ${passed + failed}`);
     log('');
 
+    if (issues.length > 0) {
+      logSection('⚠️ PROBLEMAS DETECTADOS');
+      issues.forEach((issue, i) => log(`${i + 1}. ${issue}`));
+    }
+
     if (failed === 0) {
+      log('');
       log('🎉 TODAS LAS PRUEBAS PASARON');
     } else {
+      log('');
       log('⚠️ ALGUNAS PRUEBAS FALLARON - REVISAR');
     }
 
