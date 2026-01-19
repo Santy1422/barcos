@@ -178,6 +178,7 @@ export const matchTruckingDataWithRoutes = async (
     console.log(`  Type: "${record.type}"`)
     console.log(`  Line (Cliente): "${record.line}"`)
     console.log(`  Size: "${record.size}"`)
+    console.log(`  F/E: "${record.fe}"`)
     
     // OPTIMIZACIÓN: Filtrar por criterios más específicos primero
     
@@ -295,7 +296,39 @@ export const matchTruckingDataWithRoutes = async (
       });
       console.log(`  Rutas candidatas después de filtrar por tamaño "${normalizedSize}": ${candidateRoutes.length}`)
     }
-    
+
+    // 7. Filtrar por status (FULL/EMPTY) basado en el campo F/E del Excel
+    const feValue = record.fe?.toString().trim().toUpperCase() || '';
+    // Mapear valores de F/E a status:
+    // - "F", "FULL", "2" → FULL
+    // - "E", "EMPTY", "1", "0", "" → EMPTY
+    const targetStatus: "FULL" | "EMPTY" | null =
+      (feValue === 'F' || feValue === 'FULL' || feValue === '2') ? 'FULL' :
+      (feValue === 'E' || feValue === 'EMPTY' || feValue === '1' || feValue === '0') ? 'EMPTY' : null;
+
+    if (targetStatus) {
+      const routesBeforeStatusFilter = candidateRoutes.length;
+      candidateRoutes = candidateRoutes.filter(route => route.status === targetStatus);
+      console.log(`  Rutas candidatas después de filtrar por status "${targetStatus}" (F/E="${feValue}"): ${candidateRoutes.length}`)
+
+      // Si no hay rutas con ese status específico, intentar con el status opuesto como fallback
+      if (candidateRoutes.length === 0 && routesBeforeStatusFilter > 0) {
+        console.log(`  ⚠️  No hay rutas con status "${targetStatus}", usando fallback...`)
+        // Restaurar las rutas candidatas sin filtro de status
+        candidateRoutes = routesByName.get(normalizedLeg) || [];
+        candidateRoutes = candidateRoutes.filter(route => route.routeType === targetRouteType);
+        candidateRoutes = candidateRoutes.filter(route => route.containerType?.trim().toUpperCase() === normalizedType);
+        if (normalizedLine) {
+          candidateRoutes = candidateRoutes.filter(route => route.cliente?.trim().toLowerCase() === normalizedLine);
+        }
+        if (normalizedSize) {
+          candidateRoutes = candidateRoutes.filter(route => route.sizeContenedor?.trim().toUpperCase() === normalizedSize);
+        }
+      }
+    } else {
+      console.log(`  F/E no especificado o no reconocido ("${feValue}"), no se filtra por status`)
+    }
+
     // Buscar la mejor coincidencia (ya filtradas las candidatas)
     const matchedRoute = candidateRoutes[0]; // Tomar la primera coincidencia ya que ya están filtradas
     
