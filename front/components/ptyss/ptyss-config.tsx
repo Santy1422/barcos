@@ -71,7 +71,9 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
-import { Loader2, Search, Upload, RefreshCw } from "lucide-react"
+import { Loader2, Search, Upload, RefreshCw, Download } from "lucide-react"
+import * as XLSX from 'xlsx'
+import { saveAs } from 'file-saver'
 import { PTYSSPriceImporter } from "./ptyss-price-importer"
 import { Pagination } from "@/components/ui/pagination"
 import { createApiUrl } from "@/lib/api-config"
@@ -828,8 +830,8 @@ export function PTYSSConfig() {
   }
 
   const handleRefreshRoutes = () => {
-    dispatch(fetchPTYSSRoutes({ 
-      page: 1, 
+    dispatch(fetchPTYSSRoutes({
+      page: 1,
       limit: 5000, // Aumentado para manejar hasta 5000 rutas
       ...routesFilters
     }))
@@ -837,6 +839,99 @@ export function PTYSSConfig() {
       title: "Rutas actualizadas",
       description: "La lista de rutas ha sido actualizada correctamente",
     })
+  }
+
+  // Handler para exportación de rutas
+  const handleExportRoutes = async () => {
+    try {
+      const token = localStorage.getItem('token')
+
+      if (!token) {
+        throw new Error('No se encontró token de autenticación')
+      }
+
+      toast({
+        title: "Exportando rutas",
+        description: "Obteniendo todas las rutas..."
+      })
+
+      // Obtener todas las rutas
+      const response = await fetch(createApiUrl('/api/ptyss-routes?limit=10000'), {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.payload?.message || `Error ${response.status}: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      const allRoutes = data.payload?.data || []
+
+      if (allRoutes.length === 0) {
+        toast({
+          title: "Sin datos",
+          description: "No hay rutas para exportar",
+          variant: "destructive"
+        })
+        return
+      }
+
+      // Transformar las rutas al formato de exportación
+      const exportData = allRoutes.map((route: PTYSSRoute) => ({
+        'Nombre': route.name || '',
+        'Origen': route.from || '',
+        'Destino': route.to || '',
+        'Tipo Contenedor': route.containerType || '',
+        'Tipo Ruta': route.routeType || '',
+        'Estado': route.status || '',
+        'Cliente': route.cliente || '',
+        'Area': route.routeArea || '',
+        'Precio': route.price || 0
+      }))
+
+      // Crear workbook y hoja
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.json_to_sheet(exportData)
+
+      // Ajustar anchos de columnas
+      ws['!cols'] = [
+        { wch: 20 }, // Nombre
+        { wch: 10 }, // Origen
+        { wch: 10 }, // Destino
+        { wch: 15 }, // Tipo Contenedor
+        { wch: 12 }, // Tipo Ruta
+        { wch: 10 }, // Estado
+        { wch: 15 }, // Cliente
+        { wch: 12 }, // Area
+        { wch: 10 }  // Precio
+      ]
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Rutas PTYSS')
+
+      // Generar y descargar archivo
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const fileName = `rutas-ptyss-export-${new Date().toISOString().split('T')[0]}.xlsx`
+      saveAs(blob, fileName)
+
+      toast({
+        title: "Exportación completada",
+        description: `Se exportaron ${allRoutes.length} rutas exitosamente`
+      })
+
+    } catch (error) {
+      console.error('Error en exportación de rutas:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error al exportar las rutas",
+        variant: "destructive"
+      })
+    }
   }
 
   // Handler para importación de precios
@@ -1119,6 +1214,10 @@ export function PTYSSConfig() {
                 <Button variant="outline" onClick={() => setShowPriceImporter(true)}>
                   <Upload className="h-4 w-4 mr-2" />
                   Importar Precios
+                </Button>
+                <Button variant="outline" onClick={handleExportRoutes}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Exportar Rutas
                 </Button>
                 <Button onClick={() => setShowAddRouteForm(!showAddRouteForm)}>
                   <Plus className="h-4 w-4 mr-2" />

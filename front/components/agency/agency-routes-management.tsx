@@ -10,10 +10,12 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { 
-  Route, MapPin, Plus, Edit, Trash2, X, Save, DollarSign, 
-  Users, RefreshCw, Eye, ArrowRight, Search
+import {
+  Route, MapPin, Plus, Edit, Trash2, X, Save, DollarSign,
+  Users, RefreshCw, Eye, ArrowRight, Search, Download
 } from "lucide-react"
+import * as XLSX from 'xlsx'
+import { saveAs } from 'file-saver'
 import { useAgencyRoutes } from "@/lib/features/agencyServices/useAgencyRoutes"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
 import { useToast } from "@/hooks/use-toast"
@@ -351,6 +353,118 @@ export function AgencyRoutesManagement() {
     }
   }
 
+  // Handler para exportación de rutas
+  const handleExportRoutes = () => {
+    try {
+      if (routes.length === 0) {
+        toast({
+          title: "Sin datos",
+          description: "No hay rutas para exportar",
+          variant: "destructive"
+        })
+        return
+      }
+
+      toast({
+        title: "Exportando rutas",
+        description: "Generando archivo Excel..."
+      })
+
+      // Transformar las rutas al formato de exportación (aplanando la estructura de pricing)
+      const exportData = routes.flatMap((route: any) => {
+        // Si no hay pricing, crear una fila básica
+        if (!route.pricing || route.pricing.length === 0) {
+          return [{
+            'Nombre Ruta': route.name || '',
+            'Pickup Site Type': route.pickupSiteType || '',
+            'Dropoff Site Type': route.dropoffSiteType || '',
+            'Tipo Ruta': '',
+            'Min Pasajeros': '',
+            'Max Pasajeros': '',
+            'Precio': '',
+            'Moneda': route.currency || 'USD',
+            'Tarifa Espera (hr)': route.waitingTimeRate || 0,
+            'Tarifa Pasajero Extra': route.extraPassengerRate || 0,
+            'Estado': route.isActive ? 'Activo' : 'Inactivo'
+          }]
+        }
+
+        // Aplanar pricing: una fila por cada combinación de routeType y passengerRange
+        return route.pricing.flatMap((pricing: any) => {
+          if (!pricing.passengerRanges || pricing.passengerRanges.length === 0) {
+            return [{
+              'Nombre Ruta': route.name || '',
+              'Pickup Site Type': route.pickupSiteType || '',
+              'Dropoff Site Type': route.dropoffSiteType || '',
+              'Tipo Ruta': pricing.routeType || '',
+              'Min Pasajeros': '',
+              'Max Pasajeros': '',
+              'Precio': '',
+              'Moneda': route.currency || 'USD',
+              'Tarifa Espera (hr)': route.waitingTimeRate || 0,
+              'Tarifa Pasajero Extra': route.extraPassengerRate || 0,
+              'Estado': route.isActive ? 'Activo' : 'Inactivo'
+            }]
+          }
+
+          return pricing.passengerRanges.map((range: any) => ({
+            'Nombre Ruta': route.name || '',
+            'Pickup Site Type': route.pickupSiteType || '',
+            'Dropoff Site Type': route.dropoffSiteType || '',
+            'Tipo Ruta': pricing.routeType || '',
+            'Min Pasajeros': range.minPassengers || 0,
+            'Max Pasajeros': range.maxPassengers || 0,
+            'Precio': range.price || 0,
+            'Moneda': route.currency || 'USD',
+            'Tarifa Espera (hr)': route.waitingTimeRate || 0,
+            'Tarifa Pasajero Extra': route.extraPassengerRate || 0,
+            'Estado': route.isActive ? 'Activo' : 'Inactivo'
+          }))
+        })
+      })
+
+      // Crear workbook y hoja
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.json_to_sheet(exportData)
+
+      // Ajustar anchos de columnas
+      ws['!cols'] = [
+        { wch: 30 }, // Nombre Ruta
+        { wch: 20 }, // Pickup Site Type
+        { wch: 20 }, // Dropoff Site Type
+        { wch: 15 }, // Tipo Ruta
+        { wch: 12 }, // Min Pasajeros
+        { wch: 12 }, // Max Pasajeros
+        { wch: 10 }, // Precio
+        { wch: 8 },  // Moneda
+        { wch: 15 }, // Tarifa Espera
+        { wch: 18 }, // Tarifa Pasajero Extra
+        { wch: 10 }  // Estado
+      ]
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Rutas Agency')
+
+      // Generar y descargar archivo
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const fileName = `rutas-agency-export-${new Date().toISOString().split('T')[0]}.xlsx`
+      saveAs(blob, fileName)
+
+      toast({
+        title: "Exportación completada",
+        description: `Se exportaron ${routes.length} rutas exitosamente`
+      })
+
+    } catch (error) {
+      console.error('Error en exportación de rutas:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error al exportar las rutas",
+        variant: "destructive"
+      })
+    }
+  }
+
   const filteredRoutes = routes.filter(route => {
     const searchLower = searchTerm.toLowerCase()
     return (
@@ -382,10 +496,16 @@ export function AgencyRoutesManagement() {
             Manage routes with dynamic pricing based on passenger count and route type
           </p>
         </div>
-        <Button onClick={handleOpenCreateModal} className="bg-green-600 hover:bg-green-700">
-          <Plus className="h-4 w-4 mr-2" />
-          Create Route
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExportRoutes}>
+            <Download className="h-4 w-4 mr-2" />
+            Export Routes
+          </Button>
+          <Button onClick={handleOpenCreateModal} className="bg-green-600 hover:bg-green-700">
+            <Plus className="h-4 w-4 mr-2" />
+            Create Route
+          </Button>
+        </div>
       </div>
 
       {/* Quick Stats */}
