@@ -18,7 +18,7 @@ import {
   SidebarMenuButton,
   SidebarMenuBadge,
   SidebarSeparator,
-  SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import {
@@ -43,6 +43,8 @@ import {
   BookOpen,
   FileText,
   Package,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -244,51 +246,93 @@ export function AppSidebar() {
     })
   }
 
+  const { state, toggleSidebar } = useSidebar()
+  const isCollapsed = state === "collapsed"
+
   return (
-    <Sidebar collapsible="icon" className="hidden h-full border-r bg-muted/20 md:flex md:flex-col">
-      <SidebarHeader className="flex h-14 items-center justify-between border-b px-4">
-        <Link href="/" className="flex items-center gap-2 font-semibold">
-          <Briefcase className="h-6 w-6 text-primary" />
-          <span className="group-data-[collapsible=icon]:hidden">Facturación</span>
+    <Sidebar collapsible="icon" className="hidden h-full border-r bg-gradient-to-b from-slate-50 to-white md:flex md:flex-col">
+      {/* Header con logo */}
+      <SidebarHeader className="flex h-16 items-center border-b bg-white px-4">
+        <Link href="/" className="flex items-center gap-3 font-semibold">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-white shadow-sm">
+            <Briefcase className="h-5 w-5" />
+          </div>
+          <span className="text-lg font-bold text-slate-800 group-data-[collapsible=icon]:hidden">
+            Facturación
+          </span>
         </Link>
-        <SidebarTrigger className="hidden md:flex" />
       </SidebarHeader>
-      <SidebarContent className="flex-1 overflow-y-auto p-2">
+
+      {/* Contenido del menú */}
+      <SidebarContent className="flex-1 overflow-y-auto px-3 py-4">
         <SidebarGroup>
-          <SidebarGroupLabel className="select-none px-2 group-data-[collapsible=icon]:hidden">
+          <SidebarGroupLabel className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400 group-data-[collapsible=icon]:hidden">
             Principal
           </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>{renderNavItems(mainNavItems)}</SidebarMenu>
+            <SidebarMenu className="space-y-1">{renderNavItems(mainNavItems)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <SidebarSeparator className="my-2" />
+
+        <SidebarSeparator className="my-4" />
+
         <SidebarGroup>
-          <SidebarGroupLabel className="select-none px-2 group-data-[collapsible=icon]:hidden">Ayuda</SidebarGroupLabel>
+          <SidebarGroupLabel className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400 group-data-[collapsible=icon]:hidden">
+            Ayuda
+          </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>{renderNavItems(helpNavItems)}</SidebarMenu>
+            <SidebarMenu className="space-y-1">{renderNavItems(helpNavItems)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="p-2 border-t">
+
+      {/* Footer con usuario y botón de colapsar */}
+      <SidebarFooter className="border-t bg-white p-3">
+        {/* Botón de colapsar/expandir */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleSidebar}
+          className="mb-2 w-full justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-700 group-data-[collapsible=icon]:w-auto"
+        >
+          {isCollapsed ? (
+            <ChevronRight className="h-4 w-4" />
+          ) : (
+            <>
+              <ChevronLeft className="h-4 w-4 mr-2" />
+              <span className="text-xs group-data-[collapsible=icon]:hidden">Contraer</span>
+            </>
+          )}
+        </Button>
+
+        {/* Usuario */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              className="w-full justify-start p-2 group-data-[collapsible=icon]:w-auto group-data-[collapsible=icon]:justify-center"
+              className="w-full justify-start rounded-lg p-2 hover:bg-slate-100 group-data-[collapsible=icon]:w-auto group-data-[collapsible=icon]:justify-center"
             >
-              <Avatar className="h-8 w-8">
+              <Avatar className="h-9 w-9 border-2 border-primary/20">
                 <AvatarImage src="/placeholder-user.jpg" alt={userEmail} />
-                <AvatarFallback>{userEmail.charAt(0).toUpperCase()}</AvatarFallback>
+                <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                  {userEmail.charAt(0).toUpperCase()}
+                </AvatarFallback>
               </Avatar>
-              <div className="ml-2 flex flex-col items-start group-data-[collapsible=icon]:hidden">
-                <span className="text-sm font-medium">{userEmail}</span>
-                <span className="text-xs text-muted-foreground">Usuario</span>
+              <div className="ml-3 flex flex-col items-start group-data-[collapsible=icon]:hidden">
+                <span className="text-sm font-medium text-slate-700 truncate max-w-[120px]">
+                  {userEmail.split('@')[0]}
+                </span>
+                <span className="text-xs text-slate-400">Usuario</span>
               </div>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex flex-col space-y-1">
+                <p className="text-sm font-medium">{userEmail.split('@')[0]}</p>
+                <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
+              </div>
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem>
               <Settings className="mr-2 h-4 w-4" />
@@ -299,7 +343,7 @@ export function AppSidebar() {
               <span>Soporte</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>
+            <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-600">
               <LogOut className="mr-2 h-4 w-4" />
               <span>Cerrar Sesión</span>
             </DropdownMenuItem>
