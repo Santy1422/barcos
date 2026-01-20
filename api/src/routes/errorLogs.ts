@@ -6,7 +6,7 @@ import {
   resolveError,
   clearResolvedErrors
 } from '../controllers/errorLogController';
-import { verifyToken } from '../middlewares/authMiddleware';
+import { verifyToken } from '../middleware/authMiddleware';
 
 const router = Router();
 
