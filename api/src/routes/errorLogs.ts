@@ -6,7 +6,7 @@ import {
   resolveError,
   clearResolvedErrors
 } from '../controllers/errorLogController';
-import { verifyToken } from '../middleware/authMiddleware';
+import { authenticateToken } from '../middleware/authMiddleware';
 
 const router = Router();
 
@@ -14,9 +14,9 @@ const router = Router();
 router.post('/', createErrorLog);
 
 // Rutas protegidas
-router.get('/', verifyToken, getErrorLogs);
-router.get('/stats', verifyToken, getErrorStats);
-router.patch('/:id/resolve', verifyToken, resolveError);
-router.delete('/clear', verifyToken, clearResolvedErrors);
+router.get('/', authenticateToken, getErrorLogs);
+router.get('/stats', authenticateToken, getErrorStats);
+router.patch('/:id/resolve', authenticateToken, resolveError);
+router.delete('/clear', authenticateToken, clearResolvedErrors);
 
 export default router;
