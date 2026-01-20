@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "deploy": "./deploy-server.sh"
+  },
   "devDependencies": {
     "typescript": "^5.8.3"
   },
