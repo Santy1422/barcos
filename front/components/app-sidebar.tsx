@@ -252,10 +252,10 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="hidden h-full border-r bg-gradient-to-b from-slate-50 to-white md:flex md:flex-col">
       {/* Header con logo */}
-      <SidebarHeader className="flex h-16 items-center border-b bg-white px-4">
-        <Link href="/" className="flex items-center gap-3 font-semibold">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-white shadow-sm">
-            <Briefcase className="h-5 w-5" />
+      <SidebarHeader className="flex h-16 items-center justify-center border-b bg-white px-2 group-data-[collapsible=icon]:px-0">
+        <Link href="/" className="flex items-center gap-3 font-semibold group-data-[collapsible=icon]:justify-center">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white shadow-sm">
+            <Briefcase className="h-4 w-4" />
           </div>
           <span className="text-lg font-bold text-slate-800 group-data-[collapsible=icon]:hidden">
             Facturación
@@ -264,8 +264,8 @@ export function AppSidebar() {
       </SidebarHeader>
 
       {/* Contenido del menú */}
-      <SidebarContent className="flex-1 overflow-y-auto px-3 py-4">
-        <SidebarGroup>
+      <SidebarContent className="flex-1 overflow-y-auto px-2 py-4 group-data-[collapsible=icon]:px-1">
+        <SidebarGroup className="group-data-[collapsible=icon]:px-0">
           <SidebarGroupLabel className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400 group-data-[collapsible=icon]:hidden">
             Principal
           </SidebarGroupLabel>
@@ -274,9 +274,9 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarSeparator className="my-4" />
+        <SidebarSeparator className="my-4 group-data-[collapsible=icon]:mx-0" />
 
-        <SidebarGroup>
+        <SidebarGroup className="group-data-[collapsible=icon]:px-0">
           <SidebarGroupLabel className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400 group-data-[collapsible=icon]:hidden">
             Ayuda
           </SidebarGroupLabel>
@@ -287,13 +287,13 @@ export function AppSidebar() {
       </SidebarContent>
 
       {/* Footer con usuario y botón de colapsar */}
-      <SidebarFooter className="border-t bg-white p-3">
+      <SidebarFooter className="border-t bg-white p-2 group-data-[collapsible=icon]:p-1">
         {/* Botón de colapsar/expandir */}
         <Button
           variant="ghost"
           size="sm"
           onClick={toggleSidebar}
-          className="mb-2 w-full justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-700 group-data-[collapsible=icon]:w-auto"
+          className="mb-2 w-full justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-700"
         >
           {isCollapsed ? (
             <ChevronRight className="h-4 w-4" />
@@ -310,11 +310,11 @@ export function AppSidebar() {
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              className="w-full justify-start rounded-lg p-2 hover:bg-slate-100 group-data-[collapsible=icon]:w-auto group-data-[collapsible=icon]:justify-center"
+              className="w-full justify-center rounded-lg p-2 hover:bg-slate-100 group-data-[collapsible=icon]:p-1"
             >
-              <Avatar className="h-9 w-9 border-2 border-primary/20">
+              <Avatar className="h-8 w-8 border-2 border-primary/20">
                 <AvatarImage src="/placeholder-user.jpg" alt={userEmail} />
-                <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                <AvatarFallback className="bg-primary/10 text-primary font-semibold text-sm">
                   {userEmail.charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
