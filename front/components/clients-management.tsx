@@ -761,33 +761,39 @@ export function ClientsManagement() {
 
   // Filtrar clientes por módulos del usuario
   const filteredClientsByModule = useMemo(() => {
-    if (!currentUser || !currentUser.modules || currentUser.modules.length === 0) {
+    if (!currentUser) {
       return allClients
     }
-    
-    // Obtener roles del usuario para verificar si es admin
+
+    // Obtener roles del usuario para verificar permisos
     const userRoles = currentUser.roles || (currentUser.role ? [currentUser.role] : [])
     const isAdmin = userRoles.includes('administrador')
-    
-    // Si es admin, ver todos los clientes
-    if (isAdmin) {
+    const isClientesRole = userRoles.includes('clientes')
+
+    // Si es admin o tiene rol "clientes", ver todos los clientes
+    if (isAdmin || isClientesRole) {
       return allClients
     }
-    
+
+    // Si no tiene módulos asignados, mostrar todos los clientes
+    if (!currentUser.modules || currentUser.modules.length === 0) {
+      return allClients
+    }
+
     // Mapear los módulos del usuario a los módulos de los clientes
     const userClientModules = currentUser.modules?.map(m => moduleMapping[m] || m) || []
-    
-    // Si no es admin, filtrar por módulos del usuario
+
+    // Filtrar por módulos del usuario
     return allClients.filter((client: any) => {
       if (!client.module || !Array.isArray(client.module)) {
         return false // Clientes sin módulo asignado no se muestran
       }
-      
+
       // Verificar si el cliente tiene al menos uno de los módulos del usuario (mapeados)
-      const hasOverlap = client.module.some((clientModule: string) => 
+      const hasOverlap = client.module.some((clientModule: string) =>
         userClientModules.includes(clientModule)
       )
-      
+
       return hasOverlap
     })
   }, [allClients, currentUser])

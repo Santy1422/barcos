@@ -84,7 +84,7 @@ export const requireModule = (requiredModule: string) => {
 // Middleware específicos por rol
 export const requireAdmin = requireRole(['administrador']);
 export const requireAdminOrOperations = requireRole(['administrador', 'operaciones']);
-export const requireAnyRole = requireRole(['administrador', 'operaciones', 'facturacion', 'catalogos']);
+export const requireAnyRole = requireRole(['administrador', 'operaciones', 'facturacion', 'catalogos', 'clientes']);
 export const requireAdminOrCatalogos = requireRole(['administrador', 'catalogos']);
 // Middleware para gestión de clientes: permite admin, catalogos y clientes
 export const requireAdminOrCatalogosOrClientes = requireRole(['administrador', 'catalogos', 'clientes']);
