@@ -2,6 +2,66 @@ import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features
 import { js2xml } from "xml-js"
 import { TRUCKING_DEFAULTS } from "./constants/trucking-options"
 
+// Tipo para el mapa de container types (code -> sapCode)
+export interface ContainerTypeMapping {
+  code: string
+  sapCode: string
+  category: string
+}
+
+// Variable global para almacenar el mapa de container types
+let containerTypesMap: ContainerTypeMapping[] = []
+
+// Variable para trackear los containerTypes no encontrados durante la generación de XML
+let missingContainerTypes: Set<string> = new Set()
+
+// Función para establecer el mapa de container types (llamar al inicio de la app o cuando se carguen)
+export const setContainerTypesMap = (containerTypes: ContainerTypeMapping[]) => {
+  containerTypesMap = containerTypes
+  console.log('🗺️ Container Types Map actualizado:', containerTypesMap.length, 'tipos')
+}
+
+// Función para limpiar los tipos faltantes antes de generar un nuevo XML
+export const clearMissingContainerTypes = () => {
+  missingContainerTypes = new Set()
+}
+
+// Función para obtener los tipos de contenedor que no se encontraron
+export const getMissingContainerTypes = (): string[] => {
+  return Array.from(missingContainerTypes)
+}
+
+// Función para verificar si hay tipos de contenedor faltantes
+export const hasMissingContainerTypes = (): boolean => {
+  return missingContainerTypes.size > 0
+}
+
+// Función para obtener el sapCode de un containerType code
+export const getContainerTypeSapCode = (code: string): string => {
+  if (!code) return 'DV' // Valor por defecto
+
+  const normalizedCode = code.toUpperCase().trim()
+
+  // Ignorar valores por defecto o vacíos
+  if (normalizedCode === 'DV' || normalizedCode === '') {
+    return normalizedCode || 'DV'
+  }
+
+  const containerType = containerTypesMap.find(ct =>
+    ct.code.toUpperCase().trim() === normalizedCode
+  )
+
+  if (containerType && containerType.sapCode) {
+    console.log(`✅ Container Type homologado: ${code} -> ${containerType.sapCode}`)
+    return containerType.sapCode
+  }
+
+  // Registrar el tipo faltante
+  missingContainerTypes.add(code)
+  console.warn(`⚠️ Container Type no encontrado en el mapa: ${code}, usando valor original`)
+  return code // Retornar el código original si no se encuentra en el mapa
+}
+
 // Tipos para PTYSS XML
 export interface PTYSSInvoiceForXml {
   id: string
@@ -569,7 +629,9 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 const isAuthTaxService = ['TRK182', 'TRK175', 'TRK009'].includes(record.serviceCode || '')
                 
                 // Calcular valores de contenedor primero
-                const ctrType = record.containerType || "DV"
+                // Homologar el containerType al sapCode usando el mapa de container types
+                const originalCtrType = record.containerType || "DV"
+                const ctrType = getContainerTypeSapCode(originalCtrType)
                 const ctrSize = record.containerSize || "40"
                 const ctrISOcode = getCtrISOcode(ctrType, ctrSize)
                 
@@ -588,8 +650,9 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 } else {
                   finalCtrISOcode = ctrISOcode
                   // Solo incluir CtrType, CtrSize si tienen valores no vacíos
-                  if (record.containerType && record.containerType.trim()) {
-                    finalCtrType = record.containerType
+                  // Usar el ctrType ya homologado en lugar del valor original
+                  if (ctrType && ctrType.trim()) {
+                    finalCtrType = ctrType // Usar el sapCode homologado
                   }
                   if (record.containerSize && record.containerSize.trim()) {
                     finalCtrSize = record.containerSize
@@ -660,13 +723,15 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 let ctrISOcode: string | undefined
                 let finalCtrType: string | undefined
                 let finalCtrSize: string | undefined
-                
+
                 if (taxItem.containerType && taxItem.containerSize) {
-                  const ctrType = taxItem.containerType
+                  // Homologar el containerType al sapCode
+                  const originalCtrType = taxItem.containerType
+                  const ctrType = getContainerTypeSapCode(originalCtrType)
                   const ctrSize = taxItem.containerSize
                   ctrISOcode = getCtrISOcode(ctrType, ctrSize)
-                  if (taxItem.containerType && taxItem.containerType.trim()) {
-                    finalCtrType = taxItem.containerType
+                  if (ctrType && ctrType.trim()) {
+                    finalCtrType = ctrType // Usar el sapCode homologado
                   }
                   if (taxItem.containerSize && taxItem.containerSize.trim()) {
                     finalCtrSize = taxItem.containerSize
@@ -829,44 +894,22 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
               
               // Extraer información del contenedor
               let containerSize = "40"
-              let containerType = "DV"
+              let originalContainerType = "DV"
               // CtrCategory siempre es "A" para PTYSS (trasiegos y locales)
-              // Mantenemos la lógica dinámica comentada por si se necesita volver a valores dinámicos
               let ctrCategory = "A"
-              
+
               if (parts[0] === 'TRASIEGO') {
                 containerSize = parts[4] || "40" // size
-                containerType = parts[5] || "DV" // type
-                // Lógica dinámica comentada - por ahora CtrCategory siempre es "A"
-                // if (containerType.includes('HR') || containerType.includes('HC')) {
-                //   ctrCategory = 'H'
-                // } else if (containerType.includes('RF')) {
-                //   ctrCategory = 'R'
-                // } else if (containerType.includes('CA')) {
-                //   ctrCategory = 'C'
-                // } else if (containerType.includes('DV')) {
-                //   ctrCategory = 'D'
-                // } else if (containerType.includes('FL')) {
-                //   ctrCategory = 'N'
-                // }
+                originalContainerType = parts[5] || "DV" // type
               } else {
                 containerSize = parts[2] || "40" // containerSize
-                containerType = parts[3] || "DV" // containerType
-                // Lógica dinámica comentada - por ahora CtrCategory siempre es "A"
-                // if (containerType.includes('HR') || containerType.includes('HC')) {
-                //   ctrCategory = 'H'
-                // } else if (containerType.includes('RF')) {
-                //   ctrCategory = 'R'
-                // } else if (containerType.includes('CA')) {
-                //   ctrCategory = 'C'
-                // } else if (containerType.includes('DV')) {
-                //   ctrCategory = 'D'
-                // } else if (containerType.includes('FL')) {
-                //   ctrCategory = 'N'
-                // }
+                originalContainerType = parts[3] || "DV" // containerType
               }
-              
-              // Calcular CtrISOcode basándose en CtrType y CtrSize
+
+              // Homologar el containerType al sapCode usando el mapa de container types
+              const containerType = getContainerTypeSapCode(originalContainerType)
+
+              // Calcular CtrISOcode basándose en CtrType homologado y CtrSize
               const ctrISOcode = getCtrISOcode(containerType, containerSize)
               
               // Determinar FullEmpty

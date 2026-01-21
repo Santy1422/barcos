@@ -21,9 +21,10 @@ import { FileText,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { PTYSSRecordsViewModal } from "./ptyss-records-view-modal"
-import { generatePTYSSInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSapFtp, type PTYSSInvoiceForXml } from "@/lib/xml-generator"
-import { useAppSelector } from "@/lib/hooks"
+import { generatePTYSSInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSapFtp, setContainerTypesMap, clearMissingContainerTypes, getMissingContainerTypes, hasMissingContainerTypes, type PTYSSInvoiceForXml } from "@/lib/xml-generator"
+import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { selectAllIndividualRecords } from "@/lib/features/records/recordsSlice"
+import { selectAllContainerTypes, fetchContainerTypes } from "@/lib/features/containerTypes/containerTypesSlice"
 import saveAs from "file-saver"
 
 interface PTYSSFacturacionModalProps {
@@ -33,13 +34,14 @@ interface PTYSSFacturacionModalProps {
   onFacturar: (invoiceNumber: string, xmlData?: { xml: string, isValid: boolean }, invoiceDate?: string) => Promise<void>
 }
 
-export function PTYSSFacturacionModal({ 
-  open, 
-  onOpenChange, 
-  invoice, 
-  onFacturar 
+export function PTYSSFacturacionModal({
+  open,
+  onOpenChange,
+  invoice,
+  onFacturar
 }: PTYSSFacturacionModalProps) {
   const { toast } = useToast()
+  const dispatch = useAppDispatch()
   const [isProcessing, setIsProcessing] = useState(false)
   const [newInvoiceNumber, setNewInvoiceNumber] = useState("")
   const [invoiceDate, setInvoiceDate] = useState(() => {
@@ -52,11 +54,14 @@ export function PTYSSFacturacionModal({
   const [isSendingToSap, setIsSendingToSap] = useState(false)
   const [sapLogs, setSapLogs] = useState<any[]>([])
   const [showSapLogs, setShowSapLogs] = useState(false)
-  
+  const [showMissingTypesModal, setShowMissingTypesModal] = useState(false)
+  const [missingTypes, setMissingTypes] = useState<string[]>([])
+
      // Obtener registros asociados para generar XML
    const allRecords = useAppSelector(selectAllIndividualRecords)
    const clients = useAppSelector((state) => state.clients.clients)
    const clientsLoading = useAppSelector((state) => state.clients.loading)
+   const containerTypes = useAppSelector(selectAllContainerTypes)
    
    // Debug: Verificar que los clientes se cargan correctamente
    useEffect(() => {
@@ -79,12 +84,34 @@ export function PTYSSFacturacionModal({
     setIsSendingToSap(false)
     setSapLogs([])
     setShowSapLogs(false)
+    setShowMissingTypesModal(false)
+    setMissingTypes([])
     const today = new Date()
     setInvoiceDate(today.toISOString().split('T')[0])
-  }, [invoice?.id])
+
+    // Cargar container types para homologación SAP
+    if (open) {
+      dispatch(fetchContainerTypes())
+    }
+  }, [invoice?.id, open, dispatch])
+
+  // Actualizar el mapa de containerTypes para homologación SAP
+  useEffect(() => {
+    if (containerTypes && containerTypes.length > 0) {
+      console.log("🗺️ PTYSS - Actualizando mapa de containerTypes para homologación SAP:", containerTypes.length, "tipos")
+      setContainerTypesMap(containerTypes.map((ct: any) => ({
+        code: ct.code,
+        sapCode: ct.sapCode,
+        category: ct.category
+      })))
+    }
+  }, [containerTypes])
   
   // Función para generar XML de PTYSS
   const generateXMLForInvoice = () => {
+    // Limpiar tipos de contenedor faltantes antes de generar
+    clearMissingContainerTypes()
+
     console.log("🔍 generateXMLForInvoice - Iniciando...")
     console.log("🔍 generateXMLForInvoice - invoice:", invoice)
     console.log("🔍 generateXMLForInvoice - newInvoiceNumber:", newInvoiceNumber)
@@ -221,17 +248,32 @@ export function PTYSSFacturacionModal({
       console.log("🔍 generateXMLForInvoice - Generando XML con datos:", invoiceForXml)
       const xml = generatePTYSSInvoiceXML(invoiceForXml)
       console.log("🔍 generateXMLForInvoice - XML generado, longitud:", xml.length)
+
+      // Verificar si hay tipos de contenedor faltantes
+      if (hasMissingContainerTypes()) {
+        const missing = getMissingContainerTypes()
+        console.warn("⚠️ Tipos de contenedor no configurados:", missing)
+        setMissingTypes(missing)
+        setShowMissingTypesModal(true)
+      }
+
       const validation = validateXMLForSAP(xml)
       console.log("🔍 generateXMLForInvoice - Validación:", validation)
-      
+
       setGeneratedXml(xml)
       setXmlValidation(validation)
-      
-      if (validation.isValid) {
+
+      if (validation.isValid && !hasMissingContainerTypes()) {
         toast({
           title: "XML generado exitosamente",
           description: "El XML cumple con todos los requisitos para SAP.",
           className: "bg-green-600 text-white"
+        })
+      } else if (hasMissingContainerTypes()) {
+        toast({
+          title: "Advertencia",
+          description: `Hay ${getMissingContainerTypes().length} tipo(s) de contenedor sin configurar en SAP.`,
+          variant: "destructive"
         })
       } else {
         toast({
@@ -240,7 +282,7 @@ export function PTYSSFacturacionModal({
           variant: "destructive"
         })
       }
-      
+
       const result = { xml, isValid: validation.isValid }
       console.log("✅ generateXMLForInvoice - Retornando resultado:", result)
       return result
@@ -662,6 +704,60 @@ export function PTYSSFacturacionModal({
         onOpenChange={setShowRecordsModal}
         invoice={invoice}
       />
+
+      {/* Modal de advertencia para tipos de contenedor faltantes */}
+      <Dialog open={showMissingTypesModal} onOpenChange={setShowMissingTypesModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-600">
+              <AlertTriangle className="h-5 w-5" />
+              Tipos de Contenedor No Configurados
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Alert className="border-orange-200 bg-orange-50">
+              <AlertTriangle className="h-4 w-4 text-orange-600" />
+              <AlertDescription className="text-orange-800">
+                Los siguientes tipos de contenedor no están configurados en el sistema y SAP los rechazará:
+              </AlertDescription>
+            </Alert>
+
+            <div className="bg-gray-100 p-4 rounded-lg">
+              <div className="flex flex-wrap gap-2">
+                {missingTypes.map((type, index) => (
+                  <Badge key={index} variant="destructive" className="text-sm font-mono">
+                    {type}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            <div className="text-sm text-gray-600 space-y-2">
+              <p><strong>Para solucionar esto:</strong></p>
+              <ol className="list-decimal list-inside space-y-1 ml-2">
+                <li>Ve a <strong>Configuración → Tipos de Contenedor</strong></li>
+                <li>Agrega los tipos faltantes con su código SAP correspondiente</li>
+                <li>Vuelve a generar el XML</li>
+              </ol>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowMissingTypesModal(false)}>
+                Entendido
+              </Button>
+              <Button
+                className="bg-orange-600 hover:bg-orange-700"
+                onClick={() => {
+                  setShowMissingTypesModal(false)
+                  window.open('/configuracion', '_blank')
+                }}
+              >
+                Ir a Configuración
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 } 

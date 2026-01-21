@@ -12,7 +12,8 @@ import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { selectAllIndividualRecords, selectAutoridadesRecords, fetchAutoridadesRecords } from "@/lib/features/records/recordsSlice"
 import { selectAllServices, fetchServices } from "@/lib/features/services/servicesSlice"
-import { generateInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSapFtp } from "@/lib/xml-generator"
+import { selectAllContainerTypes, fetchContainerTypes } from "@/lib/features/containerTypes/containerTypesSlice"
+import { generateInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSapFtp, setContainerTypesMap, clearMissingContainerTypes, getMissingContainerTypes, hasMissingContainerTypes } from "@/lib/xml-generator"
 import saveAs from "file-saver"
 
 interface TruckingFacturacionModalProps {
@@ -33,11 +34,14 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
   const [isSendingToSap, setIsSendingToSap] = useState(false)
   const [sapLogs, setSapLogs] = useState<any[]>([])
   const [showSapLogs, setShowSapLogs] = useState(false)
+  const [showMissingTypesModal, setShowMissingTypesModal] = useState(false)
+  const [missingTypes, setMissingTypes] = useState<string[]>([])
 
   const allRecords = useAppSelector(selectAllIndividualRecords)
   const autoridadesRecords = useAppSelector(selectAutoridadesRecords)
   const services = useAppSelector(selectAllServices)
-  
+  const containerTypes = useAppSelector(selectAllContainerTypes)
+
   // Detectar si es una factura AUTH
   const isAuthInvoice = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-')
 
@@ -48,10 +52,13 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
     setIsSendingToSap(false)
     setSapLogs([])
     setShowSapLogs(false)
-    
-    // Cargar servicios para los impuestos PTG
+    setShowMissingTypesModal(false)
+    setMissingTypes([])
+
+    // Cargar servicios para los impuestos PTG y container types para homologación
     if (open) {
       dispatch(fetchServices())
+      dispatch(fetchContainerTypes())
     }
     
     // Pre-rellenar el número de factura para prefacturas AUTH
@@ -70,6 +77,18 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
       dispatch(fetchAutoridadesRecords())
     }
   }, [open, isAuthInvoice, dispatch])
+
+  // Actualizar el mapa de containerTypes para homologación SAP
+  useEffect(() => {
+    if (containerTypes && containerTypes.length > 0) {
+      console.log("🗺️ Actualizando mapa de containerTypes para homologación SAP:", containerTypes.length, "tipos")
+      setContainerTypesMap(containerTypes.map((ct: any) => ({
+        code: ct.code,
+        sapCode: ct.sapCode,
+        category: ct.category
+      })))
+    }
+  }, [containerTypes])
 
   // Debug: monitorear cambios en registros de autoridades
   useEffect(() => {
@@ -263,6 +282,9 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
 
   const generateXMLForInvoice = () => {
     try {
+      // Limpiar tipos de contenedor faltantes antes de generar
+      clearMissingContainerTypes()
+
       console.log("=== DEBUG: generateXMLForInvoice ===")
       console.log("Invoice:", invoice)
       console.log("Is AUTH Invoice:", isAuthInvoice)
@@ -512,12 +534,25 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
       console.log("Final XML payload:", xmlPayload)
       const xml = generateInvoiceXML(xmlPayload)
       console.log("XML generado exitosamente")
-      
+
+      // Verificar si hay tipos de contenedor faltantes
+      if (hasMissingContainerTypes()) {
+        const missing = getMissingContainerTypes()
+        console.warn("⚠️ Tipos de contenedor no configurados:", missing)
+        setMissingTypes(missing)
+        setShowMissingTypesModal(true)
+      }
+
       const validation = validateXMLForSAP(xml)
       setGeneratedXml(xml)
       setXmlValidation(validation)
-      if (validation.isValid) toast({ title: "XML generado", description: "El XML cumple con los requisitos para SAP." })
-      else toast({ title: "XML con advertencias", description: `Se encontraron ${validation.errors.length} advertencias.`, variant: "destructive" })
+      if (validation.isValid && !hasMissingContainerTypes()) {
+        toast({ title: "XML generado", description: "El XML cumple con los requisitos para SAP." })
+      } else if (hasMissingContainerTypes()) {
+        toast({ title: "Advertencia", description: `Hay ${getMissingContainerTypes().length} tipo(s) de contenedor sin configurar en SAP.`, variant: "destructive" })
+      } else {
+        toast({ title: "XML con advertencias", description: `Se encontraron ${validation.errors.length} advertencias.`, variant: "destructive" })
+      }
       return { xml, isValid: validation.isValid }
     } catch (error: any) {
       console.error("=== ERROR en generateXMLForInvoice ===")
@@ -738,6 +773,60 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
           </div>
         </div>
       </DialogContent>
+
+      {/* Modal de advertencia para tipos de contenedor faltantes */}
+      <Dialog open={showMissingTypesModal} onOpenChange={setShowMissingTypesModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-600">
+              <AlertTriangle className="h-5 w-5" />
+              Tipos de Contenedor No Configurados
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Alert className="border-orange-200 bg-orange-50">
+              <AlertTriangle className="h-4 w-4 text-orange-600" />
+              <AlertDescription className="text-orange-800">
+                Los siguientes tipos de contenedor no están configurados en el sistema y SAP los rechazará:
+              </AlertDescription>
+            </Alert>
+
+            <div className="bg-gray-100 p-4 rounded-lg">
+              <div className="flex flex-wrap gap-2">
+                {missingTypes.map((type, index) => (
+                  <Badge key={index} variant="destructive" className="text-sm font-mono">
+                    {type}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            <div className="text-sm text-gray-600 space-y-2">
+              <p><strong>Para solucionar esto:</strong></p>
+              <ol className="list-decimal list-inside space-y-1 ml-2">
+                <li>Ve a <strong>Configuración → Tipos de Contenedor</strong></li>
+                <li>Agrega los tipos faltantes con su código SAP correspondiente</li>
+                <li>Vuelve a generar el XML</li>
+              </ol>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowMissingTypesModal(false)}>
+                Entendido
+              </Button>
+              <Button
+                className="bg-orange-600 hover:bg-orange-700"
+                onClick={() => {
+                  setShowMissingTypesModal(false)
+                  window.open('/configuracion', '_blank')
+                }}
+              >
+                Ir a Configuración
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }
