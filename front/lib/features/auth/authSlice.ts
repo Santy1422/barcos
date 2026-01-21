@@ -800,9 +800,9 @@ export const hasSectionAccess = (user: User | null, module: UserModule, section:
       'pendiente': []
     },
     agency: {
-      'administrador': ['services', 'records', 'sap-invoice', 'historial', 'catalogs'], // Config removido - no se usa
+      'administrador': ['services', 'invoice', 'records', 'sap-invoice', 'historial', 'catalogs'],
       'operaciones': ['services', 'records'], // Crear servicios y registros
-      'facturacion': ['sap-invoice', 'historial'], // SAP Invoice e historial (Clientes está en sección global)
+      'facturacion': ['invoice', 'sap-invoice', 'historial'], // Crear prefactura, SAP Invoice e historial
       'pendiente': []
     }
   }

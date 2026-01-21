@@ -168,6 +168,9 @@ export function AppSidebar() {
         ...(hasSectionAccess(currentUser, "agency", "services") ? [
           { title: "Crear Servicios", href: "/agency/services", icon: Plus }
         ] : []),
+        ...(hasSectionAccess(currentUser, "agency", "invoice") ? [
+          { title: "Crear Prefactura", href: "/agency/invoice", icon: FilePlus2 }
+        ] : []),
         ...(hasSectionAccess(currentUser, "agency", "records") ? [
           { title: "Registros", href: "/agency/records", icon: ListOrdered }
         ] : []),
@@ -180,7 +183,6 @@ export function AppSidebar() {
         ...(hasSectionAccess(currentUser, "agency", "catalogs") ? [
           { title: "Catálogos", href: "/agency/catalogs", icon: BookOpen }
         ] : []),
-        // Configuración removida - no se usa por ahora
       ].filter(Boolean),
     }] : []),
     // Clientes - Solo clientes y administradores (no facturación sin rol clientes)
