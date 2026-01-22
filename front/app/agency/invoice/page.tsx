@@ -1,18 +1,31 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAgencyServices } from '@/lib/features/agencyServices/useAgencyServices';
+import { useAppDispatch, useAppSelector } from '@/lib/hooks';
+import { createInvoiceAsync, fetchInvoicesAsync, type InvoiceRecord } from '@/lib/features/records/recordsSlice';
+import { selectAllClients, fetchClients } from '@/lib/features/clients/clientsSlice';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
-import { FileText, Download, DollarSign, Calendar, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  FileText, Download, DollarSign, Calendar, CheckCircle, AlertTriangle,
+  Car, Users, Loader2, Eye, ArrowLeft, Plus
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 
 export default function AgencyInvoicePage() {
   const { toast } = useToast();
+  const dispatch = useAppDispatch();
+  const clients = useAppSelector(selectAllClients);
+  const invoices = useAppSelector(state => state.records.invoices);
+
   const {
     services,
     loading,
@@ -21,18 +34,31 @@ export default function AgencyInvoicePage() {
   } = useAgencyServices();
 
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  const [prefacturaNumber, setPrefacturaNumber] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [activeTab, setActiveTab] = useState('create');
 
-  // Filter only completed services ready for invoicing
+  // Filter services by status
   const completedServices = services.filter(service => service.status === 'completed');
-  const prefacturedServices = services.filter(service => service.status === 'prefacturado');
+  const agencyPrefacturas = invoices.filter(inv => inv.module === 'agency' && inv.status !== 'finalized');
+  const agencyFacturas = invoices.filter(inv => inv.module === 'agency' && inv.status === 'finalized');
 
   useEffect(() => {
-    fetchServices({ 
-      page: 1, 
-      limit: 100, 
-      filters: { status: 'completed,prefacturado' } 
+    fetchServices({
+      page: 1,
+      limit: 100,
+      filters: { status: 'completed' }
     });
-  }, [fetchServices]);
+    dispatch(fetchClients());
+    dispatch(fetchInvoicesAsync('agency'));
+  }, [fetchServices, dispatch]);
+
+  // Generate next prefactura number
+  useEffect(() => {
+    const agencyInvoices = invoices.filter(inv => inv.module === 'agency');
+    const nextNumber = agencyInvoices.length + 1;
+    setPrefacturaNumber(`AGY-PRE-${String(nextNumber).padStart(6, '0')}`);
+  }, [invoices]);
 
   const handleServiceSelection = (serviceId: string, checked: boolean) => {
     if (checked) {
@@ -50,94 +76,139 @@ export default function AgencyInvoicePage() {
     }
   };
 
+  const selectedServicesData = useMemo(() => {
+    return completedServices.filter(service => selectedServices.includes(service._id));
+  }, [completedServices, selectedServices]);
+
   const calculateTotalValue = () => {
-    return completedServices
-      .filter(service => selectedServices.includes(service._id))
-      .reduce((total, service) => total + (service.price || 0), 0);
+    return selectedServicesData.reduce((total, service) => total + (service.price || 0), 0);
   };
 
-  const handleCreatePreInvoice = async () => {
+  // Group selected services by client
+  const servicesByClient = useMemo(() => {
+    const grouped: Record<string, typeof selectedServicesData> = {};
+    selectedServicesData.forEach(service => {
+      const clientName = service.clientName || 'Sin Cliente';
+      if (!grouped[clientName]) {
+        grouped[clientName] = [];
+      }
+      grouped[clientName].push(service);
+    });
+    return grouped;
+  }, [selectedServicesData]);
+
+  const handleCreatePrefactura = async () => {
     if (selectedServices.length === 0) {
       toast({
-        title: "No services selected",
-        description: "Please select at least one service to create pre-invoice",
+        title: "Error",
+        description: "Selecciona al menos un servicio para crear la prefactura",
         variant: "destructive",
       });
       return;
     }
 
-    try {
-      // Update status to prefacturado for selected services
-      for (const serviceId of selectedServices) {
-        await updateStatus({ id: serviceId, status: 'prefacturado' as any });
-      }
-
-      toast({
-        title: "Pre-invoice created",
-        description: `${selectedServices.length} services marked as pre-invoiced`,
-      });
-
-      setSelectedServices([]);
-      fetchServices({ 
-        page: 1, 
-        limit: 100, 
-        filters: { status: 'completed,prefacturado' } 
-      });
-    } catch (error) {
+    if (!prefacturaNumber.trim()) {
       toast({
         title: "Error",
-        description: "Failed to create pre-invoice",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleFinalizeInvoice = async () => {
-    const prefacturedToFinalize = prefacturedServices
-      .filter(service => selectedServices.includes(service._id));
-
-    if (prefacturedToFinalize.length === 0) {
-      toast({
-        title: "No pre-invoiced services selected",
-        description: "Please select pre-invoiced services to finalize",
+        description: "Ingresa un número de prefactura",
         variant: "destructive",
       });
       return;
     }
 
+    setIsCreating(true);
+
     try {
-      for (const service of prefacturedToFinalize) {
-        await updateStatus({ id: service._id, status: 'facturado' as any });
+      // Get first service to determine client info
+      const firstService = selectedServicesData[0];
+      const clientName = firstService?.clientName || 'Cliente Agency';
+
+      // Find client by name to get RUC and SAP number
+      const client = clients.find((c: any) =>
+        c.companyName === clientName || c.fullName === clientName || c.name === clientName
+      );
+
+      // Create invoice record
+      const newPrefactura: InvoiceRecord = {
+        module: 'agency',
+        invoiceNumber: prefacturaNumber,
+        clientRuc: client?.taxId || client?.ruc || '',
+        clientName: clientName,
+        clientSapNumber: client?.sapNumber || '',
+        issueDate: new Date().toISOString(),
+        totalAmount: calculateTotalValue(),
+        status: 'draft',
+        relatedRecordIds: selectedServices,
+        details: {
+          services: selectedServicesData.map(s => ({
+            id: s._id,
+            crewName: s.crewName,
+            vessel: s.vessel,
+            pickupDate: s.pickupDate,
+            pickupLocation: s.pickupLocation,
+            dropoffLocation: s.dropoffLocation,
+            price: s.price,
+            moveType: s.moveType,
+            passengerCount: s.passengerCount
+          })),
+          totalServices: selectedServices.length,
+        },
+        createdAt: new Date().toISOString(),
+      };
+
+      console.log("Creating agency prefactura:", newPrefactura);
+
+      const response = await dispatch(createInvoiceAsync(newPrefactura));
+
+      if (createInvoiceAsync.fulfilled.match(response)) {
+        // Update services status to prefacturado
+        for (const serviceId of selectedServices) {
+          await updateStatus({ id: serviceId, status: 'prefacturado' as any });
+        }
+
+        toast({
+          title: "Prefactura creada",
+          description: `Prefactura ${prefacturaNumber} creada con ${selectedServices.length} servicios`,
+        });
+
+        // Reset state
+        setSelectedServices([]);
+
+        // Refresh data
+        fetchServices({
+          page: 1,
+          limit: 100,
+          filters: { status: 'completed' }
+        });
+        dispatch(fetchInvoicesAsync('agency'));
+
+        // Switch to prefacturas tab
+        setActiveTab('prefacturas');
+      } else {
+        throw new Error('Error al crear la prefactura');
       }
-
-      toast({
-        title: "Invoice finalized",
-        description: `${prefacturedToFinalize.length} services marked as invoiced`,
-      });
-
-      setSelectedServices([]);
-      fetchServices({ 
-        page: 1, 
-        limit: 100, 
-        filters: { status: 'completed,prefacturado' } 
-      });
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Error creating prefactura:", error);
       toast({
         title: "Error",
-        description: "Failed to finalize invoice",
+        description: error.message || "No se pudo crear la prefactura",
         variant: "destructive",
       });
+    } finally {
+      setIsCreating(false);
     }
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
-        return <Badge className="bg-green-100 text-green-800">Ready for Invoice</Badge>;
+        return <Badge className="bg-green-100 text-green-800">Completado</Badge>;
       case 'prefacturado':
-        return <Badge className="bg-purple-100 text-purple-800">Pre-invoiced</Badge>;
-      case 'facturado':
-        return <Badge className="bg-gray-100 text-gray-800">Invoiced</Badge>;
+        return <Badge className="bg-purple-100 text-purple-800">Prefacturado</Badge>;
+      case 'draft':
+        return <Badge className="bg-yellow-100 text-yellow-800">Prefactura</Badge>;
+      case 'finalized':
+        return <Badge className="bg-blue-100 text-blue-800">Facturado</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -152,9 +223,9 @@ export default function AgencyInvoicePage() {
             <div className="h-10 w-10 rounded-lg bg-green-500 flex items-center justify-center">
               <FileText className="h-6 w-6 text-white" />
             </div>
-            Agency Invoicing
+            Prefacturas Agency
           </h1>
-          <p className="text-muted-foreground mt-1">Create pre-invoices and finalize billing</p>
+          <p className="text-muted-foreground mt-1">Crear y gestionar prefacturas de servicios</p>
         </div>
       </div>
 
@@ -164,22 +235,22 @@ export default function AgencyInvoicePage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Ready for Invoice</p>
+                <p className="text-sm font-medium text-muted-foreground">Servicios Completados</p>
                 <p className="text-2xl font-bold">{completedServices.length}</p>
               </div>
               <CheckCircle className="h-8 w-8 text-green-600" />
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Pre-invoiced</p>
-                <p className="text-2xl font-bold">{prefacturedServices.length}</p>
+                <p className="text-sm font-medium text-muted-foreground">Prefacturas Pendientes</p>
+                <p className="text-2xl font-bold">{agencyPrefacturas.length}</p>
               </div>
-              <AlertTriangle className="h-8 w-8 text-purple-600" />
+              <AlertTriangle className="h-8 w-8 text-yellow-600" />
             </div>
           </CardContent>
         </Card>
@@ -188,10 +259,10 @@ export default function AgencyInvoicePage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Selected Services</p>
+                <p className="text-sm font-medium text-muted-foreground">Seleccionados</p>
                 <p className="text-2xl font-bold">{selectedServices.length}</p>
               </div>
-              <Calendar className="h-8 w-8 text-blue-600" />
+              <Users className="h-8 w-8 text-blue-600" />
             </div>
           </CardContent>
         </Card>
@@ -200,7 +271,7 @@ export default function AgencyInvoicePage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Value</p>
+                <p className="text-sm font-medium text-muted-foreground">Total Seleccionado</p>
                 <p className="text-2xl font-bold">${calculateTotalValue().toLocaleString()}</p>
               </div>
               <DollarSign className="h-8 w-8 text-yellow-600" />
@@ -209,182 +280,242 @@ export default function AgencyInvoicePage() {
         </Card>
       </div>
 
-      {/* Actions */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex gap-4">
-            <Button 
-              onClick={handleCreatePreInvoice}
-              disabled={selectedServices.length === 0 || loading}
-            >
-              <FileText className="mr-2 h-4 w-4" />
-              Create Pre-Invoice ({selectedServices.length})
-            </Button>
-            
-            <Button 
-              variant="outline"
-              onClick={handleFinalizeInvoice}
-              disabled={selectedServices.length === 0 || loading}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Finalize Invoice
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="create">Crear Prefactura</TabsTrigger>
+          <TabsTrigger value="prefacturas">Prefacturas ({agencyPrefacturas.length})</TabsTrigger>
+        </TabsList>
 
-      {/* Services for Invoice */}
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-center">
-            <CardTitle>Services Ready for Invoicing</CardTitle>
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                checked={selectedServices.length === completedServices.length && completedServices.length > 0}
-                onCheckedChange={handleSelectAll}
-              />
-              <span className="text-sm">Select All</span>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-            </div>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12"></TableHead>
-                    <TableHead>Service Date</TableHead>
-                    <TableHead>Crew</TableHead>
-                    <TableHead>Vessel</TableHead>
-                    <TableHead>Route</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Price</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {completedServices.concat(prefacturedServices).map((service) => (
-                    <TableRow key={service._id}>
-                      <TableCell>
-                        <Checkbox
-                          checked={selectedServices.includes(service._id)}
-                          onCheckedChange={(checked) => handleServiceSelection(service._id, checked as boolean)}
-                        />
-                      </TableCell>
-                      
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">
-                            {format(new Date(service.pickupDate), 'MMM dd, yyyy')}
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {service.pickupTime}
-                          </div>
-                        </div>
-                      </TableCell>
-                      
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{service.crewName}</div>
-                          {service.crewRank && (
-                            <div className="text-sm text-muted-foreground">
-                              {service.crewRank}
+        <TabsContent value="create" className="space-y-4">
+          {/* Prefactura Number Input */}
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="flex-1 max-w-xs">
+                  <Label htmlFor="prefactura-number">Número de Prefactura</Label>
+                  <Input
+                    id="prefactura-number"
+                    value={prefacturaNumber}
+                    onChange={(e) => setPrefacturaNumber(e.target.value.toUpperCase())}
+                    placeholder="AGY-PRE-000001"
+                    className="font-mono"
+                  />
+                </div>
+                <div className="flex gap-2 pt-6">
+                  <Button
+                    onClick={handleCreatePrefactura}
+                    disabled={selectedServices.length === 0 || isCreating || !prefacturaNumber.trim()}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    {isCreating ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creando...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Crear Prefactura ({selectedServices.length})
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Services Table */}
+          <Card>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Servicios Completados</CardTitle>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    checked={selectedServices.length === completedServices.length && completedServices.length > 0}
+                    onCheckedChange={handleSelectAll}
+                  />
+                  <span className="text-sm">Seleccionar Todos</span>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                </div>
+              ) : completedServices.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Car className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No hay servicios completados</p>
+                  <p className="text-sm">Completa servicios en Registros primero</p>
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-12"></TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Tripulante</TableHead>
+                        <TableHead>Buque</TableHead>
+                        <TableHead>Ruta</TableHead>
+                        <TableHead>Cliente</TableHead>
+                        <TableHead className="text-right">Precio</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {completedServices.map((service) => (
+                        <TableRow
+                          key={service._id}
+                          className={selectedServices.includes(service._id) ? 'bg-blue-50' : ''}
+                        >
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedServices.includes(service._id)}
+                              onCheckedChange={(checked) => handleServiceSelection(service._id, checked as boolean)}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">
+                              {format(new Date(service.pickupDate), 'dd/MM/yyyy')}
                             </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      
-                      <TableCell>
-                        <div className="font-medium">{service.vessel}</div>
-                        {service.voyage && (
-                          <div className="text-sm text-muted-foreground">
-                            Voyage: {service.voyage}
-                          </div>
-                        )}
-                      </TableCell>
-                      
-                      <TableCell>
-                        <div className="text-sm">
-                          {service.pickupLocation} → {service.dropoffLocation}
-                        </div>
-                        {service.transportCompany && (
-                          <div className="text-xs text-muted-foreground">
-                            {service.transportCompany}
-                          </div>
-                        )}
-                      </TableCell>
-                      
-                      <TableCell>
-                        {getStatusBadge(service.status)}
-                      </TableCell>
-                      
-                      <TableCell>
-                        {service.price ? (
-                          <div className="font-medium text-green-600">
-                            ${service.price}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  
-                  {completedServices.length === 0 && prefacturedServices.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={7} className="h-24 text-center">
-                        <div className="text-muted-foreground">
-                          <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                          <p>No services ready for invoicing</p>
-                          <p className="text-sm">Complete some services first</p>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                            <div className="text-sm text-muted-foreground">
+                              {service.pickupTime}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{service.crewName}</div>
+                            {service.crewRank && (
+                              <div className="text-sm text-muted-foreground">{service.crewRank}</div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{service.vessel}</div>
+                            {service.voyage && (
+                              <div className="text-sm text-muted-foreground">V: {service.voyage}</div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">
+                              {service.pickupLocation} → {service.dropoffLocation}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">{service.clientName || '-'}</div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {service.price ? (
+                              <span className="font-medium text-green-600">${service.price}</span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-      {/* Selected Services Summary */}
-      {selectedServices.length > 0 && (
-        <Card className="border-blue-200 bg-blue-50">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-blue-900">
-                  {selectedServices.length} service{selectedServices.length !== 1 ? 's' : ''} selected
-                </h3>
-                <p className="text-blue-700">
-                  Total value: ${calculateTotalValue().toLocaleString()}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button 
-                  size="sm" 
-                  onClick={handleCreatePreInvoice}
-                  disabled={loading}
-                >
-                  Create Pre-Invoice
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={() => setSelectedServices([])}
-                >
-                  Clear Selection
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+          {/* Selected Services Summary */}
+          {selectedServices.length > 0 && (
+            <Card className="border-blue-200 bg-blue-50">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-blue-900">
+                      {selectedServices.length} servicio{selectedServices.length !== 1 ? 's' : ''} seleccionado{selectedServices.length !== 1 ? 's' : ''}
+                    </h3>
+                    <p className="text-blue-700">
+                      Total: ${calculateTotalValue().toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleCreatePrefactura}
+                      disabled={isCreating || !prefacturaNumber.trim()}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      {isCreating ? 'Creando...' : 'Crear Prefactura'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setSelectedServices([])}
+                    >
+                      Limpiar Selección
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="prefacturas" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Prefacturas Pendientes</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {agencyPrefacturas.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No hay prefacturas pendientes</p>
+                  <p className="text-sm">Crea una prefactura desde la pestaña anterior</p>
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Número</TableHead>
+                        <TableHead>Cliente</TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Servicios</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {agencyPrefacturas.map((prefactura) => (
+                        <TableRow key={prefactura.id || prefactura._id}>
+                          <TableCell className="font-mono font-medium">
+                            {prefactura.invoiceNumber}
+                          </TableCell>
+                          <TableCell>{prefactura.clientName}</TableCell>
+                          <TableCell>
+                            {format(new Date(prefactura.issueDate || prefactura.createdAt), 'dd/MM/yyyy')}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {prefactura.details?.totalServices || prefactura.relatedRecordIds?.length || 0} servicios
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {getStatusBadge(prefactura.status)}
+                          </TableCell>
+                          <TableCell className="text-right font-medium text-green-600">
+                            ${prefactura.totalAmount?.toLocaleString() || '0'}
+                          </TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="sm">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
