@@ -139,10 +139,11 @@ export default async (req, res) => {
         // Determinar el módulo basado en el sapCode o en los datos
         const module = data.sapCode === 'PTYSS001' ? 'ptyss' : 'trucking';
         const type = module === 'ptyss' ? 'maritime' : 'transport';
-        
-        // Determinar el estado para trucking: si hizo match, marcar como completado
-        const isMatched = Boolean((data && (data.isMatched === true)) || (data && Number(data.matchedPrice) > 0) || Number(totalValue) > 0)
-        const computedStatus = module === 'trucking' && isMatched ? 'completado' : 'pendiente'
+
+        // IMPORTANTE: Los registros de trucking SIEMPRE se guardan como 'pendiente'
+        // para que aparezcan en la prefactura. El estado 'completado' se asigna
+        // cuando se genera la prefactura/factura.
+        const computedStatus = 'pendiente'
 
         const record = await records.create({
           excelId: validExcelId,

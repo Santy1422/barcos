@@ -26,11 +26,13 @@ import { ClientModal } from "@/components/clients-management"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { 
+import {
   selectAllContainerTypes,
   fetchContainerTypes,
   selectContainerTypesLoading,
-  selectContainerTypesError
+  selectContainerTypesError,
+  createContainerType,
+  type ContainerTypeInput
 } from "@/lib/features/containerTypes/containerTypesSlice"
 import {
   createTruckingRoute,
@@ -142,11 +144,24 @@ export function TruckingUpload() {
   // Estado para filtro de matching
   const [matchFilter, setMatchFilter] = useState<'all' | 'matched' | 'unmatched'>('all')
 
+  // Estado para tipos de contenedores faltantes del Excel
+  const [missingContainerTypes, setMissingContainerTypes] = useState<string[]>([])
+  const [showMissingContainerTypesModal, setShowMissingContainerTypesModal] = useState(false)
+  const [newContainerType, setNewContainerType] = useState<ContainerTypeInput>({
+    code: '',
+    name: '',
+    category: 'DRY',
+    sapCode: '',
+    description: '',
+    isActive: true
+  })
+  const [isCreatingContainerType, setIsCreatingContainerType] = useState(false)
+
   // Filtrar registros basado en el filtro de matching
   const filteredPreviewData = useMemo(() => {
     if (matchFilter === 'all') return previewData
-    if (matchFilter === 'matched') return previewData.filter(record => record.isMatched)
-    if (matchFilter === 'unmatched') return previewData.filter(record => !record.isMatched)
+    if (matchFilter === 'matched') return previewData.filter(record => record.isMatched === true)
+    if (matchFilter === 'unmatched') return previewData.filter(record => record.isMatched !== true)
     return previewData
   }, [previewData, matchFilter])
 
@@ -218,6 +233,21 @@ export function TruckingUpload() {
     console.log("")
   }, [clients, clientsLoading])
 
+  // DEBUG: Monitorear previewData cada vez que cambie
+  useEffect(() => {
+    console.log("=== PREVIEW DATA ACTUALIZADO ===")
+    console.log("Total registros:", previewData.length)
+    if (previewData.length > 0) {
+      const matchedCount = previewData.filter(r => r.isMatched === true).length
+      const unmatchedCount = previewData.filter(r => r.isMatched === false).length
+      const undefinedCount = previewData.filter(r => r.isMatched === undefined).length
+      console.log(`Matcheados: ${matchedCount}, Sin match: ${unmatchedCount}, Undefined: ${undefinedCount}`)
+      console.log("Primeros 3 registros:")
+      previewData.slice(0, 3).forEach((r, i) => {
+        console.log(`  ${i + 1}: isMatched=${r.isMatched} (${typeof r.isMatched}), precio=${r.matchedPrice}, leg=${r.leg}, type=${r.type}`)
+      })
+    }
+  }, [previewData])
 
   // Mostrar error si existe
   useEffect(() => {
@@ -304,6 +334,93 @@ export function TruckingUpload() {
     return true
   }
 
+  // Función para detectar tipos de contenedores del Excel que no existen en la BD
+  const detectMissingContainerTypes = (excelData: TruckingExcelData[]): string[] => {
+    const typesInExcel = new Set<string>()
+    excelData.forEach(record => {
+      if (record.type) {
+        typesInExcel.add(record.type.toUpperCase().trim())
+      }
+    })
+
+    const existingCodes = new Set(containerTypes.map(ct => ct.code.toUpperCase().trim()))
+    const missing: string[] = []
+
+    typesInExcel.forEach(type => {
+      if (!existingCodes.has(type)) {
+        missing.push(type)
+      }
+    })
+
+    return missing
+  }
+
+  // Handler para crear un nuevo tipo de contenedor
+  const handleCreateContainerType = async () => {
+    if (!newContainerType.code || !newContainerType.name || !newContainerType.sapCode) {
+      toast({
+        title: "Error",
+        description: "Por favor completa todos los campos obligatorios (Código, Nombre, SAP Code)",
+        variant: "destructive"
+      })
+      return
+    }
+
+    setIsCreatingContainerType(true)
+    try {
+      await dispatch(createContainerType(newContainerType)).unwrap()
+
+      // Remover el tipo creado de la lista de faltantes
+      const updatedMissing = missingContainerTypes.filter(type => type !== newContainerType.code.toUpperCase())
+      setMissingContainerTypes(updatedMissing)
+
+      // Refrescar la lista de container types
+      dispatch(fetchContainerTypes())
+
+      // Limpiar el formulario
+      setNewContainerType({
+        code: '',
+        name: '',
+        category: 'DRY',
+        sapCode: '',
+        description: '',
+        isActive: true
+      })
+
+      toast({
+        title: "Tipo de contenedor creado",
+        description: `El tipo "${newContainerType.code}" ha sido creado correctamente.`
+      })
+
+      // Si no hay más tipos faltantes, cerrar el modal y re-procesar
+      if (updatedMissing.length === 0) {
+        setShowMissingContainerTypesModal(false)
+        // Marcar para re-procesar cuando los containerTypes se actualicen
+        setShouldReprocess(true)
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Error al crear el tipo de contenedor",
+        variant: "destructive"
+      })
+    } finally {
+      setIsCreatingContainerType(false)
+    }
+  }
+
+  // Handler para seleccionar un tipo faltante y pre-llenar el formulario
+  const handleSelectMissingType = (typeCode: string) => {
+    setNewContainerType({
+      code: typeCode,
+      name: typeCode, // Por defecto usar el código como nombre
+      category: 'DRY', // Por defecto DRY
+      sapCode: 'DV', // Por defecto DV
+      description: `Tipo de contenedor ${typeCode}`,
+      isActive: true
+    })
+  }
+
   // Route creation handlers
   const handleCreateRouteClick = (record: TruckingExcelData) => {
     setRecordForRoute(record)
@@ -365,13 +482,32 @@ export function TruckingUpload() {
 
       // Parsear el archivo Excel real
       const realData = await parseTruckingExcel(selectedFile)
-      
+
       console.log("=== DEBUGGING RE-PROCESSING MATCHING ===")
       console.log("Datos del Excel:", realData)
       console.log("Rutas disponibles:", routes)
       console.log("Container types disponibles:", containerTypes)
       console.log("")
-      
+
+      // Detectar tipos de contenedores faltantes ANTES de hacer el matching
+      const missingTypes = detectMissingContainerTypes(realData)
+      console.log("=== TIPOS DE CONTENEDORES FALTANTES (RE-PROCESS) ===")
+      console.log("Tipos faltantes:", missingTypes)
+
+      if (missingTypes.length > 0) {
+        setMissingContainerTypes(missingTypes)
+        setShowMissingContainerTypesModal(true)
+        handleSelectMissingType(missingTypes[0])
+        setPreviewData(realData.map(r => ({ ...r, isMatched: false })))
+        toast({
+          title: "⚠️ Tipos de contenedores faltantes",
+          description: `Aún faltan ${missingTypes.length} tipos de contenedores: ${missingTypes.join(', ')}. Debes crearlos antes de continuar.`,
+          variant: "destructive",
+        })
+        setIsLoading(false)
+        return
+      }
+
       // Inicializar estado de progreso inmediatamente
       setMatchingProgress({
         isMatching: true,
@@ -381,7 +517,7 @@ export function TruckingUpload() {
         currentRecord: 'Re-procesando...',
         matchesFound: 0
       })
-      
+
       // Aplicar matching con las rutas configuradas y container types del backend
       const matchedData = await matchTruckingDataWithRoutes(realData, routes, containerTypes, (current, total, currentRecord, matchesFound) => {
         setMatchingProgress({
@@ -627,13 +763,36 @@ export function TruckingUpload() {
 
         // Parsear el archivo Excel real
         const realData = await parseTruckingExcel(file)
-        
+
         console.log("=== DEBUGGING MATCHING ===")
         console.log("Datos del Excel:", realData)
         console.log("Rutas disponibles:", routes)
         console.log("Container types disponibles:", containerTypes)
         console.log("")
-        
+
+        // Detectar tipos de contenedores faltantes ANTES de hacer el matching
+        const missingTypes = detectMissingContainerTypes(realData)
+        console.log("=== TIPOS DE CONTENEDORES FALTANTES ===")
+        console.log("Tipos faltantes:", missingTypes)
+
+        if (missingTypes.length > 0) {
+          setMissingContainerTypes(missingTypes)
+          setShowMissingContainerTypesModal(true)
+          // Pre-llenar el formulario con el primer tipo faltante
+          handleSelectMissingType(missingTypes[0])
+
+          // Guardar los datos parseados para re-procesar después de crear los tipos
+          setPreviewData(realData.map(r => ({ ...r, isMatched: false })))
+
+          toast({
+            title: "⚠️ Tipos de contenedores faltantes",
+            description: `Se encontraron ${missingTypes.length} tipos de contenedores del Excel que no existen en la configuración: ${missingTypes.join(', ')}. Debes crearlos antes de continuar.`,
+            variant: "destructive",
+          })
+          setIsLoading(false)
+          return
+        }
+
         // Inicializar estado de progreso inmediatamente
         console.log("=== INICIANDO BARRA DE PROGRESO ===")
         console.log("Configurando estado de progreso:", {
@@ -675,10 +834,21 @@ export function TruckingUpload() {
         })
         
         console.log("Datos después del matching:", matchedData)
+        console.log("=== VERIFICANDO isMatched ===")
+        matchedData.forEach((record, index) => {
+          console.log(`Registro ${index + 1}: isMatched=${record.isMatched}, tipo=${typeof record.isMatched}, precio=${record.matchedPrice}, leg=${record.leg}, type=${record.type}`)
+        })
+        console.log(`Total matcheados: ${matchedData.filter(r => r.isMatched === true).length}/${matchedData.length}`)
         console.log("")
-        
+
         // Procesar clientes faltantes usando la columna 'line' del Excel
         const processedData = await processMissingClients(matchedData)
+
+        console.log("=== DATOS DESPUÉS DE processMissingClients ===")
+        processedData.forEach((record, index) => {
+          console.log(`Registro ${index + 1}: isMatched=${record.isMatched}, tipo=${typeof record.isMatched}`)
+        })
+
         setPreviewData(processedData)
         
         // Limpiar estado de progreso
@@ -913,8 +1083,8 @@ export function TruckingUpload() {
   }
 
   const totalAmount = previewData.reduce((sum, record) => sum + (record.matchedPrice || 0), 0)
-  const matchedCount = previewData.filter(record => record.isMatched).length
-  const unmatchedCount = previewData.length - matchedCount
+  const matchedCount = previewData.filter(record => record.isMatched === true).length
+  const unmatchedCount = previewData.filter(record => record.isMatched !== true).length
 
   // Verificar duplicados dentro del Excel por containerConsecutive
   const duplicateContainerConsecutives = useMemo(() => {
@@ -1202,6 +1372,10 @@ export function TruckingUpload() {
               <Table className="w-full table-fixed">
                 <TableBody>
                   {filteredPreviewData.map((record, index) => {
+                    // DEBUG: Verificar valores de isMatched
+                    if (index < 3) {
+                      console.log(`RENDER TABLE - Registro ${index}: isMatched=${record.isMatched}, tipo=${typeof record.isMatched}, precio=${record.matchedPrice}`)
+                    }
                     const clientName = record.line?.trim()
                     const clientStatus = clientName ? clientCompleteness.get(clientName) : null
                     const isClickable = record.isMatched && clientName && (clientStatus ? !clientStatus.isComplete : true)
@@ -1234,7 +1408,7 @@ export function TruckingUpload() {
                       <TableCell className="w-24">{record.leg}</TableCell>
                       <TableCell className="w-20">{record.moveType}</TableCell>
                       <TableCell className="w-20">
-                        {record.isMatched ? (
+                        {record.isMatched === true ? (
                           <span className="font-medium text-green-600">
                             ${record.matchedPrice?.toFixed(2)}
                           </span>
@@ -1243,21 +1417,28 @@ export function TruckingUpload() {
                         )}
                       </TableCell>
                       <TableCell className="w-20">
-                        {record.isMatched ? (
+                        {record.isMatched === true ? (
                           <Badge variant="outline" className="text-green-600 border-green-600">
                             <CheckCircle className="h-3 w-3 mr-1" />
                             Match
                           </Badge>
                         ) : (
-                          <Badge 
-                            variant="outline" 
-                            className="text-orange-600 border-orange-600 cursor-pointer hover:bg-orange-50 hover:border-orange-700"
-                            onClick={() => handleCreateRouteClick(record)}
-                            title="Haz clic para crear una ruta para este registro"
-                          >
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            Sin match
-                          </Badge>
+                          <div className="space-y-1">
+                            <Badge
+                              variant="outline"
+                              className="text-orange-600 border-orange-600 cursor-pointer hover:bg-orange-50 hover:border-orange-700"
+                              onClick={() => handleCreateRouteClick(record)}
+                              title={record.matchFailReason || "Haz clic para crear una ruta para este registro"}
+                            >
+                              <AlertCircle className="h-3 w-3 mr-1" />
+                              Sin match
+                            </Badge>
+                            {record.matchFailReason && (
+                              <p className="text-xs text-orange-700 max-w-[200px] truncate" title={record.matchFailReason}>
+                                {record.matchFailReason}
+                              </p>
+                            )}
+                          </div>
                         )}
                       </TableCell>
                     </TableRow>
@@ -1646,6 +1827,136 @@ export function TruckingUpload() {
                   <Button onClick={handleCreateRoute} disabled={routesLoading}>
                     <Plus className="h-4 w-4 mr-2" />
                     {routesLoading ? "Creando..." : "Crear Ruta"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal para crear tipos de contenedores faltantes */}
+      <Dialog open={showMissingContainerTypesModal} onOpenChange={setShowMissingContainerTypesModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2">
+              <AlertCircle className="h-5 w-5" />
+              ⚠️ Tipos de Contenedores Faltantes
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm text-red-700">
+                Los siguientes tipos de contenedores encontrados en el Excel <strong>no existen</strong> en la base de datos.
+                Debes crearlos antes de poder procesar el archivo.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {missingContainerTypes.map(typeCode => (
+                <Badge
+                  key={typeCode}
+                  variant={newContainerType.code === typeCode ? "default" : "outline"}
+                  className={`cursor-pointer ${newContainerType.code === typeCode
+                    ? "bg-primary text-white"
+                    : "hover:bg-gray-100"
+                  }`}
+                  onClick={() => handleSelectMissingType(typeCode)}
+                >
+                  {typeCode}
+                </Badge>
+              ))}
+            </div>
+
+            <div className="border rounded-lg p-4 space-y-4">
+              <h4 className="font-medium">Crear tipo de contenedor: {newContainerType.code || "(selecciona uno)"}</h4>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="ct-code">Código *</Label>
+                  <Input
+                    id="ct-code"
+                    value={newContainerType.code}
+                    onChange={(e) => setNewContainerType({...newContainerType, code: e.target.value.toUpperCase()})}
+                    placeholder="MT"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ct-name">Nombre *</Label>
+                  <Input
+                    id="ct-name"
+                    value={newContainerType.name}
+                    onChange={(e) => setNewContainerType({...newContainerType, name: e.target.value})}
+                    placeholder="Empty Container"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ct-sapCode">Código SAP *</Label>
+                  <Select value={newContainerType.sapCode} onValueChange={(value) => setNewContainerType({...newContainerType, sapCode: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar código SAP" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DV">DV - Dry Van</SelectItem>
+                      <SelectItem value="RE">RE - Reefer</SelectItem>
+                      <SelectItem value="FL">FL - Flat</SelectItem>
+                      <SelectItem value="TK">TK - Tank</SelectItem>
+                      <SelectItem value="OT">OT - Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ct-category">Categoría *</Label>
+                  <Select value={newContainerType.category} onValueChange={(value: any) => setNewContainerType({...newContainerType, category: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar categoría" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DRY">DRY - Contenedor seco</SelectItem>
+                      <SelectItem value="REEFE">REEFE - Refrigerado</SelectItem>
+                      <SelectItem value="MTY">MTY - Vacío</SelectItem>
+                      <SelectItem value="FB">FB - Flat Bed</SelectItem>
+                      <SelectItem value="T">T - Tank</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <Label htmlFor="ct-description">Descripción</Label>
+                  <Input
+                    id="ct-description"
+                    value={newContainerType.description || ''}
+                    onChange={(e) => setNewContainerType({...newContainerType, description: e.target.value})}
+                    placeholder="Descripción del tipo de contenedor"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center pt-4">
+                <p className="text-sm text-muted-foreground">
+                  Faltan <strong>{missingContainerTypes.length}</strong> tipos por crear
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowMissingContainerTypesModal(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleCreateContainerType}
+                    disabled={isCreatingContainerType || !newContainerType.code || !newContainerType.name || !newContainerType.sapCode}
+                  >
+                    {isCreatingContainerType ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Creando...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Crear Tipo
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>

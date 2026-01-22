@@ -39,6 +39,7 @@ export interface TruckingExcelData {
   isMatched?: boolean;
   sapCode?:string;
   detectedContainerType?: "dry" | "reefer"; // Tipo de contenedor detectado por el matching
+  matchFailReason?: string; // Razón por la que falló el matching (para diagnóstico)
   // Campos extraídos del leg para PTYSS
   from?: string;
   to?: string;
@@ -195,11 +196,12 @@ export const matchTruckingDataWithRoutes = async (
         matchedRouteId: '',
         matchedRouteName: '',
         isMatched: false,
-        sapCode: 'TRK002'
+        sapCode: 'TRK002',
+        matchFailReason: `No existe ruta "${normalizedLeg}". Créala en Catálogos.`
       });
       continue;
     }
-    
+
     // 2. Filtrar por moveType (solo 2 valores posibles)
     const normalizedMoveType = record.moveType?.trim().toLowerCase() || '';
     const targetRouteType = 
@@ -214,14 +216,15 @@ export const matchTruckingDataWithRoutes = async (
         matchedRouteId: '',
         matchedRouteName: '',
         isMatched: false,
-        sapCode: 'TRK002'
+        sapCode: 'TRK002',
+        matchFailReason: `MoveType "${normalizedMoveType}" no válido. Debe ser S/Single o RT.`
       });
       continue;
     }
-    
+
     candidateRoutes = candidateRoutes.filter(route => route.routeType === targetRouteType);
     console.log(`  Rutas candidatas después de filtrar por moveType "${targetRouteType}": ${candidateRoutes.length}`)
-    
+
     if (candidateRoutes.length === 0) {
       console.log(`  ❌ No hay rutas con moveType "${targetRouteType}"`)
       results.push({
@@ -230,11 +233,12 @@ export const matchTruckingDataWithRoutes = async (
         matchedRouteId: '',
         matchedRouteName: '',
         isMatched: false,
-        sapCode: 'TRK002'
+        sapCode: 'TRK002',
+        matchFailReason: `No existe ruta "${normalizedLeg}" con tipo ${targetRouteType}. Créala en Catálogos.`
       });
       continue;
     }
-    
+
     // 3. Verificar que el tipo de contenedor existe en la BD
     const normalizedType = record.type?.trim().toUpperCase() || '';
     const containerTypeExists = containerTypesFromBackend.some(ct =>
@@ -244,7 +248,7 @@ export const matchTruckingDataWithRoutes = async (
     if (!containerTypeExists && normalizedType) {
       console.warn(`    ⚠️  Tipo de contenedor "${normalizedType}" no existe en la base de datos de tipos de contenedores`);
     }
-    
+
     if (!containerTypeExists) {
       console.log(`  ❌ Tipo de contenedor "${normalizedType}" no existe en BD`)
       results.push({
@@ -253,17 +257,19 @@ export const matchTruckingDataWithRoutes = async (
         matchedRouteId: '',
         matchedRouteName: '',
         isMatched: false,
-        sapCode: 'TRK002'
+        sapCode: 'TRK002',
+        matchFailReason: `Tipo "${normalizedType}" no existe en Catálogos. Créalo primero.`
       });
       continue;
     }
     
     // 4. Filtrar por tipo de contenedor
-    candidateRoutes = candidateRoutes.filter(route => 
+    const routesBeforeContainerType = candidateRoutes.length;
+    candidateRoutes = candidateRoutes.filter(route =>
       route.containerType?.trim().toUpperCase() === normalizedType
     );
     console.log(`  Rutas candidatas después de filtrar por tipo "${normalizedType}": ${candidateRoutes.length}`)
-    
+
     if (candidateRoutes.length === 0) {
       console.log(`  ❌ No hay rutas con tipo de contenedor "${normalizedType}"`)
       results.push({
@@ -272,29 +278,60 @@ export const matchTruckingDataWithRoutes = async (
         matchedRouteId: '',
         matchedRouteName: '',
         isMatched: false,
-        sapCode: 'TRK002'
+        sapCode: 'TRK002',
+        matchFailReason: `Ruta "${normalizedLeg}" existe pero no para contenedor "${normalizedType}". Crea ruta con ese tipo.`
       });
       continue;
     }
-    
+
     // 5. Filtrar por cliente (si existe en el registro)
     const normalizedLine = record.line?.trim().toLowerCase() || '';
+    const routesBeforeClient = candidateRoutes.length;
     if (normalizedLine) {
       candidateRoutes = candidateRoutes.filter(route => {
         const normalizedCliente = route.cliente?.trim().toLowerCase() || '';
         return normalizedCliente === normalizedLine;
       });
       console.log(`  Rutas candidatas después de filtrar por cliente "${normalizedLine}": ${candidateRoutes.length}`)
+
+      if (candidateRoutes.length === 0) {
+        console.log(`  ❌ No hay rutas para cliente "${normalizedLine}"`)
+        results.push({
+          ...record,
+          matchedPrice: 0,
+          matchedRouteId: '',
+          matchedRouteName: '',
+          isMatched: false,
+          sapCode: 'TRK002',
+          matchFailReason: `Ruta "${normalizedLeg}" con tipo "${normalizedType}" existe, pero no para cliente "${normalizedLine.toUpperCase()}". Crea ruta para ese cliente.`
+        });
+        continue;
+      }
     }
-    
+
     // 6. Filtrar por tamaño (si existe en el registro)
     const normalizedSize = record.size?.trim().toUpperCase() || '';
+    const routesBeforeSize = candidateRoutes.length;
     if (normalizedSize) {
       candidateRoutes = candidateRoutes.filter(route => {
         const normalizedSizeContenedor = route.sizeContenedor?.trim().toUpperCase() || '';
         return normalizedSizeContenedor === normalizedSize;
       });
       console.log(`  Rutas candidatas después de filtrar por tamaño "${normalizedSize}": ${candidateRoutes.length}`)
+
+      if (candidateRoutes.length === 0) {
+        console.log(`  ❌ No hay rutas para tamaño "${normalizedSize}"`)
+        results.push({
+          ...record,
+          matchedPrice: 0,
+          matchedRouteId: '',
+          matchedRouteName: '',
+          isMatched: false,
+          sapCode: 'TRK002',
+          matchFailReason: `Ruta "${normalizedLeg}" tipo "${normalizedType}" cliente "${normalizedLine.toUpperCase()}" existe, pero no para tamaño ${normalizedSize}. Crea ruta con tamaño ${normalizedSize}.`
+        });
+        continue;
+      }
     }
 
     // 7. Filtrar por status (FULL/EMPTY) basado en el campo F/E del Excel
@@ -306,13 +343,13 @@ export const matchTruckingDataWithRoutes = async (
       (feValue === 'F' || feValue === 'FULL' || feValue === '2') ? 'FULL' :
       (feValue === 'E' || feValue === 'EMPTY' || feValue === '1' || feValue === '0') ? 'EMPTY' : null;
 
+    const routesBeforeStatus = candidateRoutes.length;
     if (targetStatus) {
-      const routesBeforeStatusFilter = candidateRoutes.length;
       candidateRoutes = candidateRoutes.filter(route => route.status === targetStatus);
       console.log(`  Rutas candidatas después de filtrar por status "${targetStatus}" (F/E="${feValue}"): ${candidateRoutes.length}`)
 
       // Si no hay rutas con ese status específico, intentar con el status opuesto como fallback
-      if (candidateRoutes.length === 0 && routesBeforeStatusFilter > 0) {
+      if (candidateRoutes.length === 0 && routesBeforeStatus > 0) {
         console.log(`  ⚠️  No hay rutas con status "${targetStatus}", usando fallback...`)
         // Restaurar las rutas candidatas sin filtro de status
         candidateRoutes = routesByName.get(normalizedLeg) || [];
@@ -412,17 +449,23 @@ export const matchTruckingDataWithRoutes = async (
       }
       
       console.log(`  ❌ NO SE ENCONTRÓ NINGÚN MATCH`)
+      // Construir mensaje de fallo detallado
+      const targetStatus = (feValue === 'F' || feValue === 'FULL' || feValue === '2') ? 'FULL' :
+        (feValue === 'E' || feValue === 'EMPTY' || feValue === '1' || feValue === '0') ? 'EMPTY' : null;
+      const failReason = `No existe ruta exacta para: ${normalizedLeg}, tipo ${normalizedType}, cliente ${normalizedLine.toUpperCase()}, tamaño ${normalizedSize}${targetStatus ? `, status ${targetStatus}` : ''}. Crea la ruta en Catálogos.`;
+
       results.push({
         ...record,
         matchedPrice: 0,
         matchedRouteId: '',
         matchedRouteName: '',
         isMatched: false,
-        sapCode: 'TRK002'
+        sapCode: 'TRK002',
+        matchFailReason: failReason
       });
     }
   }
-  
+
   return results;
 };
 
