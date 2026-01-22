@@ -217,12 +217,21 @@ export const createTruckingRecords = createAsyncThunk(
           recordsData
         })
       })
-      
+
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Error backend - Status:", response.status);
-        console.error("Error backend - Data:", JSON.stringify(errorData, null, 2));
-        throw new Error(errorData.error || `Error al crear registros (${response.status})`);
+        const contentType = response.headers.get('content-type');
+        console.error("Error backend trucking - Status:", response.status);
+        console.error("Error backend trucking - Content-Type:", contentType);
+
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await response.json();
+          console.error("Error backend trucking - Data:", JSON.stringify(errorData, null, 2));
+          throw new Error(errorData.error || `Error al crear registros (${response.status})`);
+        } else {
+          const errorText = await response.text();
+          console.error("Error backend trucking - HTML/Text:", errorText.substring(0, 500));
+          throw new Error(`Error del servidor (${response.status}). Verifica que el backend esté actualizado.`);
+        }
       }
       
       console.log("✅ Response OK - Status:", response.status);
