@@ -234,11 +234,14 @@ export function TruckingUpload() {
     return (
       clients.find((client: any) => {
         if (!name) return false
+        const nameLower = name.toLowerCase().trim()
         if (client.type === "juridico") {
-          // Para clientes jurídicos, buscar por nombre corto (name) en lugar de companyName
-          return client.name?.toLowerCase() === name.toLowerCase()
+          // Para clientes jurídicos, buscar por nombre corto (name) O por companyName
+          const clientName = client.name?.toLowerCase().trim() || ''
+          const clientCompanyName = client.companyName?.toLowerCase().trim() || ''
+          return clientName === nameLower || clientCompanyName === nameLower
         }
-        if (client.type === "natural") return client.fullName?.toLowerCase() === name.toLowerCase()
+        if (client.type === "natural") return client.fullName?.toLowerCase().trim() === nameLower
         return false
       }) || null
     )
@@ -248,16 +251,19 @@ export function TruckingUpload() {
     return (
       clients.find((client: any) => {
         if (!name) return false
-        
+        const nameLower = name.toLowerCase().trim()
+
         // Verificar que el cliente esté asignado al módulo especificado
         const clientModules = client.module || []
         if (!clientModules.includes(module)) return false
-        
+
         if (client.type === "juridico") {
-          // Para clientes jurídicos, buscar por nombre corto (name) en lugar de companyName
-          return client.name?.toLowerCase() === name.toLowerCase()
+          // Para clientes jurídicos, buscar por nombre corto (name) O por companyName
+          const clientName = client.name?.toLowerCase().trim() || ''
+          const clientCompanyName = client.companyName?.toLowerCase().trim() || ''
+          return clientName === nameLower || clientCompanyName === nameLower
         }
-        if (client.type === "natural") return client.fullName?.toLowerCase() === name.toLowerCase()
+        if (client.type === "natural") return client.fullName?.toLowerCase().trim() === nameLower
         return false
       }) || null
     )
