@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit'
+import { logError } from '@/lib/errorLogger'
 
 export type UserRole = 'administrador' | 'operaciones' | 'facturacion' | 'pendiente' | 'clientes' | 'catalogos'
 export type UserModule = 'trucking' | 'ptyss' | 'shipchandler' | 'agency'
@@ -81,40 +82,53 @@ const authInitialState = loadInitialState()
 export const loginAsync = createAsyncThunk(
   'auth/loginAsync',
   async ({ email, password }: { email: string; password: string }, { rejectWithValue }) => {
+    const url = '/api/user/login'
     try {
-      const response = await fetch('/api/user/login', {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password }), // Cambiar de token2 a password
+        body: JSON.stringify({ email, password }),
       })
-      
+
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.payload?.error || 'Error en el login')
+        const errorMsg = errorData.payload?.error || 'Error en el login'
+        await logError({
+          method: 'POST', url, statusCode: response.status,
+          error: { message: errorMsg, code: String(response.status) },
+          module: 'auth', action: 'login',
+          requestBody: { email }, // No loguear password
+          responseBody: errorData
+        })
+        throw new Error(errorMsg)
       }
-      
+
       const data = await response.json()
-      
-      // Los datos están envueltos en payload
       const { user, token } = data.payload
-      
+
       if (!token) {
+        await logError({
+          method: 'POST', url, statusCode: 200,
+          error: { message: 'Token no recibido del servidor' },
+          module: 'auth', action: 'login'
+        })
         throw new Error('Token no recibido del servidor')
       }
-      
-      // Guardar token en localStorage
+
       localStorage.setItem('token', token)
-      
-      // Guardar cookie para middleware
       document.cookie = `auth-token=true; path=/; max-age=86400`
-      
-      return {
-        user: user,
-        token: token
-      }
+
+      console.log('✅ [Auth] Login exitoso:', user.email)
+      return { user, token }
     } catch (error: any) {
+      console.error('❌ [Auth] Login error:', error.message)
+      await logError({
+        method: 'POST', url, statusCode: 0,
+        error: { message: error.message, stack: error.stack },
+        module: 'auth', action: 'login'
+      })
       return rejectWithValue(error.message)
     }
   }

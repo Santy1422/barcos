@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/tool
 import type { RootState } from "@/lib/store"
 import { createSelector } from '@reduxjs/toolkit'
 import { createApiUrl } from '@/lib/api-config'
+import { logError } from '@/lib/errorLogger'
 
 // Generic interface for a single record extracted from an Excel row
 export interface ExcelRecord {
@@ -48,29 +49,41 @@ export interface InvoiceRecord {
 export const fetchRecordsByModule = createAsyncThunk(
   'records/fetchByModule',
   async (module: string, { rejectWithValue }) => {
+    const url = createApiUrl(`/api/records/module/${module}`)
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch(createApiUrl(`/api/records/module/${module}`), {
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       })
-      
-      if (!response.ok) {
-        throw new Error('Error al obtener registros')
-      }
-      
-      const data = await response.json()
-      console.log("Respuesta del backend:", data);
-      console.log("data.data:", data.data);
-      console.log("data.data length:", data.data?.length);
-      const result = data.data || [];
-      console.log("Resultado final a retornar:", result);
-      return result
-    } catch (error) {
-                                       //@ts-ignore
 
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        await logError({
+          method: 'GET',
+          url,
+          statusCode: response.status,
+          error: { message: errorData.message || 'Error al obtener registros', code: String(response.status) },
+          module: 'records',
+          action: 'fetchByModule',
+          responseBody: errorData
+        })
+        throw new Error(errorData.message || 'Error al obtener registros')
+      }
+
+      const data = await response.json()
+      return data.data || []
+    } catch (error: any) {
+      await logError({
+        method: 'GET',
+        url,
+        statusCode: 0,
+        error: { message: error.message, stack: error.stack },
+        module: 'records',
+        action: 'fetchByModule'
+      })
       return rejectWithValue(error.message)
     }
   }
@@ -79,22 +92,27 @@ export const fetchRecordsByModule = createAsyncThunk(
 export const fetchPendingRecords = createAsyncThunk(
   'records/fetchPending',
   async (_, { rejectWithValue }) => {
+    const url = createApiUrl('/api/records/status/pendiente')
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch(createApiUrl('/api/records/status/pendiente'), {
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       })
-      
+
       if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        await logError({
+          method: 'GET', url, statusCode: response.status,
+          error: { message: errorData.message || 'Error al obtener registros pendientes' },
+          module: 'records', action: 'fetchPending'
+        })
         throw new Error('Error al obtener registros pendientes')
       }
-      
+
       const data = await response.json()
-      
-      // Transformar los datos del backend al formato esperado por el frontend
       const transformedRecords = (data.data || []).map((record: any) => ({
         id: record._id,
         excelId: record.excelId || '',
@@ -106,11 +124,14 @@ export const fetchPendingRecords = createAsyncThunk(
         createdAt: record.createdAt,
         invoiceId: record.invoiceId
       }))
-      
-      return transformedRecords
-    } catch (error) {
-                                       //@ts-ignore
 
+      return transformedRecords
+    } catch (error: any) {
+      await logError({
+        method: 'GET', url, statusCode: 0,
+        error: { message: error.message, stack: error.stack },
+        module: 'records', action: 'fetchPending'
+      })
       return rejectWithValue(error.message)
     }
   }
@@ -201,54 +222,55 @@ export const createTruckingRecords = createAsyncThunk(
     excelId: string
     recordsData: any[]
   }, { rejectWithValue }) => {
+    const url = '/api/records/trucking/bulk'
     try {
       const token = localStorage.getItem('token')
-      console.log("Token presente:", !!token);
-      console.log("Token (primeros 20 chars):", token ? token.substring(0, 20) + "..." : "NO HAY TOKEN");
-      console.log("Payload enviado a backend:", { excelId, recordsData });
-      const response = await fetch('/api/records/trucking/bulk', {
+      console.log("📤 [Trucking] Enviando", recordsData.length, "registros al backend");
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          excelId,
-          recordsData
-        })
+        body: JSON.stringify({ excelId, recordsData })
       })
 
       if (!response.ok) {
         const contentType = response.headers.get('content-type');
-        console.error("Error backend trucking - Status:", response.status);
-        console.error("Error backend trucking - Content-Type:", contentType);
+        let errorMessage = `Error al crear registros (${response.status})`;
+        let errorData: any = {};
 
         if (contentType && contentType.includes('application/json')) {
-          const errorData = await response.json();
-          console.error("Error backend trucking - Data:", JSON.stringify(errorData, null, 2));
-          throw new Error(errorData.error || `Error al crear registros (${response.status})`);
+          errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
         } else {
           const errorText = await response.text();
-          console.error("Error backend trucking - HTML/Text:", errorText.substring(0, 500));
-          throw new Error(`Error del servidor (${response.status}). Verifica que el backend esté actualizado.`);
+          errorData = { html: errorText.substring(0, 500) };
+          errorMessage = `Error del servidor (${response.status}). Backend no responde JSON.`;
         }
-      }
-      
-      console.log("✅ Response OK - Status:", response.status);
-      const data = await response.json()
-      console.log("Respuesta del backend:", data);
-      console.log("data.payload:", data.payload);
-      console.log("data.payload.records:", data.payload?.records);
-      console.log("data.payload.records length:", data.payload?.records?.length);
-      
-      // Retornar toda la respuesta del backend para que el frontend pueda acceder a duplicates, count, etc.
-      const result = data.payload || {};
-      console.log("Resultado final a retornar:", result);
-      console.log("Resultado final length:", result.records?.length || 0);
-      return result
-    } catch (error) {
-                                       //@ts-ignore
 
+        await logError({
+          method: 'POST', url, statusCode: response.status,
+          error: { message: errorMessage, code: String(response.status) },
+          module: 'trucking', action: 'createTruckingRecords',
+          requestBody: { excelId, recordsCount: recordsData.length },
+          responseBody: errorData
+        })
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json()
+      console.log("✅ [Trucking] Registros creados:", data.payload?.records?.length || 0);
+      return data.payload || {}
+    } catch (error: any) {
+      console.error("❌ [Trucking] Error:", error.message);
+      await logError({
+        method: 'POST', url, statusCode: 0,
+        error: { message: error.message, stack: error.stack },
+        module: 'trucking', action: 'createTruckingRecords',
+        requestBody: { excelId, recordsCount: recordsData.length }
+      })
       return rejectWithValue(error.message)
     }
   }
