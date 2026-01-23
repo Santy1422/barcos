@@ -24,6 +24,7 @@ import agencyRouteRoutes from './agencyRouteRoutes';
 import agencyInvoicesRoutes from './agencyInvoicesRoutes';
 import analyticsRoutes from './analyticsRoutes';
 import errorLogs from './errorLogs';
+import logsRoutes from './logsRoutes';
 
 router.use('/api/user', user);
 router.use('/api/clients', clients);
@@ -55,5 +56,8 @@ router.use('/api/analytics', analyticsRoutes);
 
 // Error logs
 router.use('/api/errors', errorLogs);
+
+// Request logs (para frontend y debugging)
+router.use('/api/logs', logsRoutes);
 
 export default router;

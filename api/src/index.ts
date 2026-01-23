@@ -3,6 +3,7 @@ import express from 'express'
 import bodyParser from "body-parser";
 import cors from 'cors'
 import routes from "./routes";
+import { requestLogger, errorLogger } from "./middlewares/requestLogger";
 const {users, clients} = require('./database')
 const { globalLimit } = require('./utils/rate-limiters');
 
@@ -23,6 +24,10 @@ server.use((req, res, next) => {
 });
 
 server.use(express.static('public'));
+
+// Middleware de logging de requests (antes de las rutas)
+server.use(requestLogger);
+
 //Le agregamos las rutas:
 server.use(routes);
 
@@ -32,6 +37,8 @@ server.use('*', (req, res) => {
   res.status(404).send({ error: true, message: "Ruta no encontrada: " + req.baseUrl });
 });
 
+// Middleware de logging de errores (antes del handler general)
+server.use(errorLogger);
 
 //atrapador de errores de express:
 server.use((err, req, res, next) => {
