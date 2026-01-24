@@ -147,22 +147,28 @@ export function ShipChandlerFacturacionModal({
     
     console.log('🔍 convertDateToInputFormat - Input:', dateValue, 'Type:', typeof dateValue)
     
-    // Si es un número (serie de Excel), convertir
-    if (typeof dateValue === 'number') {
-      console.log('🔍 Es número, tratando como serie de Excel')
+    // Si es un número (serie de Excel), convertir - solo valores razonables
+    if (typeof dateValue === 'number' && dateValue > 0 && dateValue < 100000) {
+      console.log('🔍 Es número, tratando como serie de Excel:', dateValue)
       // Excel serial date: 1 = 1900-01-01
       // Ajuste: Excel cuenta el 29/02/1900 como válido, pero JavaScript no
       const excelEpoch = new Date(1900, 0, 1) // 1 de enero de 1900
       const millisecondsPerDay = 24 * 60 * 60 * 1000
       const adjustedSerialNumber = dateValue > 59 ? dateValue - 1 : dateValue
       const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
-      
+
       if (isNaN(date.getTime())) {
         console.log('❌ Fecha inválida después de convertir número de Excel')
         return ''
       }
-      
+
       const year = date.getFullYear()
+      // Validar que el año sea razonable
+      if (year < 1900 || year > 2100) {
+        console.log('❌ Año fuera de rango después de convertir Excel serial:', year)
+        return ''
+      }
+
       const month = (date.getMonth() + 1).toString().padStart(2, '0')
       const day = date.getDate().toString().padStart(2, '0')
       const result = `${year}-${month}-${day}`
@@ -234,20 +240,22 @@ export function ShipChandlerFacturacionModal({
         }
       }
       
-      // Intentar parsear como fecha ISO o estándar
-      const date = new Date(dateValue)
-      if (!isNaN(date.getTime())) {
-        const year = date.getFullYear()
-        const month = (date.getMonth() + 1).toString().padStart(2, '0')
-        const day = date.getDate().toString().padStart(2, '0')
-        const result = `${year}-${month}-${day}`
-        console.log('✅ Fecha parseada desde string:', result)
-        return result
+      // Intentar parsear como fecha ISO o estándar (solo si tiene formato esperado)
+      // IMPORTANTE: No usar new Date() genérico porque puede producir años inválidos como 40000
+      if (dateValue.match(/^\d{4}-\d{1,2}-\d{1,2}(T|$)/)) {
+        const datePart = dateValue.split('T')[0]
+        const [year, month, day] = datePart.split('-').map(Number)
+        // Validar año razonable
+        if (year >= 1900 && year <= 2100) {
+          const result = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          console.log('✅ Fecha parseada desde formato ISO:', result)
+          return result
+        }
       }
-      
+
       console.log('❌ No se pudo parsear el string como fecha')
     }
-    
+
     console.log('❌ convertDateToInputFormat: No se pudo convertir', dateValue)
     return ''
   }

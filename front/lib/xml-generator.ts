@@ -103,23 +103,55 @@ export interface PTYSSRecordForXml {
 function formatDateForXML(dateString: string): string {
   // Aplicar la misma lógica de corrección de zona horaria que en trucking-records.tsx
   let date: Date
-  
-  if (!dateString) {
+
+  // Limpiar espacios si es string
+  const cleanDate = dateString ? dateString.trim() : ''
+
+  if (!cleanDate) {
     date = new Date()
-  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+  } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
     // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
-    const [year, month, day] = dateString.split('-').map(Number)
-    date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
-  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+    const [year, month, day] = cleanDate.split('-').map(Number)
+    // Validar año razonable
+    if (year >= 1900 && year <= 2100) {
+      date = new Date(year, month - 1, day)
+    } else {
+      console.warn('formatDateForXML: Año fuera de rango:', year, '- usando fecha actual')
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}T/)) {
     // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
-    const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
+    const datePart = cleanDate.split('T')[0]
     const [year, month, day] = datePart.split('-').map(Number)
-    date = new Date(year, month - 1, day) // Crear en zona horaria local
+    if (year >= 1900 && year <= 2100) {
+      date = new Date(year, month - 1, day)
+    } else {
+      console.warn('formatDateForXML: Año fuera de rango:', year, '- usando fecha actual')
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+    // Si la fecha está en formato DD-MM-YYYY
+    const parts = cleanDate.split('-')
+    const [part1, part2, yearStr] = parts
+    const year = Number(yearStr)
+    if (year >= 1900 && year <= 2100) {
+      // Si part1 > 12, es DD-MM-YYYY
+      if (Number(part1) > 12) {
+        date = new Date(year, Number(part2) - 1, Number(part1))
+      } else {
+        // Asumir DD-MM-YYYY
+        date = new Date(year, Number(part2) - 1, Number(part1))
+      }
+    } else {
+      console.warn('formatDateForXML: Año fuera de rango:', year, '- usando fecha actual')
+      date = new Date()
+    }
   } else {
-    // Para otros formatos, usar el método normal
-    date = new Date(dateString)
+    // NO usar new Date(dateString) genérico - puede producir años inválidos
+    console.warn('formatDateForXML: Formato de fecha no reconocido:', cleanDate, '- usando fecha actual')
+    date = new Date()
   }
-  
+
   const year = date.getFullYear()
   const month = (date.getMonth() + 1).toString().padStart(2, "0")
   const day = date.getDate().toString().padStart(2, "0")
@@ -137,27 +169,48 @@ function formatTimeForXML(dateString: string): string {
 function calculateDueDate(dateString: string): string {
   // Aplicar la misma lógica de corrección de zona horaria que en formatDateForXML
   let date: Date
-  
-  if (!dateString) {
+
+  // Limpiar espacios si es string
+  const cleanDate = dateString ? dateString.trim() : ''
+
+  if (!cleanDate) {
     date = new Date()
-  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
-    const [year, month, day] = dateString.split('-').map(Number)
-    date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
-  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-    // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
-    const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
+  } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+    const [year, month, day] = cleanDate.split('-').map(Number)
+    if (year >= 1900 && year <= 2100) {
+      date = new Date(year, month - 1, day)
+    } else {
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}T/)) {
+    const datePart = cleanDate.split('T')[0]
     const [year, month, day] = datePart.split('-').map(Number)
-    date = new Date(year, month - 1, day) // Crear en zona horaria local
+    if (year >= 1900 && year <= 2100) {
+      date = new Date(year, month - 1, day)
+    } else {
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+    const parts = cleanDate.split('-')
+    const [part1, part2, yearStr] = parts
+    const year = Number(yearStr)
+    if (year >= 1900 && year <= 2100) {
+      if (Number(part1) > 12) {
+        date = new Date(year, Number(part2) - 1, Number(part1))
+      } else {
+        date = new Date(year, Number(part2) - 1, Number(part1))
+      }
+    } else {
+      date = new Date()
+    }
   } else {
-    // Para otros formatos, usar el método normal
-    date = new Date(dateString)
+    date = new Date()
   }
-  
+
   // Agregar 30 días
   const dueDate = new Date(date)
   dueDate.setDate(date.getDate() + 30)
-  
+
   // Formatear como YYYYMMDD
   const year = dueDate.getFullYear()
   const month = (dueDate.getMonth() + 1).toString().padStart(2, "0")
@@ -168,23 +221,44 @@ function calculateDueDate(dateString: string): string {
 function formatReferencePeriod(dateString: string): string {
   // Aplicar la misma lógica de corrección de zona horaria que en formatDateForXML
   let date: Date
-  
-  if (!dateString) {
+
+  // Limpiar espacios si es string
+  const cleanDate = dateString ? dateString.trim() : ''
+
+  if (!cleanDate) {
     date = new Date()
-  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
-    const [year, month, day] = dateString.split('-').map(Number)
-    date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
-  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-    // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
-    const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
+  } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+    const [year, month, day] = cleanDate.split('-').map(Number)
+    if (year >= 1900 && year <= 2100) {
+      date = new Date(year, month - 1, day)
+    } else {
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}T/)) {
+    const datePart = cleanDate.split('T')[0]
     const [year, month, day] = datePart.split('-').map(Number)
-    date = new Date(year, month - 1, day) // Crear en zona horaria local
+    if (year >= 1900 && year <= 2100) {
+      date = new Date(year, month - 1, day)
+    } else {
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+    const parts = cleanDate.split('-')
+    const [part1, part2, yearStr] = parts
+    const year = Number(yearStr)
+    if (year >= 1900 && year <= 2100) {
+      if (Number(part1) > 12) {
+        date = new Date(year, Number(part2) - 1, Number(part1))
+      } else {
+        date = new Date(year, Number(part2) - 1, Number(part1))
+      }
+    } else {
+      date = new Date()
+    }
   } else {
-    // Para otros formatos, usar el método normal
-    date = new Date(dateString)
+    date = new Date()
   }
-  
+
   // Formatear como MM.YYYY
   const year = date.getFullYear()
   const month = (date.getMonth() + 1).toString().padStart(2, "0")

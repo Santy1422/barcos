@@ -68,53 +68,86 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
       if (!records || records.length === 0) {
         return null
       }
-      
+
       const firstRecord = records[0]
       const data = firstRecord?.data || {}
-      const recordDate = data?.date
-      
+      let recordDate = data?.date
+
       if (!recordDate) {
         return null
       }
-      
-      // Si es string en formato DD-MM-YYYY
-      if (typeof recordDate === 'string' && recordDate.match(/^\d{2}-\d{2}-\d{4}$/)) {
-        const [day, month, year] = recordDate.split('-').map(Number)
-        return new Date(year, month - 1, day)
+
+      // Si es string, limpiar espacios y caracteres especiales
+      if (typeof recordDate === 'string') {
+        recordDate = recordDate.trim()
       }
-      
+
+      // Si es string en formato DD-MM-YYYY (incluyendo variantes con espacios)
+      if (typeof recordDate === 'string' && recordDate.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+        const parts = recordDate.split('-')
+        if (parts.length === 3) {
+          const [part1, part2, year] = parts.map(Number)
+          // Si el primer número es > 12, es DD-MM-YYYY
+          if (part1 > 12) {
+            return new Date(year, part2 - 1, part1)
+          }
+          // Si el segundo número es > 12, es MM-DD-YYYY
+          if (part2 > 12) {
+            return new Date(year, part1 - 1, part2)
+          }
+          // Asumir DD-MM-YYYY por defecto (formato europeo/latinoamericano)
+          return new Date(year, part2 - 1, part1)
+        }
+      }
+
       // Si es string en formato YYYY-MM-DD
-      if (typeof recordDate === 'string' && recordDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      if (typeof recordDate === 'string' && recordDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
         const [year, month, day] = recordDate.split('-').map(Number)
-        return new Date(year, month - 1, day)
+        // Validar que el año sea razonable (entre 1900 y 2100)
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day)
+        }
       }
-      
+
+      // Si es string en formato ISO con T
+      if (typeof recordDate === 'string' && recordDate.includes('T')) {
+        const datePart = recordDate.split('T')[0]
+        if (datePart.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+          const [year, month, day] = datePart.split('-').map(Number)
+          if (year >= 1900 && year <= 2100) {
+            return new Date(year, month - 1, day)
+          }
+        }
+      }
+
       // Si es string con formato DD/MM/YYYY
       if (typeof recordDate === 'string' && recordDate.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
         const parts = recordDate.split('/')
         if (parts.length === 3) {
-          const [day, month, year] = parts.map(Number)
-          return new Date(year, month - 1, day)
+          const [part1, part2, year] = parts.map(Number)
+          // Si el primer número es > 12, es DD/MM/YYYY
+          if (part1 > 12) {
+            return new Date(year, part2 - 1, part1)
+          }
+          // Asumir DD/MM/YYYY por defecto
+          return new Date(year, part2 - 1, part1)
         }
       }
-      
-      // Si es número (serie de Excel)
-      if (typeof recordDate === 'number') {
+
+      // Si es número (serie de Excel) - solo valores razonables (1 a 100000)
+      if (typeof recordDate === 'number' && recordDate > 0 && recordDate < 100000) {
         const excelEpoch = new Date(1900, 0, 1)
         const millisecondsPerDay = 24 * 60 * 60 * 1000
         const adjustedSerialNumber = recordDate > 59 ? recordDate - 1 : recordDate
         const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
-        if (!isNaN(date.getTime())) {
+        if (!isNaN(date.getTime()) && date.getFullYear() >= 1900 && date.getFullYear() <= 2100) {
           return date
         }
       }
-      
-      // Intentar parsear como fecha ISO o cualquier otro formato
-      const date = new Date(recordDate)
-      if (!isNaN(date.getTime())) {
-        return date
-      }
-      
+
+      // NO usar new Date(recordDate) genérico - puede producir años inválidos
+      // En su lugar, usar fecha actual como fallback
+      console.warn('getDateFromFirstRecord: No se pudo parsear la fecha:', recordDate)
       return null
     }
     
@@ -122,19 +155,46 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
     const formatInvoiceDate = (dateString: string) => {
       if (!dateString) return null
 
-      if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        const [year, month, day] = dateString.split('-').map(Number)
-        return new Date(year, month - 1, day)
+      // Limpiar espacios
+      const cleanDate = typeof dateString === 'string' ? dateString.trim() : String(dateString)
+
+      // Formato YYYY-MM-DD
+      if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+        const [year, month, day] = cleanDate.split('-').map(Number)
+        // Validar año razonable
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day)
+        }
       }
 
-      if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-        const datePart = dateString.split('T')[0]
+      // Formato ISO con T
+      if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}T/)) {
+        const datePart = cleanDate.split('T')[0]
         const [year, month, day] = datePart.split('-').map(Number)
-        return new Date(year, month - 1, day)
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day)
+        }
       }
 
-      const parsed = new Date(dateString)
-      return isNaN(parsed.getTime()) ? null : parsed
+      // Formato DD-MM-YYYY
+      if (cleanDate.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+        const parts = cleanDate.split('-')
+        if (parts.length === 3) {
+          const [part1, part2, year] = parts.map(Number)
+          if (year >= 1900 && year <= 2100) {
+            // Si part1 > 12, es DD-MM-YYYY
+            if (part1 > 12) {
+              return new Date(year, part2 - 1, part1)
+            }
+            // Asumir DD-MM-YYYY
+            return new Date(year, part2 - 1, part1)
+          }
+        }
+      }
+
+      // NO usar new Date(dateString) genérico - puede producir años inválidos
+      console.warn('formatInvoiceDate: No se pudo parsear la fecha:', dateString)
+      return null
     }
 
     // Obtener fecha: primero intentar fecha del primer registro (invoice date), luego issueDate, finalmente fecha de hoy

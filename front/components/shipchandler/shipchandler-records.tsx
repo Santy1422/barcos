@@ -116,50 +116,78 @@ export function ShipChandlerRecords() {
   // Función para formatear la fecha del registro
   const formatRecordDate = (dateValue: any): string => {
     if (!dateValue) return 'N/A'
-    
+
+    // Si es string, limpiar espacios
+    let cleanValue = dateValue
+    if (typeof dateValue === 'string') {
+      cleanValue = dateValue.trim()
+    }
+
     // Si es string en formato DD-MM-YYYY, convertir a formato legible
-    if (typeof dateValue === 'string' && dateValue.match(/^\d{2}-\d{2}-\d{4}$/)) {
-      const parts = dateValue.split('-')
+    if (typeof cleanValue === 'string' && cleanValue.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+      const parts = cleanValue.split('-')
       if (parts.length === 3) {
-        const [day, month, year] = parts
-        return `${day}/${month}/${year}`
+        const [part1, part2, yearStr] = parts
+        const year = Number(yearStr)
+        // Validar año razonable
+        if (year >= 1900 && year <= 2100) {
+          // Si part1 > 12, es DD-MM-YYYY
+          if (Number(part1) > 12) {
+            return `${part1.padStart(2, '0')}/${part2.padStart(2, '0')}/${year}`
+          }
+          // Asumir DD-MM-YYYY
+          return `${part1.padStart(2, '0')}/${part2.padStart(2, '0')}/${year}`
+        }
       }
     }
-    
+
     // Si es string en formato YYYY-MM-DD, convertir
-    if (typeof dateValue === 'string' && dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const parts = dateValue.split('-')
+    if (typeof cleanValue === 'string' && cleanValue.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+      const parts = cleanValue.split('-')
       if (parts.length === 3) {
-        const [year, month, day] = parts
-        return `${day}/${month}/${year}`
+        const [yearStr, month, day] = parts
+        const year = Number(yearStr)
+        // Validar año razonable
+        if (year >= 1900 && year <= 2100) {
+          return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`
+        }
       }
     }
-    
-    // Si es número (serie de Excel), convertir
-    if (typeof dateValue === 'number') {
+
+    // Si es string en formato ISO con T
+    if (typeof cleanValue === 'string' && cleanValue.includes('T')) {
+      const datePart = cleanValue.split('T')[0]
+      if (datePart.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+        const [yearStr, month, day] = datePart.split('-')
+        const year = Number(yearStr)
+        if (year >= 1900 && year <= 2100) {
+          return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`
+        }
+      }
+    }
+
+    // Si es número (serie de Excel), convertir - solo valores razonables
+    if (typeof cleanValue === 'number' && cleanValue > 0 && cleanValue < 100000) {
       const excelEpoch = new Date(1900, 0, 1)
       const millisecondsPerDay = 24 * 60 * 60 * 1000
-      const adjustedSerialNumber = dateValue > 59 ? dateValue - 1 : dateValue
+      const adjustedSerialNumber = cleanValue > 59 ? cleanValue - 1 : cleanValue
       const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
-      
+
       if (!isNaN(date.getTime())) {
-        const day = date.getDate().toString().padStart(2, '0')
-        const month = (date.getMonth() + 1).toString().padStart(2, '0')
         const year = date.getFullYear()
-        return `${day}/${month}/${year}`
+        // Validar año razonable
+        if (year >= 1900 && year <= 2100) {
+          const day = date.getDate().toString().padStart(2, '0')
+          const month = (date.getMonth() + 1).toString().padStart(2, '0')
+          return `${day}/${month}/${year}`
+        }
       }
     }
-    
-    // Intentar parsear como fecha
-    const date = new Date(dateValue)
-    if (!isNaN(date.getTime())) {
-      const day = date.getDate().toString().padStart(2, '0')
-      const month = (date.getMonth() + 1).toString().padStart(2, '0')
-      const year = date.getFullYear()
-      return `${day}/${month}/${year}`
-    }
-    
-    return String(dateValue)
+
+    // NO usar new Date(dateValue) genérico - puede producir años inválidos
+    // Retornar el valor original si no se pudo parsear
+    console.warn('formatRecordDate: No se pudo parsear la fecha:', dateValue)
+    return 'N/A'
   }
 
   // Función para convertir fecha del registro a Date para filtros

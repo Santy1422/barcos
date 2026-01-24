@@ -33,48 +33,91 @@ import autoTable from "jspdf-autotable"
 // Función para convertir números de serie de Excel a fechas legibles
 const convertExcelDateToReadable = (excelDate: string | number): string => {
   if (!excelDate) return ''
-  
-  let date: Date
-  
-  if (typeof excelDate === 'string' && excelDate.includes('T')) {
-    date = new Date(excelDate)
-  } else if (typeof excelDate === 'string' && excelDate.includes('-') && !excelDate.includes('/')) {
-    date = new Date(excelDate)
-  } else if (typeof excelDate === 'string' && excelDate.includes('/')) {
-    const dateStr = excelDate.split(' ')[0]
+
+  let date: Date | null = null
+
+  // Limpiar espacios si es string
+  const cleanDate = typeof excelDate === 'string' ? excelDate.trim() : excelDate
+
+  // Si es string en formato ISO con T
+  if (typeof cleanDate === 'string' && cleanDate.includes('T')) {
+    const datePart = cleanDate.split('T')[0]
+    if (datePart.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+      const [year, month, day] = datePart.split('-').map(Number)
+      if (year >= 1900 && year <= 2100) {
+        return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
+      }
+    }
+  }
+
+  // Si es string en formato YYYY-MM-DD
+  if (typeof cleanDate === 'string' && cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+    const [year, month, day] = cleanDate.split('-').map(Number)
+    if (year >= 1900 && year <= 2100) {
+      return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
+    }
+  }
+
+  // Si es string en formato DD-MM-YYYY
+  if (typeof cleanDate === 'string' && cleanDate.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+    const parts = cleanDate.split('-')
+    if (parts.length === 3) {
+      const [part1, part2, yearStr] = parts
+      const year = Number(yearStr)
+      if (year >= 1900 && year <= 2100) {
+        // Si part1 > 12, es DD-MM-YYYY
+        if (Number(part1) > 12) {
+          return `${part1.padStart(2, '0')}/${part2.padStart(2, '0')}/${year}`
+        }
+        // Asumir DD-MM-YYYY
+        return `${part1.padStart(2, '0')}/${part2.padStart(2, '0')}/${year}`
+      }
+    }
+  }
+
+  // Si es string con formato MM/DD/YYYY o DD/MM/YYYY
+  if (typeof cleanDate === 'string' && cleanDate.includes('/')) {
+    const dateStr = cleanDate.split(' ')[0]
     const parts = dateStr.split('/')
-    
+
     if (parts.length === 3) {
       const [part1, part2, part3] = parts
       if (part1.length <= 2 && part2.length <= 2 && part3.length === 4) {
-        const day = part2.padStart(2, '0')
-        const month = part1.padStart(2, '0')
-        const year = part3
-        return `${day}/${month}/${year}`
+        const year = Number(part3)
+        if (year >= 1900 && year <= 2100) {
+          // Si part1 > 12, es DD/MM/YYYY, sino MM/DD/YYYY
+          if (Number(part1) > 12) {
+            return `${part1.padStart(2, '0')}/${part2.padStart(2, '0')}/${year}`
+          }
+          // Asumir MM/DD/YYYY -> convertir a DD/MM/YYYY
+          return `${part2.padStart(2, '0')}/${part1.padStart(2, '0')}/${year}`
+        }
       }
     }
-    
-    date = new Date(excelDate)
-  } else {
-    const excelSerialNumber = Number(excelDate)
-    if (isNaN(excelSerialNumber)) return String(excelDate)
-    
+  }
+
+  // Si es número (serie de Excel) - solo valores razonables
+  const excelSerialNumber = Number(cleanDate)
+  if (!isNaN(excelSerialNumber) && excelSerialNumber > 0 && excelSerialNumber < 100000) {
     const excelEpoch = new Date(1900, 0, 1)
     const millisecondsPerDay = 24 * 60 * 60 * 1000
     const adjustedSerialNumber = excelSerialNumber > 59 ? excelSerialNumber - 1 : excelSerialNumber
-    
+
     date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
+
+    if (!isNaN(date.getTime())) {
+      const year = date.getFullYear()
+      if (year >= 1900 && year <= 2100) {
+        const day = date.getDate().toString().padStart(2, '0')
+        const month = (date.getMonth() + 1).toString().padStart(2, '0')
+        return `${day}/${month}/${year}`
+      }
+    }
   }
-  
-  if (isNaN(date.getTime())) {
-    return String(excelDate)
-  }
-  
-  const day = date.getDate().toString().padStart(2, '0')
-  const month = (date.getMonth() + 1).toString().padStart(2, '0')
-  const year = date.getFullYear()
-  
-  return `${day}/${month}/${year}`
+
+  // Si no se pudo convertir, retornar el valor original
+  console.warn('convertExcelDateToReadable: No se pudo parsear la fecha:', excelDate)
+  return String(excelDate)
 }
 
 export function ShipChandlerPrefactura() {
