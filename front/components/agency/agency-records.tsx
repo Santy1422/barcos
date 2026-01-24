@@ -615,30 +615,41 @@ export function AgencyRecords() {
 
   const formatSafeDate = (dateValue: any) => {
     if (!dateValue) return 'N/A'
-    
+
     try {
+      let year: number, month: number, day: number
+
       // Si ya es una fecha válida
       if (dateValue instanceof Date && !isNaN(dateValue.getTime())) {
+        year = dateValue.getFullYear()
+        // Validate year is within reasonable range (1900-2100)
+        if (year < 1900 || year > 2100) return 'N/A'
         return format(dateValue, 'MMM dd, yyyy')
       }
-      
+
       // Si es string, extraer solo la parte de fecha para evitar cambios de zona horaria
       if (typeof dateValue === 'string') {
         const dateOnly = dateValue.split('T')[0] // Extraer solo la parte de fecha
-        const [year, month, day] = dateOnly.split('-')
-        const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+        ;[year, month, day] = dateOnly.split('-').map(Number)
+        // Validate year is within reasonable range (1900-2100)
+        if (year < 1900 || year > 2100) return 'N/A'
+        const date = new Date(year, month - 1, day)
         return format(date, 'MMM dd, yyyy')
       }
-      
+
       // Si es otro tipo, intentar parsearlo
       const date = new Date(dateValue)
       if (isNaN(date.getTime())) {
-        return 'Invalid Date'
+        return 'N/A'
       }
-      
+
+      // Validate year is within reasonable range (1900-2100)
+      year = date.getFullYear()
+      if (year < 1900 || year > 2100) return 'N/A'
+
       return format(date, 'MMM dd, yyyy')
     } catch (error) {
-      return 'Invalid Date'
+      return 'N/A'
     }
   }
 

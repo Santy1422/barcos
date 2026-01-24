@@ -94,7 +94,12 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
   const relatedRecords = getRelatedRecords();
 
   const formatDateTime = (dateString: string) => {
+    if (!dateString) return { date: 'N/A', time: 'N/A' };
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return { date: 'N/A', time: 'N/A' };
+    // Validar año razonable (1900-2100) para prevenir fechas incorrectas
+    const year = date.getFullYear();
+    if (year < 1900 || year > 2100) return { date: 'N/A', time: 'N/A' };
     return {
       date: date.toLocaleDateString('es-ES'),
       time: date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })

@@ -1729,11 +1729,18 @@ export function PTYSSPrefactura() {
 
   // Función para formatear fecha y hora
   const formatDateTime = (dateString: string) => {
+    if (!dateString) return { date: 'N/A', time: 'N/A' }
     const date = new Date(dateString)
+    if (isNaN(date.getTime())) return { date: 'N/A', time: 'N/A' }
+
+    // Validate year is within reasonable range (1900-2100)
+    const year = date.getFullYear()
+    if (year < 1900 || year > 2100) return { date: 'N/A', time: 'N/A' }
+
     return {
       date: date.toLocaleDateString('es-ES'),
-      time: date.toLocaleTimeString('es-ES', { 
-        hour: '2-digit', 
+      time: date.toLocaleTimeString('es-ES', {
+        hour: '2-digit',
         minute: '2-digit',
         second: '2-digit'
       })
@@ -2366,7 +2373,14 @@ export function PTYSSPrefactura() {
                           </TableCell>
                           <TableCell className="py-2 px-3">
                             <div className="text-sm">
-                              {data.moveDate ? new Date(data.moveDate).toLocaleDateString('es-ES') : "N/A"}
+                              {(() => {
+                              if (!data.moveDate) return 'N/A';
+                              const d = new Date(data.moveDate);
+                              if (isNaN(d.getTime())) return 'N/A';
+                              const year = d.getFullYear();
+                              if (year < 1900 || year > 2100) return 'N/A';
+                              return d.toLocaleDateString('es-ES');
+                            })()}
                             </div>
                           </TableCell>
                           <TableCell className="py-2 px-3">
@@ -3280,9 +3294,15 @@ export function PTYSSPrefactura() {
                       />
                     ) : (
                       <p className="text-sm">
-                        {(selectedRecordForView.data as Record<string, any>).moveDate 
-                          ? new Date((selectedRecordForView.data as Record<string, any>).moveDate).toLocaleDateString('es-ES')
-                          : "N/A"
+                        {(() => {
+                          const moveDate = (selectedRecordForView.data as Record<string, any>).moveDate;
+                          if (!moveDate) return 'N/A';
+                          const d = new Date(moveDate);
+                          if (isNaN(d.getTime())) return 'N/A';
+                          const year = d.getFullYear();
+                          if (year < 1900 || year > 2100) return 'N/A';
+                          return d.toLocaleDateString('es-ES');
+                        })()
                         }
                       </p>
                     )}

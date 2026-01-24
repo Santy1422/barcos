@@ -69,24 +69,32 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     // Aplicar la misma lógica de corrección de zona horaria que en trucking-records.tsx
     const formatInvoiceDate = (dateString: string) => {
       if (!dateString) return new Date()
-      
+
       // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
       if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
         const [year, month, day] = dateString.split('-').map(Number)
-        return new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+        // Validar año razonable (1900-2100)
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+        }
+        return new Date() // Año fuera de rango, usar fecha actual
       }
-      
+
       // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
       if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
         const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
         const [year, month, day] = datePart.split('-').map(Number)
-        return new Date(year, month - 1, day) // Crear en zona horaria local
+        // Validar año razonable (1900-2100)
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day) // Crear en zona horaria local
+        }
+        return new Date() // Año fuera de rango, usar fecha actual
       }
-      
-      // Para otros formatos, usar el método normal
-      return new Date(dateString)
+
+      // Para otros formatos, no usar new Date() genérico - usar fecha actual
+      return new Date()
     }
-    
+
     const invoiceDate = formatInvoiceDate(invoiceData.issueDate)
     const day = invoiceDate.getDate().toString().padStart(2, '0')
     const month = (invoiceDate.getMonth() + 1).toString().padStart(2, '0')
@@ -302,24 +310,32 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     // Aplicar la misma lógica de corrección de zona horaria que en trucking-records.tsx
     const formatInvoiceDate = (dateString: string) => {
       if (!dateString) return new Date()
-      
+
       // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
       if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
         const [year, month, day] = dateString.split('-').map(Number)
-        return new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+        // Validar año razonable (1900-2100)
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+        }
+        return new Date() // Año fuera de rango, usar fecha actual
       }
-      
+
       // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
       if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
         const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
         const [year, month, day] = datePart.split('-').map(Number)
-        return new Date(year, month - 1, day) // Crear en zona horaria local
+        // Validar año razonable (1900-2100)
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day) // Crear en zona horaria local
+        }
+        return new Date() // Año fuera de rango, usar fecha actual
       }
-      
-      // Para otros formatos, usar el método normal
-      return new Date(dateString)
+
+      // Para otros formatos, no usar new Date() genérico - usar fecha actual
+      return new Date()
     }
-    
+
     const invoiceDate = formatInvoiceDate(invoiceData.issueDate)
     const day = invoiceDate.getDate().toString().padStart(2, '0')
     const month = (invoiceDate.getMonth() + 1).toString().padStart(2, '0')

@@ -90,22 +90,26 @@ export const AgencySapInvoice: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
-    
+
+    let year: number, month: number, day: number;
+
     if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const [year, month, day] = dateString.split('-').map(Number);
-      const date = new Date(year, month - 1, day);
-      return date.toLocaleDateString('es-ES');
-    }
-    
-    if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+      [year, month, day] = dateString.split('-').map(Number);
+    } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
       const datePart = dateString.split('T')[0];
-      const [year, month, day] = datePart.split('-').map(Number);
-      const date = new Date(year, month - 1, day);
-      return date.toLocaleDateString('es-ES');
+      [year, month, day] = datePart.split('-').map(Number);
+    } else {
+      const parsed = new Date(dateString);
+      if (isNaN(parsed.getTime())) return 'N/A';
+      year = parsed.getFullYear();
+      month = parsed.getMonth() + 1;
+      day = parsed.getDate();
     }
-    
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return 'N/A';
+
+    // Validate year is within reasonable range (1900-2100)
+    if (year < 1900 || year > 2100) return 'N/A';
+
+    const date = new Date(year, month - 1, day);
     return date.toLocaleDateString('es-ES');
   };
 

@@ -429,26 +429,32 @@ export function PTYSSRecords() {
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A'
-    
+
+    let year: number, month: number, day: number
+
     // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
     if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const [year, month, day] = dateString.split('-').map(Number)
-      const date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
-      return date.toLocaleDateString('es-ES')
+      [year, month, day] = dateString.split('-').map(Number)
     }
-    
     // Si la fecha está en formato ISO con zona horaria UTC (ej: 2025-09-09T00:00:00.000+00:00)
     // Extraer solo la parte de la fecha y crear un objeto Date en zona horaria local
-    if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+    else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
       const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
-      const [year, month, day] = datePart.split('-').map(Number)
-      const date = new Date(year, month - 1, day) // Crear en zona horaria local
-      return date.toLocaleDateString('es-ES')
+      ;[year, month, day] = datePart.split('-').map(Number)
     }
-    
     // Para otros formatos, usar el método normal
-    const date = new Date(dateString)
-    if (isNaN(date.getTime())) return 'N/A'
+    else {
+      const date = new Date(dateString)
+      if (isNaN(date.getTime())) return 'N/A'
+      year = date.getFullYear()
+      month = date.getMonth() + 1
+      day = date.getDate()
+    }
+
+    // Year validation to prevent year 40000 issue
+    if (year < 1900 || year > 2100) return 'N/A'
+
+    const date = new Date(year, month - 1, day)
     return date.toLocaleDateString('es-ES')
   }
 

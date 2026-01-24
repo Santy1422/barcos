@@ -94,6 +94,9 @@ export function TruckingXmlViewerModal({ open, onOpenChange, invoice, onXmlSentT
     try {
       const date = new Date(dateString)
       if (isNaN(date.getTime())) return 'N/A'
+      // Validar año razonable (1900-2100) para prevenir fechas incorrectas
+      const year = date.getFullYear()
+      if (year < 1900 || year > 2100) return 'N/A'
       return date.toLocaleString('es-ES')
     } catch {
       return 'N/A'

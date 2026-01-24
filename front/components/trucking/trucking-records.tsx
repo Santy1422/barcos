@@ -127,30 +127,47 @@ export function TruckingRecords() {
     return `${containers.length} contenedor${containers.length === 1 ? '' : 'es'}`
   }
 
-  // Función para formatear fechas correctamente (evitar problema de zona horaria)
+  // Función para formatear fechas correctamente (evitar problema de zona horaria y año 40000)
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A'
-    
-    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
-    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const [year, month, day] = dateString.split('-').map(Number)
-      const date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
-      return date.toLocaleDateString('es-ES')
+
+    const cleanDate = typeof dateString === 'string' ? dateString.trim() : String(dateString)
+
+    // Si la fecha está en formato YYYY-MM-DD
+    if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+      const [year, month, day] = cleanDate.split('-').map(Number)
+      if (year >= 1900 && year <= 2100) {
+        const date = new Date(year, month - 1, day)
+        return date.toLocaleDateString('es-ES')
+      }
     }
-    
-    // Si la fecha está en formato ISO con zona horaria UTC (ej: 2025-09-09T00:00:00.000+00:00)
-    // Extraer solo la parte de la fecha y crear un objeto Date en zona horaria local
-    if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-      const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
+
+    // Si la fecha está en formato ISO con T
+    if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}T/)) {
+      const datePart = cleanDate.split('T')[0]
       const [year, month, day] = datePart.split('-').map(Number)
-      const date = new Date(year, month - 1, day) // Crear en zona horaria local
-      return date.toLocaleDateString('es-ES')
+      if (year >= 1900 && year <= 2100) {
+        const date = new Date(year, month - 1, day)
+        return date.toLocaleDateString('es-ES')
+      }
     }
-    
-    // Para otros formatos, usar el método normal
-    const date = new Date(dateString)
-    if (isNaN(date.getTime())) return 'N/A'
-    return date.toLocaleDateString('es-ES')
+
+    // Si la fecha está en formato DD-MM-YYYY
+    if (cleanDate.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+      const parts = cleanDate.split('-')
+      const [part1, part2, yearStr] = parts
+      const year = Number(yearStr)
+      if (year >= 1900 && year <= 2100) {
+        if (Number(part1) > 12) {
+          const date = new Date(year, Number(part2) - 1, Number(part1))
+          return date.toLocaleDateString('es-ES')
+        }
+        const date = new Date(year, Number(part2) - 1, Number(part1))
+        return date.toLocaleDateString('es-ES')
+      }
+    }
+
+    return 'N/A'
   }
 
   // Función para obtener el cliente real de las facturas de gastos de autoridades

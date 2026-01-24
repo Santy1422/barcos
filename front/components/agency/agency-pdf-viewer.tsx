@@ -63,27 +63,34 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
     doc.text(`${pdfTitle} No. ${serviceData.invoiceNumber}`, 195, 20, { align: 'right' })
 
     // Formatear fecha de factura
-    const formatInvoiceDate = (dateString: string) => {
-      if (!dateString) return new Date()
-      
+    const formatInvoiceDate = (dateString: string): Date | null => {
+      if (!dateString) return null
+
+      let year: number, month: number, day: number
+
       if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        const [year, month, day] = dateString.split('-').map(Number)
-        return new Date(year, month - 1, day)
-      }
-      
-      if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+        [year, month, day] = dateString.split('-').map(Number)
+      } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
         const datePart = dateString.split('T')[0]
-        const [year, month, day] = datePart.split('-').map(Number)
-        return new Date(year, month - 1, day)
+        ;[year, month, day] = datePart.split('-').map(Number)
+      } else {
+        const parsed = new Date(dateString)
+        if (isNaN(parsed.getTime())) return null
+        year = parsed.getFullYear()
+        month = parsed.getMonth() + 1
+        day = parsed.getDate()
       }
-      
-      return new Date(dateString)
+
+      // Validate year is within reasonable range (1900-2100)
+      if (year < 1900 || year > 2100) return null
+
+      return new Date(year, month - 1, day)
     }
     
     const invoiceDate = formatInvoiceDate(serviceData.invoiceDate)
-    const day = invoiceDate.getDate().toString().padStart(2, '0')
-    const month = (invoiceDate.getMonth() + 1).toString().padStart(2, '0')
-    const year = invoiceDate.getFullYear()
+    const day = invoiceDate ? invoiceDate.getDate().toString().padStart(2, '0') : 'N/A'
+    const month = invoiceDate ? (invoiceDate.getMonth() + 1).toString().padStart(2, '0') : 'N/A'
+    const year = invoiceDate ? invoiceDate.getFullYear() : 'N/A'
     doc.setFontSize(10)
     doc.text('DATE:', 195, 30, { align: 'right' })
     doc.setFontSize(12)
@@ -200,7 +207,9 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
     const processService = (svc: any, rows: any[]) => {
       // Formatear fecha del servicio
       const serviceDate = formatInvoiceDate(svc.pickupDate)
-      const formattedDate = `${serviceDate.getDate().toString().padStart(2, '0')}/${(serviceDate.getMonth() + 1).toString().padStart(2, '0')}/${serviceDate.getFullYear()}`
+      const formattedDate = serviceDate
+        ? `${serviceDate.getDate().toString().padStart(2, '0')}/${(serviceDate.getMonth() + 1).toString().padStart(2, '0')}/${serviceDate.getFullYear()}`
+        : 'N/A'
       
       // Descripción del servicio principal
       let route = `${svc.pickupLocation} TO ${svc.dropoffLocation}`

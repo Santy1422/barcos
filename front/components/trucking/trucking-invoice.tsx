@@ -550,33 +550,50 @@ export default function TruckingInvoice() {
   // Función para convertir fecha y hora a formato de fecha
   const formatDateForInput = (dateTimeString: string): string => {
     if (!dateTimeString) return ""
-    
+
     try {
       // Intentar parsear diferentes formatos de fecha
       let date: Date
-      
+      let parsedYear: number
+
       // Formato MM/DD/YYYY HH:MM:SS
       if (/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/.test(dateTimeString)) {
         const [datePart, timePart] = dateTimeString.split(' ')
         const [month, day, year] = datePart.split('/')
-        date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+        parsedYear = parseInt(year)
+        // Validar año razonable (1900-2100)
+        if (parsedYear < 1900 || parsedYear > 2100) return ""
+        date = new Date(parsedYear, parseInt(month) - 1, parseInt(day))
       }
       // Formato DD/MM/YYYY HH:MM:SS
       else if (/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/.test(dateTimeString)) {
         const [datePart, timePart] = dateTimeString.split(' ')
         const [day, month, year] = datePart.split('/')
-        date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+        parsedYear = parseInt(year)
+        // Validar año razonable (1900-2100)
+        if (parsedYear < 1900 || parsedYear > 2100) return ""
+        date = new Date(parsedYear, parseInt(month) - 1, parseInt(day))
       }
-      // Otros formatos - intentar parseo directo
+      // Otros formatos - no usar new Date() genérico para evitar year 40000 issues
       else {
-        date = new Date(dateTimeString)
+        // Intentar extraer año de formatos conocidos solo
+        const isoMatch = dateTimeString.match(/^(\d{4})-\d{2}-\d{2}/)
+        if (isoMatch) {
+          parsedYear = parseInt(isoMatch[1])
+          if (parsedYear < 1900 || parsedYear > 2100) return ""
+          date = new Date(dateTimeString)
+        } else {
+          return "" // Formato desconocido, retornar vacío en lugar de parsear
+        }
       }
-      
-      // Verificar que la fecha es válida
+
+      // Verificar que la fecha es válida y el año está en rango
       if (date && !isNaN(date.getTime())) {
+        const finalYear = date.getFullYear()
+        if (finalYear < 1900 || finalYear > 2100) return ""
         return date.toISOString().split('T')[0] // Formato YYYY-MM-DD
       }
-      
+
       return ""
     } catch (error) {
       console.error('Error al formatear fecha:', error)
@@ -1304,11 +1321,16 @@ export default function TruckingInvoice() {
 
   // Función para formatear fecha y hora
   const formatDateTime = (dateString: string) => {
+    if (!dateString) return { date: 'N/A', time: 'N/A' }
     const date = new Date(dateString)
+    if (isNaN(date.getTime())) return { date: 'N/A', time: 'N/A' }
+    // Validar año razonable (1900-2100) para prevenir fechas incorrectas
+    const year = date.getFullYear()
+    if (year < 1900 || year > 2100) return { date: 'N/A', time: 'N/A' }
     return {
       date: date.toLocaleDateString('es-ES'),
-      time: date.toLocaleTimeString('es-ES', { 
-        hour: '2-digit', 
+      time: date.toLocaleTimeString('es-ES', {
+        hour: '2-digit',
         minute: '2-digit',
         second: '2-digit'
       })
