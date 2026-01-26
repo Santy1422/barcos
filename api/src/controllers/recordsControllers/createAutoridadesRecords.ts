@@ -20,74 +20,96 @@ export async function createAutoridadesRecords(req: AuthenticatedRequest, res: R
   try {
     console.log('createAutoridadesRecords - Body recibido:', req.body);
     console.log('createAutoridadesRecords - Headers:', req.headers);
-    
+
     const { recordsData } = req.body;
     const userId = req.user?._id;
 
-    console.log('createAutoridadesRecords - recordsData:', recordsData);
+    console.log('createAutoridadesRecords - recordsData:', recordsData?.length);
     console.log('createAutoridadesRecords - userId:', userId);
 
     if (!recordsData || !Array.isArray(recordsData) || !userId) {
-      console.log('createAutoridadesRecords - Validación fallida:', { 
-        hasRecordsData: !!recordsData, 
-        isArray: Array.isArray(recordsData), 
-        hasUserId: !!userId 
+      console.log('createAutoridadesRecords - Validación fallida:', {
+        hasRecordsData: !!recordsData,
+        isArray: Array.isArray(recordsData),
+        hasUserId: !!userId
       });
       return response(res, 400, {
         error: 'Faltan datos requeridos: recordsData (array), usuario autenticado',
       });
     }
 
-         // Verificar duplicados contra la base de datos existente
-     const orderNumbers = recordsData.map(record => record.order);
-     const existingOrders = await recordsAutoridades.find({ order: { $in: orderNumbers } }).select('order');
-     const existingOrderNumbers = existingOrders.map(record => record.order);
-     
-     const duplicateOrders = orderNumbers.filter(order => existingOrderNumbers.includes(order));
-     if (duplicateOrders.length > 0) {
-       // Usar filter para obtener valores únicos en lugar de Set
-       const uniqueDuplicates = duplicateOrders.filter((order, index) => duplicateOrders.indexOf(order) === index);
-       console.log('createAutoridadesRecords - Orders duplicados encontrados en BD:', uniqueDuplicates);
-       
-       // Filtrar registros duplicados para continuar con los válidos
-       const validRecords = recordsData.filter(record => !existingOrderNumbers.includes(record.order));
-       console.log(`createAutoridadesRecords - ${validRecords.length} registros válidos (sin duplicados) de ${recordsData.length} total`);
-       
-       if (validRecords.length === 0) {
-         console.log('createAutoridadesRecords - Todos los registros son duplicados, continuando con proceso vacío...');
-         // Continuar con el proceso aunque no haya registros válidos
-       }
-       
-       // Continuar con los registros válidos
-       console.log('createAutoridadesRecords - Continuando con registros válidos...');
-     }
-    
-         // Usar registros válidos (sin duplicados) si los hay, o todos si no hay duplicados
-     const recordsToProcess = duplicateOrders.length > 0 ? 
-       recordsData.filter(record => !existingOrderNumbers.includes(record.order)) : 
-       recordsData;
-     
-     console.log('createAutoridadesRecords - Registros a procesar:', recordsToProcess.length);
-     
-     // Si no hay registros válidos para procesar, retornar respuesta con 0 creados
-     if (recordsToProcess.length === 0) {
-       console.log('createAutoridadesRecords - No hay registros válidos para procesar');
-       const responseData: any = { 
-         records: [], 
-         count: 0,
-         totalProcessed: recordsData.length
-       };
-       
-       if (duplicateOrders.length > 0) {
-         responseData.duplicates = {
-           count: duplicateOrders.length,
-           orders: duplicateOrders.filter((order, index) => duplicateOrders.indexOf(order) === index)
-         };
-         responseData.message = `Todos los registros eran duplicados. 0 registros nuevos fueron creados.`;
-       }
-       
-       return response(res, 201, responseData);
-     }
+    // 1. Verificar duplicados DENTRO del mismo batch
+    const orderNumbers = recordsData.map(record => record.order).filter(Boolean);
+    const duplicatesInBatch: string[] = [];
+    const seenInBatch = new Set<string>();
+
+    orderNumbers.forEach(order => {
+      if (seenInBatch.has(order)) {
+        duplicatesInBatch.push(order);
+      } else {
+        seenInBatch.add(order);
+      }
+    });
+
+    if (duplicatesInBatch.length > 0) {
+      console.log('createAutoridadesRecords - Duplicados encontrados DENTRO del batch:', duplicatesInBatch.length);
+    }
+
+    // 2. Verificar duplicados contra la base de datos existente
+    const existingOrders = await recordsAutoridades.find({ order: { $in: orderNumbers } }).select('order');
+    const existingOrderNumbers = existingOrders.map(record => record.order);
+
+    const duplicatesInDB = orderNumbers.filter(order => existingOrderNumbers.includes(order));
+    if (duplicatesInDB.length > 0) {
+      console.log('createAutoridadesRecords - Duplicados encontrados en BD:', duplicatesInDB.length);
+    }
+
+    // Combinar todos los duplicados
+    const allDuplicates = Array.from(new Set([...duplicatesInDB, ...duplicatesInBatch]));
+
+    // Filtrar registros: excluir duplicados de DB y mantener solo primera aparición en batch
+    const processedOrders = new Set<string>();
+    const recordsToProcess = recordsData.filter(record => {
+      const order = record.order;
+      if (!order) return true; // Si no tiene order, procesarlo
+
+      // Excluir si ya existe en DB
+      if (existingOrderNumbers.includes(order)) return false;
+
+      // Excluir si ya procesamos este order en el batch
+      if (processedOrders.has(order)) return false;
+
+      // Marcar como procesado
+      processedOrders.add(order);
+      return true;
+    });
+
+    console.log('createAutoridadesRecords - Registros a procesar:', recordsToProcess.length);
+    console.log('  - Total original:', recordsData.length);
+    console.log('  - Duplicados en DB:', duplicatesInDB.length);
+    console.log('  - Duplicados en batch:', duplicatesInBatch.length);
+
+    // Si no hay registros válidos para procesar, retornar respuesta con 0 creados
+    if (recordsToProcess.length === 0) {
+      console.log('createAutoridadesRecords - No hay registros válidos para procesar');
+      const responseData: any = {
+        records: [],
+        count: 0,
+        totalProcessed: recordsData.length
+      };
+
+      if (allDuplicates.length > 0) {
+        responseData.duplicates = {
+          count: allDuplicates.length,
+          orders: allDuplicates.filter((order, index) => allDuplicates.indexOf(order) === index),
+          inDatabase: duplicatesInDB.length,
+          inBatch: duplicatesInBatch.length
+        };
+        responseData.message = `Todos los registros eran duplicados (${duplicatesInDB.length} en DB, ${duplicatesInBatch.length} en batch). 0 registros nuevos fueron creados.`;
+      }
+
+      return response(res, 201, responseData);
+    }
      
           // Preparar datos para inserción masiva
      const recordsToInsert = recordsToProcess.map(data => {
@@ -105,59 +127,70 @@ export async function createAutoridadesRecords(req: AuthenticatedRequest, res: R
      console.log('createAutoridadesRecords - Iniciando inserción masiva de', recordsToInsert.length, 'registros');
      console.log('createAutoridadesRecords - Primer registro de ejemplo:', JSON.stringify(recordsToInsert[0], null, 2));
      
-     // Inserción masiva usando insertMany (mucho más rápido)
-     let createdRecords;
-     try {
-       createdRecords = await recordsAutoridades.insertMany(recordsToInsert, { 
-         ordered: false, // No fallar si hay errores individuales
-         rawResult: false // Retornar documentos creados
-       });
-       console.log('createAutoridadesRecords - Inserción masiva exitosa:', createdRecords.length, 'registros creados');
-     } catch (bulkError: any) {
-       console.error('createAutoridadesRecords - Error en inserción masiva:', bulkError);
-       
-       // Si falla la inserción masiva, intentar inserción individual como fallback
-       console.log('createAutoridadesRecords - Intentando inserción individual como fallback...');
-       createdRecords = [];
-       
-       for (let i = 0; i < recordsToProcess.length; i++) {
-         const data = recordsToProcess[i];
-         try {
-           // Extraer clientId si viene del frontend
-           const { clientId, ...restData } = data;
-           
-           const record = await recordsAutoridades.create({
-             ...restData,
-             clientId: clientId || null, // Guardar clientId si existe
-             status: data.status || 'cargado',
-             createdBy: userId
-           });
-           createdRecords.push(record);
-         } catch (e) {
-           console.error(`createAutoridadesRecords - Error creando registro ${i + 1}:`, e);
-           // Continuar con el siguiente
-         }
-       }
-     }
+    // Inserción masiva usando insertMany (mucho más rápido)
+    let createdRecords: any[] = [];
+    try {
+      createdRecords = await recordsAutoridades.insertMany(recordsToInsert, {
+        ordered: false, // No fallar si hay errores individuales
+        rawResult: false // Retornar documentos creados
+      });
+      console.log('createAutoridadesRecords - Inserción masiva exitosa:', createdRecords.length, 'registros creados');
+    } catch (bulkError: any) {
+      // Si es error de duplicados parciales, algunos registros pueden haberse insertado
+      if (bulkError.code === 11000 || bulkError.writeErrors) {
+        // Obtener registros que sí se insertaron
+        if (bulkError.insertedDocs) {
+          createdRecords = bulkError.insertedDocs;
+          console.log('createAutoridadesRecords - Inserción parcial:', createdRecords.length, 'registros creados,', bulkError.writeErrors?.length || 0, 'duplicados omitidos');
+        } else {
+          // Fallback: inserción individual
+          console.log('createAutoridadesRecords - Intentando inserción individual como fallback...');
+          createdRecords = [];
+
+          for (let i = 0; i < recordsToInsert.length; i++) {
+            const data = recordsToInsert[i];
+            try {
+              const record = await recordsAutoridades.create(data);
+              createdRecords.push(record);
+            } catch (e: any) {
+              // Manejar error de duplicado silenciosamente
+              if (e.code === 11000) {
+                const dupKey = e.keyValue?.order;
+                if (dupKey && !allDuplicates.includes(dupKey)) {
+                  allDuplicates.push(dupKey);
+                }
+                console.warn(`createAutoridadesRecords - Registro ${i + 1} omitido - duplicado:`, dupKey);
+              } else {
+                console.error(`createAutoridadesRecords - Error creando registro ${i + 1}:`, e.message);
+              }
+              // Continuar con el siguiente
+            }
+          }
+        }
+      } else {
+        console.error('createAutoridadesRecords - Error en inserción masiva:', bulkError.message);
+        throw bulkError;
+      }
+    }
     
-         console.log('createAutoridadesRecords - Total de registros creados:', createdRecords.length);
-     
-     // Preparar respuesta con información sobre duplicados si los hubo
-     const responseData: any = { 
-       records: createdRecords || [], 
-       count: createdRecords ? createdRecords.length : 0,
-       totalProcessed: recordsData.length
-     };
-     
-     if (duplicateOrders.length > 0) {
-       responseData.duplicates = {
-         count: duplicateOrders.length,
-         orders: duplicateOrders.filter((order, index) => duplicateOrders.indexOf(order) === index)
-       };
-       responseData.message = `Se procesaron ${createdRecords.length} registros válidos. ${duplicateOrders.length} registros duplicados fueron omitidos.`;
-     }
-     
-     return response(res, 201, responseData);
+    console.log('createAutoridadesRecords - Total de registros creados:', createdRecords.length);
+
+    // Preparar respuesta con información sobre duplicados si los hubo
+    const responseData: any = {
+      records: createdRecords || [],
+      count: createdRecords ? createdRecords.length : 0,
+      totalProcessed: recordsData.length
+    };
+
+    if (allDuplicates.length > 0) {
+      responseData.duplicates = {
+        count: allDuplicates.length,
+        orders: allDuplicates.filter((order, index) => allDuplicates.indexOf(order) === index)
+      };
+      responseData.message = `Se crearon ${createdRecords.length} registros. ${allDuplicates.length} duplicados fueron omitidos.`;
+    }
+
+    return response(res, 201, responseData);
   } catch (error) {
     return response(res, 500, { error: 'Error al crear registros de autoridades', details: error.message });
   }
