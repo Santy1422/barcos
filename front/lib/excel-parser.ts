@@ -881,7 +881,79 @@ export const parseShipChandlerExcel = async (file: File): Promise<ShipChandlerEx
               }
               return 0;
             };
-            
+
+            // Función helper para obtener fecha en formato YYYY-MM-DD
+            const getDate = (colName: string): string => {
+              const value = getValue(colName);
+
+              // Si es un número (serial de Excel), convertir a fecha
+              if (typeof value === 'number' && value > 0 && value < 100000) {
+                // Excel serial date: 1 = 1900-01-01
+                // Ajuste: Excel cuenta el 29/02/1900 como válido, pero JavaScript no
+                const excelEpoch = new Date(1900, 0, 1);
+                const millisecondsPerDay = 24 * 60 * 60 * 1000;
+                const adjustedSerialNumber = value > 59 ? value - 1 : value;
+                const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay);
+
+                if (!isNaN(date.getTime())) {
+                  const year = date.getFullYear();
+                  if (year >= 1900 && year <= 2100) {
+                    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                    const day = date.getDate().toString().padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                  }
+                }
+              }
+
+              // Si es string que parece ser un serial de Excel (solo dígitos)
+              if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (trimmed.match(/^\d+$/) && parseInt(trimmed, 10) > 0 && parseInt(trimmed, 10) < 100000) {
+                  const serial = parseInt(trimmed, 10);
+                  const excelEpoch = new Date(1900, 0, 1);
+                  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+                  const adjustedSerialNumber = serial > 59 ? serial - 1 : serial;
+                  const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay);
+
+                  if (!isNaN(date.getTime())) {
+                    const year = date.getFullYear();
+                    if (year >= 1900 && year <= 2100) {
+                      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                      const day = date.getDate().toString().padStart(2, '0');
+                      return `${year}-${month}-${day}`;
+                    }
+                  }
+                }
+
+                // Si ya está en formato YYYY-MM-DD, retornar tal cual
+                if (trimmed.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                  return trimmed;
+                }
+
+                // Si está en formato DD-MM-YYYY o DD/MM/YYYY, convertir
+                if (trimmed.match(/^\d{2}[-\/]\d{2}[-\/]\d{4}$/)) {
+                  const parts = trimmed.split(/[-\/]/);
+                  if (parts.length === 3) {
+                    const [part1, part2, year] = parts;
+                    // Asumir DD-MM-YYYY (formato común en Panamá/Latinoamérica)
+                    return `${year}-${part2.padStart(2, '0')}-${part1.padStart(2, '0')}`;
+                  }
+                }
+
+                // Si está en formato MM/DD/YYYY (formato US)
+                if (trimmed.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+                  const parts = trimmed.split('/');
+                  if (parts.length === 3) {
+                    const [month, day, year] = parts;
+                    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+                  }
+                }
+              }
+
+              // Fallback: retornar el valor como string
+              return String(value || '').trim();
+            };
+
             const invoiceType = String(getValue('invoiceType')).trim();
             
             // Solo procesar registros con Invoice Type = "Invoice"
@@ -896,7 +968,7 @@ export const parseShipChandlerExcel = async (file: File): Promise<ShipChandlerEx
               invoiceNo: String(getValue('invoiceNo')).trim(),
               invoiceType: invoiceType,
               vessel: String(getValue('vessel')).trim(),
-              date: String(getValue('date')).trim(),
+              date: getDate('date'), // Usar getDate para convertir seriales de Excel correctamente
               referenceNo: String(getValue('referenceNo')).trim(),
               deliveryAddress: String(getValue('deliveryAddress')).trim(),
               discount: getNumber('discount'),
