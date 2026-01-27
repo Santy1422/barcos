@@ -107,8 +107,48 @@ function formatDateForXML(dateString: string): string {
   // Limpiar espacios si es string
   const cleanDate = dateString ? dateString.trim() : ''
 
+  // Helper function para convertir Excel serial date a Date
+  const convertExcelSerialToDate = (serial: number): Date | null => {
+    // Excel serial date: 1 = 1900-01-01
+    // Ajuste: Excel cuenta el 29/02/1900 como válido, pero JavaScript no
+    const excelEpoch = new Date(1900, 0, 1) // 1 de enero de 1900
+    const millisecondsPerDay = 24 * 60 * 60 * 1000
+    const adjustedSerialNumber = serial > 59 ? serial - 1 : serial
+    const result = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
+
+    if (isNaN(result.getTime())) {
+      return null
+    }
+
+    const year = result.getFullYear()
+    // Validar que el año sea razonable
+    if (year < 1900 || year > 2100) {
+      return null
+    }
+
+    return result
+  }
+
   if (!cleanDate) {
     date = new Date()
+  } else if (cleanDate.match(/^\d+$/)) {
+    // Si es un string que contiene solo números, puede ser un serial de Excel
+    const serial = parseInt(cleanDate, 10)
+    // Verificar que el serial esté en un rango razonable para fechas de Excel
+    // Valores típicos de Excel para años 2020-2030 están entre ~43000 y ~48000
+    if (serial > 0 && serial < 100000) {
+      const excelDate = convertExcelSerialToDate(serial)
+      if (excelDate) {
+        date = excelDate
+        console.log('formatDateForXML: Fecha convertida desde serial de Excel:', serial, '->', date.toISOString().split('T')[0])
+      } else {
+        console.warn('formatDateForXML: Serial de Excel inválido:', serial, '- usando fecha actual')
+        date = new Date()
+      }
+    } else {
+      console.warn('formatDateForXML: Serial de Excel fuera de rango:', serial, '- usando fecha actual')
+      date = new Date()
+    }
   } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
     // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
     const [year, month, day] = cleanDate.split('-').map(Number)
@@ -173,8 +213,30 @@ function calculateDueDate(dateString: string): string {
   // Limpiar espacios si es string
   const cleanDate = dateString ? dateString.trim() : ''
 
+  // Helper function para convertir Excel serial date a Date
+  const convertExcelSerialToDate = (serial: number): Date | null => {
+    const excelEpoch = new Date(1900, 0, 1)
+    const millisecondsPerDay = 24 * 60 * 60 * 1000
+    const adjustedSerialNumber = serial > 59 ? serial - 1 : serial
+    const result = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
+
+    if (isNaN(result.getTime())) return null
+    const year = result.getFullYear()
+    if (year < 1900 || year > 2100) return null
+    return result
+  }
+
   if (!cleanDate) {
     date = new Date()
+  } else if (cleanDate.match(/^\d+$/)) {
+    // Si es un string que contiene solo números, puede ser un serial de Excel
+    const serial = parseInt(cleanDate, 10)
+    if (serial > 0 && serial < 100000) {
+      const excelDate = convertExcelSerialToDate(serial)
+      date = excelDate || new Date()
+    } else {
+      date = new Date()
+    }
   } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
     const [year, month, day] = cleanDate.split('-').map(Number)
     if (year >= 1900 && year <= 2100) {
@@ -225,8 +287,30 @@ function formatReferencePeriod(dateString: string): string {
   // Limpiar espacios si es string
   const cleanDate = dateString ? dateString.trim() : ''
 
+  // Helper function para convertir Excel serial date a Date
+  const convertExcelSerialToDate = (serial: number): Date | null => {
+    const excelEpoch = new Date(1900, 0, 1)
+    const millisecondsPerDay = 24 * 60 * 60 * 1000
+    const adjustedSerialNumber = serial > 59 ? serial - 1 : serial
+    const result = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
+
+    if (isNaN(result.getTime())) return null
+    const year = result.getFullYear()
+    if (year < 1900 || year > 2100) return null
+    return result
+  }
+
   if (!cleanDate) {
     date = new Date()
+  } else if (cleanDate.match(/^\d+$/)) {
+    // Si es un string que contiene solo números, puede ser un serial de Excel
+    const serial = parseInt(cleanDate, 10)
+    if (serial > 0 && serial < 100000) {
+      const excelDate = convertExcelSerialToDate(serial)
+      date = excelDate || new Date()
+    } else {
+      date = new Date()
+    }
   } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
     const [year, month, day] = cleanDate.split('-').map(Number)
     if (year >= 1900 && year <= 2100) {
