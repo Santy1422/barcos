@@ -1,16 +1,17 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { 
-  Plus, Save, Send, 
-  MapPin, Ship, User, Calendar, Clock, Plane, Users, DollarSign, X, AlertTriangle, CheckCircle, Search
+import {
+  Plus, Save, Send,
+  MapPin, Ship, User, Calendar, Clock, Plane, Users, DollarSign, X, AlertTriangle, CheckCircle, Search, Upload
 } from "lucide-react"
+import * as XLSX from "xlsx"
 import { TimeInput } from "@/components/ui/time-input"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
@@ -450,6 +451,125 @@ export function AgencyServices() {
       ...prev,
       crewMembers: prev.crewMembers.filter(member => member.id !== id)
     }))
+  }
+
+  // Ref para el input de archivo oculto
+  const crewFileInputRef = useRef<HTMLInputElement>(null)
+
+  // Función para importar Crew Members desde Excel
+  const handleImportCrewFromExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      try {
+        const data = evt.target?.result
+        const workbook = XLSX.read(data, { type: 'binary' })
+        const sheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[sheetName]
+        const jsonData = XLSX.utils.sheet_to_json<any>(worksheet, { defval: '' })
+
+        if (jsonData.length === 0) {
+          toast({
+            title: "Excel vacío",
+            description: "No se encontraron filas en el archivo.",
+            variant: "destructive"
+          })
+          return
+        }
+
+        console.log('📋 Crew Excel - Columnas encontradas:', Object.keys(jsonData[0]))
+        console.log('📋 Crew Excel - Filas:', jsonData.length)
+
+        // Helper para buscar valor en una fila por posibles nombres de columna
+        const findValue = (row: any, possibleKeys: string[]): string => {
+          for (const key of possibleKeys) {
+            // Buscar coincidencia exacta (case-insensitive)
+            const found = Object.keys(row).find(k => k.toLowerCase().trim() === key.toLowerCase())
+            if (found && row[found] !== undefined && row[found] !== null && String(row[found]).trim()) {
+              return String(row[found]).trim()
+            }
+          }
+          return ''
+        }
+
+        // Helper para hacer match fuzzy con catálogo
+        const matchCatalog = (value: string, catalog: any[]): string => {
+          if (!value) return ''
+          const lower = value.toLowerCase().trim()
+          // Buscar exacto
+          const exact = catalog.find(c => c.name.toLowerCase() === lower)
+          if (exact) return exact.name
+          // Buscar parcial
+          const partial = catalog.find(c =>
+            c.name.toLowerCase().includes(lower) || lower.includes(c.name.toLowerCase())
+          )
+          if (partial) return partial.name
+          // Si no se encuentra, retornar el valor original (se validará después)
+          return value.trim()
+        }
+
+        const importedMembers: CrewMember[] = jsonData.map((row: any, index: number) => {
+          const name = findValue(row, ['name', 'nombre', 'crew name', 'crew member', 'member name', 'full name'])
+          const nationality = findValue(row, ['nationality', 'nacionalidad', 'nat', 'country', 'pais'])
+          const crewRank = findValue(row, ['crew rank', 'rank', 'rango', 'position', 'cargo', 'puesto'])
+          const crewCategory = findValue(row, ['category', 'categoría', 'categoria', 'crew category', 'status', 'estado', 'tipo'])
+          const flight = findValue(row, ['flight', 'vuelo', 'flight info', 'flight number', 'no. vuelo'])
+
+          // Si no se encontró por nombre de columna, intentar por posición (columnas A-E)
+          const keys = Object.keys(row)
+          const nameVal = name || (keys[0] ? String(row[keys[0]]).trim() : '')
+          const natVal = nationality || (keys[1] ? String(row[keys[1]]).trim() : '')
+          const rankVal = crewRank || (keys[2] ? String(row[keys[2]]).trim() : '')
+          const catVal = crewCategory || (keys[3] ? String(row[keys[3]]).trim() : '')
+          const flightVal = flight || (keys[4] ? String(row[keys[4]]).trim() : '')
+
+          return {
+            id: `import-${Date.now()}-${index}`,
+            name: nameVal,
+            nationality: matchCatalog(natVal, nationalities),
+            crewRank: matchCatalog(rankVal, ranks),
+            crewCategory: matchCatalog(catVal, crewStatuses),
+            status: 'Visit' as const,
+            flight: flightVal
+          }
+        }).filter((m: CrewMember) => m.name) // Solo incluir filas que tengan nombre
+
+        if (importedMembers.length === 0) {
+          toast({
+            title: "Sin datos válidos",
+            description: "No se encontraron crew members con nombre en el archivo.",
+            variant: "destructive"
+          })
+          return
+        }
+
+        setFormData(prev => ({
+          ...prev,
+          crewMembers: [...prev.crewMembers, ...importedMembers]
+        }))
+
+        toast({
+          title: "Crew Members importados",
+          description: `Se importaron ${importedMembers.length} crew members desde el Excel.`,
+        })
+
+      } catch (error: any) {
+        console.error('Error importando Excel:', error)
+        toast({
+          title: "Error al importar",
+          description: error.message || "No se pudo leer el archivo Excel.",
+          variant: "destructive"
+        })
+      }
+    }
+    reader.readAsBinaryString(file)
+
+    // Limpiar el input para permitir reimportar el mismo archivo
+    if (crewFileInputRef.current) {
+      crewFileInputRef.current.value = ''
+    }
   }
 
   // Check if form is complete (all required fields filled)
@@ -1466,16 +1586,34 @@ export function AgencyServices() {
               </div>
             )}
             
-            <Button
-              type="button"
-              variant="outline"
-              onClick={addCrewMember}
-              className="w-full"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add Crew Member
-            </Button>
-            
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={addCrewMember}
+                className="flex-1"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add Crew Member
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => crewFileInputRef.current?.click()}
+                className="flex-1 text-green-700 border-green-300 hover:bg-green-50"
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Importar desde Excel
+              </Button>
+              <input
+                ref={crewFileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleImportCrewFromExcel}
+                className="hidden"
+              />
+            </div>
+
             {formErrors.crewMembers && (
               <p className="text-xs text-red-500">{formErrors.crewMembers}</p>
             )}
