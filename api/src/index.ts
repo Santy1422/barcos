@@ -12,8 +12,10 @@ const server = express();
 //Lo configuramos con Middlewares generales:
 server.use(cors({ origin: '*' }));
 // Configurar límites de tamaño para archivos grandes (Excel)
-server.use(express.json({ limit: '50mb' })); // Aumentar límite para JSON
-server.use(express.urlencoded({ extended: true, limit: '50mb' })); // Aumentar límite para URL-encoded
+server.use(express.json({ limit: '500mb' })); // Aumentar límite para JSON
+server.use(express.urlencoded({ extended: true, limit: '500mb' })); // Aumentar límite para URL-encoded
+server.use(bodyParser.json({ limit: '500mb' }));
+server.use(bodyParser.urlencoded({ extended: true, limit: '500mb' }));
 
 // Middleware para manejar archivos grandes
 server.use((req, res, next) => {
