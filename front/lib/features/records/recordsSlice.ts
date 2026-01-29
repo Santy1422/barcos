@@ -467,6 +467,115 @@ export const createPTYSSRecords = createAsyncThunk(
   }
 )
 
+// Versión asíncrona de ShipChandler - responde inmediatamente con jobId
+export const createShipChandlerRecordsAsync = createAsyncThunk(
+  'records/createShipChandlerAsync',
+  async ({ excelId, recordsData }: {
+    excelId: string
+    recordsData: any[]
+  }, { rejectWithValue }) => {
+    const url = '/api/records/shipchandler/bulk-async'
+    try {
+      const token = localStorage.getItem('token')
+      console.log("📤 [ShipChandler Async] Iniciando procesamiento de", recordsData.length, "registros");
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ excelId, recordsData })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Error al iniciar procesamiento (${response.status})`);
+      }
+
+      const data = await response.json()
+      console.log("✅ [ShipChandler Async] Job creado:", data.payload?.jobId);
+      return data.payload || {}
+    } catch (error: any) {
+      console.error("❌ [ShipChandler Async] Error:", error.message);
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
+// Versión asíncrona de PTYSS - responde inmediatamente con jobId
+export const createPTYSSRecordsAsync = createAsyncThunk(
+  'records/createPTYSSAsync',
+  async ({ excelId, recordsData }: {
+    excelId: string
+    recordsData: any[]
+  }, { rejectWithValue }) => {
+    const url = '/api/records/ptyss/bulk-async'
+    try {
+      const token = localStorage.getItem('token')
+      console.log("📤 [PTYSS Async] Iniciando procesamiento de", recordsData.length, "registros");
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ excelId, recordsData })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Error al iniciar procesamiento (${response.status})`);
+      }
+
+      const data = await response.json()
+      console.log("✅ [PTYSS Async] Job creado:", data.payload?.jobId);
+      return data.payload || {}
+    } catch (error: any) {
+      console.error("❌ [PTYSS Async] Error:", error.message);
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
+// Versión asíncrona de Agency - responde inmediatamente con jobId
+export const createAgencyRecordsAsync = createAsyncThunk(
+  'records/createAgencyAsync',
+  async ({ excelId, recordsData, isManualEntry = false }: {
+    excelId: string
+    recordsData: any[]
+    isManualEntry?: boolean
+  }, { rejectWithValue }) => {
+    const url = '/api/records/agency/bulk-async'
+    try {
+      const token = localStorage.getItem('token')
+      console.log("📤 [Agency Async] Iniciando procesamiento de", recordsData.length, "registros");
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ excelId, recordsData, isManualEntry })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Error al iniciar procesamiento (${response.status})`);
+      }
+
+      const data = await response.json()
+      console.log("✅ [Agency Async] Job creado:", data.payload?.jobId);
+      return data.payload || {}
+    } catch (error: any) {
+      console.error("❌ [Agency Async] Error:", error.message);
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
 export const createInvoiceAsync = createAsyncThunk(
   'records/createInvoice',
   async (invoiceData: InvoiceRecord, { rejectWithValue }) => {

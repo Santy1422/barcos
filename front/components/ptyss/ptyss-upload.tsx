@@ -30,7 +30,8 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { selectCurrentUser, type UserRole } from "@/lib/features/auth/authSlice"
-import { createTruckingRecords, createPTYSSRecords, selectCreatingRecords, selectRecordsError, selectRecordsByModule, fetchRecordsByModule, updateRecordAsync, deleteRecordAsync, type ExcelRecord } from "@/lib/features/records/recordsSlice"
+import { createTruckingRecords, createPTYSSRecords, createPTYSSRecordsAsync, getUploadJobStatus, selectCreatingRecords, selectRecordsError, selectRecordsByModule, fetchRecordsByModule, updateRecordAsync, deleteRecordAsync, type ExcelRecord } from "@/lib/features/records/recordsSlice"
+import { Progress } from "@/components/ui/progress"
 import { 
   selectAllClients,
   createClientAsync,
@@ -147,7 +148,30 @@ export function PTYSSUpload() {
   const [previewData, setPreviewData] = useState<TruckingExcelData[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  
+
+  // Estado para el procesamiento asíncrono de uploads
+  const [uploadJob, setUploadJob] = useState<{
+    jobId: string | null
+    status: 'idle' | 'pending' | 'processing' | 'completed' | 'failed'
+    progress: number
+    totalRecords: number
+    processedRecords: number
+    createdRecords: number
+    duplicateRecords: number
+    errorRecords: number
+    message: string
+  }>({
+    jobId: null,
+    status: 'idle',
+    progress: 0,
+    totalRecords: 0,
+    processedRecords: 0,
+    createdRecords: 0,
+    duplicateRecords: 0,
+    errorRecords: 0,
+    message: ''
+  })
+
   // Obtener clientes y navieras del store de Redux
   const clients = useAppSelector(selectAllClients)
   const navieras = useAppSelector(selectActiveNavieras)
@@ -232,6 +256,83 @@ export function PTYSSUpload() {
   useEffect(() => {
     dispatch(fetchRecordsByModule("ptyss"))
   }, [dispatch])
+
+  // Polling para monitorear el estado del job de upload
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  const pollJobStatus = useCallback(async (jobId: string) => {
+    try {
+      const result = await dispatch(getUploadJobStatus(jobId)).unwrap()
+      console.log("📊 Job status:", result)
+
+      setUploadJob(prev => ({
+        ...prev,
+        status: result.status,
+        progress: result.progress || 0,
+        totalRecords: result.totalRecords || 0,
+        processedRecords: result.processedRecords || 0,
+        createdRecords: result.createdRecords || 0,
+        duplicateRecords: result.duplicateRecords || 0,
+        errorRecords: result.errorRecords || 0,
+        message: result.result?.message || ''
+      }))
+
+      if (result.status === 'completed' || result.status === 'failed') {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current)
+          pollingIntervalRef.current = null
+        }
+
+        if (result.status === 'completed') {
+          toast({
+            title: "Carga completada",
+            description: `${result.createdRecords || 0} registros creados, ${result.duplicateRecords || 0} duplicados, ${result.errorRecords || 0} errores`
+          })
+          setPreviewData([])
+          setSelectedFile(null)
+          dispatch(fetchRecordsByModule("ptyss"))
+        } else {
+          toast({
+            title: "Error en la carga",
+            description: result.result?.message || "Hubo un error procesando los registros",
+            variant: "destructive"
+          })
+        }
+
+        setTimeout(() => {
+          setUploadJob({
+            jobId: null,
+            status: 'idle',
+            progress: 0,
+            totalRecords: 0,
+            processedRecords: 0,
+            createdRecords: 0,
+            duplicateRecords: 0,
+            errorRecords: 0,
+            message: ''
+          })
+        }, 3000)
+      }
+    } catch (error) {
+      console.error("Error polling job status:", error)
+    }
+  }, [dispatch, toast])
+
+  useEffect(() => {
+    if (uploadJob.jobId && (uploadJob.status === 'pending' || uploadJob.status === 'processing')) {
+      pollingIntervalRef.current = setInterval(() => {
+        pollJobStatus(uploadJob.jobId!)
+      }, 2000)
+      pollJobStatus(uploadJob.jobId)
+    }
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+        pollingIntervalRef.current = null
+      }
+    }
+  }, [uploadJob.jobId, uploadJob.status, pollJobStatus])
 
   // Filtrar registros locales (pendientes, completados y cancelados)
   const pendingLocalRecords = useMemo(() => {
@@ -1615,105 +1716,46 @@ export function PTYSSUpload() {
       console.log("=== DATOS A GUARDAR ===")
       console.log("Primer registro completo:", recordsData[0])
       console.log("ContainerConsecutive del primer registro:", recordsData[0]?.data?.containerConsecutive)
-      console.log("Todos los containerConsecutive:", recordsData.map(r => r.data.containerConsecutive))
       console.log("Records data preparado:", recordsData)
-      console.log("Payload a enviar:", {
+
+      // Usar versión asíncrona para evitar timeouts en cargas grandes
+      const result = await dispatch(createPTYSSRecordsAsync({
         excelId: tempObjectId,
         recordsData
-      })
-      
-      const result = await dispatch(createPTYSSRecords({
-        excelId: tempObjectId, // Use the generated ObjectId
-        recordsData
       })).unwrap()
-      
-      console.log("=== RESULTADO DEL GUARDADO ===")
+
+      console.log("=== JOB CREADO ===")
       console.log("Result:", result)
-      console.log("Result.count:", result.count)
-      console.log("Result.duplicates:", result.duplicates)
-      console.log("Result.records:", result.records)
-      console.log("Result.totalProcessed:", result.totalProcessed)
-      console.log("Result completo (JSON):", JSON.stringify(result, null, 2))
-      
-      // Manejar respuesta con información de duplicados (igual que Trucking)
-      let successMessage = ""
-      
-      // Obtener el conteo de registros creados de diferentes formas posibles
-      let recordsCreated = 0
-      if (typeof result.count === 'number') {
-        recordsCreated = result.count
-      } else if (Array.isArray(result.records)) {
-        recordsCreated = result.records.length
-      } else if (Array.isArray(result)) {
-        recordsCreated = result.length
-      }
-      
-      console.log("=== PROCESANDO MENSAJE ===")
-      console.log("recordsCreated:", recordsCreated)
-      console.log("result.duplicates:", result.duplicates)
-      console.log("result.duplicates?.count:", result.duplicates?.count)
-      console.log("previewData.length:", previewData.length)
-      console.log("matchedRecords.length:", matchedRecords.length)
-      
-      // Manejar diferentes casos de respuesta
-      if (result.duplicates && result.duplicates.count > 0) {
-        // Caso con duplicados (puede haber 0 o más registros nuevos guardados)
-        if (recordsCreated === 0) {
-          // Todos eran duplicados
-          successMessage = `Todos los registros ya existen en la base de datos. 0 registros nuevos guardados, ${result.duplicates.count} duplicados omitidos.`
-          console.log("Caso 1: Todos duplicados - Mensaje:", successMessage)
-        } else {
-          // Algunos duplicados, algunos nuevos
-          successMessage = `${recordsCreated} registros nuevos guardados. ${result.duplicates.count} registros duplicados omitidos (ya existían en DB).`
-          console.log("Caso 2: Parcialmente duplicados - Mensaje:", successMessage)
-        }
-        if (result.duplicates.containerConsecutives) {
-          console.log("ContainerConsecutives duplicados:", result.duplicates.containerConsecutives)
-        }
-      } else if (recordsCreated > 0) {
-        // Sin duplicados, registros guardados exitosamente
-        const omittedCount = previewData.length - matchedRecords.length
-        if (omittedCount > 0) {
-          successMessage = `${recordsCreated} registros guardados correctamente (${omittedCount} sin match omitidos)`
-        } else {
-          successMessage = `${recordsCreated} registros guardados correctamente`
-        }
-        console.log("Caso 3: Sin duplicados - Mensaje:", successMessage)
+
+      if (result.jobId) {
+        setUploadJob({
+          jobId: result.jobId,
+          status: 'pending',
+          progress: 0,
+          totalRecords: result.totalRecords || recordsData.length,
+          processedRecords: 0,
+          createdRecords: 0,
+          duplicateRecords: 0,
+          errorRecords: 0,
+          message: 'Procesamiento iniciado...'
+        })
+
+        toast({
+          title: "Procesamiento iniciado",
+          description: `Se están procesando ${recordsData.length} registros. Puedes ver el progreso en la barra.`
+        })
       } else {
-        // No se guardó nada y no hay información de duplicados
-        successMessage = "No se guardaron registros. Verifica la consola para más detalles."
-        console.log("Caso 4: Sin guardar y sin info de duplicados - Mensaje:", successMessage)
+        throw new Error("No se recibió jobId del servidor")
       }
-      
-      console.log("Mensaje final:", successMessage)
-      
-      // Determinar el título del toast según el resultado
-      const toastTitle = recordsCreated > 0 ? "Éxito" : "Información"
-      const toastVariant = recordsCreated === 0 && result.duplicates ? "default" : undefined
-      
-      toast({
-        title: toastTitle,
-        description: successMessage,
-        variant: toastVariant
-      })
-      
-      // Limpiar el estado
-      setPreviewData([])
-      setSelectedFile(null)
-      setMatchFilter('all')
-      setClientCompleteness(new Map())
-      
+
     } catch (error: any) {
       console.error("❌ Error al guardar registros PTYSS:", error)
-      console.error("❌ Error completo:", JSON.stringify(error, null, 2))
-      console.error("❌ Error.message:", error?.message)
-      console.error("❌ recordsError:", recordsError)
-      
       toast({
         title: "Error al guardar",
-        description: error?.message || recordsError || "Error al guardar los registros. Revisa la consola para más detalles.",
+        description: error?.message || recordsError || "Error al guardar los registros.",
         variant: "destructive"
       })
+      setUploadJob(prev => ({ ...prev, status: 'idle' }))
     } finally {
       setIsLoading(false)
     }
@@ -3067,9 +3109,9 @@ export function PTYSSUpload() {
                 })()}
               </div>
               
-              <Button 
+              <Button
                 onClick={handleUpload}
-                disabled={isLoading || isCreatingRecords || !areAllClientsComplete() || previewData.filter(record => !record.isMatched).length > 0}
+                disabled={isLoading || isCreatingRecords || !areAllClientsComplete() || previewData.filter(record => !record.isMatched).length > 0 || uploadJob.status === 'pending' || uploadJob.status === 'processing'}
                 className={`${areAllClientsComplete() && previewData.filter(record => !record.isMatched).length === 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
               >
                 {isLoading || isCreatingRecords ? (
@@ -3082,6 +3124,54 @@ export function PTYSSUpload() {
                 )}
               </Button>
             </div>
+
+            {/* Barra de progreso para carga asíncrona */}
+            {(uploadJob.status === 'pending' || uploadJob.status === 'processing') && (
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                    <span className="text-sm font-medium text-blue-700">
+                      {uploadJob.status === 'pending' ? 'Iniciando procesamiento...' : 'Procesando registros...'}
+                    </span>
+                  </div>
+                  <span className="text-sm text-blue-600 font-mono">{uploadJob.progress}%</span>
+                </div>
+                <Progress value={uploadJob.progress} className="h-2 bg-blue-100" />
+                <div className="mt-2 flex justify-between text-xs text-blue-600">
+                  <span>{uploadJob.processedRecords} de {uploadJob.totalRecords} procesados</span>
+                  <span>
+                    {uploadJob.createdRecords > 0 && `${uploadJob.createdRecords} creados`}
+                    {uploadJob.duplicateRecords > 0 && ` · ${uploadJob.duplicateRecords} duplicados`}
+                    {uploadJob.errorRecords > 0 && ` · ${uploadJob.errorRecords} errores`}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {uploadJob.status === 'completed' && (
+              <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  <span className="text-sm font-medium text-green-700">Carga completada</span>
+                </div>
+                <p className="mt-1 text-sm text-green-600">
+                  {uploadJob.createdRecords} registros creados
+                  {uploadJob.duplicateRecords > 0 && `, ${uploadJob.duplicateRecords} duplicados omitidos`}
+                  {uploadJob.errorRecords > 0 && `, ${uploadJob.errorRecords} errores`}
+                </p>
+              </div>
+            )}
+
+            {uploadJob.status === 'failed' && (
+              <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-5 w-5 text-red-600" />
+                  <span className="text-sm font-medium text-red-700">Error en la carga</span>
+                </div>
+                <p className="mt-1 text-sm text-red-600">{uploadJob.message || 'Hubo un error al procesar los registros'}</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

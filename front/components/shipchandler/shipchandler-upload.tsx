@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 import { selectCurrentUser } from "@/lib/features/auth/authSlice"
-import { createShipChandlerRecords, selectCreatingRecords, selectRecordsError } from "@/lib/features/records/recordsSlice"
+import { createShipChandlerRecords, createShipChandlerRecordsAsync, getUploadJobStatus, selectCreatingRecords, selectRecordsError } from "@/lib/features/records/recordsSlice"
 import { addExcelFile } from "@/lib/features/excel/excelSlice"
 import { parseShipChandlerExcel, ShipChandlerExcelData } from "@/lib/excel-parser"
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
 import { FileSpreadsheet, Upload, CheckCircle, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
 import { 
   selectAllClients,
@@ -27,6 +28,29 @@ export function ShipChandlerUpload() {
   const [previewData, setPreviewData] = useState<ShipChandlerExcelData[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+
+  // Estado para el procesamiento asíncrono de uploads
+  const [uploadJob, setUploadJob] = useState<{
+    jobId: string | null
+    status: 'idle' | 'pending' | 'processing' | 'completed' | 'failed'
+    progress: number
+    totalRecords: number
+    processedRecords: number
+    createdRecords: number
+    duplicateRecords: number
+    errorRecords: number
+    message: string
+  }>({
+    jobId: null,
+    status: 'idle',
+    progress: 0,
+    totalRecords: 0,
+    processedRecords: 0,
+    createdRecords: 0,
+    duplicateRecords: 0,
+    errorRecords: 0,
+    message: ''
+  })
   
   const dispatch = useAppDispatch()
   const { toast } = useToast()
@@ -56,6 +80,83 @@ export function ShipChandlerUpload() {
   useEffect(() => {
     dispatch(fetchClients('shipchandler'))
   }, [dispatch])
+
+  // Polling para monitorear el estado del job de upload
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  const pollJobStatus = useCallback(async (jobId: string) => {
+    try {
+      const result = await dispatch(getUploadJobStatus(jobId)).unwrap()
+      console.log("📊 Job status:", result)
+
+      setUploadJob(prev => ({
+        ...prev,
+        status: result.status,
+        progress: result.progress || 0,
+        totalRecords: result.totalRecords || 0,
+        processedRecords: result.processedRecords || 0,
+        createdRecords: result.createdRecords || 0,
+        duplicateRecords: result.duplicateRecords || 0,
+        errorRecords: result.errorRecords || 0,
+        message: result.result?.message || ''
+      }))
+
+      if (result.status === 'completed' || result.status === 'failed') {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current)
+          pollingIntervalRef.current = null
+        }
+
+        if (result.status === 'completed') {
+          toast({
+            title: "Carga completada",
+            description: `${result.createdRecords || 0} registros creados, ${result.duplicateRecords || 0} duplicados, ${result.errorRecords || 0} errores`
+          })
+          setPreviewData([])
+          setSelectedFile(null)
+          setClientCompleteness(new Map())
+        } else {
+          toast({
+            title: "Error en la carga",
+            description: result.result?.message || "Hubo un error procesando los registros",
+            variant: "destructive"
+          })
+        }
+
+        setTimeout(() => {
+          setUploadJob({
+            jobId: null,
+            status: 'idle',
+            progress: 0,
+            totalRecords: 0,
+            processedRecords: 0,
+            createdRecords: 0,
+            duplicateRecords: 0,
+            errorRecords: 0,
+            message: ''
+          })
+        }, 3000)
+      }
+    } catch (error) {
+      console.error("Error polling job status:", error)
+    }
+  }, [dispatch, toast])
+
+  useEffect(() => {
+    if (uploadJob.jobId && (uploadJob.status === 'pending' || uploadJob.status === 'processing')) {
+      pollingIntervalRef.current = setInterval(() => {
+        pollJobStatus(uploadJob.jobId!)
+      }, 2000)
+      pollJobStatus(uploadJob.jobId)
+    }
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+        pollingIntervalRef.current = null
+      }
+    }
+  }, [uploadJob.jobId, uploadJob.status, pollJobStatus])
 
   // Helper function to find client by name (busca por campo 'name' para jurídicos, no 'companyName')
   const findClientByName = (name: string): Client | null => {
@@ -302,72 +403,37 @@ export function ShipChandlerUpload() {
         excelId: tempObjectId,
         recordsData
       })
-      
-      const result = await dispatch(createShipChandlerRecords({
-        excelId: tempObjectId, // Use the generated ObjectId
+
+      // Usar versión asíncrona para evitar timeouts en cargas grandes
+      const result = await dispatch(createShipChandlerRecordsAsync({
+        excelId: tempObjectId,
         recordsData
       })).unwrap()
-      
-      console.log("=== RESULTADO DEL GUARDADO ===")
-      console.log("Result completo:", JSON.stringify(result, null, 2))
-      console.log("Result.count:", result.count)
-      console.log("Result.records:", result.records)
-      console.log("Result.records length:", result.records?.length)
-      console.log("Result.duplicates:", result.duplicates)
-      
-      // Manejar respuesta
-      let successMessage = ""
-      let recordsCreated = 0
-      if (typeof result.count === 'number') {
-        recordsCreated = result.count
-      } else if (Array.isArray(result.records)) {
-        recordsCreated = result.records.length
-      } else if (Array.isArray(result)) {
-        recordsCreated = result.length
-      }
-      
-      console.log("Registros creados calculados:", recordsCreated)
-      
-      if (recordsCreated === 0) {
-        // Si no se guardaron registros, mostrar información detallada
-        const duplicateCount = result.duplicates?.count || 0
-        const totalProcessed = result.totalProcessed || previewData.length
-        
-        if (duplicateCount > 0) {
-          successMessage = `No se guardaron registros nuevos. ${duplicateCount} de ${totalProcessed} registros ya existen en el sistema (duplicados).`
-        } else {
-          successMessage = `No se guardaron registros. Verifica los logs del servidor para más detalles.`
-        }
-        
+
+      console.log("=== JOB CREADO ===")
+      console.log("Result:", result)
+
+      if (result.jobId) {
+        setUploadJob({
+          jobId: result.jobId,
+          status: 'pending',
+          progress: 0,
+          totalRecords: result.totalRecords || recordsData.length,
+          processedRecords: 0,
+          createdRecords: 0,
+          duplicateRecords: 0,
+          errorRecords: 0,
+          message: 'Procesamiento iniciado...'
+        })
+
         toast({
-          title: "⚠️ Sin registros guardados",
-          description: successMessage,
-          variant: "destructive",
+          title: "Procesamiento iniciado",
+          description: `Se están procesando ${recordsData.length} registros. Puedes ver el progreso en la barra.`
         })
       } else {
-        successMessage = `Se guardaron ${recordsCreated} registros correctamente.`
-        
-        if (result.duplicates && result.duplicates.count > 0) {
-          successMessage += ` ${result.duplicates.count} registros duplicados fueron omitidos.`
-        }
-        
-        toast({
-          title: "✅ Registros guardados",
-          description: successMessage,
-        })
+        throw new Error("No se recibió jobId del servidor")
       }
 
-      // Limpiar estado
-      setSelectedFile(null)
-      setPreviewData([])
-      setMissingClients([])
-      setClientCompleteness(new Map())
-      
-      // Resetear el input de archivo
-      const fileInput = document.getElementById('excel-file-input') as HTMLInputElement
-      if (fileInput) {
-        fileInput.value = ''
-      }
     } catch (error: any) {
       console.error('Error al guardar registros:', error)
       toast({
@@ -375,6 +441,7 @@ export function ShipChandlerUpload() {
         description: error.message || "No se pudieron guardar los registros. Intenta nuevamente.",
         variant: "destructive",
       })
+      setUploadJob(prev => ({ ...prev, status: 'idle' }))
     } finally {
       setIsProcessing(false)
     }
@@ -478,7 +545,7 @@ export function ShipChandlerUpload() {
                   <h3 className="text-lg font-semibold">Vista previa de datos</h3>
                   <Button
                     onClick={handleUpload}
-                    disabled={isProcessing || isCreatingRecords || !areAllClientsComplete()}
+                    disabled={isProcessing || isCreatingRecords || !areAllClientsComplete() || uploadJob.status === 'pending' || uploadJob.status === 'processing'}
                     className={`${areAllClientsComplete() ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
                   >
                     {isProcessing || isCreatingRecords ? (
@@ -494,6 +561,54 @@ export function ShipChandlerUpload() {
                     )}
                   </Button>
                 </div>
+
+                {/* Barra de progreso para carga asíncrona */}
+                {(uploadJob.status === 'pending' || uploadJob.status === 'processing') && (
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                        <span className="text-sm font-medium text-blue-700">
+                          {uploadJob.status === 'pending' ? 'Iniciando procesamiento...' : 'Procesando registros...'}
+                        </span>
+                      </div>
+                      <span className="text-sm text-blue-600 font-mono">{uploadJob.progress}%</span>
+                    </div>
+                    <Progress value={uploadJob.progress} className="h-2 bg-blue-100" />
+                    <div className="mt-2 flex justify-between text-xs text-blue-600">
+                      <span>{uploadJob.processedRecords} de {uploadJob.totalRecords} procesados</span>
+                      <span>
+                        {uploadJob.createdRecords > 0 && `${uploadJob.createdRecords} creados`}
+                        {uploadJob.duplicateRecords > 0 && ` · ${uploadJob.duplicateRecords} duplicados`}
+                        {uploadJob.errorRecords > 0 && ` · ${uploadJob.errorRecords} errores`}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {uploadJob.status === 'completed' && (
+                  <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      <span className="text-sm font-medium text-green-700">Carga completada</span>
+                    </div>
+                    <p className="mt-1 text-sm text-green-600">
+                      {uploadJob.createdRecords} registros creados
+                      {uploadJob.duplicateRecords > 0 && `, ${uploadJob.duplicateRecords} duplicados omitidos`}
+                      {uploadJob.errorRecords > 0 && `, ${uploadJob.errorRecords} errores`}
+                    </p>
+                  </div>
+                )}
+
+                {uploadJob.status === 'failed' && (
+                  <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-5 w-5 text-red-600" />
+                      <span className="text-sm font-medium text-red-700">Error en la carga</span>
+                    </div>
+                    <p className="mt-1 text-sm text-red-600">{uploadJob.message || 'Hubo un error al procesar los registros'}</p>
+                  </div>
+                )}
 
                 <div className="rounded-md border max-h-[600px] overflow-auto">
                   <Table>

@@ -7,6 +7,9 @@ import { deleteAutoridadesRecord } from '../controllers/recordsControllers/delet
 import recordsAutoridadesControllers from '../controllers/recordsControllers/recordsAutoridadesControllers';
 import { requireShipchandlerModule, requirePtyssModule, requireAnyRole } from '../middlewares/authorization';
 import createTruckingRecordsAsync from '../controllers/recordsControllers/createTruckingRecordsAsync';
+import createPTYSSRecordsAsync from '../controllers/recordsControllers/createPTYSSRecordsAsync';
+import createAgencyRecordsAsync from '../controllers/recordsControllers/createAgencyRecordsAsync';
+import createShipChandlerRecordsAsync from '../controllers/recordsControllers/createShipChandlerRecordsAsync';
 import { getJobStatus, getUserPendingJobs, getUserJobHistory } from '../controllers/recordsControllers/getUploadJobStatus';
 
 const { catchedAsync } = require('../utils');
@@ -27,14 +30,20 @@ router.get('/jobs/pending', jwtUtils, catchedAsync(getUserPendingJobs));
 router.get('/jobs/history', jwtUtils, catchedAsync(getUserJobHistory));
 router.get('/jobs/:jobId', jwtUtils, catchedAsync(getJobStatus));
 
-// Crear múltiples registros de PTYSS desde entrada manual
+// Crear múltiples registros de PTYSS desde entrada manual (síncrono - legacy)
 router.post('/ptyss/bulk', jwtUtils, requirePtyssModule, requireAnyRole, catchedAsync(recordsControllers.createPTYSSRecords));
+// Crear múltiples registros de PTYSS (asíncrono - nuevo)
+router.post('/ptyss/bulk-async', jwtUtils, requirePtyssModule, requireAnyRole, catchedAsync(createPTYSSRecordsAsync));
 
-// Crear múltiples registros de Agency desde Excel o entrada manual
+// Crear múltiples registros de Agency desde Excel o entrada manual (síncrono - legacy)
 router.post('/agency/bulk', jwtUtils, catchedAsync(recordsControllers.createAgencyRecords));
+// Crear múltiples registros de Agency (asíncrono - nuevo)
+router.post('/agency/bulk-async', jwtUtils, catchedAsync(createAgencyRecordsAsync));
 
-// Crear múltiples registros de ShipChandler desde Excel
+// Crear múltiples registros de ShipChandler desde Excel (síncrono - legacy)
 router.post('/shipchandler/bulk', jwtUtils, requireShipchandlerModule, requireAnyRole, catchedAsync(recordsControllers.createShipChandlerRecords));
+// Crear múltiples registros de ShipChandler (asíncrono - nuevo)
+router.post('/shipchandler/bulk-async', jwtUtils, requireShipchandlerModule, requireAnyRole, catchedAsync(createShipChandlerRecordsAsync));
 
 // Gastos Autoridades
 router.post('/autoridades', jwtUtils, catchedAsync(recordsAutoridadesControllers.createAutoridadesRecord));
