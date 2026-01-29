@@ -276,6 +276,95 @@ export const createTruckingRecords = createAsyncThunk(
   }
 )
 
+// Versión asíncrona - responde inmediatamente con jobId
+export const createTruckingRecordsAsync = createAsyncThunk(
+  'records/createTruckingAsync',
+  async ({ excelId, recordsData }: {
+    excelId: string
+    recordsData: any[]
+  }, { rejectWithValue }) => {
+    const url = '/api/records/trucking/bulk-async'
+    try {
+      const token = localStorage.getItem('token')
+      console.log("📤 [Trucking Async] Iniciando procesamiento de", recordsData.length, "registros");
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ excelId, recordsData })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Error al iniciar procesamiento (${response.status})`);
+      }
+
+      const data = await response.json()
+      console.log("✅ [Trucking Async] Job creado:", data.payload?.jobId);
+      return data.payload || {}
+    } catch (error: any) {
+      console.error("❌ [Trucking Async] Error:", error.message);
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
+// Obtener estado de un job de procesamiento
+export const getUploadJobStatus = createAsyncThunk(
+  'records/getJobStatus',
+  async (jobId: string, { rejectWithValue }) => {
+    const url = `/api/records/jobs/${jobId}`
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Error al obtener estado del job');
+      }
+
+      const data = await response.json()
+      return data.payload?.job || data.job || {}
+    } catch (error: any) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
+// Obtener jobs pendientes del usuario
+export const getUserPendingJobs = createAsyncThunk(
+  'records/getPendingJobs',
+  async (_, { rejectWithValue }) => {
+    const url = '/api/records/jobs/pending'
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('Error al obtener jobs pendientes');
+      }
+
+      const data = await response.json()
+      return data.payload?.jobs || data.jobs || []
+    } catch (error: any) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
 export const createShipChandlerRecords = createAsyncThunk(
   'records/createShipChandler',
   async ({ excelId, recordsData }: {

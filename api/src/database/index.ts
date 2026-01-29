@@ -17,6 +17,7 @@ import AgencyInvoice from './schemas/agencyInvoiceSchema';
 import recordsAutoridadesSchema from './schemas/recordsAutoridadesSchema';
 import { ContainerType } from './schemas/containerTypesSchema';
 import { ErrorLog } from './schemas/errorLogSchema';
+import { UploadJob } from './schemas/uploadJobSchema';
 
 mongoose.set('strictQuery', false);
 
@@ -51,6 +52,7 @@ export const agencyInvoices = AgencyInvoice;
 export const recordsAutoridades = mongoose.model('recordsAutoridades', recordsAutoridadesSchema);
 export const containerTypes = ContainerType;
 export const errorLogs = ErrorLog;
+export const uploadJobs = UploadJob;
 
 // Manejo de eventos de conexión
 mongoose.connection.on('connected', () => {

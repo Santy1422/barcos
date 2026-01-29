@@ -6,6 +6,8 @@ import { getAllAutoridadesRecords } from '../controllers/recordsControllers/getA
 import { deleteAutoridadesRecord } from '../controllers/recordsControllers/deleteAutoridadesRecord';
 import recordsAutoridadesControllers from '../controllers/recordsControllers/recordsAutoridadesControllers';
 import { requireShipchandlerModule, requirePtyssModule, requireAnyRole } from '../middlewares/authorization';
+import createTruckingRecordsAsync from '../controllers/recordsControllers/createTruckingRecordsAsync';
+import { getJobStatus, getUserPendingJobs, getUserJobHistory } from '../controllers/recordsControllers/getUploadJobStatus';
 
 const { catchedAsync } = require('../utils');
 
@@ -14,8 +16,16 @@ const router = Router();
 // Crear registro
 router.post('/', jwtUtils, catchedAsync(recordsControllers.createRecord));
 
-// Crear múltiples registros de trucking desde Excel
+// Crear múltiples registros de trucking desde Excel (síncrono - legacy)
 router.post('/trucking/bulk', jwtUtils, catchedAsync(recordsControllers.createTruckingRecords));
+
+// Crear múltiples registros de trucking desde Excel (asíncrono - nuevo)
+router.post('/trucking/bulk-async', jwtUtils, catchedAsync(createTruckingRecordsAsync));
+
+// Jobs de upload - estado y historial
+router.get('/jobs/pending', jwtUtils, catchedAsync(getUserPendingJobs));
+router.get('/jobs/history', jwtUtils, catchedAsync(getUserJobHistory));
+router.get('/jobs/:jobId', jwtUtils, catchedAsync(getJobStatus));
 
 // Crear múltiples registros de PTYSS desde entrada manual
 router.post('/ptyss/bulk', jwtUtils, requirePtyssModule, requireAnyRole, catchedAsync(recordsControllers.createPTYSSRecords));
