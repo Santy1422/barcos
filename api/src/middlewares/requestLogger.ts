@@ -1,5 +1,62 @@
 import { Request, Response, NextFunction } from 'express';
-import { RequestLog } from '../database/schemas/requestLogSchema';
+import fs from 'fs';
+import path from 'path';
+
+// Directorio para logs en archivos (no en MongoDB)
+const LOGS_DIR = path.join(__dirname, '../../logs');
+
+// Crear directorio de logs si no existe
+if (!fs.existsSync(LOGS_DIR)) {
+  fs.mkdirSync(LOGS_DIR, { recursive: true });
+}
+
+// Función para obtener el nombre del archivo de log del día
+const getLogFileName = (type: 'requests' | 'errors'): string => {
+  const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  return path.join(LOGS_DIR, `${type}-${date}.log`);
+};
+
+// Función para escribir log a archivo (async, no bloquea)
+const writeToFile = (type: 'requests' | 'errors', data: any): void => {
+  const fileName = getLogFileName(type);
+  const logLine = JSON.stringify(data) + '\n';
+
+  fs.appendFile(fileName, logLine, (err) => {
+    if (err) {
+      console.error('Error escribiendo log a archivo:', err.message);
+    }
+  });
+
+  // Limpiar logs viejos (más de 7 días)
+  cleanOldLogs();
+};
+
+// Limpiar logs viejos (ejecutar ocasionalmente)
+let lastCleanup = 0;
+const cleanOldLogs = (): void => {
+  const now = Date.now();
+  // Solo ejecutar cada hora
+  if (now - lastCleanup < 3600000) return;
+  lastCleanup = now;
+
+  try {
+    const files = fs.readdirSync(LOGS_DIR);
+    const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+
+    files.forEach(file => {
+      const match = file.match(/(\d{4}-\d{2}-\d{2})\.log$/);
+      if (match) {
+        const fileDate = new Date(match[1]);
+        if (fileDate < sevenDaysAgo) {
+          fs.unlinkSync(path.join(LOGS_DIR, file));
+          console.log(`🧹 Log viejo eliminado: ${file}`);
+        }
+      }
+    });
+  } catch (err) {
+    // Silenciar errores de limpieza
+  }
+};
 
 // Función para extraer el módulo de la URL
 const extractModule = (path: string): string | undefined => {
@@ -214,7 +271,13 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
       const logPrefix = res.statusCode >= 400 ? '❌' : '✅';
       console.log(`${logPrefix} [${req.method}] ${req.path} - ${res.statusCode} (${responseTime}ms) - ${user?.email || 'anonymous'}`);
 
-      await RequestLog.create(logData);
+      // Guardar en archivo local (no en MongoDB para evitar llenar la base de datos)
+      // Solo guardar errores (status >= 400) para ahorrar espacio
+      if (res.statusCode >= 400) {
+        writeToFile('errors', logData);
+      }
+      // Opcionalmente guardar todos los requests (comentado para ahorrar espacio)
+      // writeToFile('requests', logData);
     } catch (err) {
       console.error('Error guardando request log:', err);
     }
@@ -230,37 +293,28 @@ export const errorLogger = (err: any, req: Request, res: Response, next: NextFun
   console.error(`❌ [ERROR] [${req.method}] ${req.path} - ${err.message}`);
   console.error(err.stack);
 
-  // Guardar error en logs
-  RequestLog.create({
-    timestamp: new Date(),
+  // Guardar error en archivo local (no en MongoDB)
+  const errorLogData = {
+    timestamp: new Date().toISOString(),
     source: 'backend',
     method: req.method,
     url: req.originalUrl,
     path: req.path,
     statusCode: err.statusCode || 500,
-    responseTime: 0,
     userId: user?._id?.toString() || user?.id,
     userEmail: user?.email,
-    userName: user?.name || user?.fullName,
     ip: req.ip || (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.socket.remoteAddress,
-    userAgent: req.headers['user-agent'],
-    requestHeaders: extractHeaders(req.headers),
-    requestBody: sanitizeData(req.body),
-    requestQuery: Object.keys(req.query).length > 0 ? req.query : undefined,
-    requestParams: Object.keys(req.params).length > 0 ? req.params : undefined,
     error: {
       message: err.message,
-      stack: err.stack,
+      stack: err.stack?.substring(0, 500), // Limitar stack trace
       code: err.code,
       name: err.name
     },
     module: extractModule(req.path),
-    action: extractAction(req.method, req.path),
-    entityId: extractEntityId(req.path),
-    entityType: extractEntityType(req.path)
-  }).catch(logErr => {
-    console.error('Error guardando error log:', logErr);
-  });
+    action: extractAction(req.method, req.path)
+  };
+
+  writeToFile('errors', errorLogData);
 
   next(err);
 };
