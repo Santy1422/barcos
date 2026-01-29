@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 import { selectCurrentUser } from "@/lib/features/auth/authSlice"
-import { createTruckingRecords, selectCreatingRecords, selectRecordsError } from "@/lib/features/records/recordsSlice"
+import { createTruckingRecords, createTruckingRecordsAsync, getUploadJobStatus, selectCreatingRecords, selectRecordsError } from "@/lib/features/records/recordsSlice"
 import { addExcelFile } from "@/lib/features/excel/excelSlice"
 import { parseTruckingExcel, TruckingExcelData, matchTruckingDataWithRoutes } from "@/lib/excel-parser"
 import { selectTruckingRoutes, fetchTruckingRoutes, selectTruckingRoutesLoading, selectTruckingRoutesError, selectTruckingRoutesPagination } from "@/lib/features/truckingRoutes/truckingRoutesSlice"
@@ -87,6 +87,29 @@ export function TruckingUpload() {
     percentage: 0,
     currentRecord: '',
     matchesFound: 0
+  })
+
+  // Estado para el procesamiento asíncrono de uploads
+  const [uploadJob, setUploadJob] = useState<{
+    jobId: string | null
+    status: 'idle' | 'pending' | 'processing' | 'completed' | 'failed'
+    progress: number
+    totalRecords: number
+    processedRecords: number
+    createdRecords: number
+    duplicateRecords: number
+    errorRecords: number
+    message: string
+  }>({
+    jobId: null,
+    status: 'idle',
+    progress: 0,
+    totalRecords: 0,
+    processedRecords: 0,
+    createdRecords: 0,
+    duplicateRecords: 0,
+    errorRecords: 0,
+    message: ''
   })
 
   const dispatch = useAppDispatch()
@@ -259,6 +282,99 @@ export function TruckingUpload() {
       })
     }
   }, [routesError, toast])
+
+  // Polling para monitorear el estado del job de upload
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  const pollJobStatus = useCallback(async (jobId: string) => {
+    try {
+      const result = await dispatch(getUploadJobStatus(jobId)).unwrap()
+      console.log("📊 Job status:", result)
+
+      setUploadJob(prev => ({
+        ...prev,
+        status: result.status,
+        progress: result.progress || 0,
+        totalRecords: result.totalRecords || 0,
+        processedRecords: result.processedRecords || 0,
+        createdRecords: result.createdRecords || 0,
+        duplicateRecords: result.duplicateRecords || 0,
+        errorRecords: result.errorRecords || 0,
+        message: result.result?.message || ''
+      }))
+
+      // Si el job terminó (completed o failed), detener polling
+      if (result.status === 'completed' || result.status === 'failed') {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current)
+          pollingIntervalRef.current = null
+        }
+
+        if (result.status === 'completed') {
+          toast({
+            title: "Carga completada",
+            description: `${result.createdRecords || 0} registros creados, ${result.duplicateRecords || 0} duplicados, ${result.errorRecords || 0} errores`
+          })
+          // Limpiar estado
+          setPreviewData([])
+          setSelectedFile(null)
+          setMatchFilter('all')
+          setClientCompleteness(new Map())
+          // Refrescar listas
+          try {
+            const { fetchPendingRecordsByModule, fetchRecordsByModule } = await import("@/lib/features/records/recordsSlice")
+            //@ts-ignore
+            dispatch(fetchPendingRecordsByModule("trucking"))
+            //@ts-ignore
+            dispatch(fetchRecordsByModule("trucking"))
+          } catch {}
+        } else {
+          toast({
+            title: "Error en la carga",
+            description: result.result?.message || "Hubo un error procesando los registros",
+            variant: "destructive"
+          })
+        }
+
+        // Reset job state after a delay
+        setTimeout(() => {
+          setUploadJob({
+            jobId: null,
+            status: 'idle',
+            progress: 0,
+            totalRecords: 0,
+            processedRecords: 0,
+            createdRecords: 0,
+            duplicateRecords: 0,
+            errorRecords: 0,
+            message: ''
+          })
+        }, 3000)
+      }
+    } catch (error) {
+      console.error("Error polling job status:", error)
+    }
+  }, [dispatch, toast])
+
+  // Efecto para iniciar polling cuando hay un jobId
+  useEffect(() => {
+    if (uploadJob.jobId && (uploadJob.status === 'pending' || uploadJob.status === 'processing')) {
+      // Polling cada 2 segundos
+      pollingIntervalRef.current = setInterval(() => {
+        pollJobStatus(uploadJob.jobId!)
+      }, 2000)
+
+      // Hacer una llamada inicial inmediata
+      pollJobStatus(uploadJob.jobId)
+    }
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+        pollingIntervalRef.current = null
+      }
+    }
+  }, [uploadJob.jobId, uploadJob.status, pollJobStatus])
 
   const findClientByName = (name: string): Client | null => {
     return (
@@ -993,83 +1109,38 @@ export function TruckingUpload() {
         excelId: tempObjectId,
         recordsData
       })
-      
-      const result = await dispatch(createTruckingRecords({
-        excelId: tempObjectId, // Use the generated ObjectId
+
+      // Usar versión asíncrona para evitar timeouts en cargas grandes
+      const result = await dispatch(createTruckingRecordsAsync({
+        excelId: tempObjectId,
         recordsData
       })).unwrap()
-      
-      console.log("=== RESULTADO DEL GUARDADO ===")
+
+      console.log("=== JOB CREADO ===")
       console.log("Result:", result)
-      console.log("Result.count:", result.count)
-      console.log("Result.duplicates:", result.duplicates)
-      console.log("Result.records:", result.records)
-      console.log("Result.totalProcessed:", result.totalProcessed)
-      console.log("Result completo (JSON):", JSON.stringify(result, null, 2))
-      
-      // Manejar respuesta con información de duplicados
-      let successMessage = ""
-      
-      // Obtener el conteo de registros creados de diferentes formas posibles
-      let recordsCreated = 0
-      if (typeof result.count === 'number') {
-        recordsCreated = result.count
-      } else if (Array.isArray(result.records)) {
-        recordsCreated = result.records.length
-      } else if (Array.isArray(result)) {
-        recordsCreated = result.length
-      }
-      
-      console.log("=== PROCESANDO MENSAJE ===")
-      console.log("recordsCreated:", recordsCreated)
-      console.log("result.duplicates:", result.duplicates)
-      console.log("result.duplicates?.count:", result.duplicates?.count)
-      
-      // Si no pudimos obtener el conteo, usar un mensaje genérico
-      if (recordsCreated === 0 && !result.duplicates) {
-        successMessage = "Registros procesados exitosamente. Verifica la consola para más detalles."
-        console.log("Caso 1: Sin conteo y sin duplicados")
-      } else if (result.duplicates && result.duplicates.count > 0) {
-        successMessage = `${recordsCreated} registros guardados correctamente. ${result.duplicates.count} registros existentes no guardados (duplicados).`
-        console.log("Caso 2: Con duplicados - Mensaje:", successMessage)
-        if (result.duplicates.containerConsecutives) {
-          console.log("ContainerConsecutives duplicados:", result.duplicates.containerConsecutives)
-        }
+
+      if (result.jobId) {
+        // Iniciar el tracking del job
+        setUploadJob({
+          jobId: result.jobId,
+          status: 'pending',
+          progress: 0,
+          totalRecords: result.totalRecords || recordsData.length,
+          processedRecords: 0,
+          createdRecords: 0,
+          duplicateRecords: 0,
+          errorRecords: 0,
+          message: 'Procesamiento iniciado...'
+        })
+
+        toast({
+          title: "Procesamiento iniciado",
+          description: `Se están procesando ${recordsData.length} registros. Puedes ver el progreso en la barra.`
+        })
       } else {
-        // Contar tipos de contenedores guardados
-        const dryCount = recordsData.filter(r => r.data?.detectedContainerType === 'dry').length;
-        const reeferCount = recordsData.filter(r => r.data?.detectedContainerType === 'reefer').length;
-        
-        successMessage = `${recordsCreated} registros con match guardados correctamente en el sistema (${previewData.length - recordsData.length} sin match omitidos)`;
-        console.log("Caso 3: Sin duplicados - Mensaje:", successMessage)
-        if (dryCount > 0 || reeferCount > 0) {
-          successMessage += ` Tipos: ${dryCount > 0 ? `${dryCount} DRY` : ''}${dryCount > 0 && reeferCount > 0 ? ', ' : ''}${reeferCount > 0 ? `${reeferCount} REEFER` : ''}`;
-        }
+        throw new Error("No se recibió jobId del servidor")
       }
-      
-      console.log("Mensaje final:", successMessage)
-      
-      toast({
-        title: "Éxito",
-        description: successMessage
-      })
-      
-      // Limpiar el estado
-      setPreviewData([])
-      setSelectedFile(null)
-      setMatchFilter('all')
-      setClientCompleteness(new Map())
-      // Refrescar listas del módulo para reflejar estados/completados en Prefactura
-      try {
-        // Evitar importar aquí fetchers del slice para no aumentar dependencias del upload
-        // La pantalla de prefactura ya los llama al montar, pero refrescamos por UX
-        const { fetchPendingRecordsByModule, fetchRecordsByModule } = await import("@/lib/features/records/recordsSlice")
-        //@ts-ignore
-        dispatch(fetchPendingRecordsByModule("trucking"))
-        //@ts-ignore
-        dispatch(fetchRecordsByModule("trucking"))
-      } catch {}
-      
+
     } catch (error) {
       console.error("Error al guardar:", error)
       toast({
@@ -1077,6 +1148,7 @@ export function TruckingUpload() {
         description: recordsError || "Error al guardar los registros",
         variant: "destructive"
       })
+      setUploadJob(prev => ({ ...prev, status: 'idle' }))
     } finally {
       setIsLoading(false)
     }
@@ -1501,9 +1573,9 @@ export function TruckingUpload() {
                 </Button>
               </div>
               
-              <Button 
+              <Button
                 onClick={handleUpload}
-                disabled={isLoading || isCreatingRecords || !areAllClientsComplete() || unmatchedCount > 0}
+                disabled={isLoading || isCreatingRecords || !areAllClientsComplete() || unmatchedCount > 0 || uploadJob.status === 'pending' || uploadJob.status === 'processing'}
                 className={`${areAllClientsComplete() && unmatchedCount === 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
               >
                 {isLoading || isCreatingRecords ? (
@@ -1516,6 +1588,58 @@ export function TruckingUpload() {
                 )}
               </Button>
             </div>
+
+            {/* Barra de progreso para carga asíncrona */}
+            {(uploadJob.status === 'pending' || uploadJob.status === 'processing') && (
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                    <span className="text-sm font-medium text-blue-700">
+                      {uploadJob.status === 'pending' ? 'Iniciando procesamiento...' : 'Procesando registros...'}
+                    </span>
+                  </div>
+                  <span className="text-sm text-blue-600 font-mono">
+                    {uploadJob.progress}%
+                  </span>
+                </div>
+                <Progress value={uploadJob.progress} className="h-2 bg-blue-100" />
+                <div className="mt-2 flex justify-between text-xs text-blue-600">
+                  <span>{uploadJob.processedRecords} de {uploadJob.totalRecords} procesados</span>
+                  <span>
+                    {uploadJob.createdRecords > 0 && `${uploadJob.createdRecords} creados`}
+                    {uploadJob.duplicateRecords > 0 && ` · ${uploadJob.duplicateRecords} duplicados`}
+                    {uploadJob.errorRecords > 0 && ` · ${uploadJob.errorRecords} errores`}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Resultado de carga completada */}
+            {uploadJob.status === 'completed' && (
+              <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  <span className="text-sm font-medium text-green-700">Carga completada</span>
+                </div>
+                <p className="mt-1 text-sm text-green-600">
+                  {uploadJob.createdRecords} registros creados
+                  {uploadJob.duplicateRecords > 0 && `, ${uploadJob.duplicateRecords} duplicados omitidos`}
+                  {uploadJob.errorRecords > 0 && `, ${uploadJob.errorRecords} errores`}
+                </p>
+              </div>
+            )}
+
+            {/* Error de carga */}
+            {uploadJob.status === 'failed' && (
+              <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-5 w-5 text-red-600" />
+                  <span className="text-sm font-medium text-red-700">Error en la carga</span>
+                </div>
+                <p className="mt-1 text-sm text-red-600">{uploadJob.message || 'Hubo un error al procesar los registros'}</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
