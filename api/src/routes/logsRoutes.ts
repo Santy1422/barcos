@@ -1,27 +1,35 @@
 import { Router, Request, Response } from 'express';
-import { RequestLog } from '../database/schemas/requestLogSchema';
+import fs from 'fs';
+import path from 'path';
 
 const router = Router();
 
-// POST /api/logs/frontend - Recibir errores del frontend
+// Directorio para logs en archivos (no en MongoDB)
+const LOGS_DIR = path.join(__dirname, '../../logs');
+if (!fs.existsSync(LOGS_DIR)) {
+  fs.mkdirSync(LOGS_DIR, { recursive: true });
+}
+
+const writeLogToFile = (data: any): void => {
+  const date = new Date().toISOString().split('T')[0];
+  const fileName = path.join(LOGS_DIR, `frontend-errors-${date}.log`);
+  const logLine = JSON.stringify(data) + '\n';
+  fs.appendFile(fileName, logLine, (err) => {
+    if (err) console.error('Error escribiendo frontend log a archivo:', err.message);
+  });
+};
+
+// POST /api/logs/frontend - Recibir errores del frontend (guardado en archivo local)
 router.post('/frontend', async (req: Request, res: Response) => {
   try {
     const {
       method,
       url,
       statusCode,
-      responseTime,
       error,
       module,
       action,
-      componentName,
-      pageUrl,
-      browserInfo,
-      requestBody,
-      responseBody,
-      userId,
       userEmail,
-      userName
     } = req.body;
 
     // Validar campos mínimos
@@ -33,40 +41,29 @@ router.post('/frontend', async (req: Request, res: Response) => {
     }
 
     const logData = {
-      timestamp: new Date(),
-      source: 'frontend' as const,
+      timestamp: new Date().toISOString(),
+      source: 'frontend',
       method: method || 'UNKNOWN',
       url,
-      path: new URL(url, 'http://localhost').pathname,
       statusCode: statusCode || 0,
-      responseTime: responseTime || 0,
-      userId,
       userEmail,
-      userName,
-      ip: req.ip || (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.socket.remoteAddress,
-      userAgent: req.headers['user-agent'],
-      requestBody,
-      responseBody,
       error: {
         message: error.message,
-        stack: error.stack,
         code: error.code,
         name: error.name || 'FrontendError'
       },
       module,
-      action,
-      componentName,
-      pageUrl,
-      browserInfo
+      action
     };
 
-    await RequestLog.create(logData);
+    // Guardar en archivo local (NO en MongoDB)
+    writeLogToFile(logData);
 
     console.log(`📱 [FRONTEND ERROR] ${method || 'ERR'} ${url} - ${error.message} (${userEmail || 'anonymous'})`);
 
     res.json({ success: true, message: 'Error logged successfully' });
   } catch (err: any) {
-    console.error('Error guardando frontend log:', err);
+    console.error('Error guardando frontend log:', err.message);
     res.status(500).json({
       success: false,
       message: 'Error al guardar log',
@@ -75,118 +72,50 @@ router.post('/frontend', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/logs - Obtener logs (para debugging)
+// GET /api/logs - Obtener logs desde archivos locales
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const {
-      source,
-      module,
-      statusCode,
-      userId,
-      startDate,
-      endDate,
-      limit = 100,
-      page = 1,
-      onlyErrors
-    } = req.query;
+    const { limit = 100 } = req.query;
+    const files = fs.readdirSync(LOGS_DIR).filter(f => f.endsWith('.log')).sort().reverse();
+    const logs: any[] = [];
 
-    const query: any = {};
-
-    if (source) query.source = source;
-    if (module) query.module = module;
-    if (statusCode) query.statusCode = Number(statusCode);
-    if (userId) query.userId = userId;
-    if (onlyErrors === 'true') query.statusCode = { $gte: 400 };
-
-    if (startDate || endDate) {
-      query.timestamp = {};
-      if (startDate) query.timestamp.$gte = new Date(startDate as string);
-      if (endDate) query.timestamp.$lte = new Date(endDate as string);
+    for (const file of files) {
+      if (logs.length >= Number(limit)) break;
+      try {
+        const content = fs.readFileSync(path.join(LOGS_DIR, file), 'utf-8');
+        const lines = content.trim().split('\n').filter(Boolean);
+        for (const line of lines.reverse()) {
+          if (logs.length >= Number(limit)) break;
+          try { logs.push(JSON.parse(line)); } catch {}
+        }
+      } catch {}
     }
 
-    const skip = (Number(page) - 1) * Number(limit);
-
-    const [logs, total] = await Promise.all([
-      RequestLog.find(query)
-        .sort({ timestamp: -1 })
-        .skip(skip)
-        .limit(Number(limit))
-        .lean(),
-      RequestLog.countDocuments(query)
-    ]);
-
-    res.json({
-      success: true,
-      data: logs,
-      pagination: {
-        current: Number(page),
-        pages: Math.ceil(total / Number(limit)),
-        total,
-        limit: Number(limit)
-      }
-    });
+    res.json({ success: true, data: logs, total: logs.length });
   } catch (err: any) {
-    console.error('Error obteniendo logs:', err);
-    res.status(500).json({
-      success: false,
-      message: 'Error al obtener logs',
-      error: err.message
-    });
+    res.status(500).json({ success: false, message: 'Error al obtener logs', error: err.message });
   }
 });
 
-// GET /api/logs/stats - Estadísticas de logs
+// GET /api/logs/stats - Info de archivos de log
 router.get('/stats', async (req: Request, res: Response) => {
   try {
-    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-    const [
-      totalLast24h,
-      errorsLast24h,
-      byModule,
-      byStatusCode,
-      topErrors
-    ] = await Promise.all([
-      RequestLog.countDocuments({ timestamp: { $gte: last24h } }),
-      RequestLog.countDocuments({ timestamp: { $gte: last24h }, statusCode: { $gte: 400 } }),
-      RequestLog.aggregate([
-        { $match: { timestamp: { $gte: last24h } } },
-        { $group: { _id: '$module', count: { $sum: 1 } } },
-        { $sort: { count: -1 } }
-      ]),
-      RequestLog.aggregate([
-        { $match: { timestamp: { $gte: last24h } } },
-        { $group: { _id: '$statusCode', count: { $sum: 1 } } },
-        { $sort: { _id: 1 } }
-      ]),
-      RequestLog.aggregate([
-        { $match: { timestamp: { $gte: last24h }, statusCode: { $gte: 400 } } },
-        { $group: { _id: '$error.message', count: { $sum: 1 }, lastOccurrence: { $max: '$timestamp' } } },
-        { $sort: { count: -1 } },
-        { $limit: 10 }
-      ])
-    ]);
+    const files = fs.readdirSync(LOGS_DIR).filter(f => f.endsWith('.log'));
+    const fileStats = files.map(f => {
+      const stat = fs.statSync(path.join(LOGS_DIR, f));
+      return { name: f, size: stat.size, modified: stat.mtime };
+    }).sort((a, b) => b.modified.getTime() - a.modified.getTime());
 
     res.json({
       success: true,
       data: {
-        last24h: {
-          total: totalLast24h,
-          errors: errorsLast24h,
-          errorRate: totalLast24h > 0 ? ((errorsLast24h / totalLast24h) * 100).toFixed(2) + '%' : '0%'
-        },
-        byModule,
-        byStatusCode,
-        topErrors
+        totalFiles: files.length,
+        totalSize: fileStats.reduce((sum, f) => sum + f.size, 0),
+        files: fileStats
       }
     });
   } catch (err: any) {
-    console.error('Error obteniendo estadísticas:', err);
-    res.status(500).json({
-      success: false,
-      message: 'Error al obtener estadísticas',
-      error: err.message
-    });
+    res.status(500).json({ success: false, message: 'Error al obtener estadísticas', error: err.message });
   }
 });
 
