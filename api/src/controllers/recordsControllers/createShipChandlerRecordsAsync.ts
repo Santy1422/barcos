@@ -163,14 +163,13 @@ async function processRecordsInBackground(
           const invoiceNo = data.invoiceNo ? String(data.invoiceNo).trim() : null;
 
           return {
-            excelFileId: excelId,
-            user: userId,
+            excelId: excelId,
             module: 'shipchandler',
             type: 'supply-order',
             status: 'completado',
             totalValue: recordData.totalValue || data.total || 0,
             data,
-            clientId: data.clientId || null,
+            clientId: data.clientId ? new mongoose.Types.ObjectId(data.clientId) : undefined,
             containerConsecutive: invoiceNo,
             createdBy: userId
           };

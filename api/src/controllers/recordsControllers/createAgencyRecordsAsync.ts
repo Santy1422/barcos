@@ -186,7 +186,7 @@ async function processRecordsInBackground(
             `${data.vessel}-${data.crewName}-${new Date(data.serviceDate).getTime()}`;
 
           return {
-            excelId: excelId,
+            excelId: excelId || new mongoose.Types.ObjectId(),
             module: 'agency',
             type: data.serviceCode || 'AGENCY_SERVICE',
             status: 'pendiente',
@@ -198,9 +198,8 @@ async function processRecordsInBackground(
             },
             sapCode: sapCode,
             containerConsecutive: null,
-            clientId: data.clientId ? new mongoose.Types.ObjectId(data.clientId) : null,
-            invoiceId: null,
-            createdBy: new mongoose.Types.ObjectId(userId)
+            clientId: data.clientId ? new mongoose.Types.ObjectId(data.clientId) : undefined,
+            createdBy: userId
           };
         });
 

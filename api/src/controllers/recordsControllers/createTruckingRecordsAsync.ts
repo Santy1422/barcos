@@ -151,25 +151,33 @@ async function processRecordsInBackground(
       const batch = recordsToProcess.slice(i, i + BATCH_SIZE);
 
       try {
-        // Preparar documentos para inserción
-        const recordsToInsert = batch.map((record, idx) => ({
-          excelFileId: excelId,
-          user: userId,
-          module: 'trucking',
-          bl: record.data?.bl || '',
-          containerConsecutive: record.data?.containerConsecutive || '',
-          data: record.data,
-          status: record.status || 'pending',
-          matched: record.matched || false,
-          route: record.route,
-          price: record.price,
-          containerType: record.containerType,
-          sapCode: record.sapCode
-        }));
+        // Preparar documentos para inserción (debe coincidir con recordsSchema)
+        const recordsToInsert = batch.map((record) => {
+          const data = record.data || {};
+          const sapCode = data.sapCode || null;
+          const containerConsecutive = data.containerConsecutive || null;
+          const clientId = data.clientId || null;
+          const module = data.sapCode === 'PTYSS001' ? 'ptyss' : 'trucking';
+          const type = module === 'ptyss' ? 'maritime' : 'transport';
+
+          return {
+            excelId: excelId,
+            module,
+            type,
+            status: 'pendiente',
+            totalValue: record.totalValue || 0,
+            data,
+            sapCode,
+            containerConsecutive,
+            clientId: clientId ? new mongoose.Types.ObjectId(clientId) : undefined,
+            createdBy: userId
+          };
+        });
 
         // Insertar lote
         const insertedRecords = await records.insertMany(recordsToInsert, { ordered: false })
           .catch(async (err) => {
+            console.error(`❌ insertMany error:`, err.message);
             // Manejar errores de duplicados parciales
             if (err.writeErrors) {
               err.writeErrors.forEach((writeErr: any) => {
@@ -177,6 +185,11 @@ async function processRecordsInBackground(
                   row: i + writeErr.index,
                   message: writeErr.errmsg || 'Error de inserción'
                 });
+              });
+            }
+            if (err.errors) {
+              Object.values(err.errors).forEach((valErr: any) => {
+                console.error(`  Validation error: ${valErr.message}`);
               });
             }
             // Retornar los que sí se insertaron

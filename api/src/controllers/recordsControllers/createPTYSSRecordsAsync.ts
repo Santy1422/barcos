@@ -195,8 +195,7 @@ async function processRecordsInBackground(
             : (data.order || null);
 
           const recordPayload: any = {
-            excelFileId: excelId,
-            user: userId,
+            excelId: excelId,
             module: 'ptyss',
             type: 'maritime',
             status: recordStatus,
@@ -211,7 +210,7 @@ async function processRecordsInBackground(
           }
 
           if (data.clientId) {
-            recordPayload.clientId = data.clientId;
+            recordPayload.clientId = new mongoose.Types.ObjectId(data.clientId);
           }
 
           return recordPayload;
