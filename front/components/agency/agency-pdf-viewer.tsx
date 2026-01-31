@@ -43,18 +43,22 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
     });
   };
 
-  const generateAgencyInvoicePDF = (serviceData: any, pdfTitle: string, allServices?: any[]) => {
+  const generateAgencyInvoicePDF = (serviceData: any, pdfTitle: string, allServices?: any[], logoBase64?: string) => {
     const issuer = getClient('PTYSS')
     const doc = new jsPDF()
 
-    // Colores / encabezado
+    // Logo de la empresa
     const lightBlue = [59, 130, 246]
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14)
-    doc.setFont(undefined, 'bold')
-    doc.text('PTYSS', 30, 23, { align: 'center', baseline: 'middle' })
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('PTYSS', 30, 23, { align: 'center', baseline: 'middle' })
+    }
 
     // Número de factura y fecha
     doc.setTextColor(0, 0, 0)
@@ -376,19 +380,37 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
   useEffect(() => {
     if (open && (service || (isMultipleServices && services.length > 0))) {
       setIsGenerating(true)
-      try {
-        // Para múltiples servicios, usar el primer servicio como base para datos del cliente
-        const baseService = isMultipleServices && services.length > 0 ? services[0] : service;
-        const pdfTitle = baseService.status === 'facturado' ? 'INVOICE' : 'PRE-INVOICE'
-        const doc = generateAgencyInvoicePDF(baseService, pdfTitle, isMultipleServices ? services : undefined)
-        const blob = doc.output('blob')
-        setPdfBlob(blob)
-      } catch (error) {
-        console.error('Error generating PDF:', error)
-        toast({ title: "Error", description: "No se pudo generar el PDF", variant: "destructive" })
-      } finally {
-        setIsGenerating(false)
-      }
+
+      const loadLogoAndGenerate = async () => {
+        try {
+          // Cargar logo PTYSS
+          let logoBase64: string | undefined;
+          try {
+            const response = await fetch('/logos/logo_PTYSS.png');
+            const blob = await response.blob();
+            logoBase64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+          } catch (e) {
+            console.warn("No se pudo cargar el logo PTYSS, usando texto fallback");
+          }
+
+          const baseService = isMultipleServices && services.length > 0 ? services[0] : service;
+          const pdfTitle = baseService.status === 'facturado' ? 'INVOICE' : 'PRE-INVOICE'
+          const doc = generateAgencyInvoicePDF(baseService, pdfTitle, isMultipleServices ? services : undefined, logoBase64)
+          const blob = doc.output('blob')
+          setPdfBlob(blob)
+        } catch (error) {
+          console.error('Error generating PDF:', error)
+          toast({ title: "Error", description: "No se pudo generar el PDF", variant: "destructive" })
+        } finally {
+          setIsGenerating(false)
+        }
+      };
+
+      loadLogoAndGenerate();
     }
   }, [open, service, services, isMultipleServices, toast, ranks])
 

@@ -112,8 +112,21 @@ export function AgencyPrefactura() {
 
 
   // Cargar registros PTYSS al montar el componente
+  // Logo para PDF
+  const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined)
+
   useEffect(() => {
     dispatch(fetchRecordsByModule("agency"))
+
+    // Cargar logo PTYSS
+    fetch('/logos/logo_PTYSS.png')
+      .then(res => res.blob())
+      .then(blob => {
+        const reader = new FileReader()
+        reader.onloadend = () => setLogoBase64(reader.result as string)
+        reader.readAsDataURL(blob)
+      })
+      .catch(() => console.warn("No se pudo cargar el logo PTYSS"))
   }, [dispatch])
 
   // Cargar clientes al montar el componente
@@ -1146,13 +1159,17 @@ export function AgencyPrefactura() {
     const lightBlue = [59, 130, 246] // blue-500
     const lightGray = [241, 245, 249] // slate-50
     
-    // Encabezado con logo
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(12)
-    doc.setFont(undefined, 'bold')
-    doc.text('PTYSS', 30, 25, { align: 'center' })
+    // Logo de la empresa
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(12)
+      doc.setFont(undefined, 'bold')
+      doc.text('PTYSS', 30, 25, { align: 'center' })
+    }
     
     // Número de prefactura y fecha
     doc.setTextColor(0, 0, 0)

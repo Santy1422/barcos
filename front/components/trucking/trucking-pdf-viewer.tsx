@@ -42,22 +42,23 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     });
   };
 
-  const generateTruckingPrefacturaPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string) => {
+  const generateTruckingPrefacturaPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string, logoBase64?: string) => {
     // Adaptar la función exacta de trucking-prefactura.tsx
     const issuer = getClient('PTG')
     const doc = new jsPDF()
 
-    // Colores / encabezado
+    // Logo de la empresa
     const lightBlue = [59, 130, 246]
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    // Texto 'PTG' grande, centrado y con padding visual
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14)
-    doc.setFont(undefined, 'bold')
-    // Centramos vertical y horizontalmente dentro del rectángulo (15,15,30,15)
-    // Centro X = 15 + 30/2 = 30, Centro Y = 15 + 15/2 = 22.5
-    doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    }
 
     // Número de prefactura y fecha
     doc.setTextColor(0, 0, 0)
@@ -283,22 +284,24 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     return new Blob([doc.output('blob')], { type: 'application/pdf' });
   };
 
-  const generateAutoridadesPdf = (invoiceData: any, selectedRecords: any[], pdfTitle: string) => {
+  const generateAutoridadesPdf = (invoiceData: any, selectedRecords: any[], pdfTitle: string, logoBase64?: string) => {
     // Usar EXACTAMENTE la misma función del paso 2 de trucking-gastos-autoridades-page.tsx
     if (selectedRecords.length === 0) return null
 
     const doc = new jsPDF()
 
-    // Colores / encabezado
+    // Logo de la empresa
     const lightBlue = [59, 130, 246]
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    
-    // Texto 'PTG' grande, centrado
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14)
-    doc.setFont(undefined, 'bold')
-    doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    }
 
     // Número de documento y fecha
     doc.setTextColor(0, 0, 0)
@@ -575,50 +578,55 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
 
   useEffect(() => {
     if (open && invoice) {
-      console.log("=== DEBUG: Generando PDF ===");
-      console.log("Invoice:", invoice);
-      console.log("Is AUTH Invoice:", isAuthInvoice);
-      console.log("Autoridades records disponibles:", autoridadesRecords.length);
-      console.log("All records disponibles:", allRecords.length);
-      console.log("Related record IDs:", invoice.relatedRecordIds);
-      
       setIsGenerating(true);
-      try {
-        let relatedRecords: any[] = [];
-        let pdf: Blob;
-        
-        if (isAuthInvoice) {
-          // Para facturas AUTH, usar registros de autoridades
-          relatedRecords = autoridadesRecords.filter((record: any) => 
-            invoice.relatedRecordIds.includes(record._id || record.id)
-          );
-          console.log("Registros de autoridades encontrados:", relatedRecords.length);
-          console.log("Registros encontrados:", relatedRecords);
-          
-          const pdfTitle = invoice.status === "facturada" ? "GASTOS AUTORIDADES" : "GASTOS AUTORIDADES";
-          pdf = generateAutoridadesPdf(invoice, relatedRecords, pdfTitle);
-        } else {
-          // Para facturas normales, usar registros de trasiego
-          relatedRecords = allRecords.filter((record: any) => 
-            invoice.relatedRecordIds.includes(record._id || record.id)
-          );
-          console.log("Registros de trasiego encontrados:", relatedRecords.length);
-          
-          const pdfTitle = invoice.status === "facturada" ? "FACTURA" : "PREFACTURA";
-          pdf = generateTruckingPrefacturaPDF(invoice, relatedRecords, pdfTitle);
+
+      const loadLogoAndGenerate = async () => {
+        try {
+          // Cargar logo PTG
+          let logoBase64: string | undefined;
+          try {
+            const response = await fetch('/logos/logo_PTG.png');
+            const blob = await response.blob();
+            logoBase64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+          } catch (e) {
+            console.warn("No se pudo cargar el logo PTG, usando texto fallback");
+          }
+
+          let relatedRecords: any[] = [];
+          let pdf: Blob;
+
+          if (isAuthInvoice) {
+            relatedRecords = autoridadesRecords.filter((record: any) =>
+              invoice.relatedRecordIds.includes(record._id || record.id)
+            );
+            const pdfTitle = invoice.status === "facturada" ? "GASTOS AUTORIDADES" : "GASTOS AUTORIDADES";
+            pdf = generateAutoridadesPdf(invoice, relatedRecords, pdfTitle, logoBase64);
+          } else {
+            relatedRecords = allRecords.filter((record: any) =>
+              invoice.relatedRecordIds.includes(record._id || record.id)
+            );
+            const pdfTitle = invoice.status === "facturada" ? "FACTURA" : "PREFACTURA";
+            pdf = generateTruckingPrefacturaPDF(invoice, relatedRecords, pdfTitle, logoBase64);
+          }
+
+          if (!pdf) {
+            throw new Error("No se pudo generar el PDF");
+          }
+
+          setPdfBlob(pdf);
+        } catch (error) {
+          console.error("Error generando PDF:", error);
+          toast({ title: "Error", description: "Error al generar el PDF", variant: "destructive" });
+        } finally {
+          setIsGenerating(false);
         }
-        
-        if (!pdf) {
-          throw new Error("No se pudo generar el PDF");
-        }
-        
-        setPdfBlob(pdf);
-      } catch (error) {
-        console.error("Error generando PDF:", error);
-        toast({ title: "Error", description: "Error al generar el PDF", variant: "destructive" });
-      } finally {
-        setIsGenerating(false);
-      }
+      };
+
+      loadLogoAndGenerate();
     }
   }, [open, invoice, allRecords, autoridadesRecords, clients, toast, isAuthInvoice]);
 

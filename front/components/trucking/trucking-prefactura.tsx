@@ -131,12 +131,24 @@ export function TruckingPrefactura() {
   const userRoles = currentUser?.roles || (currentUser?.role ? [currentUser.role] : [])
   const isAdmin = userRoles.includes('administrador')
 
+  // Logo para PDF
+  const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined)
+
   useEffect(() => {
     dispatch(fetchPendingRecordsByModule("trucking"))
     dispatch(fetchClients())
     dispatch(fetchServices("trucking"))
-    // Cargar también todos los registros del módulo para métricas (prefacturados)
     dispatch(fetchRecordsByModule("trucking"))
+
+    // Cargar logo PTG
+    fetch('/logos/logo_PTG.png')
+      .then(res => res.blob())
+      .then(blob => {
+        const reader = new FileReader()
+        reader.onloadend = () => setLogoBase64(reader.result as string)
+        reader.readAsDataURL(blob)
+      })
+      .catch(() => console.warn("No se pudo cargar el logo PTG"))
   }, [dispatch])
 
   // Selección de registros
@@ -684,17 +696,18 @@ export function TruckingPrefactura() {
 
     const doc = new jsPDF()
 
-    // Colores / encabezado
+    // Logo de la empresa
     const lightBlue = [59, 130, 246]
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    // Texto 'PTG' grande, centrado y con padding visual
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14)
-    doc.setFont(undefined, 'bold')
-    // Centramos vertical y horizontalmente dentro del rectángulo (15,15,30,15)
-    // Centro X = 15 + 30/2 = 30, Centro Y = 15 + 15/2 = 22.5
-    doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    }
 
     // Número de prefactura y fecha
     doc.setTextColor(0, 0, 0)

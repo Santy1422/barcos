@@ -21,7 +21,7 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Función para generar el PDF (basada en la lógica de ShipChandler prefactura)
-  const generateShipChandlerPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string) => {
+  const generateShipChandlerPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string, logoBase64?: string) => {
     if (selectedRecords.length === 0) {
       return new Blob([], { type: 'application/pdf' })
     }
@@ -48,14 +48,18 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
 
     const doc = new jsPDF()
 
-    // Colores / encabezado
+    // Logo de la empresa
     const lightBlue = [59, 130, 246]
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14)
-    doc.setFont(undefined, 'bold')
-    doc.text('SCH', 30, 23, { align: 'center', baseline: 'middle' })
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('SCH', 30, 23, { align: 'center', baseline: 'middle' })
+    }
 
     // Número de factura/prefactura y fecha
     doc.setTextColor(0, 0, 0)
@@ -374,24 +378,42 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
   useEffect(() => {
     if (open && invoice) {
       setIsGenerating(true);
-      try {
-        // Obtener los registros relacionados con esta factura
-        const relatedRecords = allRecords.filter((record: any) =>
-          invoice.relatedRecordIds.includes(record._id || record.id)
-        );
-        const pdfTitle = invoice.status === "facturada" ? "FACTURA" : "PREFACTURA";
-        const pdf = generateShipChandlerPDF(invoice, relatedRecords, pdfTitle);
-        setPdfBlob(pdf);
-      } catch (error) {
-        console.error("Error generando PDF:", error);
-        toast({
-          title: "Error",
-          description: "Error al generar el PDF",
-          variant: "destructive"
-        });
-      } finally {
-        setIsGenerating(false);
-      }
+
+      const loadLogoAndGenerate = async () => {
+        try {
+          // Cargar logo PTYSS (ShipChandler es parte de PTY Ship Suppliers)
+          let logoBase64: string | undefined;
+          try {
+            const response = await fetch('/logos/logo_PTYSS.png');
+            const blob = await response.blob();
+            logoBase64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+          } catch (e) {
+            console.warn("No se pudo cargar el logo PTYSS, usando texto fallback");
+          }
+
+          const relatedRecords = allRecords.filter((record: any) =>
+            invoice.relatedRecordIds.includes(record._id || record.id)
+          );
+          const pdfTitle = invoice.status === "facturada" ? "FACTURA" : "PREFACTURA";
+          const pdf = generateShipChandlerPDF(invoice, relatedRecords, pdfTitle, logoBase64);
+          setPdfBlob(pdf);
+        } catch (error) {
+          console.error("Error generando PDF:", error);
+          toast({
+            title: "Error",
+            description: "Error al generar el PDF",
+            variant: "destructive"
+          });
+        } finally {
+          setIsGenerating(false);
+        }
+      };
+
+      loadLogoAndGenerate();
     }
   }, [open, invoice, clients, allRecords, toast]);
 

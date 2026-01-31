@@ -128,9 +128,22 @@ export function ShipChandlerPrefactura() {
   const shipchandlerRecords = useAppSelector(state => selectRecordsByModule(state as any, "shipchandler"))
   const clients = useAppSelector(selectAllClients)
 
+  // Logo para PDF
+  const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined)
+
   useEffect(() => {
     dispatch(fetchRecordsByModule("shipchandler"))
     dispatch(fetchClients('shipchandler'))
+
+    // Cargar logo PTYSS (ShipChandler es parte de PTY Ship Suppliers)
+    fetch('/logos/logo_PTYSS.png')
+      .then(res => res.blob())
+      .then(blob => {
+        const reader = new FileReader()
+        reader.onloadend = () => setLogoBase64(reader.result as string)
+        reader.readAsDataURL(blob)
+      })
+      .catch(() => console.warn("No se pudo cargar el logo PTYSS"))
   }, [dispatch])
 
   // Selección de registros
@@ -551,14 +564,18 @@ export function ShipChandlerPrefactura() {
 
     const doc = new jsPDF()
 
-    // Colores / encabezado
+    // Logo de la empresa
     const lightBlue = [59, 130, 246]
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14)
-    doc.setFont(undefined, 'bold')
-    doc.text('SCH', 30, 23, { align: 'center', baseline: 'middle' })
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('SCH', 30, 23, { align: 'center', baseline: 'middle' })
+    }
 
     // Número de prefactura y fecha
     doc.setTextColor(0, 0, 0)
