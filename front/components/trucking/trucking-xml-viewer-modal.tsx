@@ -5,7 +5,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Copy, Download, Send, CheckCircle, AlertTriangle, FileText, Info, ScrollText } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import { Copy, Download, Send, CheckCircle, AlertTriangle, FileText, Info, ScrollText, Edit3, RefreshCw, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import saveAs from "file-saver"
 import { generateXmlFileName, sendXmlToSapFtp } from "@/lib/xml-generator"
@@ -25,6 +26,9 @@ export function TruckingXmlViewerModal({ open, onOpenChange, invoice, onXmlSentT
   const [localSentToSap, setLocalSentToSap] = useState<boolean | null>(null)
   const [localSentToSapAt, setLocalSentToSapAt] = useState<string | null>(null)
   const [localSapFileName, setLocalSapFileName] = useState<string | null>(null)
+  // Estado para modo edición
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedXml, setEditedXml] = useState<string>("")
 
   useEffect(() => {
     if (invoice?.id) {
@@ -33,6 +37,8 @@ export function TruckingXmlViewerModal({ open, onOpenChange, invoice, onXmlSentT
       setLocalSapFileName(null)
       setSapLogs([])
       setShowSapLogs(false)
+      setIsEditing(false)
+      setEditedXml("")
     }
   }, [invoice?.id])
 
@@ -42,14 +48,29 @@ export function TruckingXmlViewerModal({ open, onOpenChange, invoice, onXmlSentT
   const xml = typeof invoice.xmlData === 'string' ? invoice.xmlData : invoice.xmlData.xml
   const isValid = typeof invoice.xmlData === 'string' ? true : (invoice.xmlData.isValid ?? true)
   const generatedAt = typeof invoice.xmlData === 'string' ? invoice.createdAt : (invoice.xmlData.generatedAt ?? invoice.createdAt)
-  
+
+  // XML actual a usar (editado o original)
+  const currentXml = isEditing && editedXml ? editedXml : xml
+
   const effectiveSentToSap = localSentToSap !== null ? localSentToSap : invoice.sentToSap
   const effectiveSentToSapAt = localSentToSapAt || invoice.sentToSapAt
   const sapFileName = localSapFileName || invoice.sapFileName
 
+  // Función para iniciar edición
+  const handleStartEditing = () => {
+    setEditedXml(xml)
+    setIsEditing(true)
+  }
+
+  // Función para cancelar edición
+  const handleCancelEditing = () => {
+    setEditedXml("")
+    setIsEditing(false)
+  }
+
   const handleCopyXml = async () => {
     try {
-      await navigator.clipboard.writeText(xml)
+      await navigator.clipboard.writeText(currentXml)
       toast({ title: "XML copiado", description: "El contenido del XML ha sido copiado al portapapeles." })
     } catch (error) {
       toast({ title: "Error al copiar", description: "No se pudo copiar el XML al portapapeles.", variant: "destructive" })
@@ -57,20 +78,25 @@ export function TruckingXmlViewerModal({ open, onOpenChange, invoice, onXmlSentT
   }
 
   const handleDownloadXml = () => {
-    const blob = new Blob([xml], { type: "application/xml;charset=utf-8" })
+    const blob = new Blob([currentXml], { type: "application/xml;charset=utf-8" })
     const downloadFileName = sapFileName || generateXmlFileName()
     saveAs(blob, downloadFileName)
     toast({ title: "XML descargado", description: `El archivo XML ha sido descargado como ${downloadFileName}` })
   }
 
-  const handleSendToSap = async () => {
+  const handleSendToSap = async (forceResend: boolean = false) => {
     if (!invoice?.id) return
     setIsSendingToSap(true)
     setSapLogs([])
     setShowSapLogs(true)
     try {
-      const fileNameToSend = sapFileName || generateXmlFileName()
-      const result = await sendXmlToSapFtp(invoice.id, xml, fileNameToSend)
+      // Si es reenvío, generar nuevo nombre de archivo para evitar conflictos
+      const fileNameToSend = forceResend
+        ? generateXmlFileName()
+        : (sapFileName || generateXmlFileName())
+
+      // Usar el XML actual (editado o original)
+      const result = await sendXmlToSapFtp(invoice.id, currentXml, fileNameToSend)
       setSapLogs(result.logs || [])
       if (result.success) {
         setLocalSentToSap(true)
@@ -94,7 +120,6 @@ export function TruckingXmlViewerModal({ open, onOpenChange, invoice, onXmlSentT
     try {
       const date = new Date(dateString)
       if (isNaN(date.getTime())) return 'N/A'
-      // Validar año razonable (1900-2100) para prevenir fechas incorrectas
       const year = date.getFullYear()
       if (year < 1900 || year > 2100) return 'N/A'
       return date.toLocaleString('es-ES')
@@ -145,18 +170,80 @@ export function TruckingXmlViewerModal({ open, onOpenChange, invoice, onXmlSentT
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Contenido XML</h3>
-              <div className="flex gap-2">
+              <h3 className="font-semibold text-gray-900">
+                Contenido XML {isEditing && <Badge variant="outline" className="ml-2 text-orange-600 border-orange-300">Editando</Badge>}
+              </h3>
+              <div className="flex gap-2 flex-wrap justify-end">
                 <Button variant="outline" size="sm" onClick={handleCopyXml} className="flex items-center gap-2"><Copy className="h-4 w-4" />Copiar</Button>
                 <Button variant="outline" size="sm" onClick={handleDownloadXml} className="flex items-center gap-2"><Download className="h-4 w-4" />Descargar</Button>
-                <Button variant="outline" size="sm" onClick={handleSendToSap} disabled={isSendingToSap || !isValid || effectiveSentToSap} className={`flex items-center gap-2 ${effectiveSentToSap ? 'text-green-600 border-green-600 bg-green-50' : 'text-blue-600 border-blue-600 hover:bg-blue-50'}`}>
-                  {isSendingToSap ? (<><div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>Enviando...</>) : effectiveSentToSap ? (<><CheckCircle className="h-3 w-3" />Enviado</>) : (<><Send className="h-3 w-3" />Enviar a SAP</>)}
-                </Button>
+                {!isEditing ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleStartEditing}
+                    className="flex items-center gap-2 text-orange-600 border-orange-300 hover:bg-orange-50"
+                  >
+                    <Edit3 className="h-4 w-4" />
+                    Editar
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCancelEditing}
+                    className="flex items-center gap-2 text-gray-600"
+                  >
+                    <X className="h-4 w-4" />
+                    Cancelar
+                  </Button>
+                )}
+                {effectiveSentToSap && !isEditing ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSendToSap(true)}
+                    disabled={isSendingToSap}
+                    className="flex items-center gap-2 text-purple-600 border-purple-300 hover:bg-purple-50"
+                  >
+                    {isSendingToSap ? (
+                      <><div className="animate-spin rounded-full h-3 w-3 border-b-2 border-purple-600"></div>Reenviando...</>
+                    ) : (
+                      <><RefreshCw className="h-3 w-3" />Reenviar a SAP</>
+                    )}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSendToSap(isEditing)}
+                    disabled={isSendingToSap || !isValid}
+                    className={`flex items-center gap-2 ${
+                      isEditing
+                        ? 'text-orange-600 border-orange-600 hover:bg-orange-50'
+                        : 'text-blue-600 border-blue-600 hover:bg-blue-50'
+                    }`}
+                  >
+                    {isSendingToSap ? (
+                      <><div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>Enviando...</>
+                    ) : (
+                      <><Send className="h-3 w-3" />{isEditing ? 'Enviar XML Editado' : 'Enviar a SAP'}</>
+                    )}
+                  </Button>
+                )}
               </div>
             </div>
-            <div className="border rounded-md p-3 bg-gray-50 min-h-[300px] max-h-[400px] overflow-auto">
-              <pre className="font-mono text-xs whitespace-pre-wrap text-gray-800">{xml}</pre>
-            </div>
+            {isEditing ? (
+              <Textarea
+                value={editedXml}
+                onChange={(e) => setEditedXml(e.target.value)}
+                className="font-mono text-xs min-h-[400px] bg-white"
+                placeholder="Edita el XML aquí..."
+              />
+            ) : (
+              <div className="border rounded-md p-3 bg-gray-50 min-h-[300px] max-h-[400px] overflow-auto">
+                <pre className="font-mono text-xs whitespace-pre-wrap text-gray-800">{xml}</pre>
+              </div>
+            )}
           </div>
 
           {showSapLogs && sapLogs.length > 0 && (
@@ -185,5 +272,3 @@ export function TruckingXmlViewerModal({ open, onOpenChange, invoice, onXmlSentT
     </Dialog>
   )
 }
-
-

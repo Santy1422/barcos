@@ -11,6 +11,7 @@ import createPTYSSRecordsAsync from '../controllers/recordsControllers/createPTY
 import createAgencyRecordsAsync from '../controllers/recordsControllers/createAgencyRecordsAsync';
 import createShipChandlerRecordsAsync from '../controllers/recordsControllers/createShipChandlerRecordsAsync';
 import { getJobStatus, getUserPendingJobs, getUserJobHistory } from '../controllers/recordsControllers/getUploadJobStatus';
+import getRecordsByIds from '../controllers/recordsControllers/getRecordsByIds';
 
 const { catchedAsync } = require('../utils');
 
@@ -51,6 +52,9 @@ router.post('/autoridades/bulk', jwtUtils, catchedAsync(recordsAutoridadesContro
 router.get('/autoridades', jwtUtils, catchedAsync(recordsAutoridadesControllers.getAllAutoridadesRecords));
 router.put('/autoridades/:id', jwtUtils, catchedAsync(recordsAutoridadesControllers.updateAutoridadesRecord));
 router.delete('/autoridades/:id', jwtUtils, catchedAsync(recordsAutoridadesControllers.deleteAutoridadesRecord));
+
+// Obtener registros por array de IDs
+router.post('/by-ids', jwtUtils, catchedAsync(getRecordsByIds));
 
 // Obtener todos los registros
 router.get('/', jwtUtils, catchedAsync(recordsControllers.getAllRecords));
