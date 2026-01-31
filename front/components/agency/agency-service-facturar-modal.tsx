@@ -86,7 +86,7 @@ export function AgencyServiceFacturarModal({
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const day = String(now.getDate()).padStart(2, '0');
       const time = String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
-      const suggestedNumber = `AGY-${year}${month}${day}-${time}`;
+      const suggestedNumber = `AG-${year}${month}${day}-${time}`;
       setInvoiceNumber(suggestedNumber);
       
       const today = new Date();
@@ -512,7 +512,7 @@ export function AgencyServiceFacturarModal({
                   id="invoice-number" 
                   value={invoiceNumber} 
                   onChange={(e) => setInvoiceNumber(e.target.value.toUpperCase())} 
-                  placeholder="AGY-20241210-1430" 
+                  placeholder="AG-20241210-1430"
                   className="font-mono"
                 />
                 <p className="text-xs text-muted-foreground">

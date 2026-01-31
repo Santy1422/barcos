@@ -68,6 +68,15 @@ export function AgencyRecords() {
   const [clientFilter, setClientFilter] = useState("all")
   const [vesselFilter, setVesselFilter] = useState("")
   const [selectedService, setSelectedService] = useState<any>(null)
+
+  // Column filters
+  const [dateFilter, setDateFilter] = useState("")
+  const [crewFilter, setCrewFilter] = useState("")
+  const [routeFilter, setRouteFilter] = useState("")
+  const [moveTypeFilter, setMoveTypeFilter] = useState("all")
+  const [flightFilter, setFlightFilter] = useState("")
+  const [commentsFilter, setCommentsFilter] = useState("")
+  const [transportFilter, setTransportFilter] = useState("")
   
   // Edit modal state
   const [editFormData, setEditFormData] = useState({
@@ -179,10 +188,13 @@ export function AgencyRecords() {
     }
   }, [modals?.showEditModal, selectedService])
 
+  // Check if any column filter is active (requires all data loaded)
+  const hasColumnFilters = !!(dateFilter || crewFilter || routeFilter || moveTypeFilter !== "all" || flightFilter || commentsFilter || transportFilter)
+
   // Apply filters
   useEffect(() => {
     const filterObj: any = {}
-    
+
     if (searchTerm) {
       filterObj.search = searchTerm
     }
@@ -202,17 +214,109 @@ export function AgencyRecords() {
     }
 
     setFilters(filterObj)
-    fetchServices({ page: 1, limit: 20, filters: filterObj })
-  }, [searchTerm, statusFilter, clientFilter, vesselFilter, setFilters, fetchServices])
+    // When column filters are active, load all records to filter client-side
+    const limit = hasColumnFilters ? 500 : 20
+    fetchServices({ page: 1, limit, filters: filterObj })
+  }, [searchTerm, statusFilter, clientFilter, vesselFilter, hasColumnFilters, setFilters, fetchServices])
 
   const handleClearFilters = () => {
     setSearchTerm("")
     setStatusFilter("all")
     setClientFilter("all")
     setVesselFilter("")
+    setDateFilter("")
+    setCrewFilter("")
+    setRouteFilter("")
+    setMoveTypeFilter("all")
+    setFlightFilter("")
+    setCommentsFilter("")
+    setTransportFilter("")
     clearFilters()
     fetchServices({ page: 1, limit: 20 })
   }
+
+  // Client-side filtering for column filters
+  const filteredServices = (services && Array.isArray(services) ? services : []).filter((service) => {
+    // Global search
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase()
+      const matchesSearch =
+        (service.crewMembers?.some((m: any) => m.name?.toLowerCase().includes(term))) ||
+        service.crewName?.toLowerCase().includes(term) ||
+        service.vessel?.toLowerCase().includes(term) ||
+        service.pickupLocation?.toLowerCase().includes(term) ||
+        service.dropoffLocation?.toLowerCase().includes(term)
+      if (!matchesSearch) return false
+    }
+
+    // Status filter
+    if (statusFilter !== "all" && service.status !== statusFilter) return false
+
+    // Vessel filter
+    if (vesselFilter && !service.vessel?.toLowerCase().includes(vesselFilter.toLowerCase())) return false
+
+    // Date filter
+    if (dateFilter) {
+      const dateStr = formatSafeDate(service.pickupDate)?.toLowerCase() || ''
+      const timeStr = service.pickupTime?.toLowerCase() || ''
+      if (!dateStr.includes(dateFilter.toLowerCase()) && !timeStr.includes(dateFilter.toLowerCase())) return false
+    }
+
+    // Crew filter
+    if (crewFilter) {
+      const term = crewFilter.toLowerCase()
+      const matchesCrew =
+        service.crewMembers?.some((m: any) =>
+          m.name?.toLowerCase().includes(term) ||
+          m.crewRank?.toLowerCase().includes(term) ||
+          m.nationality?.toLowerCase().includes(term)
+        ) ||
+        service.crewName?.toLowerCase().includes(term)
+      if (!matchesCrew) return false
+    }
+
+    // Route filter
+    if (routeFilter) {
+      const term = routeFilter.toLowerCase()
+      if (
+        !service.pickupLocation?.toLowerCase().includes(term) &&
+        !service.dropoffLocation?.toLowerCase().includes(term) &&
+        !service.returnDropoffLocation?.toLowerCase().includes(term)
+      ) return false
+    }
+
+    // Move type filter
+    if (moveTypeFilter !== "all" && service.moveType !== moveTypeFilter) return false
+
+    // Flight filter
+    if (flightFilter) {
+      const term = flightFilter.toLowerCase()
+      const matchesFlight = service.crewMembers?.some((m: any) =>
+        m.flight?.toLowerCase().includes(term)
+      )
+      if (!matchesFlight) return false
+    }
+
+    // Comments filter
+    if (commentsFilter) {
+      const term = commentsFilter.toLowerCase()
+      if (
+        !service.comments?.toLowerCase().includes(term) &&
+        !service.notes?.toLowerCase().includes(term)
+      ) return false
+    }
+
+    // Transport/Driver filter
+    if (transportFilter) {
+      const term = transportFilter.toLowerCase()
+      if (
+        !service.transportCompany?.toLowerCase().includes(term) &&
+        !service.driver?.toLowerCase().includes(term)
+      ) return false
+    }
+
+    return true
+  })
 
   const handleStatusChange = async (serviceId: string, newStatus: string) => {
     try {
@@ -579,6 +683,8 @@ export function AgencyRecords() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
+      case 'tentative':
+        return 'bg-purple-100 text-purple-800'
       case 'pending':
         return 'bg-yellow-100 text-yellow-800'
       case 'in_progress':
@@ -597,15 +703,20 @@ export function AgencyRecords() {
 
   const getStatusLabel = (status: string) => {
     switch (status) {
+      case 'tentative':
+        return 'Tentative'
       case 'pending':
         return 'Pending'
       case 'in_progress':
         return 'In Progress'
       case 'completed':
-      case 'prefacturado':
-      case 'facturado':
-      case 'nota_de_credito':
         return 'Completed'
+      case 'prefacturado':
+        return 'Prefacturado'
+      case 'facturado':
+        return 'Facturado'
+      case 'nota_de_credito':
+        return 'Nota de Crédito'
       case 'cancelled':
         return 'Cancelled'
       default:
@@ -683,11 +794,19 @@ export function AgencyRecords() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-6">
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold">{totalServices || 0}</div>
             <p className="text-xs text-muted-foreground">Total Services</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold text-purple-600">
+              {services && Array.isArray(services) ? services.filter(s => s?.status === 'tentative').length : 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Tentative</p>
           </CardContent>
         </Card>
         <Card>
@@ -724,38 +843,19 @@ export function AgencyRecords() {
         </Card>
       </div>
 
-      {/* Filters */}
+      {/* Global Search & Clear */}
       <Card>
         <CardContent className="p-4">
-          <div className="grid gap-4 md:grid-cols-5">
-            <div className="relative">
+          <div className="flex gap-4 items-center">
+            <div className="relative flex-1">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search crew, vessel..."
+                placeholder="Search crew, vessel, location..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-8"
               />
             </div>
-            
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="in_progress">In Progress</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Input
-              placeholder="Filter by vessel..."
-              value={vesselFilter}
-              onChange={(e) => setVesselFilter(e.target.value)}
-            />
 
             <Button variant="outline" onClick={handleClearFilters}>
               Clear Filters
@@ -767,39 +867,146 @@ export function AgencyRecords() {
       {/* Services Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Services ({services && Array.isArray(services) ? services.length : 0})</CardTitle>
+          <CardTitle>Services ({filteredServices.length})</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Crew</TableHead>
-                  <TableHead>Vessel</TableHead>
-                  <TableHead>Route</TableHead>
-                  <TableHead>Move Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="hidden md:table-cell">Notes</TableHead>
+                  <TableHead>
+                    <div className="space-y-1">
+                      <span>Date</span>
+                      <Input
+                        placeholder="Filter..."
+                        value={dateFilter}
+                        onChange={(e) => setDateFilter(e.target.value)}
+                        className="h-7 text-xs"
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="space-y-1">
+                      <span>Crew</span>
+                      <Input
+                        placeholder="Filter..."
+                        value={crewFilter}
+                        onChange={(e) => setCrewFilter(e.target.value)}
+                        className="h-7 text-xs"
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="space-y-1">
+                      <span>Vessel</span>
+                      <Input
+                        placeholder="Filter..."
+                        value={vesselFilter}
+                        onChange={(e) => setVesselFilter(e.target.value)}
+                        className="h-7 text-xs"
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="space-y-1">
+                      <span>Route</span>
+                      <Input
+                        placeholder="Filter..."
+                        value={routeFilter}
+                        onChange={(e) => setRouteFilter(e.target.value)}
+                        className="h-7 text-xs"
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="space-y-1">
+                      <span>Move Type</span>
+                      <Select value={moveTypeFilter} onValueChange={setMoveTypeFilter}>
+                        <SelectTrigger className="h-7 text-xs">
+                          <SelectValue placeholder="All" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="SINGLE">Single</SelectItem>
+                          <SelectItem value="RT">Round Trip</SelectItem>
+                          <SelectItem value="INTERNAL">Internal</SelectItem>
+                          <SelectItem value="BAGS_CLAIM">Bags Claim</SelectItem>
+                          <SelectItem value="DOCUMENTATION">Documentation</SelectItem>
+                          <SelectItem value="NO_SHOW">No Show</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="space-y-1">
+                      <span>Flight</span>
+                      <Input
+                        placeholder="Filter..."
+                        value={flightFilter}
+                        onChange={(e) => setFlightFilter(e.target.value)}
+                        className="h-7 text-xs"
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="space-y-1">
+                      <span>Comments</span>
+                      <Input
+                        placeholder="Filter..."
+                        value={commentsFilter}
+                        onChange={(e) => setCommentsFilter(e.target.value)}
+                        className="h-7 text-xs"
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="space-y-1">
+                      <span>Transport / Driver</span>
+                      <Input
+                        placeholder="Filter..."
+                        value={transportFilter}
+                        onChange={(e) => setTransportFilter(e.target.value)}
+                        className="h-7 text-xs"
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="space-y-1">
+                      <span>Status</span>
+                      <Select value={statusFilter} onValueChange={setStatusFilter}>
+                        <SelectTrigger className="h-7 text-xs">
+                          <SelectValue placeholder="All" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="tentative">Tentative</SelectItem>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="in_progress">In Progress</SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                          <SelectItem value="cancelled">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
+                    <TableCell colSpan={10} className="h-24 text-center">
                       <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                       Loading services...
                     </TableCell>
                   </TableRow>
-                ) : !services || !Array.isArray(services) || services.length === 0 ? (
+                ) : filteredServices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
+                    <TableCell colSpan={10} className="h-24 text-center">
                       No services found
                     </TableCell>
                   </TableRow>
                 ) : (
-                  services.map((service) => (
+                  filteredServices.map((service) => (
                     <TableRow key={service._id}>
                       <TableCell>
                         <div>
@@ -811,7 +1018,7 @@ export function AgencyRecords() {
                           </div>
                         </div>
                       </TableCell>
-                      
+
                       <TableCell>
                         <div>
                           {service?.crewMembers && Array.isArray(service.crewMembers) && service.crewMembers.length > 0 ? (
@@ -852,26 +1059,24 @@ export function AgencyRecords() {
                           )}
                         </div>
                       </TableCell>
-                      
+
                       <TableCell>
-                        <div className="font-medium">{service.vessel}</div>
+                        <div className="font-medium">{service.vessel || '-'}</div>
                         {service.voyage && (
                           <div className="text-sm text-muted-foreground">
                             Voyage: {service.voyage}
                           </div>
                         )}
                       </TableCell>
-                      
+
                       <TableCell>
                         <div className="text-sm">
-                          {/* First leg */}
                           <div className="flex items-center">
                             <MapPin className="h-3 w-3 mr-1" />
                             {service.pickupLocation}
                             <ArrowRight className="h-3 w-3 mx-2" />
                             {service.dropoffLocation}
                           </div>
-                          {/* Second leg for Round Trip */}
                           {service.moveType === 'RT' && service.returnDropoffLocation && (
                             <div className="flex items-center mt-1 text-xs text-muted-foreground">
                               <MapPin className="h-3 w-3 mr-1" />
@@ -882,37 +1087,88 @@ export function AgencyRecords() {
                             </div>
                           )}
                         </div>
-                        {service.transportCompany && (
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {service.transportCompany}
-                          </div>
-                        )}
                       </TableCell>
-                      
+
                       <TableCell>
                         <Badge variant="outline" className="font-medium">
                           {service.moveType === 'RT' ? 'Round Trip' :
                            service.moveType === 'SINGLE' ? 'Single' :
                            service.moveType === 'INTERNAL' ? 'Internal' :
                            service.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
-                           service.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}
+                           service.moveType === 'DOCUMENTATION' ? 'Documentation' :
+                           service.moveType === 'NO_SHOW' ? 'No Show' : 'Single'}
                         </Badge>
                       </TableCell>
-                      
+
+                      {/* Flight column */}
+                      <TableCell>
+                        <div className="text-sm">
+                          {service?.crewMembers && Array.isArray(service.crewMembers) && service.crewMembers.length > 0 ? (
+                            <>
+                              {service.crewMembers[0].flight ? (
+                                <div className="flex items-center gap-1">
+                                  <Plane className="h-3 w-3 text-muted-foreground" />
+                                  <span>{service.crewMembers[0].flight}</span>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                              {service.crewMembers.length > 1 && service.crewMembers.some((m: any) => m.flight) && (
+                                <div className="text-xs text-muted-foreground mt-0.5">
+                                  +{service.crewMembers.filter((m: any) => m.flight).length - (service.crewMembers[0].flight ? 1 : 0)} más
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </div>
+                      </TableCell>
+
+                      {/* Comments column */}
+                      <TableCell className="max-w-32">
+                        {service.comments || service.notes ? (
+                          <div
+                            className="text-sm text-gray-600 truncate cursor-help"
+                            title={service.comments || service.notes}
+                          >
+                            {service.comments || service.notes}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-sm">-</span>
+                        )}
+                      </TableCell>
+
+                      {/* Transport / Driver column */}
+                      <TableCell>
+                        <div className="text-sm">
+                          {service.transportCompany ? (
+                            <div className="flex items-center gap-1">
+                              <Building className="h-3 w-3 text-muted-foreground" />
+                              <span className="font-medium">{service.transportCompany}</span>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                          {service.driver && (
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                              <User className="h-3 w-3" />
+                              <span>{service.driver}</span>
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+
                       <TableCell>
                         <div className="space-y-2">
                           <Badge className={getStatusColor(service.status)}>
                             {getStatusLabel(service.status)}
                           </Badge>
-                          
-                          {/* Progress indicator for each service */}
+
                           {(() => {
                             const isRoundTrip = service.moveType === 'RT'
-                            
-                            // For Round Trip, always 9 fields total (8 basic + 1 optional return dropoff)
-                            // For Single and other types, 8 fields total
                             const totalFields = isRoundTrip ? 9 : 8
-                            
+
                             const completedFields = [
                               service.pickupDate,
                               service.pickupTime,
@@ -921,17 +1177,14 @@ export function AgencyRecords() {
                               service.vessel,
                               service.transportCompany,
                               service.driver,
-                              service.crewMembers?.length > 0 || service.crewName,
-                              // For Round Trip, count return dropoff if it's filled (optional)
+                              (service.crewMembers?.length ?? 0) > 0 || service.crewName,
                               isRoundTrip ? service.returnDropoffLocation : true
                             ].filter(Boolean).length
-                            
-                            // Cap the completed fields to the total to avoid percentages > 100%
+
                             const actualCompletedFields = Math.min(completedFields, totalFields)
-                            
                             const percentage = Math.round((actualCompletedFields / totalFields) * 100)
                             const isComplete = actualCompletedFields === totalFields
-                            
+
                             return (
                               <div className="flex items-center gap-1 text-xs">
                                 <div className={`w-1.5 h-1.5 rounded-full ${isComplete ? 'bg-green-500' : actualCompletedFields > totalFields / 2 ? 'bg-yellow-500' : 'bg-red-500'}`} />
@@ -944,20 +1197,7 @@ export function AgencyRecords() {
                           })()}
                         </div>
                       </TableCell>
-                      
-                      <TableCell className="max-w-32 hidden md:table-cell">
-                        {service.notes ? (
-                          <div 
-                            className="text-sm text-gray-600 truncate cursor-help" 
-                            title={service.notes}
-                          >
-                            {service.notes}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 text-sm">-</span>
-                        )}
-                      </TableCell>
-                      
+
                       <TableCell>
                         <div className="flex gap-1">
                           <Button
@@ -968,19 +1208,18 @@ export function AgencyRecords() {
                           >
                             <Eye className="h-3 w-3" />
                           </Button>
-                          
-                          {/* Solo mostrar acciones de edición/cambio si no está completado, prefacturado, facturado, nota_de_credito o cancelado */}
+
                           {!['completed', 'prefacturado', 'facturado', 'nota_de_credito', 'cancelled'].includes(service.status) && (
                             <>
                               <Button
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => handleOpenEditModal(service._id)}
-                                disabled={!['pending', 'in_progress'].includes(service.status)}
+                                disabled={!['tentative', 'pending', 'in_progress'].includes(service.status)}
                               >
                                 <Edit className="h-3 w-3" />
                               </Button>
-                              
+
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -991,8 +1230,7 @@ export function AgencyRecords() {
                               </Button>
                             </>
                           )}
-                          
-                          {/* Botón de eliminar siempre visible */}
+
                           <Button
                             size="sm"
                             variant="ghost"
@@ -1066,6 +1304,21 @@ export function AgencyRecords() {
             })()}
             
             <div className="space-y-2">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => {
+                  if (selectedService) {
+                    handleStatusChange(selectedService, 'tentative')
+                  }
+                }}
+              >
+                <Badge className="bg-purple-100 text-purple-800 mr-2">
+                  Tentative
+                </Badge>
+                Set as Tentative
+              </Button>
+
               <Button
                 variant="outline"
                 className="w-full justify-start"

@@ -239,12 +239,13 @@ export const useAgencyServices = () => {
     
     // Verificar si un servicio puede ser editado
     canEditService: (service: AgencyService): boolean => {
-      return ['pending', 'in_progress'].includes(service.status);
+      return ['tentative', 'pending', 'in_progress'].includes(service.status);
     },
     
     // Verificar si un servicio puede cambiar de estado
     canChangeStatus: (service: AgencyService, newStatus: string): boolean => {
       const validTransitions: Record<string, string[]> = {
+        'tentative': ['pending'],
         'pending': ['in_progress'],
         'in_progress': ['completed'],
         'completed': ['prefacturado'],

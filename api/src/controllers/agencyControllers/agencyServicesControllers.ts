@@ -182,7 +182,7 @@ export const createAgencyService = async (req: Request, res: Response) => {
     // Create new service
     const newService = new AgencyService({
       module: 'AGENCY',
-      status: 'pending',
+      status: 'tentative',
       pickupDate: new Date(pickupDate),
       serviceDate: new Date(pickupDate), // Auto-map
       pickupTime,
@@ -358,7 +358,7 @@ export const updateAgencyServiceStatus = async (req: Request, res: Response) => 
     }
 
     // Validate status value
-    const validStatuses = ['pending', 'in_progress', 'completed', 'cancelled', 'prefacturado', 'facturado', 'nota_de_credito'];
+    const validStatuses = ['tentative', 'pending', 'in_progress', 'completed', 'cancelled', 'prefacturado', 'facturado', 'nota_de_credito'];
     if (!validStatuses.includes(status)) {
       return response(res, 400, { message: `Invalid status. Valid values: ${validStatuses.join(', ')}` });
     }
@@ -375,6 +375,9 @@ export const updateAgencyServiceStatus = async (req: Request, res: Response) => 
 
     // Define valid transitions
     switch (currentStatus) {
+      case 'tentative':
+        isValidTransition = ['pending', 'cancelled'].includes(status);
+        break;
       case 'pending':
         isValidTransition = ['in_progress', 'completed', 'cancelled'].includes(status);
         break;

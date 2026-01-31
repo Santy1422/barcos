@@ -581,11 +581,10 @@ export function AgencyServices() {
     // Check if all crew members have complete data
     const allCrewMembersComplete = formData.crewMembers.length > 0 && 
       formData.crewMembers.every(member => 
-        member.name.trim() && 
-        member.nationality && 
-        member.crewRank && 
-        member.crewCategory && 
-        member.flight.trim()
+        member.name.trim() &&
+        member.nationality &&
+        member.crewRank &&
+        member.crewCategory
       )
     
     const baseValidation = !!(
@@ -709,9 +708,7 @@ export function AgencyServices() {
         if (!member.crewCategory) {
           errors[`crewMember_${index}_crewCategory`] = `Crew member ${index + 1} crew category is required`
         }
-        if (!member.flight.trim()) {
-          errors[`crewMember_${index}_flight`] = `Crew member ${index + 1} flight is required`
-        }
+        // Flight is optional - no validation needed
       })
     }
 
