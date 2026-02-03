@@ -235,87 +235,101 @@ export function AgencyRecords() {
     fetchServices({ page: 1, limit: 20 })
   }
 
+  // Safe string conversion for filtering - handles numbers, objects, arrays, etc.
+  const toStr = (val: any): string => {
+    if (val == null) return ''
+    if (typeof val === 'string') return val
+    return String(val)
+  }
+
   // Client-side filtering for column filters
   const filteredServices = (services && Array.isArray(services) ? services : []).filter((service) => {
-    // Global search
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase()
-      const matchesSearch =
-        (service.crewMembers?.some((m: any) => m.name?.toLowerCase().includes(term))) ||
-        service.crewName?.toLowerCase().includes(term) ||
-        service.vessel?.toLowerCase().includes(term) ||
-        service.pickupLocation?.toLowerCase().includes(term) ||
-        service.dropoffLocation?.toLowerCase().includes(term)
-      if (!matchesSearch) return false
+    if (!service) return false
+
+    try {
+      // Global search
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase()
+        const matchesSearch =
+          (service.crewMembers?.some((m: any) => toStr(m?.name).toLowerCase().includes(term))) ||
+          toStr(service.crewName).toLowerCase().includes(term) ||
+          toStr(service.vessel).toLowerCase().includes(term) ||
+          toStr(service.pickupLocation).toLowerCase().includes(term) ||
+          toStr(service.dropoffLocation).toLowerCase().includes(term)
+        if (!matchesSearch) return false
+      }
+
+      // Status filter
+      if (statusFilter !== "all" && service.status !== statusFilter) return false
+
+      // Vessel filter
+      if (vesselFilter && !toStr(service.vessel).toLowerCase().includes(vesselFilter.toLowerCase())) return false
+
+      // Date filter
+      if (dateFilter) {
+        const dateStr = (formatSafeDate(service.pickupDate) || '').toLowerCase()
+        const timeStr = toStr(service.pickupTime).toLowerCase()
+        if (!dateStr.includes(dateFilter.toLowerCase()) && !timeStr.includes(dateFilter.toLowerCase())) return false
+      }
+
+      // Crew filter
+      if (crewFilter) {
+        const term = crewFilter.toLowerCase()
+        const matchesCrew =
+          service.crewMembers?.some((m: any) =>
+            toStr(m?.name).toLowerCase().includes(term) ||
+            toStr(m?.crewRank).toLowerCase().includes(term) ||
+            toStr(m?.nationality).toLowerCase().includes(term)
+          ) ||
+          toStr(service.crewName).toLowerCase().includes(term)
+        if (!matchesCrew) return false
+      }
+
+      // Route filter
+      if (routeFilter) {
+        const term = routeFilter.toLowerCase()
+        if (
+          !toStr(service.pickupLocation).toLowerCase().includes(term) &&
+          !toStr(service.dropoffLocation).toLowerCase().includes(term) &&
+          !toStr(service.returnDropoffLocation).toLowerCase().includes(term)
+        ) return false
+      }
+
+      // Move type filter
+      if (moveTypeFilter !== "all" && service.moveType !== moveTypeFilter) return false
+
+      // Flight filter
+      if (flightFilter) {
+        const term = flightFilter.toLowerCase()
+        const matchesFlight = service.crewMembers?.some((m: any) =>
+          toStr(m?.flight).toLowerCase().includes(term)
+        )
+        if (!matchesFlight) return false
+      }
+
+      // Comments filter
+      if (commentsFilter) {
+        const term = commentsFilter.toLowerCase()
+        if (
+          !toStr(service.comments).toLowerCase().includes(term) &&
+          !toStr(service.notes).toLowerCase().includes(term)
+        ) return false
+      }
+
+      // Transport/Driver filter
+      if (transportFilter) {
+        const term = transportFilter.toLowerCase()
+        if (
+          !toStr(service.transportCompany).toLowerCase().includes(term) &&
+          !toStr(service.driver).toLowerCase().includes(term)
+        ) return false
+      }
+
+      return true
+    } catch (error) {
+      console.error('Error filtering service:', service._id, error)
+      return true // Include the service if filtering fails
     }
-
-    // Status filter
-    if (statusFilter !== "all" && service.status !== statusFilter) return false
-
-    // Vessel filter
-    if (vesselFilter && !service.vessel?.toLowerCase().includes(vesselFilter.toLowerCase())) return false
-
-    // Date filter
-    if (dateFilter) {
-      const dateStr = formatSafeDate(service.pickupDate)?.toLowerCase() || ''
-      const timeStr = service.pickupTime?.toLowerCase() || ''
-      if (!dateStr.includes(dateFilter.toLowerCase()) && !timeStr.includes(dateFilter.toLowerCase())) return false
-    }
-
-    // Crew filter
-    if (crewFilter) {
-      const term = crewFilter.toLowerCase()
-      const matchesCrew =
-        service.crewMembers?.some((m: any) =>
-          m.name?.toLowerCase().includes(term) ||
-          m.crewRank?.toLowerCase().includes(term) ||
-          m.nationality?.toLowerCase().includes(term)
-        ) ||
-        service.crewName?.toLowerCase().includes(term)
-      if (!matchesCrew) return false
-    }
-
-    // Route filter
-    if (routeFilter) {
-      const term = routeFilter.toLowerCase()
-      if (
-        !service.pickupLocation?.toLowerCase().includes(term) &&
-        !service.dropoffLocation?.toLowerCase().includes(term) &&
-        !service.returnDropoffLocation?.toLowerCase().includes(term)
-      ) return false
-    }
-
-    // Move type filter
-    if (moveTypeFilter !== "all" && service.moveType !== moveTypeFilter) return false
-
-    // Flight filter
-    if (flightFilter) {
-      const term = flightFilter.toLowerCase()
-      const matchesFlight = service.crewMembers?.some((m: any) =>
-        m.flight?.toLowerCase().includes(term)
-      )
-      if (!matchesFlight) return false
-    }
-
-    // Comments filter
-    if (commentsFilter) {
-      const term = commentsFilter.toLowerCase()
-      if (
-        !service.comments?.toLowerCase().includes(term) &&
-        !service.notes?.toLowerCase().includes(term)
-      ) return false
-    }
-
-    // Transport/Driver filter
-    if (transportFilter) {
-      const term = transportFilter.toLowerCase()
-      if (
-        !service.transportCompany?.toLowerCase().includes(term) &&
-        !service.driver?.toLowerCase().includes(term)
-      ) return false
-    }
-
-    return true
   })
 
   const handleStatusChange = async (serviceId: string, newStatus: string) => {
@@ -1130,9 +1144,9 @@ export function AgencyRecords() {
                         {service.comments || service.notes ? (
                           <div
                             className="text-sm text-gray-600 truncate cursor-help"
-                            title={service.comments || service.notes}
+                            title={toStr(service.comments || service.notes)}
                           >
-                            {service.comments || service.notes}
+                            {toStr(service.comments || service.notes)}
                           </div>
                         ) : (
                           <span className="text-gray-400 text-sm">-</span>
