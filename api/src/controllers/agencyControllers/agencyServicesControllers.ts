@@ -182,7 +182,7 @@ export const createAgencyService = async (req: Request, res: Response) => {
     // Create new service
     const newService = new AgencyService({
       module: 'AGENCY',
-      status: 'tentative',
+      status: 'pending',
       pickupDate: new Date(pickupDate),
       serviceDate: new Date(pickupDate), // Auto-map
       pickupTime,
@@ -373,36 +373,42 @@ export const updateAgencyServiceStatus = async (req: Request, res: Response) => 
     const currentStatus = service.status;
     let isValidTransition = false;
 
-    // Define valid transitions
+    // Define valid transitions based on flow diagram:
+    // PENDING -> TENTATIVE | IN_PROGRESS
+    // TENTATIVE -> IN_PROGRESS
+    // IN_PROGRESS -> COMPLETED
+    // COMPLETED -> PREFACTURADO
+    // PREFACTURADO -> FACTURADO
+    // FACTURADO -> NOTA_DE_CREDITO
     switch (currentStatus) {
-      case 'tentative':
-        isValidTransition = ['pending', 'cancelled'].includes(status);
-        break;
       case 'pending':
-        isValidTransition = ['in_progress', 'completed', 'cancelled'].includes(status);
+        isValidTransition = ['tentative', 'in_progress', 'cancelled'].includes(status);
+        break;
+      case 'tentative':
+        isValidTransition = ['in_progress', 'cancelled'].includes(status);
         break;
       case 'in_progress':
-        isValidTransition = ['completed', 'pending', 'cancelled'].includes(status);
+        isValidTransition = ['completed', 'cancelled'].includes(status);
         break;
       case 'completed':
-        isValidTransition = ['prefacturado', 'pending', 'in_progress', 'cancelled'].includes(status);
+        isValidTransition = ['prefacturado', 'cancelled'].includes(status);
         break;
       case 'prefacturado':
         isValidTransition = ['facturado', 'cancelled'].includes(status);
         break;
       case 'facturado':
-        isValidTransition = status === 'nota_de_credito'; // Can only change to credit note
+        isValidTransition = status === 'nota_de_credito';
         break;
       case 'cancelled':
-        isValidTransition = false; // Cannot change from cancelled (final state)
+        isValidTransition = false;
         break;
       case 'nota_de_credito':
-        isValidTransition = false; // Cannot change from nota_de_credito (final state)
+        isValidTransition = false;
         break;
     }
 
     // Allow rollback to pending from any state except facturado, cancelled, and nota_de_credito
-    if (status === 'pending' && !['facturado', 'cancelled', 'nota_de_credito'].includes(currentStatus)) {
+    if (status === 'pending' && !['pending', 'facturado', 'cancelled', 'nota_de_credito'].includes(currentStatus)) {
       isValidTransition = true;
     }
 

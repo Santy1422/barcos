@@ -1300,104 +1300,88 @@ export function AgencyRecords() {
           <DialogHeader>
             <DialogTitle>Change Service Status</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <p id="status-dialog-description" className="text-sm text-muted-foreground">
-              Select the new status for this service
-            </p>
-            
-            {/* Show warning if Round Trip without return dropoff */}
-            {(() => {
-              const service = services.find(s => s._id === selectedService)
-              return service?.moveType === 'RT' && !service?.returnDropoffLocation && (
-                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                  <p className="text-xs text-yellow-800">
-                    ⚠️ This Round Trip service does not have a Return Drop-off Location. Please edit the service to add it before marking as completed.
-                  </p>
-                </div>
-              )
-            })()}
-            
-            <div className="space-y-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => {
-                  if (selectedService) {
-                    handleStatusChange(selectedService, 'tentative')
-                  }
-                }}
-              >
-                <Badge className="bg-purple-100 text-purple-800 mr-2">
-                  Tentative
-                </Badge>
-                Set as Tentative
-              </Button>
+          {(() => {
+            const currentService = services.find(s => s._id === selectedService)
+            const currentStatus = currentService?.status || ''
 
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => {
-                  if (selectedService) {
-                    handleStatusChange(selectedService, 'pending')
-                  }
-                }}
-              >
-                <Badge className="bg-yellow-100 text-yellow-800 mr-2">
-                  Pending
-                </Badge>
-                Set as Pending
-              </Button>
-              
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => {
-                  if (selectedService) {
-                    handleStatusChange(selectedService, 'in_progress')
-                  }
-                }}
-              >
-                <Badge className="bg-blue-100 text-blue-800 mr-2">
-                  In Progress
-                </Badge>
-                Set as In Progress
-              </Button>
-              
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                disabled={(() => {
-                  const service = services.find(s => s._id === selectedService)
-                  return service?.moveType === 'RT' && !service?.returnDropoffLocation
-                })()}
-                onClick={() => {
-                  if (selectedService) {
-                    handleStatusChange(selectedService, 'completed')
-                  }
-                }}
-              >
-                <Badge className="bg-green-100 text-green-800 mr-2">
-                  Completed
-                </Badge>
-                Set as Completed
-              </Button>
-              
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => {
-                  if (selectedService) {
-                    handleStatusChange(selectedService, 'cancelled')
-                  }
-                }}
-              >
-                <Badge className="bg-red-100 text-red-800 mr-2">
-                  Cancelled
-                </Badge>
-                Set as Cancelled
-              </Button>
-            </div>
-          </div>
+            // Valid forward transitions per the flow diagram
+            const validTransitions: Record<string, string[]> = {
+              'pending': ['tentative', 'in_progress'],
+              'tentative': ['in_progress'],
+              'in_progress': ['completed'],
+              'completed': ['prefacturado'],
+              'prefacturado': ['facturado'],
+              'facturado': ['nota_de_credito'],
+              'cancelled': [],
+              'nota_de_credito': []
+            }
+
+            const allowedStatuses = validTransitions[currentStatus] || []
+
+            // Always allow rollback to pending (except from pending, facturado, cancelled, nota_de_credito)
+            const canRollbackToPending = !['pending', 'facturado', 'cancelled', 'nota_de_credito'].includes(currentStatus)
+
+            // Always allow cancellation (except from facturado, cancelled, nota_de_credito)
+            const canCancel = !['facturado', 'cancelled', 'nota_de_credito'].includes(currentStatus)
+
+            const isRtMissingReturn = currentService?.moveType === 'RT' && !currentService?.returnDropoffLocation
+
+            const statusOptions = [
+              { value: 'tentative', label: 'Tentative', color: 'bg-purple-100 text-purple-800' },
+              { value: 'pending', label: 'Pending', color: 'bg-yellow-100 text-yellow-800' },
+              { value: 'in_progress', label: 'In Progress', color: 'bg-blue-100 text-blue-800' },
+              { value: 'completed', label: 'Completed', color: 'bg-green-100 text-green-800' },
+              { value: 'cancelled', label: 'Cancelled', color: 'bg-red-100 text-red-800' },
+            ]
+
+            return (
+              <div className="space-y-4">
+                <p id="status-dialog-description" className="text-sm text-muted-foreground">
+                  Current status: <Badge className={getStatusColor(currentStatus)}>{getStatusLabel(currentStatus)}</Badge>
+                </p>
+
+                {isRtMissingReturn && (
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <p className="text-xs text-yellow-800">
+                      This Round Trip service does not have a Return Drop-off Location. Please edit the service to add it before marking as completed.
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {statusOptions.map(opt => {
+                    const isForwardTransition = allowedStatuses.includes(opt.value)
+                    const isRollback = opt.value === 'pending' && canRollbackToPending
+                    const isCancelOption = opt.value === 'cancelled' && canCancel
+                    const isAllowed = isForwardTransition || isRollback || isCancelOption
+
+                    if (!isAllowed) return null
+
+                    const isDisabled = opt.value === 'completed' && isRtMissingReturn
+
+                    return (
+                      <Button
+                        key={opt.value}
+                        variant="outline"
+                        className="w-full justify-start"
+                        disabled={isDisabled}
+                        onClick={() => {
+                          if (selectedService) {
+                            handleStatusChange(selectedService, opt.value)
+                          }
+                        }}
+                      >
+                        <Badge className={`${opt.color} mr-2`}>
+                          {opt.label}
+                        </Badge>
+                        Set as {opt.label}
+                      </Button>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })()}
           <DialogFooter>
             <Button variant="outline" onClick={closeModals}>
               Cancel

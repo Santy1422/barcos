@@ -184,7 +184,7 @@ export interface ServicesResponse {
 // Interface para actualizar estado
 export interface UpdateStatusParams {
   id: string;
-  status: 'pending' | 'in_progress' | 'completed';
+  status: 'tentative' | 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'prefacturado' | 'facturado' | 'nota_de_credito';
 }
 
 // Interface para actualizar servicio

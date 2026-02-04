@@ -125,7 +125,7 @@ const agencyServiceSchema = new Schema<IAgencyService>(
     status: {
       type: String,
       enum: ['tentative', 'pending', 'in_progress', 'completed', 'cancelled', 'ready_for_invoice', 'prefacturado', 'facturado', 'nota_de_credito'],
-      default: 'tentative',
+      default: 'pending',
       required: true
     },
     
