@@ -126,12 +126,11 @@ export function AgencyRecords() {
   })
   const [editFormErrors, setEditFormErrors] = useState<Record<string, string>>({})
 
-  // Load services and catalogs on component mount
+  // Load catalogs on component mount (services are loaded by the filters useEffect)
   useEffect(() => {
-    fetchServices({ page: 1, limit: 20 })
     fetchGroupedCatalogs()
     fetchActiveRoutes()
-  }, [fetchServices, fetchGroupedCatalogs, fetchActiveRoutes])
+  }, [fetchGroupedCatalogs, fetchActiveRoutes])
 
   // Load service data when edit modal opens
   useEffect(() => {
