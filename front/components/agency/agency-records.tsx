@@ -1064,42 +1064,15 @@ export function AgencyRecords() {
                       </TableCell>
 
                       <TableCell>
-                        <div>
+                        <div className="text-sm space-y-0.5">
                           {service?.crewMembers && Array.isArray(service.crewMembers) && service.crewMembers.length > 0 ? (
-                            <>
-                              <div className="font-medium">
-                                {service.crewMembers[0].name}
-                                {service.crewMembers.length > 1 && (
-                                  <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                                    +{service.crewMembers.length - 1} más
-                                  </span>
-                                )}
+                            service.crewMembers.map((m: any, i: number) => (
+                              <div key={i} className="font-medium leading-tight">
+                                {m.name || '-'}
                               </div>
-                              {service.crewMembers[0].crewRank && (
-                                <div className="text-sm text-muted-foreground">
-                                  {service.crewMembers[0].crewRank}
-                                </div>
-                              )}
-                              {service.crewMembers[0].nationality && (
-                                <div className="text-xs text-muted-foreground">
-                                  {service.crewMembers[0].nationality}
-                                </div>
-                              )}
-                            </>
+                            ))
                           ) : (
-                            <>
-                              <div className="font-medium">{service.crewName || '-'}</div>
-                              {service.crewRank && (
-                                <div className="text-sm text-muted-foreground">
-                                  {service.crewRank}
-                                </div>
-                              )}
-                              {service.nationality && (
-                                <div className="text-xs text-muted-foreground">
-                                  {service.nationality}
-                                </div>
-                              )}
-                            </>
+                            <div className="font-medium">{service.crewName || '-'}</div>
                           )}
                         </div>
                       </TableCell>
