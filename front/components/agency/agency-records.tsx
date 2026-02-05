@@ -67,6 +67,8 @@ export function AgencyRecords() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [clientFilter, setClientFilter] = useState("all")
   const [vesselFilter, setVesselFilter] = useState("")
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
   const [selectedService, setSelectedService] = useState<any>(null)
 
   // Column filters
@@ -212,18 +214,27 @@ export function AgencyRecords() {
     if (vesselFilter) {
       filterObj.vessel = vesselFilter
     }
+    if (startDate) {
+      filterObj.startDate = startDate
+    }
+    if (endDate) {
+      // Set end of day for the endDate so it includes the full day
+      filterObj.endDate = endDate + 'T23:59:59.999Z'
+    }
 
     setFilters(filterObj)
     // When column filters are active, load all records to filter client-side
     const limit = hasColumnFilters ? 500 : 20
     fetchServices({ page: 1, limit, filters: filterObj })
-  }, [searchTerm, statusFilter, clientFilter, vesselFilter, hasColumnFilters, setFilters, fetchServices])
+  }, [searchTerm, statusFilter, clientFilter, vesselFilter, startDate, endDate, hasColumnFilters, setFilters, fetchServices])
 
   const handleClearFilters = () => {
     setSearchTerm("")
     setStatusFilter("all")
     setClientFilter("all")
     setVesselFilter("")
+    setStartDate("")
+    setEndDate("")
     setDateFilter("")
     setCrewFilter("")
     setRouteFilter("")
@@ -857,9 +868,9 @@ export function AgencyRecords() {
         </Card>
       </div>
 
-      {/* Global Search & Clear */}
+      {/* Global Search & Filters */}
       <Card>
-        <CardContent className="p-4">
+        <CardContent className="p-4 space-y-3">
           <div className="flex gap-4 items-center">
             <div className="relative flex-1">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -874,6 +885,41 @@ export function AgencyRecords() {
             <Button variant="outline" onClick={handleClearFilters}>
               Clear Filters
             </Button>
+          </div>
+
+          {/* Date Range Filter */}
+          <div className="flex gap-4 items-center">
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-medium whitespace-nowrap">Date Range:</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-40"
+                placeholder="From"
+              />
+              <span className="text-sm text-muted-foreground">to</span>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-40"
+                min={startDate || undefined}
+                placeholder="To"
+              />
+            </div>
+            {(startDate || endDate) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setStartDate(""); setEndDate("") }}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
