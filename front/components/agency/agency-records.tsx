@@ -932,122 +932,107 @@ export function AgencyRecords() {
           <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>
-                    <div className="space-y-1">
-                      <span>Date</span>
-                      <Input
-                        placeholder="Filter..."
-                        value={dateFilter}
-                        onChange={(e) => setDateFilter(e.target.value)}
-                        className="h-7 text-xs"
-                      />
-                    </div>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Date</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Crew</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Vessel</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Route</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Move Type</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Flight</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Comments</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Transport</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Status</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Actions</TableHead>
+                </TableRow>
+                <TableRow className="border-b bg-background">
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter date..."
+                      value={dateFilter}
+                      onChange={(e) => setDateFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
                   </TableHead>
-                  <TableHead>
-                    <div className="space-y-1">
-                      <span>Crew</span>
-                      <Input
-                        placeholder="Filter..."
-                        value={crewFilter}
-                        onChange={(e) => setCrewFilter(e.target.value)}
-                        className="h-7 text-xs"
-                      />
-                    </div>
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter crew..."
+                      value={crewFilter}
+                      onChange={(e) => setCrewFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
                   </TableHead>
-                  <TableHead>
-                    <div className="space-y-1">
-                      <span>Vessel</span>
-                      <Input
-                        placeholder="Filter..."
-                        value={vesselFilter}
-                        onChange={(e) => setVesselFilter(e.target.value)}
-                        className="h-7 text-xs"
-                      />
-                    </div>
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter vessel..."
+                      value={vesselFilter}
+                      onChange={(e) => setVesselFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
                   </TableHead>
-                  <TableHead>
-                    <div className="space-y-1">
-                      <span>Route</span>
-                      <Input
-                        placeholder="Filter..."
-                        value={routeFilter}
-                        onChange={(e) => setRouteFilter(e.target.value)}
-                        className="h-7 text-xs"
-                      />
-                    </div>
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter route..."
+                      value={routeFilter}
+                      onChange={(e) => setRouteFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
                   </TableHead>
-                  <TableHead>
-                    <div className="space-y-1">
-                      <span>Move Type</span>
-                      <Select value={moveTypeFilter} onValueChange={setMoveTypeFilter}>
-                        <SelectTrigger className="h-7 text-xs">
-                          <SelectValue placeholder="All" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All</SelectItem>
-                          <SelectItem value="SINGLE">Single</SelectItem>
-                          <SelectItem value="RT">Round Trip</SelectItem>
-                          <SelectItem value="INTERNAL">Internal</SelectItem>
-                          <SelectItem value="BAGS_CLAIM">Bags Claim</SelectItem>
-                          <SelectItem value="DOCUMENTATION">Documentation</SelectItem>
-                          <SelectItem value="NO_SHOW">No Show</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <TableHead className="py-1.5 px-2">
+                    <Select value={moveTypeFilter} onValueChange={setMoveTypeFilter}>
+                      <SelectTrigger className="h-7 text-xs bg-muted/30 border-dashed">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All</SelectItem>
+                        <SelectItem value="SINGLE">Single</SelectItem>
+                        <SelectItem value="RT">Round Trip</SelectItem>
+                        <SelectItem value="INTERNAL">Internal</SelectItem>
+                        <SelectItem value="BAGS_CLAIM">Bags Claim</SelectItem>
+                        <SelectItem value="DOCUMENTATION">Documentation</SelectItem>
+                        <SelectItem value="NO_SHOW">No Show</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </TableHead>
-                  <TableHead>
-                    <div className="space-y-1">
-                      <span>Flight</span>
-                      <Input
-                        placeholder="Filter..."
-                        value={flightFilter}
-                        onChange={(e) => setFlightFilter(e.target.value)}
-                        className="h-7 text-xs"
-                      />
-                    </div>
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter flight..."
+                      value={flightFilter}
+                      onChange={(e) => setFlightFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
                   </TableHead>
-                  <TableHead>
-                    <div className="space-y-1">
-                      <span>Comments</span>
-                      <Input
-                        placeholder="Filter..."
-                        value={commentsFilter}
-                        onChange={(e) => setCommentsFilter(e.target.value)}
-                        className="h-7 text-xs"
-                      />
-                    </div>
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter..."
+                      value={commentsFilter}
+                      onChange={(e) => setCommentsFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
                   </TableHead>
-                  <TableHead>
-                    <div className="space-y-1">
-                      <span>Transport / Driver</span>
-                      <Input
-                        placeholder="Filter..."
-                        value={transportFilter}
-                        onChange={(e) => setTransportFilter(e.target.value)}
-                        className="h-7 text-xs"
-                      />
-                    </div>
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter..."
+                      value={transportFilter}
+                      onChange={(e) => setTransportFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
                   </TableHead>
-                  <TableHead>
-                    <div className="space-y-1">
-                      <span>Status</span>
-                      <Select value={statusFilter} onValueChange={setStatusFilter}>
-                        <SelectTrigger className="h-7 text-xs">
-                          <SelectValue placeholder="All" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All</SelectItem>
-                          <SelectItem value="tentative">Tentative</SelectItem>
-                          <SelectItem value="pending">Pending</SelectItem>
-                          <SelectItem value="in_progress">In Progress</SelectItem>
-                          <SelectItem value="completed">Completed</SelectItem>
-                          <SelectItem value="cancelled">Cancelled</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <TableHead className="py-1.5 px-2">
+                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                      <SelectTrigger className="h-7 text-xs bg-muted/30 border-dashed">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All</SelectItem>
+                        <SelectItem value="tentative">Tentative</SelectItem>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="in_progress">In Progress</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                        <SelectItem value="cancelled">Cancelled</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="py-1.5 px-2" />
                 </TableRow>
               </TableHeader>
               <TableBody>
