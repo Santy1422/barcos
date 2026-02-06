@@ -797,25 +797,25 @@ export const hasSectionAccess = (user: User | null, module: UserModule, section:
   const sectionPermissions: Record<UserModule, Record<UserRole, string[]>> = {
     trucking: {
       'administrador': ['upload', 'prefactura', 'gastos-autoridades', 'records', 'config'],
-      'operaciones': ['upload'], // Solo subir excel
+      'operaciones': ['upload', 'prefactura'], // Subir excel y crear prefacturas
       'facturacion': ['prefactura', 'gastos-autoridades', 'records'], // Crear prefactura, gastos, facturas
       'pendiente': []
     },
     ptyss: {
       'administrador': ['upload', 'invoice', 'records', 'historial', 'config'],
-      'operaciones': ['upload'], // Solo crear registros
+      'operaciones': ['upload', 'invoice'], // Crear registros y prefacturas
       'facturacion': ['invoice', 'records', 'historial'], // Crear prefactura, facturas, historial
       'pendiente': []
     },
     shipchandler: {
       'administrador': ['upload', 'prefactura', 'records'],
-      'operaciones': ['upload'], // Solo subir excel
+      'operaciones': ['upload', 'prefactura'], // Subir excel y crear prefacturas
       'facturacion': ['prefactura', 'records'], // Crear prefactura, facturas
       'pendiente': []
     },
     agency: {
       'administrador': ['services', 'invoice', 'records', 'sap-invoice', 'historial', 'catalogs'],
-      'operaciones': ['services', 'records'], // Crear servicios y registros
+      'operaciones': ['services', 'records', 'invoice'], // Crear servicios, registros y prefacturas
       'facturacion': ['invoice', 'sap-invoice', 'historial'], // Crear prefactura, SAP Invoice e historial
       'pendiente': []
     }
