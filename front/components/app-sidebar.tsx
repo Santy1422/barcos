@@ -121,7 +121,7 @@ export function AppSidebar() {
     }] : []),
     // PTYSS module - filtered by role
     ...(hasModuleAccess(currentUser, "ptyss") ? [{
-      title: "PTYSS",
+      title: "TRUCKING",
       href: "/ptyss",
       icon: Ship,
       children: [
