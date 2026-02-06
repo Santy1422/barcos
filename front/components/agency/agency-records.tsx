@@ -9,10 +9,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { 
-  Car, Search, Eye, FileText, Calendar, 
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Car, Search, Eye, FileText, Calendar,
   User, Loader2, Trash2, Edit, RefreshCw, MapPin, ArrowRight, Paperclip,
-  Clock, Save, X, Ship, Users, Plane, Building, Plus, CheckCircle, AlertTriangle
+  Clock, Save, X, Ship, Users, Plane, Building, Plus, CheckCircle, AlertTriangle, ChevronDown
 } from "lucide-react"
 import { TimeInput } from "@/components/ui/time-input"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
@@ -62,9 +70,20 @@ export function AgencyRecords() {
     findRouteByLocations
   } = useAgencyRoutes()
 
+  // Status options for multi-select
+  const statusOptions = [
+    { value: 'pending', label: 'Pending' },
+    { value: 'tentative', label: 'Tentative' },
+    { value: 'in_progress', label: 'In Progress' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'prefacturado', label: 'Prefacturado' },
+    { value: 'facturado', label: 'Facturado' },
+    { value: 'cancelled', label: 'Cancelled' },
+  ]
+
   // Local state
   const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [clientFilter, setClientFilter] = useState("all")
   const [vesselFilter, setVesselFilter] = useState("")
   const [startDate, setStartDate] = useState("")
@@ -199,13 +218,9 @@ export function AgencyRecords() {
     if (searchTerm) {
       filterObj.search = searchTerm
     }
-    if (statusFilter !== "all") {
-      // If filtering by "completed", include prefacturado, facturado and nota_de_credito as well
-      if (statusFilter === "completed") {
-        filterObj.statusIn = ['completed', 'prefacturado', 'facturado', 'nota_de_credito']
-      } else {
-        filterObj.status = statusFilter
-      }
+    if (statusFilter.length > 0) {
+      // Use statusIn for multiple status filter
+      filterObj.statusIn = statusFilter
     }
     if (clientFilter !== "all") {
       filterObj.clientId = clientFilter
@@ -229,7 +244,7 @@ export function AgencyRecords() {
 
   const handleClearFilters = () => {
     setSearchTerm("")
-    setStatusFilter("all")
+    setStatusFilter([])
     setClientFilter("all")
     setVesselFilter("")
     setStartDate("")
@@ -269,8 +284,8 @@ export function AgencyRecords() {
         if (!matchesSearch) return false
       }
 
-      // Status filter
-      if (statusFilter !== "all" && service.status !== statusFilter) return false
+      // Status filter (multi-select)
+      if (statusFilter.length > 0 && !statusFilter.includes(service.status)) return false
 
       // Vessel filter
       if (vesselFilter && !toStr(service.vessel).toLowerCase().includes(vesselFilter.toLowerCase())) return false
@@ -1018,19 +1033,56 @@ export function AgencyRecords() {
                     />
                   </TableHead>
                   <TableHead className="py-1.5 px-2">
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger className="h-7 text-xs bg-muted/30 border-dashed">
-                        <SelectValue placeholder="All" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All</SelectItem>
-                        <SelectItem value="tentative">Tentative</SelectItem>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="in_progress">In Progress</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="h-7 text-xs bg-muted/30 border-dashed w-full justify-between font-normal"
+                        >
+                          {statusFilter.length === 0
+                            ? "All"
+                            : statusFilter.length === 1
+                            ? statusOptions.find(s => s.value === statusFilter[0])?.label
+                            : `${statusFilter.length} selected`}
+                          <ChevronDown className="ml-1 h-3 w-3 opacity-50" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-48" align="start">
+                        <DropdownMenuLabel className="text-xs flex items-center justify-between">
+                          Filter by Status
+                          {statusFilter.length > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 px-1 text-xs"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                setStatusFilter([])
+                              }}
+                            >
+                              Clear
+                            </Button>
+                          )}
+                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {statusOptions.map((option) => (
+                          <DropdownMenuCheckboxItem
+                            key={option.value}
+                            checked={statusFilter.includes(option.value)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setStatusFilter([...statusFilter, option.value])
+                              } else {
+                                setStatusFilter(statusFilter.filter(s => s !== option.value))
+                              }
+                            }}
+                            onSelect={(e) => e.preventDefault()}
+                          >
+                            {option.label}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableHead>
                   <TableHead className="py-1.5 px-2" />
                 </TableRow>
