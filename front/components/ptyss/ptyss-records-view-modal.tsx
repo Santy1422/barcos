@@ -207,15 +207,27 @@ export function PTYSSRecordsViewModal({
                         </Badge>
                       </div>
 
-                      {/* Fecha de Movimiento */}
+                      {/* Fecha Inicial */}
                       <div className="space-y-2">
                         <Label className="text-sm font-medium text-gray-600 flex items-center gap-1">
-                          <Calendar className="h-3 w-3" /> Fecha Movimiento
+                          <Calendar className="h-3 w-3" /> Fecha Inicial
                         </Label>
                         <p className="text-sm">
                           {data.moveDate ? new Date(data.moveDate).toLocaleDateString('es-ES') : "N/A"}
                         </p>
                       </div>
+
+                      {/* Fecha Fin */}
+                      {data.endDate && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-600 flex items-center gap-1">
+                            <Calendar className="h-3 w-3" /> Fecha Fin
+                          </Label>
+                          <p className="text-sm">
+                            {new Date(data.endDate).toLocaleDateString('es-ES')}
+                          </p>
+                        </div>
+                      )}
 
                       {/* Valor */}
                       <div className="space-y-2">

@@ -89,6 +89,7 @@ interface PTYSSRecordData {
   conductor: string
   numeroChasisPlaca: string
   moveDate: string
+  endDate: string
   notes: string
   totalValue: number
   recordType: "local" | "trasiego" // Campo para identificar registros locales o de trasiego
@@ -116,6 +117,7 @@ const initialRecordData: PTYSSRecordData = {
   conductor: "",
   numeroChasisPlaca: "",
   moveDate: "",
+  endDate: "",
   notes: "",
   totalValue: 0,
   recordType: "local",
@@ -2767,7 +2769,7 @@ export function PTYSSUpload() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="moveDate">Fecha de Movimiento</Label>
+                  <Label htmlFor="moveDate">Fecha Inicial</Label>
                   <Input
                     id="moveDate"
                     type="date"
@@ -2775,11 +2777,21 @@ export function PTYSSUpload() {
                     onChange={(e) => setCurrentRecord({...currentRecord, moveDate: e.target.value})}
                   />
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="endDate">Fecha Fin</Label>
+                  <Input
+                    id="endDate"
+                    type="date"
+                    value={currentRecord.endDate}
+                    onChange={(e) => setCurrentRecord({...currentRecord, endDate: e.target.value})}
+                  />
+                </div>
               </div>
             </div>
-            
+
             <Separator />
-            
+
             {/* Notas */}
             <div className="space-y-4">
               <h3 className="text-lg font-medium">Notas Adicionales</h3>
