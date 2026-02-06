@@ -788,17 +788,16 @@ export function TruckingRecords() {
           console.log("InvoiceDate:", invoiceDate)
           
           // Actualizar la factura con el nuevo número y XML
-          // Convertir la fecha a objeto Date en zona horaria local para evitar problemas de UTC
-          const dateObj = new Date(invoiceDate + 'T00:00:00')
-          
-          await dispatch(updateInvoiceAsync({ 
-            id: facturarInvoice.id, 
-            updates: { 
-              status: 'facturada', 
-              invoiceNumber, 
+          // Usar la fecha directamente como string YYYY-MM-DD para evitar conversión a UTC
+          // El backend almacenará la fecha exacta que el usuario seleccionó
+          await dispatch(updateInvoiceAsync({
+            id: facturarInvoice.id,
+            updates: {
+              status: 'facturada',
+              invoiceNumber,
               xmlData: xmlData ? xmlData.xml : undefined,
-              issueDate: dateObj.toISOString()
-            } 
+              issueDate: invoiceDate // Pasar fecha como string YYYY-MM-DD
+            }
           })).unwrap()
           
           // Marcar registros como facturados (usar función correcta según tipo de factura)

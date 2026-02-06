@@ -42,7 +42,7 @@ export function AgencyServiceFacturarModal({
   const { groupedCatalogs, fetchGroupedCatalogs } = useAgencyCatalogs();
   const [isProcessing, setIsProcessing] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [invoiceDate, setInvoiceDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [waitingTimePrice, setWaitingTimePrice] = useState(0);
   const [hourlyRate, setHourlyRate] = useState(0);
   const [generatedXml, setGeneratedXml] = useState<string>("");
@@ -90,7 +90,7 @@ export function AgencyServiceFacturarModal({
       setInvoiceNumber(suggestedNumber);
       
       const today = new Date();
-      setInvoiceDate(today.toISOString().split('T')[0]);
+      setInvoiceDate(today.toLocaleDateString('en-CA'));
       setGeneratedXml("");
       setXmlValidation(null);
     }

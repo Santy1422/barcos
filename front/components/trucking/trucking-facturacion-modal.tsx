@@ -29,7 +29,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
   const dispatch = useAppDispatch()
   const [isProcessing, setIsProcessing] = useState(false)
   const [newInvoiceNumber, setNewInvoiceNumber] = useState("")
-  const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [invoiceDate, setInvoiceDate] = useState(() => new Date().toLocaleDateString('en-CA'))
   const [generatedXml, setGeneratedXml] = useState<string>("")
   const [xmlValidation, setXmlValidation] = useState<{ isValid: boolean; errors: string[] } | null>(null)
   const [isSendingToSap, setIsSendingToSap] = useState(false)
@@ -70,7 +70,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
       const suggestedNumber = invoiceNum.replace(/^AUTH-/, `AUTH-FAC-${Date.now().toString().slice(-6)}-`)
       setNewInvoiceNumber(suggestedNumber)
     }
-    const today = new Date(); setInvoiceDate(today.toISOString().split('T')[0])
+    const today = new Date(); setInvoiceDate(today.toLocaleDateString('en-CA'))
   }, [invoice?.id, open, dispatch])
 
   // Cargar registros de autoridades cuando se abre el modal

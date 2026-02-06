@@ -28,7 +28,7 @@ export function AgencyFacturacionModal({ open, onOpenChange, invoice, onFacturar
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [newInvoiceNumber, setNewInvoiceNumber] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [invoiceDate, setInvoiceDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [actions, setActions] = useState({ sendToSAP: false });
   const [generatedXml, setGeneratedXml] = useState<string>("");
   const [isSendingToSap, setIsSendingToSap] = useState(false);
@@ -56,7 +56,7 @@ export function AgencyFacturacionModal({ open, onOpenChange, invoice, onFacturar
     }
     
     const today = new Date();
-    setInvoiceDate(today.toISOString().split('T')[0]);
+    setInvoiceDate(today.toLocaleDateString('en-CA'));
     setActions({ sendToSAP: false });
   }, [invoice?.id, open, fetchServices]);
 

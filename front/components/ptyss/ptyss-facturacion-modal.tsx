@@ -46,7 +46,7 @@ export function PTYSSFacturacionModal({
   const [newInvoiceNumber, setNewInvoiceNumber] = useState("")
   const [invoiceDate, setInvoiceDate] = useState(() => {
     const today = new Date()
-    return today.toISOString().split('T')[0] // Formato YYYY-MM-DD
+    return today.toLocaleDateString('en-CA') // Formato YYYY-MM-DD en zona horaria local
   })
   const [showRecordsModal, setShowRecordsModal] = useState(false)
   const [generatedXml, setGeneratedXml] = useState<string>("")
@@ -87,7 +87,7 @@ export function PTYSSFacturacionModal({
     setShowMissingTypesModal(false)
     setMissingTypes([])
     const today = new Date()
-    setInvoiceDate(today.toISOString().split('T')[0])
+    setInvoiceDate(today.toLocaleDateString('en-CA'))
 
     // Cargar container types para homologación SAP
     if (open) {

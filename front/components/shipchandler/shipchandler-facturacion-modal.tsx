@@ -44,7 +44,7 @@ export function ShipChandlerFacturacionModal({
   const [newInvoiceNumber, setNewInvoiceNumber] = useState("")
   const [invoiceDate, setInvoiceDate] = useState(() => {
     const today = new Date()
-    return today.toISOString().split('T')[0] // Formato YYYY-MM-DD
+    return today.toLocaleDateString('en-CA') // Formato YYYY-MM-DD en zona horaria local
   })
   const [generatedXml, setGeneratedXml] = useState<string>("")
   const [xmlValidation, setXmlValidation] = useState<{ isValid: boolean; errors: string[] } | null>(null)
@@ -351,27 +351,27 @@ export function ShipChandlerFacturacionModal({
               console.log('⚠️ No se pudo convertir la fecha, usando fecha actual')
               // Si no se puede convertir, usar fecha actual
               const today = new Date()
-              setInvoiceDate(today.toISOString().split('T')[0])
+              setInvoiceDate(today.toLocaleDateString('en-CA'))
             }
           } else {
             console.log('⚠️ No hay fecha en el registro (recordDate es:', recordDate, '), usando fecha actual')
             // Si no hay fecha, usar fecha actual
             const today = new Date()
-            setInvoiceDate(today.toISOString().split('T')[0])
+            setInvoiceDate(today.toLocaleDateString('en-CA'))
           }
         } else {
           console.log('⚠️ No se encontraron registros relacionados')
           // Si no hay registros, valores por defecto
           setNewInvoiceNumber("")
           const today = new Date()
-          setInvoiceDate(today.toISOString().split('T')[0])
+          setInvoiceDate(today.toLocaleDateString('en-CA'))
         }
       } else {
         console.log('⚠️ No hay registros cargados aún o no hay relatedRecordIds')
         // Si no hay registros cargados aún, valores por defecto
         setNewInvoiceNumber("")
         const today = new Date()
-        setInvoiceDate(today.toISOString().split('T')[0])
+        setInvoiceDate(today.toLocaleDateString('en-CA'))
       }
     }
     
