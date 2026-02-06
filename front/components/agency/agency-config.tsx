@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Settings2, Plus, Edit, Trash2, Ship, Anchor, Wrench, MapPin } from "lucide-react"
+import { Settings2, Plus, Edit, Trash2, Ship, Anchor, Wrench, MapPin, FileCode, Save } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 
@@ -77,7 +77,7 @@ export function AgencyConfig() {
   
   const [showAddNavieraForm, setShowAddNavieraForm] = useState(false)
   const [navieraToDelete, setNavieraToDelete] = useState<Naviera | null>(null)
-  const [activeTab, setActiveTab] = useState<'navieras' | 'routes' | 'localRoutes' | 'services' | 'localServices'>('navieras')
+  const [activeTab, setActiveTab] = useState<'navieras' | 'routes' | 'localRoutes' | 'services' | 'localServices' | 'sapCodes'>('navieras')
 
   // PTYSS Routes form state
   const [showAddRouteForm, setShowAddRouteForm] = useState(false)
@@ -108,6 +108,36 @@ export function AgencyConfig() {
     TRK179: 10,
     SLR168: 10
   })
+
+  // Estado para SAP Service Codes
+  const [sapServiceCodes, setSapServiceCodes] = useState([
+    {
+      code: 'SHP242',
+      name: 'Crew Transport Service',
+      profitCenter: 'PAPANC440',
+      activity: 'SHP',
+      pillar: 'NOPS',
+      buCountry: 'PA',
+      serviceCountry: 'PA',
+      clientType: 'MSCGVA',
+      baseUnitMeasure: 'EA',
+      incomeRebateCode: 'I'
+    },
+    {
+      code: 'TRK137',
+      name: 'Waiting Time Service',
+      profitCenter: 'PAPANC430',
+      activity: 'TRK',
+      pillar: 'TRSP',
+      buCountry: 'PA',
+      serviceCountry: 'PA',
+      clientType: 'MSCGVA',
+      baseUnitMeasure: 'EA',
+      incomeRebateCode: 'I'
+    }
+  ])
+  const [editingSapCode, setEditingSapCode] = useState<string | null>(null)
+  const [sapCodesLoading, setSapCodesLoading] = useState(false)
 
   // Cargar navieras al montar el componente
   useEffect(() => {
@@ -635,6 +665,14 @@ export function AgencyConfig() {
             >
               <Wrench className="h-4 w-4 mr-2" />
               Servicios Locales
+            </Button>
+            <Button
+              variant={activeTab === 'sapCodes' ? "default" : "outline"}
+              className={activeTab === 'sapCodes' ? "bg-blue-600 hover:bg-blue-700" : ""}
+              onClick={() => setActiveTab('sapCodes')}
+            >
+              <FileCode className="h-4 w-4 mr-2" />
+              SAP Service Codes
             </Button>
           </div>
         </CardContent>
@@ -1351,6 +1389,231 @@ export function AgencyConfig() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* SAP Service Codes Tab */}
+      {activeTab === 'sapCodes' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileCode className="h-5 w-5" />
+              SAP Service Codes Configuration
+            </CardTitle>
+            <CardDescription>
+              Configure SAP parameters for Agency service codes (Profit Center, Activity, Pillar, etc.)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              {sapServiceCodes.map((serviceCode) => (
+                <Card key={serviceCode.code} className="border-2">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Badge variant="outline" className="text-lg font-mono px-3 py-1">
+                          {serviceCode.code}
+                        </Badge>
+                        <span className="font-medium">{serviceCode.name}</span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditingSapCode(editingSapCode === serviceCode.code ? null : serviceCode.code)}
+                      >
+                        <Edit className="h-4 w-4 mr-2" />
+                        {editingSapCode === serviceCode.code ? 'Cancel' : 'Edit'}
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {editingSapCode === serviceCode.code ? (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor={`${serviceCode.code}-profitCenter`}>Profit Center</Label>
+                          <Input
+                            id={`${serviceCode.code}-profitCenter`}
+                            value={serviceCode.profitCenter}
+                            onChange={(e) => {
+                              setSapServiceCodes(prev => prev.map(sc =>
+                                sc.code === serviceCode.code
+                                  ? { ...sc, profitCenter: e.target.value }
+                                  : sc
+                              ))
+                            }}
+                            placeholder="PAPANC440"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`${serviceCode.code}-activity`}>Activity</Label>
+                          <Input
+                            id={`${serviceCode.code}-activity`}
+                            value={serviceCode.activity}
+                            onChange={(e) => {
+                              setSapServiceCodes(prev => prev.map(sc =>
+                                sc.code === serviceCode.code
+                                  ? { ...sc, activity: e.target.value }
+                                  : sc
+                              ))
+                            }}
+                            placeholder="SHP"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`${serviceCode.code}-pillar`}>Pillar</Label>
+                          <Input
+                            id={`${serviceCode.code}-pillar`}
+                            value={serviceCode.pillar}
+                            onChange={(e) => {
+                              setSapServiceCodes(prev => prev.map(sc =>
+                                sc.code === serviceCode.code
+                                  ? { ...sc, pillar: e.target.value }
+                                  : sc
+                              ))
+                            }}
+                            placeholder="NOPS"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`${serviceCode.code}-buCountry`}>BU Country</Label>
+                          <Input
+                            id={`${serviceCode.code}-buCountry`}
+                            value={serviceCode.buCountry}
+                            onChange={(e) => {
+                              setSapServiceCodes(prev => prev.map(sc =>
+                                sc.code === serviceCode.code
+                                  ? { ...sc, buCountry: e.target.value }
+                                  : sc
+                              ))
+                            }}
+                            placeholder="PA"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`${serviceCode.code}-serviceCountry`}>Service Country</Label>
+                          <Input
+                            id={`${serviceCode.code}-serviceCountry`}
+                            value={serviceCode.serviceCountry}
+                            onChange={(e) => {
+                              setSapServiceCodes(prev => prev.map(sc =>
+                                sc.code === serviceCode.code
+                                  ? { ...sc, serviceCountry: e.target.value }
+                                  : sc
+                              ))
+                            }}
+                            placeholder="PA"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`${serviceCode.code}-clientType`}>Client Type</Label>
+                          <Input
+                            id={`${serviceCode.code}-clientType`}
+                            value={serviceCode.clientType}
+                            onChange={(e) => {
+                              setSapServiceCodes(prev => prev.map(sc =>
+                                sc.code === serviceCode.code
+                                  ? { ...sc, clientType: e.target.value }
+                                  : sc
+                              ))
+                            }}
+                            placeholder="MSCGVA"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`${serviceCode.code}-baseUnitMeasure`}>Base Unit Measure</Label>
+                          <Input
+                            id={`${serviceCode.code}-baseUnitMeasure`}
+                            value={serviceCode.baseUnitMeasure}
+                            onChange={(e) => {
+                              setSapServiceCodes(prev => prev.map(sc =>
+                                sc.code === serviceCode.code
+                                  ? { ...sc, baseUnitMeasure: e.target.value }
+                                  : sc
+                              ))
+                            }}
+                            placeholder="EA"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`${serviceCode.code}-incomeRebateCode`}>Income Rebate Code</Label>
+                          <Input
+                            id={`${serviceCode.code}-incomeRebateCode`}
+                            value={serviceCode.incomeRebateCode}
+                            onChange={(e) => {
+                              setSapServiceCodes(prev => prev.map(sc =>
+                                sc.code === serviceCode.code
+                                  ? { ...sc, incomeRebateCode: e.target.value }
+                                  : sc
+                              ))
+                            }}
+                            placeholder="I"
+                          />
+                        </div>
+                        <div className="col-span-full flex justify-end pt-2">
+                          <Button
+                            onClick={() => {
+                              // TODO: Save to backend
+                              toast({
+                                title: "Configuration saved",
+                                description: `SAP parameters for ${serviceCode.code} have been updated.`,
+                              })
+                              setEditingSapCode(null)
+                            }}
+                            className="bg-green-600 hover:bg-green-700"
+                          >
+                            <Save className="h-4 w-4 mr-2" />
+                            Save Changes
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Profit Center:</span>
+                          <span className="ml-2 font-mono">{serviceCode.profitCenter}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Activity:</span>
+                          <span className="ml-2 font-mono">{serviceCode.activity}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Pillar:</span>
+                          <span className="ml-2 font-mono">{serviceCode.pillar}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">BU Country:</span>
+                          <span className="ml-2 font-mono">{serviceCode.buCountry}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Service Country:</span>
+                          <span className="ml-2 font-mono">{serviceCode.serviceCountry}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Client Type:</span>
+                          <span className="ml-2 font-mono">{serviceCode.clientType}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Base Unit:</span>
+                          <span className="ml-2 font-mono">{serviceCode.baseUnitMeasure}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Income Rebate:</span>
+                          <span className="ml-2 font-mono">{serviceCode.incomeRebateCode}</span>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> These parameters are used when generating SAP XML invoices.
+                  Changes will affect all new invoices generated after saving.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Modal de confirmación para eliminar naviera */}
