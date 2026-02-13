@@ -18,7 +18,7 @@ const excelRecordSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["pendiente", "completado", "prefacturado", "facturado", "anulado", "cancelado"],
+    enum: ["pendiente", "en_progreso", "completado", "prefacturado", "facturado", "anulado", "cancelado"],
     default: "pendiente"
   },
   totalValue: {

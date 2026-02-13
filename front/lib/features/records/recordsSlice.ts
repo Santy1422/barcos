@@ -11,7 +11,7 @@ export interface ExcelRecord {
   excelId: string // ID of the Excel file this record came from
   module: "trucking" | "ptyss"
   type: string // Type of data (e.g., "transport-services", "supply-order")
-  status: "pendiente" | "completado" | "prefacturado" | "facturado" | "anulado" // Status of this individual record
+  status: "pendiente" | "en_progreso" | "completado" | "prefacturado" | "facturado" | "anulado" // Status of this individual record
   totalValue: number // The calculated total value for this specific record/line item
   data: any // The raw data object for this record (e.g., TruckingRecordData)
   sapCode?: string // Campo específico para consultas

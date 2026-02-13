@@ -200,7 +200,7 @@ export function PTYSSUpload() {
   const ptyssRecords = useAppSelector((state) => selectRecordsByModule(state, "ptyss"))
 
   // Estado para filtro de estado de registros locales
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pendiente' | 'completado' | 'cancelado'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pendiente' | 'en_progreso' | 'completado' | 'cancelado'>('all')
   
   // Estado para filtro por cliente
   const [clientFilter, setClientFilter] = useState<string>('all')
@@ -342,8 +342,8 @@ export function PTYSSUpload() {
       const data = record.data as Record<string, any>
       // Filtrar solo registros locales (tienen recordType = "local")
       // Mostrar pendientes, completados y cancelados (excluir solo los que ya tienen factura)
-      return data.recordType === "local" && 
-             (record.status === "pendiente" || record.status === "completado" || record.status === "cancelado") && 
+      return data.recordType === "local" &&
+             (record.status === "pendiente" || record.status === "en_progreso" || record.status === "completado" || record.status === "cancelado") &&
              !record.invoiceId
     })
     
@@ -1951,7 +1951,7 @@ export function PTYSSUpload() {
                 {/* Filtro de Estado */}
                 <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border">
                   <Label htmlFor="status-filter" className="text-sm font-medium whitespace-nowrap">Filtrar por estado:</Label>
-                  <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as 'all' | 'pendiente' | 'completado' | 'cancelado')}>
+                  <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as 'all' | 'pendiente' | 'en_progreso' | 'completado' | 'cancelado')}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Seleccionar estado" />
                     </SelectTrigger>
@@ -1966,6 +1966,12 @@ export function PTYSSUpload() {
                         Pendientes ({ptyssRecords.filter((r: ExcelRecord) => {
                           const data = r.data as Record<string, any>
                           return data.recordType === "local" && r.status === "pendiente" && !r.invoiceId
+                        }).length})
+                      </SelectItem>
+                      <SelectItem value="en_progreso">
+                        En Progreso ({ptyssRecords.filter((r: ExcelRecord) => {
+                          const data = r.data as Record<string, any>
+                          return data.recordType === "local" && r.status === "en_progreso" && !r.invoiceId
                         }).length})
                       </SelectItem>
                       <SelectItem value="completado">
