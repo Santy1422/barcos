@@ -1,6 +1,6 @@
 "use client"
 
-import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit"
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit"
 import type { RootState } from "@/lib/store"
 
 // Asegurar que la URL base tenga /api al final
@@ -11,20 +11,25 @@ const API_URL = BASE_URL.endsWith('/api') ? BASE_URL : `${BASE_URL}/api`
 interface ModuleData {
   totalRecords: number
   totalRevenue: number
+  totalInvoices: number
   recentRecords: any[]
   byStatus: { [key: string]: number }
+  topClients?: any[]
 }
 
 interface MetricsSummary {
   totalRevenue: number
   totalTransactions: number
   activeClients: number
+  totalClients: number
   invoicesCreated: number
   pendingInvoices: number
+  completedInvoices: number
+  totalRecords: number
 }
 
 interface RevenueData {
-  timeline: { date: string; amount: number }[]
+  timeline: { date: string; amount: number; count?: number }[]
   byModule: {
     trucking: number
     agency: number
@@ -32,13 +37,38 @@ interface RevenueData {
     shipchandler: number
   }
   total: number
+  monthlyBreakdown?: { year: number; month: number; amount: number; count: number }[]
 }
 
 interface OperationalMetrics {
   overallCompletionRate: number
   truckingEfficiency: number
+  ptyssEfficiency: number
+  shipchandlerEfficiency: number
   agencyEfficiency: number
   averageProcessingTime: number
+  moduleStats: any
+  totals: any
+}
+
+interface ClientsData {
+  total: number
+  totalActive: number
+  inactive: number
+  newThisMonth: number
+  byType: { [key: string]: number }
+  topByRevenue: any[]
+  clientsByMonth: any[]
+}
+
+interface InvoicesData {
+  total: number
+  totalAmount: number
+  pending: number
+  completed: number
+  byModule: { [key: string]: { count: number; amount: number } }
+  byStatus: { [key: string]: number }
+  invoicesByDay: { date: string; count: number; amount: number }[]
 }
 
 interface AnalyticsState {
@@ -47,8 +77,8 @@ interface AnalyticsState {
   agency: ModuleData | null
   ptyss: ModuleData | null
   shipchandler: ModuleData | null
-  clients: any | null
-  invoices: any | null
+  clients: ClientsData | null
+  invoices: InvoicesData | null
   metrics: MetricsSummary | null
   revenue: RevenueData | null
   operational: OperationalMetrics | null
@@ -83,9 +113,15 @@ const getAuthHeader = () => {
 // Async Thunks
 export const fetchMetrics = createAsyncThunk(
   "analytics/fetchMetrics",
-  async (_, { rejectWithValue }) => {
+  async (params: { month?: string; year?: string } = {}, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_URL}/analytics/metrics`, {
+      let url = `${API_URL}/analytics/metrics`
+      const queryParams = new URLSearchParams()
+      if (params.month) queryParams.append("month", params.month)
+      if (params.year) queryParams.append("year", params.year)
+      if (queryParams.toString()) url += `?${queryParams}`
+
+      const response = await fetch(url, {
         headers: {
           "Content-Type": "application/json",
           ...getAuthHeader(),
@@ -104,11 +140,13 @@ export const fetchMetrics = createAsyncThunk(
 
 export const fetchRevenue = createAsyncThunk(
   "analytics/fetchRevenue",
-  async (params: { startDate?: string; endDate?: string } = {}, { rejectWithValue }) => {
+  async (params: { startDate?: string; endDate?: string; month?: string; year?: string } = {}, { rejectWithValue }) => {
     try {
       const queryParams = new URLSearchParams()
       if (params.startDate) queryParams.append("startDate", params.startDate)
       if (params.endDate) queryParams.append("endDate", params.endDate)
+      if (params.month) queryParams.append("month", params.month)
+      if (params.year) queryParams.append("year", params.year)
 
       const url = `${API_URL}/analytics/revenue${queryParams.toString() ? `?${queryParams}` : ""}`
       const response = await fetch(url, {
@@ -217,7 +255,7 @@ export const fetchAllAnalytics = createAsyncThunk(
   "analytics/fetchAll",
   async (_, { dispatch }) => {
     await Promise.all([
-      dispatch(fetchMetrics()),
+      dispatch(fetchMetrics({})),
       dispatch(fetchRevenue({})),
       dispatch(fetchOperational()),
       dispatch(fetchModuleAnalytics("trucking")),
