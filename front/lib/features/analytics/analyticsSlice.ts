@@ -3,7 +3,9 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit"
 import type { RootState } from "@/lib/store"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"
+// Asegurar que la URL base tenga /api al final
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+const API_URL = BASE_URL.endsWith('/api') ? BASE_URL : `${BASE_URL}/api`
 
 // Types
 interface ModuleData {
