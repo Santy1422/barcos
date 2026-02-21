@@ -1,11 +1,6 @@
 import { Router } from 'express';
-import { 
-  biAuthMiddleware,
-  biRateLimiter,
-  biCacheMiddleware,
-  validateAnalyticsParams
-} from '../middleware/biAuthMiddleware';
-import { 
+import { jwtUtils } from '../middlewares/jwtUtils';
+import {
   getTruckingAnalytics,
   getAgencyAnalytics,
   getPTYSSAnalytics,
@@ -14,78 +9,31 @@ import {
   getClientAnalytics,
   getInvoiceAnalytics,
   getRevenueAnalytics,
-  getOperationalMetrics
+  getOperationalMetrics,
+  exportAnalyticsToExcel
 } from '../controllers/analyticsControllers/analyticsControllers';
 
 const router = Router();
 
-// Aplicar rate limiting a todas las rutas
-router.use(biRateLimiter);
+// Usar el mismo middleware JWT que el resto de la aplicación
+// Todos los endpoints requieren autenticación
 
-// Endpoints principales de datos (con caché de 5 minutos)
-router.get('/trucking', 
-  biAuthMiddleware, 
-  validateAnalyticsParams,
-  biCacheMiddleware(300),
-  getTruckingAnalytics
-);
+// Endpoints principales de datos
+router.get('/trucking', jwtUtils, getTruckingAnalytics);
+router.get('/agency', jwtUtils, getAgencyAnalytics);
+router.get('/ptyss', jwtUtils, getPTYSSAnalytics);
+router.get('/shipchandler', jwtUtils, getShipChandlerAnalytics);
 
-router.get('/agency', 
-  biAuthMiddleware, 
-  validateAnalyticsParams,
-  biCacheMiddleware(300),
-  getAgencyAnalytics
-);
+// Endpoints de análisis específicos
+router.get('/clients', jwtUtils, getClientAnalytics);
+router.get('/invoices', jwtUtils, getInvoiceAnalytics);
 
-router.get('/ptyss', 
-  biAuthMiddleware, 
-  validateAnalyticsParams,
-  biCacheMiddleware(300),
-  getPTYSSAnalytics
-);
+// Métricas agregadas y KPIs
+router.get('/metrics', jwtUtils, getMetricsSummary);
+router.get('/revenue', jwtUtils, getRevenueAnalytics);
+router.get('/operational', jwtUtils, getOperationalMetrics);
 
-router.get('/shipchandler', 
-  biAuthMiddleware, 
-  validateAnalyticsParams,
-  biCacheMiddleware(300),
-  getShipChandlerAnalytics
-);
-
-// Endpoints de análisis específicos (con caché de 10 minutos)
-router.get('/clients', 
-  biAuthMiddleware, 
-  validateAnalyticsParams,
-  biCacheMiddleware(600),
-  getClientAnalytics
-);
-
-router.get('/invoices', 
-  biAuthMiddleware, 
-  validateAnalyticsParams,
-  biCacheMiddleware(300),
-  getInvoiceAnalytics
-);
-
-// Métricas agregadas y KPIs (con caché de 3 minutos)
-router.get('/metrics', 
-  biAuthMiddleware, 
-  validateAnalyticsParams,
-  biCacheMiddleware(180),
-  getMetricsSummary
-);
-
-router.get('/revenue', 
-  biAuthMiddleware, 
-  validateAnalyticsParams,
-  biCacheMiddleware(180),
-  getRevenueAnalytics
-);
-
-router.get('/operational', 
-  biAuthMiddleware, 
-  validateAnalyticsParams,
-  biCacheMiddleware(180),
-  getOperationalMetrics
-);
+// Export a Excel
+router.get('/export', jwtUtils, exportAnalyticsToExcel);
 
 export default router;
