@@ -30,14 +30,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   RefreshCw,
   TrendingUp,
-  TrendingDown,
   Users,
   FileText,
   DollarSign,
@@ -53,10 +49,6 @@ import {
   PieChart,
   Database,
   Download,
-  Calendar,
-  Filter,
-  ArrowUpRight,
-  ArrowDownRight,
   Loader2,
 } from "lucide-react"
 import {
@@ -104,9 +96,6 @@ export function AnalyticsDashboard() {
 
   const [refreshing, setRefreshing] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [selectedMonth, setSelectedMonth] = useState<string>("")
-  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString())
-  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: "", end: "" })
 
   useEffect(() => {
     dispatch(fetchAllAnalytics())
@@ -123,12 +112,7 @@ export function AnalyticsDashboard() {
     try {
       const token = localStorage.getItem("token")
       const baseUrl = API_URL.endsWith('/api') ? API_URL : `${API_URL}/api`
-
-      let url = `${baseUrl}/analytics/export?`
-      if (selectedMonth) url += `month=${selectedMonth}&`
-      if (selectedYear) url += `year=${selectedYear}&`
-      if (dateRange.start) url += `startDate=${dateRange.start}&`
-      if (dateRange.end) url += `endDate=${dateRange.end}&`
+      const url = `${baseUrl}/analytics/export`
 
       const response = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` }
@@ -144,6 +128,8 @@ export function AnalyticsDashboard() {
         a.click()
         a.remove()
         window.URL.revokeObjectURL(downloadUrl)
+      } else {
+        console.error("Export failed:", response.status)
       }
     } catch (err) {
       console.error("Export error:", err)
@@ -184,7 +170,7 @@ export function AnalyticsDashboard() {
 
   const invoicesByDayData = invoicesData?.invoicesByDay || []
 
-  // KPI Cards con tendencias
+  // KPI Cards
   const kpiCards = [
     {
       title: "Ingresos Totales",
@@ -192,17 +178,15 @@ export function AnalyticsDashboard() {
       icon: DollarSign,
       color: "text-green-600",
       bgColor: "bg-green-50",
-      trend: 12.5,
-      trendUp: true,
+      subtitle: "Total facturado",
     },
     {
       title: "Transacciones",
       value: formatNumber(metrics?.totalTransactions),
-      icon: TrendingUp,
+      icon: FileText,
       color: "text-blue-600",
       bgColor: "bg-blue-50",
-      trend: 8.2,
-      trendUp: true,
+      subtitle: "Facturas totales",
     },
     {
       title: "Clientes Activos",
@@ -210,17 +194,15 @@ export function AnalyticsDashboard() {
       icon: Users,
       color: "text-purple-600",
       bgColor: "bg-purple-50",
-      trend: 5.1,
-      trendUp: true,
+      subtitle: `de ${formatNumber(metrics?.totalClients || clientsData?.total)} totales`,
     },
     {
-      title: "Facturas Creadas",
-      value: formatNumber(metrics?.invoicesCreated || invoicesData?.total),
-      icon: FileText,
+      title: "Registros",
+      value: formatNumber(metrics?.totalRecords),
+      icon: Database,
       color: "text-orange-600",
       bgColor: "bg-orange-50",
-      trend: 3.4,
-      trendUp: false,
+      subtitle: "En todos los módulos",
     },
   ]
 
@@ -239,8 +221,6 @@ export function AnalyticsDashboard() {
     { value: "12", label: "Diciembre" },
   ]
 
-  const years = Array.from({ length: 5 }, (_, i) => (new Date().getFullYear() - i).toString())
-
   return (
     <div className="space-y-6">
       {/* Header con filtros */}
@@ -253,36 +233,6 @@ export function AnalyticsDashboard() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Filtros de fecha */}
-          <div className="flex items-center gap-2">
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger className="w-[130px]">
-                <SelectValue placeholder="Mes" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                {months.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={selectedYear} onValueChange={setSelectedYear}>
-              <SelectTrigger className="w-[100px]">
-                <SelectValue placeholder="Año" />
-              </SelectTrigger>
-              <SelectContent>
-                {years.map((y) => (
-                  <SelectItem key={y} value={y}>
-                    {y}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
           <Button
             onClick={handleExport}
             disabled={exporting}
@@ -319,7 +269,7 @@ export function AnalyticsDashboard() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {kpiCards.map((kpi, index) => (
-          <Card key={index} className="hover:shadow-lg transition-all duration-200 border-l-4" style={{ borderLeftColor: kpi.color.replace('text-', '#').replace('-600', '') }}>
+          <Card key={index} className="hover:shadow-lg transition-all duration-200">
             <CardContent className="pt-6">
               <div className="flex items-start justify-between">
                 <div className="space-y-2">
@@ -329,14 +279,7 @@ export function AnalyticsDashboard() {
                   ) : (
                     <p className="text-2xl font-bold">{kpi.value}</p>
                   )}
-                  <div className={`flex items-center text-xs ${kpi.trendUp ? 'text-green-600' : 'text-red-600'}`}>
-                    {kpi.trendUp ? (
-                      <ArrowUpRight className="h-3 w-3 mr-1" />
-                    ) : (
-                      <ArrowDownRight className="h-3 w-3 mr-1" />
-                    )}
-                    <span>{kpi.trend}% vs mes anterior</span>
-                  </div>
+                  <p className="text-xs text-muted-foreground">{kpi.subtitle}</p>
                 </div>
                 <div className={`p-3 rounded-xl ${kpi.bgColor}`}>
                   <kpi.icon className={`h-6 w-6 ${kpi.color}`} />
