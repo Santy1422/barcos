@@ -16,6 +16,10 @@ import {
   selectClientsAnalytics,
   selectInvoicesAnalytics,
   selectAdvancedAnalytics,
+  selectForecastingAnalytics,
+  selectModuleComparisonAnalytics,
+  selectAlertsAnalytics,
+  selectEfficiencyRankings,
   selectLastFetched,
 } from "@/lib/features/analytics/analyticsSlice"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -60,6 +64,16 @@ import {
   CreditCard,
   Award,
   TrendingUp as TrendUp,
+  AlertTriangle,
+  Bell,
+  Brain,
+  Flame,
+  Medal,
+  Trophy,
+  Crown,
+  Star,
+  Shield,
+  Info,
 } from "lucide-react"
 import {
   LineChart,
@@ -111,6 +125,10 @@ export function AnalyticsDashboard() {
   const clientsData = useAppSelector(selectClientsAnalytics)
   const invoicesData = useAppSelector(selectInvoicesAnalytics)
   const advanced = useAppSelector(selectAdvancedAnalytics)
+  const forecasting = useAppSelector(selectForecastingAnalytics)
+  const moduleComparison = useAppSelector(selectModuleComparisonAnalytics)
+  const alertsData = useAppSelector(selectAlertsAnalytics)
+  const efficiencyRankings = useAppSelector(selectEfficiencyRankings)
   const lastFetched = useAppSelector(selectLastFetched)
 
   const [refreshing, setRefreshing] = useState(false)
@@ -369,6 +387,77 @@ export function AnalyticsDashboard() {
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
+      )}
+
+      {/* Alertas y Anomalías - Prominente en la parte superior */}
+      {alertsData && alertsData.alerts && alertsData.alerts.length > 0 && (
+        <Card className="border-l-4 border-l-yellow-500 bg-gradient-to-r from-yellow-50 to-orange-50">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Bell className="h-5 w-5 text-yellow-600 animate-pulse" />
+                Alertas del Sistema
+                <Badge variant="outline" className="ml-2">
+                  {alertsData.summary?.total || 0} alertas
+                </Badge>
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Badge className={alertsData.summary?.healthScore >= 80 ? "bg-green-500" : alertsData.summary?.healthScore >= 50 ? "bg-yellow-500" : "bg-red-500"}>
+                  <Shield className="h-3 w-3 mr-1" />
+                  Salud: {alertsData.summary?.healthScore || 0}%
+                </Badge>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {alertsData.alerts.slice(0, 6).map((alert: any, index: number) => (
+                <div
+                  key={index}
+                  className={`p-3 rounded-lg border ${
+                    alert.type === 'warning' ? 'bg-yellow-50 border-yellow-200' :
+                    alert.type === 'success' ? 'bg-green-50 border-green-200' :
+                    'bg-blue-50 border-blue-200'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    {alert.type === 'warning' ? (
+                      <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                    ) : alert.type === 'success' ? (
+                      <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <Info className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{alert.title}</p>
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{alert.message}</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <Badge variant="outline" className="text-xs">
+                          {alert.category}
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${
+                            alert.severity === 'high' ? 'border-red-300 text-red-600' :
+                            alert.severity === 'medium' ? 'border-yellow-300 text-yellow-600' :
+                            'border-gray-300 text-gray-600'
+                          }`}
+                        >
+                          {alert.severity}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {alertsData.alerts.length > 6 && (
+              <p className="text-sm text-muted-foreground mt-3 text-center">
+                +{alertsData.alerts.length - 6} alertas más
+              </p>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* KPI Cards - 8 tarjetas */}
@@ -1294,6 +1383,513 @@ export function AnalyticsDashboard() {
               </CardContent>
             </Card>
           )}
+        </div>
+      )}
+
+      {/* Predicciones y Forecasting */}
+      {forecasting && (
+        <div className="space-y-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Brain className="h-6 w-6 text-purple-500" />
+            Predicciones y Forecasting
+          </h2>
+
+          {/* Métricas de predicción */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+              <CardContent className="pt-6 text-center">
+                <Target className="h-8 w-8 mx-auto mb-2 text-purple-600" />
+                <p className="text-2xl font-bold text-purple-700">{formatCurrency(forecasting.nextMonthPrediction)}</p>
+                <p className="text-xs text-muted-foreground">Predicción Próximo Mes</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
+              <CardContent className="pt-6 text-center">
+                <Calendar className="h-8 w-8 mx-auto mb-2 text-indigo-600" />
+                <p className="text-2xl font-bold text-indigo-700">{formatCurrency(forecasting.nextQuarterPrediction)}</p>
+                <p className="text-xs text-muted-foreground">Predicción Próximo Trimestre</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+              <CardContent className="pt-6 text-center">
+                <TrendingUp className="h-8 w-8 mx-auto mb-2 text-green-600" />
+                <p className="text-2xl font-bold text-green-700">{forecasting.averageGrowth?.toFixed(1) || 0}%</p>
+                <p className="text-xs text-muted-foreground">Crecimiento Promedio Mensual</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+              <CardContent className="pt-6 text-center">
+                <Shield className="h-8 w-8 mx-auto mb-2 text-blue-600" />
+                <p className="text-2xl font-bold text-blue-700">{((forecasting.confidence || 0) * 100).toFixed(0)}%</p>
+                <p className="text-xs text-muted-foreground">Confianza del Modelo</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Gráfico de tendencia y predicción */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <BarChart3 className="h-5 w-5 text-purple-600" />
+                Tendencia Histórica y Proyección
+              </CardTitle>
+              <CardDescription>
+                Datos históricos con línea de tendencia y predicción a 3 meses
+                {forecasting.trend && (
+                  <Badge className="ml-2" variant={forecasting.trend.direction === 'upward' ? 'default' : forecasting.trend.direction === 'downward' ? 'destructive' : 'secondary'}>
+                    {forecasting.trend.direction === 'upward' ? '↑ Tendencia alcista' : forecasting.trend.direction === 'downward' ? '↓ Tendencia bajista' : '→ Estable'}
+                  </Badge>
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={350}>
+                <ComposedChart
+                  data={[
+                    ...(forecasting.historical || []).map((h: any) => ({
+                      name: `${months.find(m => m.value === h.month?.toString())?.label?.slice(0, 3) || h.month} ${h.year?.toString().slice(2)}`,
+                      revenue: h.revenue,
+                      trendLine: h.trendLine,
+                      type: 'historical'
+                    })),
+                    ...(forecasting.forecast || []).map((f: any) => ({
+                      name: `${months.find(m => m.value === f.month?.toString())?.label?.slice(0, 3) || f.month} ${f.year?.toString().slice(2)}`,
+                      predicted: f.predictedRevenue,
+                      type: 'forecast'
+                    }))
+                  ]}
+                >
+                  <defs>
+                    <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(val) => formatCompact(val)} />
+                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Legend />
+                  <Bar dataKey="revenue" name="Revenue Real" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="predicted" name="Predicción" fill="#8b5cf6" radius={[4, 4, 0, 0]} opacity={0.7} />
+                  <Line type="monotone" dataKey="trendLine" name="Línea de Tendencia" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Estacionalidad */}
+          {forecasting.seasonality && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-green-100 rounded-full">
+                      <ArrowUpRight className="h-6 w-6 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Mejor Mes (Histórico)</p>
+                      <p className="text-xl font-bold text-green-700">
+                        {months.find(m => m.value === forecasting.seasonality.bestMonth?.month?.toString())?.label || 'N/A'}
+                      </p>
+                      <p className="text-sm text-green-600">{formatCurrency(forecasting.seasonality.bestMonth?.y)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="bg-gradient-to-br from-orange-50 to-red-50 border-orange-200">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-orange-100 rounded-full">
+                      <ArrowDownRight className="h-6 w-6 text-orange-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Mes Más Bajo (Histórico)</p>
+                      <p className="text-xl font-bold text-orange-700">
+                        {months.find(m => m.value === forecasting.seasonality.worstMonth?.month?.toString())?.label || 'N/A'}
+                      </p>
+                      <p className="text-sm text-orange-600">{formatCurrency(forecasting.seasonality.worstMonth?.y)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Comparativa Detallada de Módulos */}
+      {moduleComparison && moduleComparison.modules && (
+        <div className="space-y-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Package className="h-6 w-6 text-blue-500" />
+            Comparativa Detallada de Módulos
+          </h2>
+
+          {/* Rankings rápidos */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card className="bg-gradient-to-br from-yellow-50 to-amber-50 border-yellow-200">
+              <CardContent className="pt-4 text-center">
+                <Trophy className="h-6 w-6 mx-auto mb-2 text-yellow-600" />
+                <p className="text-xs text-muted-foreground">Mayor Revenue</p>
+                <p className="font-bold text-yellow-700 uppercase">{moduleComparison.rankings?.byRevenue?.[0]?.module || 'N/A'}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200">
+              <CardContent className="pt-4 text-center">
+                <Medal className="h-6 w-6 mx-auto mb-2 text-blue-600" />
+                <p className="text-xs text-muted-foreground">Mayor Volumen</p>
+                <p className="font-bold text-blue-700 uppercase">{moduleComparison.rankings?.byVolume?.[0]?.module || 'N/A'}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
+              <CardContent className="pt-4 text-center">
+                <Flame className="h-6 w-6 mx-auto mb-2 text-green-600" />
+                <p className="text-xs text-muted-foreground">Mayor Crecimiento</p>
+                <p className="font-bold text-green-700 uppercase">{moduleComparison.rankings?.byGrowth?.[0]?.module || 'N/A'}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-purple-50 to-violet-50 border-purple-200">
+              <CardContent className="pt-4 text-center">
+                <Crown className="h-6 w-6 mx-auto mb-2 text-purple-600" />
+                <p className="text-xs text-muted-foreground">Mayor Ticket Promedio</p>
+                <p className="font-bold text-purple-700 uppercase">{moduleComparison.rankings?.byAvgTicket?.[0]?.module || 'N/A'}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Tabla comparativa detallada */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <BarChart3 className="h-5 w-5 text-blue-600" />
+                Métricas Detalladas por Módulo (Este Mes)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Módulo</TableHead>
+                      <TableHead className="text-right">Revenue</TableHead>
+                      <TableHead className="text-right">Facturas</TableHead>
+                      <TableHead className="text-right">Ticket Prom.</TableHead>
+                      <TableHead className="text-right">Completación</TableHead>
+                      <TableHead className="text-right">Clientes</TableHead>
+                      <TableHead className="text-right">Crecimiento</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {moduleComparison.modules.map((mod: any, index: number) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: MODULE_COLORS[mod.module] || '#666' }} />
+                            <span className="uppercase">{mod.module}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-bold text-green-600">
+                          {formatCurrency(mod.thisMonth?.revenue)}
+                        </TableCell>
+                        <TableCell className="text-right">{formatNumber(mod.thisMonth?.count)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(mod.thisMonth?.avgTicket)}</TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant={mod.thisMonth?.completionRate >= 80 ? "default" : mod.thisMonth?.completionRate >= 50 ? "secondary" : "destructive"}>
+                            {mod.thisMonth?.completionRate?.toFixed(0) || 0}%
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">{formatNumber(mod.uniqueClients)}</TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant={mod.growth >= 0 ? "default" : "destructive"} className="gap-1">
+                            {mod.growth >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                            {Math.abs(mod.growth || 0).toFixed(1)}%
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Gráfico comparativo de módulos */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Revenue por Módulo (Este vs Anterior)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart
+                    data={moduleComparison.modules.map((mod: any) => ({
+                      name: mod.module?.toUpperCase(),
+                      'Este Mes': mod.thisMonth?.revenue || 0,
+                      'Mes Anterior': mod.lastMonth?.revenue || 0,
+                    }))}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={(val) => formatCompact(val)} />
+                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                    <Legend />
+                    <Bar dataKey="Este Mes" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Mes Anterior" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Crecimiento por Módulo</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart
+                    data={moduleComparison.modules.map((mod: any) => ({
+                      name: mod.module?.toUpperCase(),
+                      growth: mod.growth || 0,
+                      fill: mod.growth >= 0 ? '#22c55e' : '#ef4444'
+                    }))}
+                    layout="vertical"
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(val) => `${val}%`} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={100} />
+                    <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
+                    <Bar dataKey="growth" radius={[0, 4, 4, 0]}>
+                      {moduleComparison.modules.map((mod: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={mod.growth >= 0 ? '#22c55e' : '#ef4444'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* Rankings de Eficiencia */}
+      {efficiencyRankings && (
+        <div className="space-y-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Trophy className="h-6 w-6 text-yellow-500" />
+            Rankings de Eficiencia
+          </h2>
+
+          {/* Resumen de Rankings */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <Card className="bg-gradient-to-br from-yellow-50 to-amber-50 border-yellow-200">
+              <CardContent className="pt-4 text-center">
+                <Crown className="h-6 w-6 mx-auto mb-2 text-yellow-600" />
+                <p className="text-xs text-muted-foreground">Top Cliente</p>
+                <p className="font-bold text-yellow-700 truncate">{efficiencyRankings.summary?.topClient || 'N/A'}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200">
+              <CardContent className="pt-4 text-center">
+                <Star className="h-6 w-6 mx-auto mb-2 text-blue-600" />
+                <p className="text-xs text-muted-foreground">Top Módulo</p>
+                <p className="font-bold text-blue-700 uppercase">{efficiencyRankings.summary?.topModule || 'N/A'}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
+              <CardContent className="pt-4 text-center">
+                <Calendar className="h-6 w-6 mx-auto mb-2 text-green-600" />
+                <p className="text-xs text-muted-foreground">Mejor Día</p>
+                <p className="font-bold text-green-700">{efficiencyRankings.summary?.bestDay || 'N/A'}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-purple-50 to-violet-50 border-purple-200">
+              <CardContent className="pt-4 text-center">
+                <Clock className="h-6 w-6 mx-auto mb-2 text-purple-600" />
+                <p className="text-xs text-muted-foreground">Mejor Hora</p>
+                <p className="font-bold text-purple-700">{efficiencyRankings.summary?.bestHour || 'N/A'}</p>
+              </CardContent>
+            </Card>
+            <Card className={`bg-gradient-to-br ${efficiencyRankings.summary?.clientsAtRisk > 0 ? 'from-red-50 to-orange-50 border-red-200' : 'from-green-50 to-emerald-50 border-green-200'}`}>
+              <CardContent className="pt-4 text-center">
+                <AlertTriangle className={`h-6 w-6 mx-auto mb-2 ${efficiencyRankings.summary?.clientsAtRisk > 0 ? 'text-red-600' : 'text-green-600'}`} />
+                <p className="text-xs text-muted-foreground">Clientes en Riesgo</p>
+                <p className={`font-bold ${efficiencyRankings.summary?.clientsAtRisk > 0 ? 'text-red-700' : 'text-green-700'}`}>{efficiencyRankings.summary?.clientsAtRisk || 0}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Top Clientes Rentables */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Award className="h-5 w-5 text-yellow-500" />
+                  Top 10 Clientes Más Rentables
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[350px]">
+                  <div className="space-y-2">
+                    {(efficiencyRankings.clients || []).slice(0, 10).map((client: any, index: number) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <Badge
+                            className={`w-6 h-6 rounded-full p-0 justify-center ${
+                              index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-amber-600' : ''
+                            }`}
+                            variant={index < 3 ? 'default' : 'outline'}
+                          >
+                            {index + 1}
+                          </Badge>
+                          <div>
+                            <p className="font-medium text-sm truncate max-w-[150px]">{client.name}</p>
+                            <div className="flex gap-1 mt-1">
+                              {client.modules?.slice(0, 2).map((mod: string, i: number) => (
+                                <Badge key={i} variant="outline" className="text-xs py-0">{mod}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-green-600">{formatCurrency(client.revenue)}</p>
+                          <p className="text-xs text-muted-foreground">{client.invoices} facturas</p>
+                          <Badge variant={client.growth >= 0 ? "default" : "destructive"} className="text-xs mt-1">
+                            {client.growth >= 0 ? '+' : ''}{client.growth?.toFixed(0)}%
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            {/* Clientes en Riesgo */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <AlertTriangle className="h-5 w-5 text-red-500" />
+                  Clientes en Riesgo (Decrecimiento)
+                </CardTitle>
+                <CardDescription>Clientes con facturación decreciente significativa</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {efficiencyRankings.atRisk && efficiencyRankings.atRisk.length > 0 ? (
+                  <ScrollArea className="h-[350px]">
+                    <div className="space-y-2">
+                      {efficiencyRankings.atRisk.map((client: any, index: number) => (
+                        <div key={index} className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100">
+                          <div>
+                            <p className="font-medium text-sm truncate max-w-[180px]">{client.name}</p>
+                            <div className="flex gap-2 mt-1 text-xs text-muted-foreground">
+                              <span>Anterior: {formatCurrency(client.previous)}</span>
+                              <span>→</span>
+                              <span>Actual: {formatCurrency(client.current)}</span>
+                            </div>
+                          </div>
+                          <Badge variant="destructive" className="gap-1">
+                            <ArrowDownRight className="h-3 w-3" />
+                            {Math.abs(client.growth).toFixed(0)}%
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-[300px] text-green-600">
+                    <CheckCircle className="h-12 w-12 mb-2" />
+                    <p className="font-medium">Sin clientes en riesgo</p>
+                    <p className="text-sm text-muted-foreground">Todos los clientes mantienen actividad estable</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Gráficos de productividad */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Por día de la semana */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Calendar className="h-5 w-5 text-green-600" />
+                  Revenue por Día de la Semana
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={efficiencyRankings.days || []}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={(val) => formatCompact(val)} />
+                    <Tooltip formatter={(value: number, name: string) => [name === "revenue" ? formatCurrency(value) : value, name === "revenue" ? "Revenue" : "Transacciones"]} />
+                    <Bar dataKey="revenue" fill="#22c55e" radius={[4, 4, 0, 0]} name="Revenue" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Por hora */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Clock className="h-5 w-5 text-purple-600" />
+                  Top 10 Horas Más Productivas
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={efficiencyRankings.hours || []} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(val) => formatCompact(val)} />
+                    <YAxis type="category" dataKey="label" tick={{ fontSize: 10 }} width={70} />
+                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                    <Bar dataKey="revenue" fill="#8b5cf6" radius={[0, 4, 4, 0]} name="Revenue" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Clientes con mayor crecimiento */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Flame className="h-5 w-5 text-orange-500" />
+                Clientes con Mayor Crecimiento
+              </CardTitle>
+              <CardDescription>Comparación últimos 30 días vs 30 días anteriores</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                {(efficiencyRankings.growth || []).slice(0, 10).map((client: any, index: number) => (
+                  <div key={index} className="p-3 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge className="bg-green-500">{index + 1}</Badge>
+                      <p className="font-medium text-sm truncate">{client.name}</p>
+                    </div>
+                    <div className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Actual:</span>
+                        <span className="font-bold text-green-600">{formatCurrency(client.current)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Anterior:</span>
+                        <span>{formatCurrency(client.previous)}</span>
+                      </div>
+                      <div className="flex justify-center mt-2">
+                        <Badge variant="default" className="bg-green-500 gap-1">
+                          <ArrowUpRight className="h-3 w-3" />
+                          +{client.growth?.toFixed(0)}%
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
