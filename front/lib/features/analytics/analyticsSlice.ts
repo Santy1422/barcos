@@ -71,6 +71,34 @@ interface InvoicesData {
   invoicesByDay: { date: string; count: number; amount: number }[]
 }
 
+interface AdvancedData {
+  comparisons: {
+    thisMonth: { revenue: number; count: number }
+    lastMonth: { revenue: number; count: number }
+    monthOverMonthGrowth: number
+    thisWeek: { revenue: number; count: number }
+    lastWeek: { revenue: number; count: number }
+    weekOverWeekGrowth: number
+    thisYear: { revenue: number; count: number }
+    lastYear: { revenue: number; count: number }
+    yearOverYearGrowth: number
+  }
+  ticketStats: {
+    average: number
+    max: number
+    min: number
+    total: number
+    count: number
+  }
+  activityByHour: { hour: number; count: number; amount: number }[]
+  activityByDayOfWeek: { day: number; dayName: string; count: number; amount: number }[]
+  topClientsThisMonth: { name: string; revenue: number; count: number }[]
+  recentTransactions: { id: string; invoiceNumber: string; client: string; module: string; amount: number; status: string; date: string }[]
+  activeUsers: { userId: string; invoiceCount: number; totalRevenue: number }[]
+  recordsByModuleStatus: { module: string; status: string; count: number }[]
+  clientGrowth: { year: number; month: number; count: number }[]
+}
+
 interface AnalyticsState {
   // Data
   trucking: ModuleData | null
@@ -82,6 +110,7 @@ interface AnalyticsState {
   metrics: MetricsSummary | null
   revenue: RevenueData | null
   operational: OperationalMetrics | null
+  advanced: AdvancedData | null
 
   // State
   loading: boolean
@@ -99,6 +128,7 @@ const initialState: AnalyticsState = {
   metrics: null,
   revenue: null,
   operational: null,
+  advanced: null,
   loading: false,
   error: null,
   lastFetched: null,
@@ -251,6 +281,27 @@ export const fetchInvoicesAnalytics = createAsyncThunk(
   }
 )
 
+export const fetchAdvancedAnalytics = createAsyncThunk(
+  "analytics/fetchAdvancedAnalytics",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/analytics/advanced`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Error fetching advanced analytics")
+      }
+      return await response.json()
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Error fetching advanced analytics")
+    }
+  }
+)
+
 export const fetchAllAnalytics = createAsyncThunk(
   "analytics/fetchAll",
   async (_, { dispatch }) => {
@@ -258,6 +309,7 @@ export const fetchAllAnalytics = createAsyncThunk(
       dispatch(fetchMetrics({})),
       dispatch(fetchRevenue({})),
       dispatch(fetchOperational()),
+      dispatch(fetchAdvancedAnalytics()),
       dispatch(fetchModuleAnalytics("trucking")),
       dispatch(fetchModuleAnalytics("agency")),
       dispatch(fetchModuleAnalytics("ptyss")),
@@ -359,6 +411,17 @@ const analyticsSlice = createSlice({
         state.error = action.payload as string
       })
 
+    // Advanced Analytics
+    builder
+      .addCase(fetchAdvancedAnalytics.fulfilled, (state, action) => {
+        state.advanced = action.payload.data || action.payload
+        state.loading = false
+      })
+      .addCase(fetchAdvancedAnalytics.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
+
     // Fetch All
     builder
       .addCase(fetchAllAnalytics.pending, (state) => {
@@ -384,6 +447,7 @@ export const selectPtyssAnalytics = (state: RootState) => state.analytics.ptyss
 export const selectShipchandlerAnalytics = (state: RootState) => state.analytics.shipchandler
 export const selectClientsAnalytics = (state: RootState) => state.analytics.clients
 export const selectInvoicesAnalytics = (state: RootState) => state.analytics.invoices
+export const selectAdvancedAnalytics = (state: RootState) => state.analytics.advanced
 export const selectLastFetched = (state: RootState) => state.analytics.lastFetched
 
 export const { clearError, resetAnalytics } = analyticsSlice.actions

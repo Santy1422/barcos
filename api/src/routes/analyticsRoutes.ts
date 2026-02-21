@@ -10,6 +10,7 @@ import {
   getInvoiceAnalytics,
   getRevenueAnalytics,
   getOperationalMetrics,
+  getAdvancedAnalytics,
   exportAnalyticsToExcel
 } from '../controllers/analyticsControllers/analyticsControllers';
 
@@ -32,6 +33,7 @@ router.get('/invoices', jwtUtils, getInvoiceAnalytics);
 router.get('/metrics', jwtUtils, getMetricsSummary);
 router.get('/revenue', jwtUtils, getRevenueAnalytics);
 router.get('/operational', jwtUtils, getOperationalMetrics);
+router.get('/advanced', jwtUtils, getAdvancedAnalytics);
 
 // Export a Excel
 router.get('/export', jwtUtils, exportAnalyticsToExcel);

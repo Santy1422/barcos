@@ -15,6 +15,7 @@ import {
   selectShipchandlerAnalytics,
   selectClientsAnalytics,
   selectInvoicesAnalytics,
+  selectAdvancedAnalytics,
   selectLastFetched,
 } from "@/lib/features/analytics/analyticsSlice"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -109,6 +110,7 @@ export function AnalyticsDashboard() {
   const shipchandler = useAppSelector(selectShipchandlerAnalytics)
   const clientsData = useAppSelector(selectClientsAnalytics)
   const invoicesData = useAppSelector(selectInvoicesAnalytics)
+  const advanced = useAppSelector(selectAdvancedAnalytics)
   const lastFetched = useAppSelector(selectLastFetched)
 
   const [refreshing, setRefreshing] = useState(false)
@@ -1026,6 +1028,274 @@ export function AnalyticsDashboard() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Sección Avanzada */}
+      {advanced && (
+        <div className="space-y-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Zap className="h-6 w-6 text-yellow-500" />
+            Análisis Avanzado
+          </h2>
+
+          {/* Comparaciones de crecimiento */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Mes vs Mes anterior */}
+            <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm font-medium text-blue-700">Este Mes vs Anterior</span>
+                  <Badge variant={advanced.comparisons?.monthOverMonthGrowth >= 0 ? "default" : "destructive"} className="gap-1">
+                    {advanced.comparisons?.monthOverMonthGrowth >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                    {Math.abs(advanced.comparisons?.monthOverMonthGrowth || 0).toFixed(1)}%
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Este mes</p>
+                    <p className="text-xl font-bold text-blue-700">{formatCurrency(advanced.comparisons?.thisMonth?.revenue)}</p>
+                    <p className="text-xs text-muted-foreground">{advanced.comparisons?.thisMonth?.count} transacciones</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Mes anterior</p>
+                    <p className="text-xl font-bold text-blue-500">{formatCurrency(advanced.comparisons?.lastMonth?.revenue)}</p>
+                    <p className="text-xs text-muted-foreground">{advanced.comparisons?.lastMonth?.count} transacciones</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Semana vs Semana anterior */}
+            <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm font-medium text-green-700">Esta Semana vs Anterior</span>
+                  <Badge variant={advanced.comparisons?.weekOverWeekGrowth >= 0 ? "default" : "destructive"} className="gap-1">
+                    {advanced.comparisons?.weekOverWeekGrowth >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                    {Math.abs(advanced.comparisons?.weekOverWeekGrowth || 0).toFixed(1)}%
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Esta semana</p>
+                    <p className="text-xl font-bold text-green-700">{formatCurrency(advanced.comparisons?.thisWeek?.revenue)}</p>
+                    <p className="text-xs text-muted-foreground">{advanced.comparisons?.thisWeek?.count} transacciones</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Semana anterior</p>
+                    <p className="text-xl font-bold text-green-500">{formatCurrency(advanced.comparisons?.lastWeek?.revenue)}</p>
+                    <p className="text-xs text-muted-foreground">{advanced.comparisons?.lastWeek?.count} transacciones</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Año vs Año anterior */}
+            <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm font-medium text-purple-700">Este Año vs Anterior</span>
+                  <Badge variant={advanced.comparisons?.yearOverYearGrowth >= 0 ? "default" : "destructive"} className="gap-1">
+                    {advanced.comparisons?.yearOverYearGrowth >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                    {Math.abs(advanced.comparisons?.yearOverYearGrowth || 0).toFixed(1)}%
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Este año</p>
+                    <p className="text-xl font-bold text-purple-700">{formatCurrency(advanced.comparisons?.thisYear?.revenue)}</p>
+                    <p className="text-xs text-muted-foreground">{advanced.comparisons?.thisYear?.count} transacciones</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Año anterior</p>
+                    <p className="text-xl font-bold text-purple-500">{formatCurrency(advanced.comparisons?.lastYear?.revenue)}</p>
+                    <p className="text-xs text-muted-foreground">{advanced.comparisons?.lastYear?.count} transacciones</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Estadísticas de Ticket */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <DollarSign className="h-8 w-8 mx-auto mb-2 text-green-600" />
+                <p className="text-2xl font-bold">{formatCurrency(advanced.ticketStats?.average)}</p>
+                <p className="text-xs text-muted-foreground">Ticket Promedio</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <ArrowUpRight className="h-8 w-8 mx-auto mb-2 text-blue-600" />
+                <p className="text-2xl font-bold">{formatCurrency(advanced.ticketStats?.max)}</p>
+                <p className="text-xs text-muted-foreground">Ticket Máximo</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <ArrowDownRight className="h-8 w-8 mx-auto mb-2 text-orange-600" />
+                <p className="text-2xl font-bold">{formatCurrency(advanced.ticketStats?.min)}</p>
+                <p className="text-xs text-muted-foreground">Ticket Mínimo</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <Receipt className="h-8 w-8 mx-auto mb-2 text-purple-600" />
+                <p className="text-2xl font-bold">{formatNumber(advanced.ticketStats?.count)}</p>
+                <p className="text-xs text-muted-foreground">Total Facturas</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <CreditCard className="h-8 w-8 mx-auto mb-2 text-indigo-600" />
+                <p className="text-2xl font-bold">{formatCurrency(advanced.ticketStats?.total)}</p>
+                <p className="text-xs text-muted-foreground">Revenue Total</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Actividad por Hora */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Clock className="h-5 w-5 text-blue-600" />
+                  Actividad por Hora del Día
+                </CardTitle>
+                <CardDescription>Distribución de facturación en 24 horas</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={advanced.activityByHour || []}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="hour" tick={{ fontSize: 10 }} tickFormatter={(h) => `${h}h`} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip formatter={(value: number, name: string) => [name === "amount" ? formatCurrency(value) : value, name === "amount" ? "Monto" : "Cantidad"]} labelFormatter={(h) => `Hora: ${h}:00`} />
+                    <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Cantidad" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Actividad por Día de la Semana */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Calendar className="h-5 w-5 text-purple-600" />
+                  Actividad por Día de la Semana
+                </CardTitle>
+                <CardDescription>Distribución semanal de facturación</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={advanced.activityByDayOfWeek || []} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10 }} />
+                    <YAxis type="category" dataKey="dayName" tick={{ fontSize: 11 }} width={40} />
+                    <Tooltip formatter={(value: number, name: string) => [name === "amount" ? formatCurrency(value) : value, name === "amount" ? "Monto" : "Cantidad"]} />
+                    <Bar dataKey="count" fill="#8b5cf6" radius={[0, 4, 4, 0]} name="Cantidad" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Top Clientes del Mes */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Award className="h-5 w-5 text-yellow-500" />
+                  Top Clientes Este Mes
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {(advanced.topClientsThisMonth || []).map((client, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <Badge variant={index === 0 ? "default" : "outline"} className="w-6 h-6 rounded-full p-0 justify-center">
+                          {index + 1}
+                        </Badge>
+                        <span className="font-medium truncate max-w-[200px]">{client.name}</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-green-600">{formatCurrency(client.revenue)}</p>
+                        <p className="text-xs text-muted-foreground">{client.count} facturas</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Últimas Transacciones */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Activity className="h-5 w-5 text-green-600" />
+                  Últimas Transacciones
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[300px]">
+                  <div className="space-y-2">
+                    {(advanced.recentTransactions || []).map((tx, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg text-sm">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{tx.invoiceNumber || 'Sin número'}</span>
+                            <Badge variant="outline" className="text-xs">{tx.module}</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate max-w-[200px]">{tx.client}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-green-600">{formatCurrency(tx.amount)}</p>
+                          <Badge variant={tx.status === 'facturada' ? 'default' : 'secondary'} className="text-xs">
+                            {tx.status}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Crecimiento de Clientes */}
+          {advanced.clientGrowth && advanced.clientGrowth.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-indigo-600" />
+                  Crecimiento de Clientes (12 meses)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={250}>
+                  <AreaChart data={advanced.clientGrowth.map((c: any) => ({
+                    name: `${months.find(m => m.value === c.month?.toString())?.label?.slice(0, 3) || c.month}`,
+                    clientes: c.count
+                  }))}>
+                    <defs>
+                      <linearGradient id="colorClients" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip />
+                    <Area type="monotone" dataKey="clientes" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#colorClients)" name="Nuevos Clientes" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
 
       {/* Footer */}
       <div className="flex flex-col sm:flex-row items-center justify-between text-sm text-muted-foreground border-t pt-4 gap-2">

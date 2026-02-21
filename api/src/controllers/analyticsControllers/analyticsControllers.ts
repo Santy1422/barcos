@@ -723,6 +723,204 @@ export const getInvoiceAnalytics = async (req: Request, res: Response) => {
   }
 };
 
+// GET /api/analytics/advanced - Métricas avanzadas
+export const getAdvancedAnalytics = async (req: Request, res: Response) => {
+  try {
+    const now = new Date();
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    const startOfThisWeek = new Date(now);
+    startOfThisWeek.setDate(now.getDate() - now.getDay());
+    startOfThisWeek.setHours(0, 0, 0, 0);
+    const startOfLastWeek = new Date(startOfThisWeek);
+    startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
+    const endOfLastWeek = new Date(startOfThisWeek);
+    endOfLastWeek.setMilliseconds(-1);
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const startOfLastYear = new Date(now.getFullYear() - 1, 0, 1);
+    const endOfLastYear = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59);
+
+    // Revenue este mes vs mes anterior
+    const thisMonthRevenue = await invoices.aggregate([
+      { $match: { createdAt: { $gte: startOfThisMonth } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 } } }
+    ]);
+
+    const lastMonthRevenue = await invoices.aggregate([
+      { $match: { createdAt: { $gte: startOfLastMonth, $lte: endOfLastMonth } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 } } }
+    ]);
+
+    // Revenue esta semana vs semana anterior
+    const thisWeekRevenue = await invoices.aggregate([
+      { $match: { createdAt: { $gte: startOfThisWeek } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 } } }
+    ]);
+
+    const lastWeekRevenue = await invoices.aggregate([
+      { $match: { createdAt: { $gte: startOfLastWeek, $lte: endOfLastWeek } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 } } }
+    ]);
+
+    // Revenue este año vs año anterior
+    const thisYearRevenue = await invoices.aggregate([
+      { $match: { createdAt: { $gte: startOfYear } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 } } }
+    ]);
+
+    const lastYearRevenue = await invoices.aggregate([
+      { $match: { createdAt: { $gte: startOfLastYear, $lte: endOfLastYear } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 } } }
+    ]);
+
+    // Ticket promedio
+    const allInvoicesStats = await invoices.aggregate([
+      { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 }, avg: { $avg: '$totalAmount' }, max: { $max: '$totalAmount' }, min: { $min: '$totalAmount' } } }
+    ]);
+
+    // Actividad por hora (últimos 30 días)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const activityByHour = await invoices.aggregate([
+      { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+      { $group: { _id: { $hour: '$createdAt' }, count: { $sum: 1 }, amount: { $sum: '$totalAmount' } } },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Actividad por día de semana
+    const activityByDayOfWeek = await invoices.aggregate([
+      { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+      { $group: { _id: { $dayOfWeek: '$createdAt' }, count: { $sum: 1 }, amount: { $sum: '$totalAmount' } } },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Top 5 clientes este mes
+    const topClientsThisMonth = await invoices.aggregate([
+      { $match: { createdAt: { $gte: startOfThisMonth } } },
+      { $group: { _id: '$clientName', total: { $sum: '$totalAmount' }, count: { $sum: 1 } } },
+      { $sort: { total: -1 } },
+      { $limit: 5 }
+    ]);
+
+    // Últimas 10 transacciones
+    const recentTransactions = await invoices.find({})
+      .select('invoiceNumber clientName module totalAmount status createdAt')
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+
+    // Usuarios activos (que han creado facturas)
+    const activeUsers = await invoices.aggregate([
+      { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+      { $group: { _id: '$createdBy', count: { $sum: 1 }, totalRevenue: { $sum: '$totalAmount' } } },
+      { $sort: { totalRevenue: -1 } },
+      { $limit: 10 }
+    ]);
+
+    // Registros por módulo y estado
+    const recordsByModuleStatus = await records.aggregate([
+      { $group: { _id: { module: '$module', status: '$status' }, count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    // Crecimiento de clientes (últimos 12 meses)
+    const twelveMonthsAgo = new Date();
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+
+    const clientGrowth = await clients.aggregate([
+      { $match: { createdAt: { $gte: twelveMonthsAgo } } },
+      { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, count: { $sum: 1 } } },
+      { $sort: { '_id.year': 1, '_id.month': 1 } }
+    ]);
+
+    // Calcular crecimiento porcentual
+    const thisMonthTotal = thisMonthRevenue[0]?.total || 0;
+    const lastMonthTotal = lastMonthRevenue[0]?.total || 0;
+    const monthOverMonthGrowth = lastMonthTotal > 0 ? ((thisMonthTotal - lastMonthTotal) / lastMonthTotal) * 100 : 0;
+
+    const thisWeekTotal = thisWeekRevenue[0]?.total || 0;
+    const lastWeekTotal = lastWeekRevenue[0]?.total || 0;
+    const weekOverWeekGrowth = lastWeekTotal > 0 ? ((thisWeekTotal - lastWeekTotal) / lastWeekTotal) * 100 : 0;
+
+    const thisYearTotal = thisYearRevenue[0]?.total || 0;
+    const lastYearTotal = lastYearRevenue[0]?.total || 0;
+    const yearOverYearGrowth = lastYearTotal > 0 ? ((thisYearTotal - lastYearTotal) / lastYearTotal) * 100 : 0;
+
+    // Días de la semana
+    const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+    return res.json({
+      success: true,
+      data: {
+        comparisons: {
+          thisMonth: { revenue: thisMonthTotal, count: thisMonthRevenue[0]?.count || 0 },
+          lastMonth: { revenue: lastMonthTotal, count: lastMonthRevenue[0]?.count || 0 },
+          monthOverMonthGrowth,
+          thisWeek: { revenue: thisWeekTotal, count: thisWeekRevenue[0]?.count || 0 },
+          lastWeek: { revenue: lastWeekTotal, count: lastWeekRevenue[0]?.count || 0 },
+          weekOverWeekGrowth,
+          thisYear: { revenue: thisYearTotal, count: thisYearRevenue[0]?.count || 0 },
+          lastYear: { revenue: lastYearTotal, count: lastYearRevenue[0]?.count || 0 },
+          yearOverYearGrowth,
+        },
+        ticketStats: {
+          average: allInvoicesStats[0]?.avg || 0,
+          max: allInvoicesStats[0]?.max || 0,
+          min: allInvoicesStats[0]?.min || 0,
+          total: allInvoicesStats[0]?.total || 0,
+          count: allInvoicesStats[0]?.count || 0,
+        },
+        activityByHour: activityByHour.map((h: any) => ({
+          hour: h._id,
+          count: h.count,
+          amount: h.amount,
+        })),
+        activityByDayOfWeek: activityByDayOfWeek.map((d: any) => ({
+          day: d._id,
+          dayName: dayNames[d._id - 1] || d._id,
+          count: d.count,
+          amount: d.amount,
+        })),
+        topClientsThisMonth: topClientsThisMonth.map((c: any) => ({
+          name: c._id || 'N/A',
+          revenue: c.total,
+          count: c.count,
+        })),
+        recentTransactions: recentTransactions.map((t: any) => ({
+          id: t._id,
+          invoiceNumber: t.invoiceNumber,
+          client: t.clientName,
+          module: t.module,
+          amount: t.totalAmount,
+          status: t.status,
+          date: t.createdAt,
+        })),
+        activeUsers: activeUsers.map((u: any) => ({
+          userId: u._id,
+          invoiceCount: u.count,
+          totalRevenue: u.totalRevenue,
+        })),
+        recordsByModuleStatus: recordsByModuleStatus.map((r: any) => ({
+          module: r._id.module,
+          status: r._id.status,
+          count: r.count,
+        })),
+        clientGrowth: clientGrowth.map((c: any) => ({
+          year: c._id.year,
+          month: c._id.month,
+          count: c.count,
+        })),
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('Error in getAdvancedAnalytics:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 // GET /api/analytics/export - Exportar datos a Excel
 export const exportAnalyticsToExcel = async (req: Request, res: Response) => {
   try {
