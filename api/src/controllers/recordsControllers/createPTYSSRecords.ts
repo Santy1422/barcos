@@ -1,4 +1,4 @@
-import { records } from "../../database";
+import { records, getNextOrderNumber } from "../../database";
 import { response } from "../../utils";
 import mongoose from "mongoose";
 
@@ -213,6 +213,10 @@ export default async (req, res) => {
         console.log(`  - userId: ${userId}`);
         console.log(`  - clientId: ${clientId}`);
 
+        // Generar numero de orden consecutivo automaticamente
+        const orderNumber = await getNextOrderNumber("ptyss");
+        console.log(`  - orderNumber generado: ${orderNumber}`);
+
         // Construir el objeto del registro
         const recordData: any = {
           excelId: validExcelId,
@@ -222,6 +226,7 @@ export default async (req, res) => {
           totalValue: totalValue || 0,
           data, // Datos originales completos
           sapCode: data.sapCode || null,
+          orderNumber, // Numero de orden consecutivo (tipo PO)
           createdBy: userId
         };
 

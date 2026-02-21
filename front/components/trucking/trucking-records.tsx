@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Truck, Search, Download, Eye, Edit, Calendar, DollarSign, User, Loader2, Trash2, Database, Code, X } from "lucide-react"
+import { Truck, Search, Download, Eye, Edit, Calendar, DollarSign, User, Loader2, Trash2, Database, Code, X, Filter } from "lucide-react"
 import saveAs from "file-saver"
 
 import {
@@ -50,6 +50,8 @@ export function TruckingRecords() {
   const [isUsingPeriodFilter, setIsUsingPeriodFilter] = useState(false)
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
+  const [clientFilter, setClientFilter] = useState<string>("all")
+  const [showClientFilter, setShowClientFilter] = useState(false)
 
   // Estado de modales
   const [recordsModalOpen, setRecordsModalOpen] = useState(false)
@@ -270,20 +272,56 @@ export function TruckingRecords() {
     setEndDate("")
   }
 
+  // Obtener clientes únicos de las facturas
+  const uniqueClients = useMemo(() => {
+    const clientNames = new Set<string>()
+    invoices.forEach((inv: any) => {
+      const clientName = getClientForInvoice(inv)
+      if (clientName && clientName !== 'N/A') {
+        clientNames.add(clientName)
+      }
+    })
+    return Array.from(clientNames).sort()
+  }, [invoices, autoridadesRecords, clients])
+
+  // Efecto para cerrar el filtro de cliente cuando se hace clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showClientFilter) {
+        const target = event.target as Element
+        if (!target.closest('[data-client-filter]')) {
+          setShowClientFilter(false)
+        }
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showClientFilter])
+
   const filteredInvoices = useMemo(() => {
     const q = search.toLowerCase()
     return invoices.filter((inv: any) => {
       const containers = getContainersForInvoice(inv)
       const matchesSearch = (inv.invoiceNumber || '').toLowerCase().includes(q) || (inv.clientName || '').toLowerCase().includes(q) || containers.toLowerCase().includes(q)
       const matchesStatus = statusFilter === 'all' || inv.status === statusFilter
-      
+
       // Filtro por tipo (Normal vs AUTH)
       let matchesType = true
       if (typeFilter !== 'all') {
         const isAuth = (inv.invoiceNumber || '').toString().toUpperCase().startsWith('AUTH-')
         matchesType = typeFilter === 'auth' ? isAuth : !isAuth
       }
-      
+
+      // Filtro por cliente
+      let matchesClient = true
+      if (clientFilter !== 'all') {
+        const clientName = getClientForInvoice(inv)
+        matchesClient = clientName === clientFilter
+      }
+
       let matchesDate = true
       if (isUsingPeriodFilter && startDate && endDate) {
         const d = new Date(inv.issueDate || inv.createdAt)
@@ -291,9 +329,9 @@ export function TruckingRecords() {
         const e = new Date(endDate); e.setHours(23,59,59,999)
         matchesDate = d >= s && d <= e
       }
-      return matchesSearch && matchesStatus && matchesType && matchesDate
+      return matchesSearch && matchesStatus && matchesType && matchesClient && matchesDate
     })
-  }, [invoices, allRecords, search, statusFilter, typeFilter, isUsingPeriodFilter, startDate, endDate])
+  }, [invoices, allRecords, autoridadesRecords, clients, search, statusFilter, typeFilter, clientFilter, isUsingPeriodFilter, startDate, endDate])
 
   // Acciones
   const handleDeleteInvoice = async (invoice: any) => {
@@ -679,13 +717,79 @@ export function TruckingRecords() {
             </div>
           )}
 
+          {clientFilter !== 'all' && (
+            <div className="flex items-center gap-2 p-2 bg-orange-50 border border-orange-200 rounded-md">
+              <Badge variant="default" className="bg-orange-600 text-white text-xs">
+                Filtro Cliente
+              </Badge>
+              <span className="text-sm text-orange-700">Mostrando facturas de: {clientFilter}</span>
+              <Button variant="ghost" size="sm" onClick={()=>setClientFilter('all')} className="h-6 w-6 p-0 ml-auto"><X className="h-3 w-3" /></Button>
+            </div>
+          )}
+
           <div className="rounded-md border">
                 <Table>
                   <TableHeader>
                     <TableRow>
                   <TableHead>Número</TableHead>
                   <TableHead>Tipo</TableHead>
-                  <TableHead>Cliente</TableHead>
+                  <TableHead>
+                    <div className="flex items-center justify-between relative" data-client-filter>
+                      <span>Cliente</span>
+                      <div className="flex items-center gap-1">
+                        {clientFilter !== 'all' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setClientFilter('all')}
+                            className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            title="Limpiar filtro"
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowClientFilter(!showClientFilter)}
+                          className={`h-6 w-6 p-0 ${clientFilter !== 'all' ? 'text-blue-600' : 'text-gray-500'}`}
+                          title="Filtrar por cliente"
+                        >
+                          <Filter className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      {showClientFilter && (
+                        <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-md shadow-lg p-3 min-w-64">
+                          <div className="space-y-2">
+                            <div className="text-xs font-medium text-gray-700 mb-2">Filtrar por cliente:</div>
+                            <div className="max-h-48 overflow-y-auto space-y-1">
+                              <div
+                                className={`px-2 py-1 text-xs cursor-pointer rounded hover:bg-gray-100 ${clientFilter === 'all' ? 'bg-blue-100 text-blue-800 font-medium' : ''}`}
+                                onClick={() => {
+                                  setClientFilter('all')
+                                  setShowClientFilter(false)
+                                }}
+                              >
+                                Todos los clientes
+                              </div>
+                              {uniqueClients.map((clientName) => (
+                                <div
+                                  key={clientName}
+                                  className={`px-2 py-1 text-xs cursor-pointer rounded hover:bg-gray-100 ${clientFilter === clientName ? 'bg-blue-100 text-blue-800 font-medium' : ''}`}
+                                  onClick={() => {
+                                    setClientFilter(clientName)
+                                    setShowClientFilter(false)
+                                  }}
+                                >
+                                  {clientName}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </TableHead>
                   <TableHead>Contenedor</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Total</TableHead>
@@ -696,11 +800,11 @@ export function TruckingRecords() {
                   </TableHeader>
                   <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={8} className="py-8 text-center"><div className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Cargando…</div></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="py-8 text-center"><div className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Cargando…</div></TableCell></TableRow>
                 ) : error ? (
-                  <TableRow><TableCell colSpan={8} className="py-8 text-center text-red-600">{error}</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="py-8 text-center text-red-600">{error}</TableCell></TableRow>
                 ) : filteredInvoices.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">No hay prefacturas</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">No hay prefacturas</TableCell></TableRow>
                 ) : (
                   filteredInvoices.map((inv: any) => {
                     const isAuth = (inv.invoiceNumber || '').toString().toUpperCase().startsWith('AUTH-')
@@ -779,14 +883,15 @@ export function TruckingRecords() {
       <TruckingRecordsViewModal open={recordsModalOpen} onOpenChange={setRecordsModalOpen} invoice={viewRecordsInvoice} />
       <TruckingPdfViewer open={pdfModalOpen} onOpenChange={setPdfModalOpen} invoice={pdfInvoice} />
       <TruckingPrefacturaEditModal open={editModalOpen} onOpenChange={setEditModalOpen} invoice={editInvoice} onClose={()=>setEditModalOpen(false)} onEditSuccess={()=>dispatch(fetchInvoicesAsync('trucking'))} />
-      <TruckingFacturacionModal open={facturarModalOpen} onOpenChange={setFacturarModalOpen} invoice={facturarInvoice} onFacturar={async (invoiceNumber, xmlData, invoiceDate)=>{
+      <TruckingFacturacionModal open={facturarModalOpen} onOpenChange={setFacturarModalOpen} invoice={facturarInvoice} onFacturar={async (invoiceNumber, xmlData, invoiceDate, poNumber)=>{
         try {
           console.log("=== DEBUG: onFacturar callback ===")
           console.log("Invoice:", facturarInvoice)
           console.log("InvoiceNumber:", invoiceNumber)
           console.log("XmlData:", xmlData)
           console.log("InvoiceDate:", invoiceDate)
-          
+          console.log("PoNumber:", poNumber)
+
           // Actualizar la factura con el nuevo número y XML
           // Usar la fecha directamente como string YYYY-MM-DD para evitar conversión a UTC
           // El backend almacenará la fecha exacta que el usuario seleccionó
@@ -796,7 +901,8 @@ export function TruckingRecords() {
               status: 'facturada',
               invoiceNumber,
               xmlData: xmlData ? xmlData.xml : undefined,
-              issueDate: invoiceDate // Pasar fecha como string YYYY-MM-DD
+              issueDate: invoiceDate, // Pasar fecha como string YYYY-MM-DD
+              ...(poNumber && { poNumber }) // Agregar PO Number si se proporcionó
             }
           })).unwrap()
           

@@ -21,7 +21,7 @@ interface TruckingFacturacionModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   invoice: any
-  onFacturar: (invoiceNumber: string, xmlData?: { xml: string, isValid: boolean }, invoiceDate?: string) => Promise<void>
+  onFacturar: (invoiceNumber: string, xmlData?: { xml: string, isValid: boolean }, invoiceDate?: string, poNumber?: string) => Promise<void>
 }
 
 export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFacturar }: TruckingFacturacionModalProps) {
@@ -29,6 +29,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
   const dispatch = useAppDispatch()
   const [isProcessing, setIsProcessing] = useState(false)
   const [newInvoiceNumber, setNewInvoiceNumber] = useState("")
+  const [poNumber, setPoNumber] = useState("")
   const [invoiceDate, setInvoiceDate] = useState(() => new Date().toLocaleDateString('en-CA'))
   const [generatedXml, setGeneratedXml] = useState<string>("")
   const [xmlValidation, setXmlValidation] = useState<{ isValid: boolean; errors: string[] } | null>(null)
@@ -51,6 +52,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
     setGeneratedXml("")
     setXmlValidation(null)
     setNewInvoiceNumber("")
+    setPoNumber("")
     setIsSendingToSap(false)
     setSapLogs([])
     setShowSapLogs(false)
@@ -662,7 +664,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
       console.log("XmlData a pasar:", xmlData)
       
       // Llamar al callback (con XML para trasiego, null para AUTH)
-      await onFacturar(newInvoiceNumber, xmlData, invoiceDate)
+      await onFacturar(newInvoiceNumber, xmlData, invoiceDate, poNumber)
       
       toast({ title: "Facturación completada", description: `La prefactura ha sido facturada como ${newInvoiceNumber}.` })
     } catch (error: any) {
@@ -755,6 +757,12 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
           <div className="space-y-2">
             <Label htmlFor="invoice-date" className="text-sm font-semibold">Fecha de Factura *</Label>
             <Input id="invoice-date" type="date" value={invoiceDate} onChange={(e)=>setInvoiceDate(e.target.value)} className="font-mono" />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="po-number" className="text-sm font-semibold">Numero de PO (opcional)</Label>
+            <Input id="po-number" value={poNumber} onChange={(e) => setPoNumber(e.target.value.toUpperCase())} placeholder="Ej: PO-12345" className="font-mono" />
+            <p className="text-xs text-muted-foreground">Este campo aparecera solo en el PDF, no en el XML</p>
           </div>
 
           <div className="space-y-4">

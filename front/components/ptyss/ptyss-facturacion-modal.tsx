@@ -31,7 +31,7 @@ interface PTYSSFacturacionModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   invoice: any
-  onFacturar: (invoiceNumber: string, xmlData?: { xml: string, isValid: boolean }, invoiceDate?: string) => Promise<void>
+  onFacturar: (invoiceNumber: string, xmlData?: { xml: string, isValid: boolean }, invoiceDate?: string, poNumber?: string) => Promise<void>
 }
 
 export function PTYSSFacturacionModal({
@@ -44,6 +44,7 @@ export function PTYSSFacturacionModal({
   const dispatch = useAppDispatch()
   const [isProcessing, setIsProcessing] = useState(false)
   const [newInvoiceNumber, setNewInvoiceNumber] = useState("")
+  const [poNumber, setPoNumber] = useState("")
   const [invoiceDate, setInvoiceDate] = useState(() => {
     const today = new Date()
     return today.toLocaleDateString('en-CA') // Formato YYYY-MM-DD en zona horaria local
@@ -81,6 +82,7 @@ export function PTYSSFacturacionModal({
     setGeneratedXml("")
     setXmlValidation(null)
     setNewInvoiceNumber("")
+    setPoNumber("")
     setIsSendingToSap(false)
     setSapLogs([])
     setShowSapLogs(false)
@@ -389,7 +391,7 @@ export function PTYSSFacturacionModal({
       
       console.log("🔍 PTYSSFacturacionModal - xmlData final que se enviará:", xmlData)
       
-      await onFacturar(newInvoiceNumber, xmlData, invoiceDate)
+      await onFacturar(newInvoiceNumber, xmlData, invoiceDate, poNumber)
       
       const xmlMessage = xmlData?.isValid 
         ? " XML generado y validado correctamente."
@@ -514,6 +516,23 @@ export function PTYSSFacturacionModal({
               />
               <p className="text-xs text-muted-foreground">
                 Esta fecha se usará en todos los campos de fecha del XML
+              </p>
+            </div>
+
+            {/* Número de PO */}
+            <div className="space-y-2">
+              <Label htmlFor="po-number" className="text-sm font-semibold">
+                Numero de PO (opcional)
+              </Label>
+              <Input
+                id="po-number"
+                value={poNumber}
+                onChange={(e) => setPoNumber(e.target.value.toUpperCase())}
+                placeholder="Ej: PO-12345"
+                className="font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                Este campo aparecera solo en el PDF, no en el XML
               </p>
             </div>
 

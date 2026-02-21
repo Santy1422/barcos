@@ -110,32 +110,23 @@ export function AgencyConfig() {
   })
 
   // Estado para SAP Service Codes
-  const [sapServiceCodes, setSapServiceCodes] = useState([
-    {
-      code: 'SHP242',
-      name: 'Crew Transport Service',
-      profitCenter: 'PAPANC440',
-      activity: 'SHP',
-      pillar: 'NOPS',
-      buCountry: 'PA',
-      serviceCountry: 'PA',
-      clientType: 'MSCGVA',
-      baseUnitMeasure: 'EA',
-      incomeRebateCode: 'I'
-    },
-    {
-      code: 'TRK137',
-      name: 'Waiting Time Service',
-      profitCenter: 'PAPANC430',
-      activity: 'TRK',
-      pillar: 'TRSP',
-      buCountry: 'PA',
-      serviceCountry: 'PA',
-      clientType: 'MSCGVA',
-      baseUnitMeasure: 'EA',
-      incomeRebateCode: 'I'
-    }
-  ])
+  interface SapServiceCode {
+    _id?: string;
+    code: string;
+    name: string;
+    description?: string;
+    module?: string;
+    profitCenter: string;
+    activity: string;
+    pillar: string;
+    buCountry: string;
+    serviceCountry: string;
+    clientType: string;
+    baseUnitMeasure: string;
+    incomeRebateCode: string;
+  }
+
+  const [sapServiceCodes, setSapServiceCodes] = useState<SapServiceCode[]>([])
   const [editingSapCode, setEditingSapCode] = useState<string | null>(null)
   const [sapCodesLoading, setSapCodesLoading] = useState(false)
 
@@ -217,6 +208,60 @@ export function AgencyConfig() {
       setLocalServicePrices(newPrices)
     }
   }, [localServices])
+
+  // Cargar SAP Service Codes desde el backend
+  useEffect(() => {
+    const fetchSapServiceCodes = async () => {
+      setSapCodesLoading(true)
+      try {
+        const token = localStorage.getItem('token')
+        const response = await fetch(createApiUrl('/api/sap-service-codes?module=agency'), {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.data && data.data.length > 0) {
+            setSapServiceCodes(data.data)
+          } else {
+            // Si no hay datos, usar valores por defecto y hacer seed
+            const seedResponse = await fetch(createApiUrl('/api/sap-service-codes/seed/agency'), {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            })
+
+            if (seedResponse.ok) {
+              // Volver a cargar después del seed
+              const reloadResponse = await fetch(createApiUrl('/api/sap-service-codes?module=agency'), {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              })
+              if (reloadResponse.ok) {
+                const reloadData = await reloadResponse.json()
+                if (reloadData.success && reloadData.data) {
+                  setSapServiceCodes(reloadData.data)
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error loading SAP service codes:', error)
+      } finally {
+        setSapCodesLoading(false)
+      }
+    }
+
+    fetchSapServiceCodes()
+  }, [])
 
   // Limpiar errores cuando cambie el tab
   useEffect(() => {
@@ -1404,6 +1449,15 @@ export function AgencyConfig() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {sapCodesLoading && sapServiceCodes.length === 0 ? (
+              <div className="flex justify-center p-8">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : sapServiceCodes.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No SAP service codes configured. Please check the backend connection.
+              </div>
+            ) : (
             <div className="space-y-6">
               {sapServiceCodes.map((serviceCode) => (
                 <Card key={serviceCode.code} className="border-2">
@@ -1550,18 +1604,58 @@ export function AgencyConfig() {
                         </div>
                         <div className="col-span-full flex justify-end pt-2">
                           <Button
-                            onClick={() => {
-                              // TODO: Save to backend
-                              toast({
-                                title: "Configuration saved",
-                                description: `SAP parameters for ${serviceCode.code} have been updated.`,
-                              })
-                              setEditingSapCode(null)
+                            onClick={async () => {
+                              setSapCodesLoading(true)
+                              try {
+                                const token = localStorage.getItem('token')
+                                const response = await fetch(createApiUrl(`/api/sap-service-codes/${serviceCode.code}`), {
+                                  method: 'PUT',
+                                  headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'Content-Type': 'application/json'
+                                  },
+                                  body: JSON.stringify({
+                                    name: serviceCode.name,
+                                    profitCenter: serviceCode.profitCenter,
+                                    activity: serviceCode.activity,
+                                    pillar: serviceCode.pillar,
+                                    buCountry: serviceCode.buCountry,
+                                    serviceCountry: serviceCode.serviceCountry,
+                                    clientType: serviceCode.clientType,
+                                    baseUnitMeasure: serviceCode.baseUnitMeasure,
+                                    incomeRebateCode: serviceCode.incomeRebateCode
+                                  })
+                                })
+
+                                if (response.ok) {
+                                  toast({
+                                    title: "Configuration saved",
+                                    description: `SAP parameters for ${serviceCode.code} have been updated.`,
+                                  })
+                                  setEditingSapCode(null)
+                                } else {
+                                  const errorData = await response.json()
+                                  toast({
+                                    title: "Error",
+                                    description: errorData.message || "Error saving SAP configuration",
+                                    variant: "destructive"
+                                  })
+                                }
+                              } catch (error: any) {
+                                toast({
+                                  title: "Error",
+                                  description: error.message || "Error saving SAP configuration",
+                                  variant: "destructive"
+                                })
+                              } finally {
+                                setSapCodesLoading(false)
+                              }
                             }}
                             className="bg-green-600 hover:bg-green-700"
+                            disabled={sapCodesLoading}
                           >
                             <Save className="h-4 w-4 mr-2" />
-                            Save Changes
+                            {sapCodesLoading ? 'Saving...' : 'Save Changes'}
                           </Button>
                         </div>
                       </div>
@@ -1612,6 +1706,7 @@ export function AgencyConfig() {
                 </p>
               </div>
             </div>
+            )}
           </CardContent>
         </Card>
       )}

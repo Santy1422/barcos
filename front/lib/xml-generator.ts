@@ -1039,40 +1039,41 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
             const recordItems = Array.from(groupedRecords.entries()).map(([groupKey, group]) => {
               const parts = groupKey.split('|')
               const totalPrice = group.price * group.count
-              
+
               // Usar el primer registro del grupo para obtener los datos
               const firstRecord = group.records[0]
               const data = firstRecord.data
-              
-              // Determinar el código de servicio basado en el tipo de registro
-              const recordType = data.recordType || ''
-              const sapCode = data.sapCode || ''
-              const isTrasiego = recordType === 'trasiego' || sapCode === 'TRK002' || invoice.clientName === 'PTG'
+
+              // Determinar si es trasiego o local basándose en la clave del grupo
+              const isTrasiego = parts[0] === 'TRASIEGO'
+
+              // Para trasiego siempre usar TRK002, para local usar TRK001
               const serviceCode = isTrasiego ? 'TRK002' : 'TRK001'
-              
+
               // Extraer información del contenedor
               let containerSize = "40"
               let originalContainerType = "DV"
               // CtrCategory siempre es "A" para PTYSS (trasiegos y locales)
               let ctrCategory = "A"
 
-              if (parts[0] === 'TRASIEGO') {
-                containerSize = parts[4] || "40" // size
-                originalContainerType = parts[5] || "DV" // type
+              if (isTrasiego) {
+                // Para trasiego: usar valores fijos según requerimiento
+                containerSize = "40"
+                originalContainerType = "DV"
               } else {
                 containerSize = parts[2] || "40" // containerSize
                 originalContainerType = parts[3] || "DV" // containerType
               }
 
               // Homologar el containerType al sapCode usando el mapa de container types
-              const containerType = getContainerTypeSapCode(originalContainerType)
+              const containerType = isTrasiego ? "DV" : getContainerTypeSapCode(originalContainerType)
 
-              // Calcular CtrISOcode basándose en CtrType homologado y CtrSize
-              const ctrISOcode = getCtrISOcode(containerType, containerSize)
-              
+              // Calcular CtrISOcode: para trasiego usar 42G0, para locales calcular dinámicamente
+              const ctrISOcode = isTrasiego ? '42G0' : getCtrISOcode(containerType, containerSize)
+
               // Determinar FullEmpty
-              const fullEmpty = parts[0] === 'TRASIEGO' ? (parts[6] || 'FULL') : 'FULL'
-              
+              const fullEmpty = isTrasiego ? 'FULL' : 'FULL'
+
               return {
                 "IncomeRebateCode": "I",
                 "AmntTransacCur": (-totalPrice).toFixed(3),
@@ -1086,7 +1087,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                 "BUCountry": "PA",
                 "ServiceCountry": "PA",
                 "ClientType": "MEDLOG",
-                "BusinessType": "I", // Siempre IMPORT para PTYSS
+                "BusinessType": "E", // EXPORT para PTYSS trasiego
                 "FullEmpty": fullEmpty,
                 "CtrISOcode": ctrISOcode,
                 "CtrType": containerType,
@@ -1131,7 +1132,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                     "BUCountry": "PA",
                     "ServiceCountry": "PA",
                     "ClientType": "MEDLOG",
-                    "BusinessType": "I", // Siempre IMPORT para PTYSS
+                    "BusinessType": "E", // EXPORT para PTYSS
                     "FullEmpty": "FULL"
                   })
                 }

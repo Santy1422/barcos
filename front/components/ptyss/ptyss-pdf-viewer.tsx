@@ -105,7 +105,15 @@ export function PTYSSPdfViewer({ open, onOpenChange, invoice, clients, allRecord
     doc.text(`${day} ${month} ${year}`, 195, 35, { align: 'right' })
     doc.setFontSize(8)
     doc.text('DAY MO YR', 195, 40, { align: 'right' })
-    
+
+    // PO Number (solo si existe)
+    if (invoiceData.poNumber) {
+      doc.setFontSize(10)
+      doc.setFont(undefined, 'bold')
+      doc.text(`PO: ${invoiceData.poNumber}`, 195, 46, { align: 'right' })
+      doc.setFont(undefined, 'normal')
+    }
+
     // Información de la empresa (PTY SHIP SUPPLIERS, S.A.)
     doc.setFontSize(9)
     doc.setFont(undefined, 'bold')

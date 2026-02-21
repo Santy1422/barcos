@@ -18,6 +18,7 @@ import recordsAutoridadesSchema from './schemas/recordsAutoridadesSchema';
 import { ContainerType } from './schemas/containerTypesSchema';
 import { ErrorLog } from './schemas/errorLogSchema';
 import { UploadJob } from './schemas/uploadJobSchema';
+import { OrderCounter, getNextOrderNumber } from './schemas/orderCounterSchema';
 
 mongoose.set('strictQuery', false);
 
@@ -53,6 +54,8 @@ export const recordsAutoridades = mongoose.model('recordsAutoridades', recordsAu
 export const containerTypes = ContainerType;
 export const errorLogs = ErrorLog;
 export const uploadJobs = UploadJob;
+export const orderCounters = OrderCounter;
+export { getNextOrderNumber };
 
 // Manejo de eventos de conexión
 mongoose.connection.on('connected', () => {

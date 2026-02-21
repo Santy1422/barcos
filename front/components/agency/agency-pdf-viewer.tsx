@@ -102,6 +102,14 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
     doc.setFontSize(8)
     doc.text('DAY MO YR', 195, 40, { align: 'right' })
 
+    // PO Number (solo si existe)
+    if (serviceData.poNumber) {
+      doc.setFontSize(10)
+      doc.setFont(undefined, 'bold')
+      doc.text(`PO: ${serviceData.poNumber}`, 195, 46, { align: 'right' })
+      doc.setFont(undefined, 'normal')
+    }
+
     // Información empresa (PTYSS)
     doc.setFontSize(9)
     doc.setFont(undefined, 'bold')

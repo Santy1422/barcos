@@ -25,6 +25,7 @@ import agencyInvoicesRoutes from './agencyInvoicesRoutes';
 import analyticsRoutes from './analyticsRoutes';
 import errorLogs from './errorLogs';
 import logsRoutes from './logsRoutes';
+import serviceSapCodeRoutes from './serviceSapCodeRoutes';
 
 router.use('/api/user', user);
 router.use('/api/clients', clients);
@@ -59,5 +60,8 @@ router.use('/api/errors', errorLogs);
 
 // Request logs (para frontend y debugging)
 router.use('/api/logs', logsRoutes);
+
+// SAP Service Codes configuration
+router.use('/api/sap-service-codes', serviceSapCodeRoutes);
 
 export default router;

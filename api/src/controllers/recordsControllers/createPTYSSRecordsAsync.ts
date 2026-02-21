@@ -1,4 +1,4 @@
-import { records, uploadJobs } from "../../database";
+import { records, uploadJobs, getNextOrderNumber } from "../../database";
 import { response } from "../../utils";
 import mongoose from "mongoose";
 
@@ -184,7 +184,9 @@ async function processRecordsInBackground(
       const batch = recordsToProcess.slice(i, i + BATCH_SIZE);
 
       try {
-        const recordsToInsert = batch.map((recordData) => {
+        // Preparar documentos para insercion con orderNumbers generados secuencialmente
+        const recordsToInsert = [];
+        for (const recordData of batch) {
           const data = recordData.data || {};
           const totalValue = recordData.totalValue;
 
@@ -194,6 +196,9 @@ async function processRecordsInBackground(
             ? (data.containerConsecutive || null)
             : (data.order || null);
 
+          // Generar numero de orden consecutivo automaticamente
+          const orderNumber = await getNextOrderNumber('ptyss');
+
           const recordPayload: any = {
             excelId: excelId,
             module: 'ptyss',
@@ -202,6 +207,7 @@ async function processRecordsInBackground(
             totalValue: totalValue || 0,
             data,
             sapCode: data.sapCode || null,
+            orderNumber, // Numero de orden consecutivo (tipo PO)
             createdBy: userId
           };
 
@@ -213,8 +219,8 @@ async function processRecordsInBackground(
             recordPayload.clientId = new mongoose.Types.ObjectId(data.clientId);
           }
 
-          return recordPayload;
-        });
+          recordsToInsert.push(recordPayload);
+        }
 
         const insertedRecords = await records.insertMany(recordsToInsert, { ordered: false })
           .catch(async (err) => {

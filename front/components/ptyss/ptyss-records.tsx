@@ -476,21 +476,26 @@ export function PTYSSRecords() {
           if (!open) setFacturarInvoice(null)
         }}
         invoice={facturarInvoice}
-        onFacturar={async (newInvoiceNumber: string, xmlData?: { xml: string; isValid: boolean; sentToSap?: boolean; sentToSapAt?: string }, invoiceDate?: string) => {
+        onFacturar={async (newInvoiceNumber: string, xmlData?: { xml: string; isValid: boolean; sentToSap?: boolean; sentToSapAt?: string }, invoiceDate?: string, poNumber?: string) => {
           if (!facturarInvoice) return
-          
+
           const currentInvoice = facturarInvoice // Guardar referencia antes de cerrar modal
-          
+
           try {
             // Preparar las actualizaciones de la factura
-            const updates: any = { 
-              status: "facturada", 
-              invoiceNumber: newInvoiceNumber 
+            const updates: any = {
+              status: "facturada",
+              invoiceNumber: newInvoiceNumber
             }
-            
+
             // Actualizar fecha de emisión si se proporcionó
             if (invoiceDate) {
               updates.issueDate = invoiceDate
+            }
+
+            // Agregar PO Number si se proporcionó
+            if (poNumber) {
+              updates.poNumber = poNumber
             }
             
             // Agregar XML si está disponible

@@ -105,7 +105,8 @@ export function PTYSSHistory() {
 
   // Filtrar registros
   const filteredRecords = records.filter(record => {
-    const matchesSearch = 
+    const matchesSearch =
+      ((record as any).orderNumber?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (record.data?.order?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (record.data?.container?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (getRecordNaviera(record).toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
@@ -142,7 +143,7 @@ export function PTYSSHistory() {
   // Exportar a Excel
   const exportToExcel = () => {
     const exportData = filteredRecords.map(record => ({
-      'Orden': record.data?.order || 'N/A',
+      'No. Orden': (record as any).orderNumber || 'N/A',
       'Contenedor': record.data?.container || 'N/A',
       'Cliente': getRecordClient(record),
       'Naviera': getRecordNaviera(record),
@@ -382,7 +383,7 @@ export function PTYSSHistory() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Orden</TableHead>
+                    <TableHead>No. Orden</TableHead>
                     <TableHead>Contenedor</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Naviera</TableHead>
@@ -396,7 +397,9 @@ export function PTYSSHistory() {
                 <TableBody>
                   {filteredRecords.map((record) => (
                     <TableRow key={record._id}>
-                      <TableCell className="font-medium">{record.data?.order || 'N/A'}</TableCell>
+                      <TableCell className="font-medium font-mono text-sm">
+                        {(record as any).orderNumber || 'N/A'}
+                      </TableCell>
                       <TableCell>{record.data?.container || 'N/A'}</TableCell>
                       <TableCell>{getRecordClient(record)}</TableCell>
                       <TableCell>{getRecordNaviera(record)}</TableCell>
@@ -460,8 +463,10 @@ export function PTYSSHistory() {
                 <TabsContent value="general" className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label className="text-sm font-medium">Orden</Label>
-                      <p className="text-sm text-gray-600">{selectedRecord.data?.order || 'N/A'}</p>
+                      <Label className="text-sm font-medium">No. Orden</Label>
+                      <p className="text-sm text-gray-600 font-mono font-bold">
+                        {(selectedRecord as any).orderNumber || 'N/A'}
+                      </p>
                     </div>
                     <div>
                       <Label className="text-sm font-medium">Contenedor</Label>

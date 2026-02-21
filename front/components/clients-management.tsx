@@ -1191,6 +1191,7 @@ export function ClientsManagement() {
                   <TableHead>Tipo</TableHead>
                   <TableHead>Nombre/Empresa</TableHead>
                   <TableHead>Documento/RUC</TableHead>
+                  <TableHead>Código SAP</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Teléfono</TableHead>
                   <TableHead>Ubicación</TableHead>
@@ -1201,7 +1202,7 @@ export function ClientsManagement() {
               <TableBody>
                 {filteredClients.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
+                    <TableCell colSpan={9} className="text-center py-8">
                       <div className="flex flex-col items-center space-y-2">
                         <Users className="h-8 w-8 text-muted-foreground" />
                         <p className="text-muted-foreground">
@@ -1240,12 +1241,18 @@ export function ClientsManagement() {
                       </TableCell>
                       
                       <TableCell>
-                        {client.type === "natural" 
+                        {client.type === "natural"
                           ? `${client.documentType.toUpperCase()}: ${client.documentNumber}`
                           : `${client.ruc}`
                         }
                       </TableCell>
-                      
+
+                      <TableCell>
+                        <span className="text-sm font-mono">
+                          {client.sapCode || "-"}
+                        </span>
+                      </TableCell>
+
                       <TableCell>
                         {client.email && (
                           <div className="flex items-center space-x-1">

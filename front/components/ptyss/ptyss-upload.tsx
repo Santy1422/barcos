@@ -12,10 +12,10 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
-import { 
-  FileText, 
-  Plus, 
-  AlertCircle, 
+import {
+  FileText,
+  Plus,
+  AlertCircle,
   CheckCircle2,
   Ship,
   Database,
@@ -25,7 +25,8 @@ import {
   Loader2,
   Check,
   Send,
-  X
+  X,
+  Search
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
@@ -209,6 +210,9 @@ export function PTYSSUpload() {
   const [moveDateStart, setMoveDateStart] = useState<string>('')
   const [moveDateEnd, setMoveDateEnd] = useState<string>('')
 
+  // Estado para búsqueda de registros locales
+  const [localRecordSearchTerm, setLocalRecordSearchTerm] = useState<string>('')
+
   // Estado para crear rutas desde registros sin match
   const [showCreateRouteModal, setShowCreateRouteModal] = useState(false)
   const [recordForRoute, setRecordForRoute] = useState<TruckingExcelData | null>(null)
@@ -368,29 +372,56 @@ export function PTYSSUpload() {
       result = result.filter((record: ExcelRecord) => {
         const data = record.data as Record<string, any>
         const moveDate = data.moveDate
-        
+
         if (!moveDate) return false
-        
+
         const recordDate = new Date(moveDate)
-        
+
         if (moveDateStart) {
           const startDate = new Date(moveDateStart)
           startDate.setHours(0, 0, 0, 0)
           if (recordDate < startDate) return false
         }
-        
+
         if (moveDateEnd) {
           const endDate = new Date(moveDateEnd)
           endDate.setHours(23, 59, 59, 999)
           if (recordDate > endDate) return false
         }
-        
+
         return true
       })
     }
-    
+
+    // Aplicar filtro de búsqueda por texto
+    if (localRecordSearchTerm.trim()) {
+      const searchLower = localRecordSearchTerm.toLowerCase().trim()
+      result = result.filter((record: ExcelRecord) => {
+        const data = record.data as Record<string, any>
+        const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
+        const clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : ""
+
+        // Buscar en múltiples campos
+        const searchableFields = [
+          data.container || "",           // Contenedor
+          data.order || "",               // Orden
+          clientName,                     // Cliente
+          data.from || "",                // Origen
+          data.to || "",                  // Destino
+          data.conductor || "",           // Conductor
+          data.matriculaCamion || "",     // Matrícula camión
+          data.naviera || "",             // Naviera
+          data.operationType || "",       // Tipo de operación
+        ]
+
+        return searchableFields.some(field =>
+          field.toLowerCase().includes(searchLower)
+        )
+      })
+    }
+
     return result
-  }, [ptyssRecords, statusFilter, clientFilter, moveDateStart, moveDateEnd, clients])
+  }, [ptyssRecords, statusFilter, clientFilter, moveDateStart, moveDateEnd, localRecordSearchTerm, clients])
 
   // Función para re-procesar el Excel (simula el handleFileChange pero sin seleccionar archivo)
   const reprocessExcel = useCallback(async () => {
@@ -544,9 +575,9 @@ export function PTYSSUpload() {
           const data = await response.json()
           const services = data.data?.services || []
           
-          // Filtrar solo los servicios locales fijos
-          const fixedServices = services.filter((service: any) => 
-            ['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)
+          // Filtrar solo los servicios locales fijos (FDA codes)
+          const fixedServices = services.filter((service: any) =>
+            ['FDA263', 'FDA047', 'FDA059'].includes(service.code)
           )
           
           setLocalServices(fixedServices)
@@ -1106,8 +1137,9 @@ export function PTYSSUpload() {
     // Verificar que el cliente tenga rutas locales asociadas
     const clientRoutes = getLocalRoutesByRealClientId(currentRecord.clientId)
     
-    if (!currentRecord.clientId || !currentRecord.order || !currentRecord.container || !currentRecord.naviera || 
-        !currentRecord.localRouteId || !currentRecord.operationType || !currentRecord.containerSize || 
+    // Nota: El campo contenedor es opcional para exportaciones donde no se conoce hasta el retiro del puerto
+    if (!currentRecord.clientId || !currentRecord.order || !currentRecord.naviera ||
+        !currentRecord.localRouteId || !currentRecord.operationType || !currentRecord.containerSize ||
         !currentRecord.containerType || !currentRecord.conductor) {
       toast({
         title: "Error",
@@ -1263,32 +1295,33 @@ export function PTYSSUpload() {
       return localService?.price || 10 // Fallback a $10 si no se encuentra
     }
     
-    // Calcular servicios locales basados en la configuración
-    // TI (CLG097) - precio fijo
-    if (record.ti === 'si') {
-      total += getServicePrice('CLG097')
-    }
-    
-    // Estadia (TRK179) - precio fijo
-    if (record.estadia === 'si') {
-      total += getServicePrice('TRK179')
-    }
-    
-    // Retencion (TRK163) - precio por día después del tercer día
-    if (record.retencion && parseFloat(record.retencion) > 0) {
-      const dias = parseFloat(record.retencion)
-      if (dias > 3) {
-        const diasCobrables = dias - 3 // Solo cobrar días después del tercero
-        total += getServicePrice('TRK163') * diasCobrables
+    // Calcular servicios locales FDA (montos manuales)
+    // FDA263 - monto manual (ti)
+    if (record.ti && record.ti !== 'no') {
+      const amount = parseFloat(record.ti)
+      if (!isNaN(amount) && amount > 0) {
+        total += amount
       }
-      // Si son 3 días o menos, no se cobra nada
     }
-    
-    // Genset (SLR168) - precio por día
+
+    // FDA047 - monto manual (estadia)
+    if (record.estadia && record.estadia !== 'no') {
+      const amount = parseFloat(record.estadia)
+      if (!isNaN(amount) && amount > 0) {
+        total += amount
+      }
+    }
+
+    // FDA059 - monto manual (retencion)
+    if (record.retencion && parseFloat(record.retencion) > 0) {
+      total += parseFloat(record.retencion)
+    }
+
+    // Genset - monto manual
     if (record.genset && parseFloat(record.genset) > 0) {
-      total += getServicePrice('SLR168') * parseFloat(record.genset)
+      total += parseFloat(record.genset)
     }
-    
+
     // Agregar pesaje directamente (monto fijo)
     if (record.pesaje) total += parseFloat(record.pesaje) || 0
     
@@ -1946,6 +1979,31 @@ export function PTYSSUpload() {
           <CardContent>
             {/* Filtros */}
             <div className="space-y-4 mb-4">
+              {/* Campo de búsqueda */}
+              <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border">
+                <Label htmlFor="local-record-search" className="text-sm font-medium whitespace-nowrap">Buscar:</Label>
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="local-record-search"
+                    placeholder="Buscar por contenedor, cliente, orden, ruta..."
+                    value={localRecordSearchTerm}
+                    onChange={(e) => setLocalRecordSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                {localRecordSearchTerm && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setLocalRecordSearchTerm('')}
+                    className="h-8 w-8 p-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+
               {/* Filtros de Estado y Cliente en la misma fila */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Filtro de Estado */}
@@ -2042,9 +2100,9 @@ export function PTYSSUpload() {
                 </div>
               </div>
               
-              {/* Filtro por Fecha de Movimiento */}
+              {/* Filtro por Fecha Inicial */}
               <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border">
-                <Label htmlFor="move-date-start" className="text-sm font-medium whitespace-nowrap">Filtrar por fecha de movimiento:</Label>
+                <Label htmlFor="move-date-start" className="text-sm font-medium whitespace-nowrap">Filtrar por Fecha Inicial:</Label>
                 <div className="flex items-center gap-2">
                   <Input
                     id="move-date-start"
@@ -2080,16 +2138,17 @@ export function PTYSSUpload() {
               </div>
               
               {/* Botón para limpiar todos los filtros */}
-              {(statusFilter !== 'all' || clientFilter !== 'all' || moveDateStart || moveDateEnd) && (
+              {(statusFilter !== 'all' || clientFilter !== 'all' || moveDateStart || moveDateEnd || localRecordSearchTerm) && (
                 <div className="flex justify-end">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => {
                       setStatusFilter('all')
                       setClientFilter('all')
                       setMoveDateStart('')
                       setMoveDateEnd('')
+                      setLocalRecordSearchTerm('')
                     }}
                     className="text-xs"
                   >
@@ -2108,7 +2167,7 @@ export function PTYSSUpload() {
                     <TableHead className="font-semibold">Orden</TableHead>
                     <TableHead className="font-semibold">Ruta</TableHead>
                     <TableHead className="font-semibold">Operación</TableHead>
-                    <TableHead className="font-semibold">Fecha Movimiento</TableHead>
+                    <TableHead className="font-semibold">Fecha Inicial</TableHead>
                     <TableHead className="font-semibold">Estado</TableHead>
                     <TableHead className="font-semibold text-center">Acciones</TableHead>
                   </TableRow>
@@ -2481,7 +2540,7 @@ export function PTYSSUpload() {
               <h3 className="text-lg font-medium">Información del Contenedor</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="container">Contenedor *</Label>
+                  <Label htmlFor="container">Contenedor (opcional en exportación)</Label>
                   <Input
                     id="container"
                     value={currentRecord.container}
@@ -2495,7 +2554,6 @@ export function PTYSSUpload() {
                     maxLength={11}
                     pattern="[A-Z0-9]+"
                     title="Solo letras y números, máximo 11 caracteres"
-                    required
                   />
                 </div>
                 

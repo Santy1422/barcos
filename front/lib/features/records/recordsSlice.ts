@@ -16,6 +16,7 @@ export interface ExcelRecord {
   data: any // The raw data object for this record (e.g., TruckingRecordData)
   sapCode?: string // Campo específico para consultas
   containerConsecutive?: string // Campo específico para consultas
+  orderNumber?: string // Numero de orden consecutivo (formato: ORD-XXXXXX)
   createdAt: string
   invoiceId?: string // ID of the invoice if it has been facturado
 }
@@ -1457,6 +1458,36 @@ const recordsSlice = createSlice({
       .addCase(fetchAllRecordsByModule.rejected, (state, action) => {
         state.fetchingRecords = false
         state.error = action.payload as string
+      })
+
+      // Update invoice
+      .addCase(updateInvoiceAsync.pending, (state) => {
+        state.creatingRecords = true
+        state.error = null
+      })
+      .addCase(updateInvoiceAsync.fulfilled, (state, action) => {
+        state.creatingRecords = false
+        // Actualizar la factura en el estado local
+        const updatedInvoice = action.payload
+        const invoiceIndex = state.invoices.findIndex(inv =>
+          inv.id === updatedInvoice._id || inv.id === updatedInvoice.id
+        )
+        if (invoiceIndex >= 0) {
+          // Actualizar la factura existente con los nuevos datos
+          state.invoices[invoiceIndex] = {
+            ...state.invoices[invoiceIndex],
+            ...updatedInvoice,
+            id: updatedInvoice._id || updatedInvoice.id
+          }
+          console.log("✅ updateInvoiceAsync.fulfilled - Factura actualizada en estado:", updatedInvoice)
+        } else {
+          console.warn("⚠️ updateInvoiceAsync.fulfilled - Factura no encontrada en estado:", updatedInvoice._id || updatedInvoice.id)
+        }
+      })
+      .addCase(updateInvoiceAsync.rejected, (state, action) => {
+        state.creatingRecords = false
+        state.error = action.payload as string
+        console.error("❌ updateInvoiceAsync.rejected:", action.payload)
       })
 
       // Delete invoice

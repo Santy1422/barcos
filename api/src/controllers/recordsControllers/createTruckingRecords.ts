@@ -1,4 +1,4 @@
-import { records } from "../../database";
+import { records, getNextOrderNumber } from "../../database";
 import { response } from "../../utils";
 import mongoose from "mongoose";
 
@@ -145,6 +145,10 @@ export default async (req, res) => {
         // cuando se genera la prefactura/factura.
         const computedStatus = 'pendiente'
 
+        // Generar numero de orden consecutivo automaticamente
+        const orderNumber = await getNextOrderNumber(module);
+        console.log(`  - orderNumber generado: ${orderNumber}`);
+
         const record = await records.create({
           excelId: validExcelId,
           module: module,
@@ -154,6 +158,7 @@ export default async (req, res) => {
           data, // Datos originales completos
           sapCode, // Campo específico para consultas
           containerConsecutive, // Campo específico para consultas
+          orderNumber, // Numero de orden consecutivo (tipo PO)
           clientId, // Campo específico para referencias del cliente
           createdBy: userId
         });

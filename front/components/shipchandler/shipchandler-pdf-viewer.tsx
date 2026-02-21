@@ -230,6 +230,14 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
     doc.setFontSize(8)
     doc.text('DAY MO YR', 195, 40, { align: 'right' })
 
+    // PO Number (solo si existe)
+    if (invoiceData.poNumber) {
+      doc.setFontSize(10)
+      doc.setFont(undefined, 'bold')
+      doc.text(`PO: ${invoiceData.poNumber}`, 195, 46, { align: 'right' })
+      doc.setFont(undefined, 'normal')
+    }
+
     // Información empresa
     doc.setFontSize(9)
     doc.setFont(undefined, 'bold')

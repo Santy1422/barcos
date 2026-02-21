@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,7 +25,7 @@ import {
   type UserModule,
   hasPermission
 } from "@/lib/features/auth/authSlice"
-import { UserPlus, Edit, Trash2, Shield, Users, Eye, EyeOff, CheckSquare, Square, Key } from "lucide-react"
+import { UserPlus, Edit, Trash2, Shield, Users, Eye, EyeOff, CheckSquare, Square, Key, Search } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Switch } from "@/components/ui/switch"
 
@@ -71,6 +71,7 @@ export function UsersManagement() {
   const [showResetPasswordDialog, setShowResetPasswordDialog] = useState(false)
   const [userToResetPassword, setUserToResetPassword] = useState<User | null>(null)
   const [newPassword, setNewPassword] = useState("")
+  const [searchTerm, setSearchTerm] = useState("")
   const [formData, setFormData] = useState({
     username: "",
     email: "",
@@ -350,10 +351,10 @@ export function UsersManagement() {
   }
 
   const toggleSelectAll = () => {
-    if (selectedUsers.size === users.filter(u => u.id !== currentUser?.id).length) {
+    if (selectedUsers.size === filteredUsers.filter(u => u.id !== currentUser?.id).length) {
       setSelectedUsers(new Set())
     } else {
-      const allUserIds = new Set(users.filter(u => u.id !== currentUser?.id).map(u => u.id))
+      const allUserIds = new Set(filteredUsers.filter(u => u.id !== currentUser?.id).map(u => u.id))
       setSelectedUsers(allUserIds)
     }
   }
@@ -399,6 +400,27 @@ export function UsersManagement() {
       })
     }
   }
+
+  // Filtrar usuarios por búsqueda
+  const filteredUsers = useMemo(() => {
+    if (!searchTerm.trim()) return users
+
+    const search = searchTerm.toLowerCase()
+    return users.filter((user) => {
+      const username = (user.username || user.email.split('@')[0]).toLowerCase()
+      const fullName = (user.fullName || user.name || '').toLowerCase()
+      const email = user.email.toLowerCase()
+      const userRoles = user.roles || (user.role ? [user.role] : [])
+      const rolesText = userRoles.map(role => roleLabels[role] || role).join(' ').toLowerCase()
+
+      return (
+        username.includes(search) ||
+        fullName.includes(search) ||
+        email.includes(search) ||
+        rolesText.includes(search)
+      )
+    })
+  }, [users, searchTerm])
 
   return (
     <div className="space-y-6">
@@ -566,6 +588,24 @@ export function UsersManagement() {
           </div>
         </CardHeader>
         <CardContent>
+          {/* Barra de búsqueda */}
+          <div className="mb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar por nombre, email o rol..."
+                className="pl-9"
+              />
+            </div>
+            {searchTerm && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Mostrando {filteredUsers.length} de {users.length} usuarios
+              </p>
+            )}
+          </div>
+
           {isLoadingUsers ? (
             <div className="flex items-center justify-center py-8">
               <div className="text-center">
@@ -583,9 +623,9 @@ export function UsersManagement() {
                       size="sm"
                       className="h-8 w-8 p-0"
                       onClick={toggleSelectAll}
-                      title={selectedUsers.size === users.filter(u => u.id !== currentUser?.id).length ? "Deseleccionar todos" : "Seleccionar todos"}
+                      title={selectedUsers.size === filteredUsers.filter(u => u.id !== currentUser?.id).length ? "Deseleccionar todos" : "Seleccionar todos"}
                     >
-                      {selectedUsers.size > 0 && selectedUsers.size === users.filter(u => u.id !== currentUser?.id).length ? (
+                      {selectedUsers.size > 0 && selectedUsers.size === filteredUsers.filter(u => u.id !== currentUser?.id).length ? (
                         <CheckSquare className="h-4 w-4" />
                       ) : (
                         <Square className="h-4 w-4" />
@@ -603,7 +643,7 @@ export function UsersManagement() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((user) => {
+                {filteredUsers.map((user) => {
                   const isCurrentUser = user.id === currentUser?.id
                   const isSelected = selectedUsers.has(user.id)
                   

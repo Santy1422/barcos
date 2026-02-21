@@ -180,9 +180,9 @@ export function PTYSSPrefactura() {
           const data = await response.json()
           const services = data.data?.services || []
           
-          // Filtrar solo los servicios locales fijos
-          const fixedServices = services.filter((service: any) => 
-            ['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)
+          // Filtrar solo los servicios locales fijos (FDA codes)
+          const fixedServices = services.filter((service: any) =>
+            ['FDA263', 'FDA047', 'FDA059'].includes(service.code)
           )
           
           setFixedLocalServices(fixedServices)
@@ -515,46 +515,52 @@ export function PTYSSPrefactura() {
           isLocalService: boolean
         }> = []
         
-        // TI (CLG097) - precio fijo
-        if (data.ti === 'si') {
-          newLocalServices.push({
-            serviceId: 'CLG097',
-            name: 'Customs/TI',
-            description: 'Customs/TI',
-            amount: 10,
-            isLocalService: true
-          })
+        // FDA263 - monto manual (ti)
+        if (data.ti && data.ti !== 'no') {
+          const amount = parseFloat(data.ti)
+          if (!isNaN(amount) && amount > 0) {
+            newLocalServices.push({
+              serviceId: 'FDA263',
+              name: 'FDA263',
+              description: 'Servicio Local FDA263',
+              amount: amount,
+              isLocalService: true
+            })
+          }
         }
-        
-        // Estadia (TRK179) - precio fijo
-        if (data.estadia === 'si') {
-          newLocalServices.push({
-            serviceId: 'TRK179',
-            name: 'Storage/Estadía',
-            description: 'Storage/Estadía',
-            amount: 10,
-            isLocalService: true
-          })
+
+        // FDA047 - monto manual (estadia)
+        if (data.estadia && data.estadia !== 'no') {
+          const amount = parseFloat(data.estadia)
+          if (!isNaN(amount) && amount > 0) {
+            newLocalServices.push({
+              serviceId: 'FDA047',
+              name: 'FDA047',
+              description: 'Servicio Local FDA047',
+              amount: amount,
+              isLocalService: true
+            })
+          }
         }
-        
-        // Retencion (TRK163) - precio por día
+
+        // FDA059 - monto manual (retencion)
         if (data.retencion && parseFloat(data.retencion) > 0) {
           newLocalServices.push({
-            serviceId: 'TRK163',
-            name: 'Demurrage/Retención',
-            description: `Demurrage/Retención (${data.retencion} días)`,
-            amount: 10 * parseFloat(data.retencion),
+            serviceId: 'FDA059',
+            name: 'FDA059',
+            description: 'Servicio Local FDA059',
+            amount: parseFloat(data.retencion),
             isLocalService: true
           })
         }
-        
-        // Genset (SLR168) - precio por día
+
+        // Genset - monto manual
         if (data.genset && parseFloat(data.genset) > 0) {
           newLocalServices.push({
-            serviceId: 'SLR168',
-            name: 'Genset Rental',
-            description: `Genset Rental (${data.genset} días)`,
-            amount: 10 * parseFloat(data.genset),
+            serviceId: 'GENSET',
+            name: 'Genset',
+            description: `Genset`,
+            amount: parseFloat(data.genset),
             isLocalService: true
           })
         }
@@ -598,50 +604,56 @@ export function PTYSSPrefactura() {
           selectedLocalRecords.forEach((record: IndividualExcelRecord) => {
             const data = record.data as Record<string, any>
             
-            // TI (CLG097) - precio fijo
-            if (data.ti === 'si') {
-              allLocalServices.push({
-                serviceId: 'CLG097',
-                name: 'Customs/TI',
-                description: 'Customs/TI',
-                amount: 10,
-                isLocalService: true
-              })
+            // FDA263 - monto manual (ti)
+            if (data.ti && data.ti !== 'no') {
+              const amount = parseFloat(data.ti)
+              if (!isNaN(amount) && amount > 0) {
+                allLocalServices.push({
+                  serviceId: 'FDA263',
+                  name: 'FDA263',
+                  description: 'Servicio Local FDA263',
+                  amount: amount,
+                  isLocalService: true
+                })
+              }
             }
-            
-            // Estadia (TRK179) - precio fijo
-            if (data.estadia === 'si') {
-              allLocalServices.push({
-                serviceId: 'TRK179',
-                name: 'Storage/Estadía',
-                description: 'Storage/Estadía',
-                amount: 10,
-                isLocalService: true
-              })
+
+            // FDA047 - monto manual (estadia)
+            if (data.estadia && data.estadia !== 'no') {
+              const amount = parseFloat(data.estadia)
+              if (!isNaN(amount) && amount > 0) {
+                allLocalServices.push({
+                  serviceId: 'FDA047',
+                  name: 'FDA047',
+                  description: 'Servicio Local FDA047',
+                  amount: amount,
+                  isLocalService: true
+                })
+              }
             }
-            
-            // Retencion (TRK163) - precio por día
+
+            // FDA059 - monto manual (retencion)
             if (data.retencion && parseFloat(data.retencion) > 0) {
               allLocalServices.push({
-                serviceId: 'TRK163',
-                name: 'Demurrage/Retención',
-                description: `Demurrage/Retención (${data.retencion} días)`,
-                amount: 10 * parseFloat(data.retencion),
+                serviceId: 'FDA059',
+                name: 'FDA059',
+                description: 'Servicio Local FDA059',
+                amount: parseFloat(data.retencion),
                 isLocalService: true
               })
             }
-            
-            // Genset (SLR168) - precio por día
+
+            // Genset - monto manual
             if (data.genset && parseFloat(data.genset) > 0) {
               allLocalServices.push({
-                serviceId: 'SLR168',
-                name: 'Genset Rental',
-                description: `Genset Rental (${data.genset} días)`,
-                amount: 10 * parseFloat(data.genset),
+                serviceId: 'GENSET',
+                name: 'Genset',
+                description: 'Genset',
+                amount: parseFloat(data.genset),
                 isLocalService: true
               })
             }
-            
+
             // Pesaje - precio directo
             if (data.pesaje && parseFloat(data.pesaje) > 0) {
               allLocalServices.push({
@@ -681,50 +693,56 @@ export function PTYSSPrefactura() {
           selectedLocalRecords.forEach((record: IndividualExcelRecord) => {
             const data = record.data as Record<string, any>
             
-            // TI (CLG097) - precio fijo
-            if (data.ti === 'si') {
-              allLocalServices.push({
-                serviceId: 'CLG097',
-                name: 'Customs/TI',
-                description: 'Customs/TI',
-                amount: 10,
-                isLocalService: true
-              })
+            // FDA263 - monto manual (ti)
+            if (data.ti && data.ti !== 'no') {
+              const amount = parseFloat(data.ti)
+              if (!isNaN(amount) && amount > 0) {
+                allLocalServices.push({
+                  serviceId: 'FDA263',
+                  name: 'FDA263',
+                  description: 'Servicio Local FDA263',
+                  amount: amount,
+                  isLocalService: true
+                })
+              }
             }
-            
-            // Estadia (TRK179) - precio fijo
-            if (data.estadia === 'si') {
-              allLocalServices.push({
-                serviceId: 'TRK179',
-                name: 'Storage/Estadía',
-                description: 'Storage/Estadía',
-                amount: 10,
-                isLocalService: true
-              })
+
+            // FDA047 - monto manual (estadia)
+            if (data.estadia && data.estadia !== 'no') {
+              const amount = parseFloat(data.estadia)
+              if (!isNaN(amount) && amount > 0) {
+                allLocalServices.push({
+                  serviceId: 'FDA047',
+                  name: 'FDA047',
+                  description: 'Servicio Local FDA047',
+                  amount: amount,
+                  isLocalService: true
+                })
+              }
             }
-            
-            // Retencion (TRK163) - precio por día
+
+            // FDA059 - monto manual (retencion)
             if (data.retencion && parseFloat(data.retencion) > 0) {
               allLocalServices.push({
-                serviceId: 'TRK163',
-                name: 'Demurrage/Retención',
-                description: `Demurrage/Retención (${data.retencion} días)`,
-                amount: 10 * parseFloat(data.retencion),
+                serviceId: 'FDA059',
+                name: 'FDA059',
+                description: 'Servicio Local FDA059',
+                amount: parseFloat(data.retencion),
                 isLocalService: true
               })
             }
-            
-            // Genset (SLR168) - precio por día
+
+            // Genset - monto manual
             if (data.genset && parseFloat(data.genset) > 0) {
               allLocalServices.push({
-                serviceId: 'SLR168',
-                name: 'Genset Rental',
-                description: `Genset Rental (${data.genset} días)`,
-                amount: 10 * parseFloat(data.genset),
+                serviceId: 'GENSET',
+                name: 'Genset',
+                description: 'Genset',
+                amount: parseFloat(data.genset),
                 isLocalService: true
               })
             }
-            
+
             // Pesaje - precio directo
             if (data.pesaje && parseFloat(data.pesaje) > 0) {
               allLocalServices.push({
@@ -777,50 +795,56 @@ export function PTYSSPrefactura() {
       selectableRecords.forEach((record: IndividualExcelRecord) => {
         const data = record.data as Record<string, any>
         if (data.recordType === 'local') {
-          // TI (CLG097) - precio fijo
-          if (data.ti === 'si') {
-            newLocalServices.push({
-              serviceId: 'CLG097',
-              name: 'Customs/TI',
-              description: 'Customs/TI',
-              amount: 10,
-              isLocalService: true
-            })
+          // FDA263 - monto manual (ti)
+          if (data.ti && data.ti !== 'no') {
+            const amount = parseFloat(data.ti)
+            if (!isNaN(amount) && amount > 0) {
+              newLocalServices.push({
+                serviceId: 'FDA263',
+                name: 'FDA263',
+                description: 'Servicio Local FDA263',
+                amount: amount,
+                isLocalService: true
+              })
+            }
           }
-          
-          // Estadia (TRK179) - precio fijo
-          if (data.estadia === 'si') {
-            newLocalServices.push({
-              serviceId: 'TRK179',
-              name: 'Storage/Estadía',
-              description: 'Storage/Estadía',
-              amount: 10,
-              isLocalService: true
-            })
+
+          // FDA047 - monto manual (estadia)
+          if (data.estadia && data.estadia !== 'no') {
+            const amount = parseFloat(data.estadia)
+            if (!isNaN(amount) && amount > 0) {
+              newLocalServices.push({
+                serviceId: 'FDA047',
+                name: 'FDA047',
+                description: 'Servicio Local FDA047',
+                amount: amount,
+                isLocalService: true
+              })
+            }
           }
-          
-          // Retencion (TRK163) - precio por día
+
+          // FDA059 - monto manual (retencion)
           if (data.retencion && parseFloat(data.retencion) > 0) {
             newLocalServices.push({
-              serviceId: 'TRK163',
-              name: 'Demurrage/Retención',
-              description: `Demurrage/Retención (${data.retencion} días)`,
-              amount: 10 * parseFloat(data.retencion),
+              serviceId: 'FDA059',
+              name: 'FDA059',
+              description: 'Servicio Local FDA059',
+              amount: parseFloat(data.retencion),
               isLocalService: true
             })
           }
-          
-          // Genset (SLR168) - precio por día
+
+          // Genset - monto manual
           if (data.genset && parseFloat(data.genset) > 0) {
             newLocalServices.push({
-              serviceId: 'SLR168',
-              name: 'Genset Rental',
-              description: `Genset Rental (${data.genset} días)`,
-              amount: 10 * parseFloat(data.genset),
+              serviceId: 'GENSET',
+              name: 'Genset',
+              description: 'Genset',
+              amount: parseFloat(data.genset),
               isLocalService: true
             })
           }
-          
+
           // Pesaje - precio directo
           if (data.pesaje && parseFloat(data.pesaje) > 0) {
             newLocalServices.push({
@@ -898,58 +922,57 @@ export function PTYSSPrefactura() {
 
     selectedLocalRecords.forEach((record: IndividualExcelRecord) => {
       const data = record.data as Record<string, any>
-      
-      // TI (CLG097) - precio fijo
-      if (data.ti === 'si') {
-        const tiPrice = getFixedLocalServicePrice('CLG097')
-        console.log('🔍 Calculando TI - precio:', tiPrice)
-        allLocalServices.push({
-          serviceId: 'CLG097',
-          name: 'Customs/TI',
-          description: 'Customs/TI',
-          amount: tiPrice,
-          isLocalService: true
-        })
-      }
-      
-      // Estadia (TRK179) - precio fijo
-      if (data.estadia === 'si') {
-        allLocalServices.push({
-          serviceId: 'TRK179',
-          name: 'Storage/Estadía',
-          description: 'Storage/Estadía',
-          amount: getFixedLocalServicePrice('TRK179'),
-          isLocalService: true
-        })
-      }
-      
-      // Retencion (TRK163) - precio por día después del tercer día
-      if (data.retencion && parseFloat(data.retencion) > 0) {
-        const dias = parseFloat(data.retencion)
-        if (dias > 3) {
-          const diasCobrables = dias - 3 // Solo cobrar días después del tercero
+
+      // FDA263 - monto manual (ti)
+      if (data.ti && data.ti !== 'no') {
+        const amount = parseFloat(data.ti)
+        if (!isNaN(amount) && amount > 0) {
           allLocalServices.push({
-            serviceId: 'TRK163',
-            name: 'Demurrage/Retención',
-            description: `Demurrage/Retención (${diasCobrables} días cobrables de ${dias} total)`,
-            amount: getFixedLocalServicePrice('TRK163') * diasCobrables,
+            serviceId: 'FDA263',
+            name: 'FDA263',
+            description: 'Servicio Local FDA263',
+            amount: amount,
             isLocalService: true
           })
         }
-        // Si son 3 días o menos, no se agrega el servicio
       }
-      
-      // Genset (SLR168) - precio por día
-      if (data.genset && parseFloat(data.genset) > 0) {
+
+      // FDA047 - monto manual (estadia)
+      if (data.estadia && data.estadia !== 'no') {
+        const amount = parseFloat(data.estadia)
+        if (!isNaN(amount) && amount > 0) {
+          allLocalServices.push({
+            serviceId: 'FDA047',
+            name: 'FDA047',
+            description: 'Servicio Local FDA047',
+            amount: amount,
+            isLocalService: true
+          })
+        }
+      }
+
+      // FDA059 - monto manual (retencion)
+      if (data.retencion && parseFloat(data.retencion) > 0) {
         allLocalServices.push({
-          serviceId: 'SLR168',
-          name: 'Genset Rental',
-          description: `Genset Rental (${data.genset} días)`,
-          amount: getFixedLocalServicePrice('SLR168') * parseFloat(data.genset),
+          serviceId: 'FDA059',
+          name: 'FDA059',
+          description: 'Servicio Local FDA059',
+          amount: parseFloat(data.retencion),
           isLocalService: true
         })
       }
-      
+
+      // Genset - monto manual
+      if (data.genset && parseFloat(data.genset) > 0) {
+        allLocalServices.push({
+          serviceId: 'GENSET',
+          name: 'Genset',
+          description: 'Genset',
+          amount: parseFloat(data.genset),
+          isLocalService: true
+        })
+      }
+
       // Pesaje - precio directo
       if (data.pesaje && parseFloat(data.pesaje) > 0) {
         allLocalServices.push({
@@ -1537,42 +1560,22 @@ export function PTYSSPrefactura() {
       
       // Para servicios locales fijos, acumular por tipo
       if (service.isLocalService) {
-        if (service.serviceId === 'TRK163' || service.serviceId === 'SLR168') { // Retención o Genset
-          if (service.serviceId === 'TRK163') {
-            // Para retención, extraer días cobrables de la descripción
-            const match = service.description.match(/\((\d+) días cobrables de (\d+) total\)/)
-            if (match) {
-              const diasCobrables = parseInt(match[1])
-              const diasTotal = parseInt(match[2])
-              groupedServices[serviceKey].count += diasCobrables
-              groupedServices[serviceKey].total += service.amount
-              groupedServices[serviceKey].unitPrice = getFixedLocalServicePrice('TRK163')
-            } else {
-              // Fallback si no se puede parsear la descripción
-              groupedServices[serviceKey].count += 1
-              groupedServices[serviceKey].total += service.amount
-              groupedServices[serviceKey].unitPrice = getFixedLocalServicePrice('TRK163')
-            }
-          } else {
-            // Para Genset, extraer días de la descripción
-            const match = service.description.match(/\((\d+) días\)/)
-            const days = match ? parseInt(match[1]) : 1
-            groupedServices[serviceKey].count += days
-            groupedServices[serviceKey].total += service.amount
-            groupedServices[serviceKey].unitPrice = getFixedLocalServicePrice('SLR168')
-          }
+        // FDA codes y otros servicios locales son montos manuales
+        if (service.serviceId === 'FDA263' || service.serviceId === 'FDA047' || service.serviceId === 'FDA059' || service.serviceId === 'GENSET') {
+          // Servicios FDA y Genset son montos manuales directos
+          groupedServices[serviceKey].count += 1
+          groupedServices[serviceKey].total += service.amount
+          groupedServices[serviceKey].unitPrice = service.amount
         } else if (service.serviceId === 'PESAJE') {
-          // Pesaje es un valor directo, no un servicio configurado
+          // Pesaje es un valor directo
           groupedServices[serviceKey].count += 1
           groupedServices[serviceKey].total += service.amount
-          groupedServices[serviceKey].unitPrice = service.amount // El precio unitario es el mismo que el total para pesaje
+          groupedServices[serviceKey].unitPrice = service.amount
         } else {
-          // TI, Estadia son servicios fijos configurados
+          // Otros servicios locales
           groupedServices[serviceKey].count += 1
           groupedServices[serviceKey].total += service.amount
-          // Usar el precio configurado para servicios locales fijos
-          const unitPrice = service.serviceId === 'CLG097' ? getFixedLocalServicePrice('CLG097') : getFixedLocalServicePrice('TRK179')
-          groupedServices[serviceKey].unitPrice = unitPrice
+          groupedServices[serviceKey].unitPrice = service.amount
         }
       } else {
         // Para servicios adicionales no locales, mantener como están

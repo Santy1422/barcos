@@ -30,7 +30,7 @@ interface ShipChandlerFacturacionModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   invoice: any
-  onFacturar: (invoiceNumber: string, xmlData?: { xml: string, isValid: boolean }, invoiceDate?: string) => Promise<void>
+  onFacturar: (invoiceNumber: string, xmlData?: { xml: string, isValid: boolean }, invoiceDate?: string, poNumber?: string) => Promise<void>
 }
 
 export function ShipChandlerFacturacionModal({ 
@@ -42,6 +42,7 @@ export function ShipChandlerFacturacionModal({
   const { toast } = useToast()
   const [isProcessing, setIsProcessing] = useState(false)
   const [newInvoiceNumber, setNewInvoiceNumber] = useState("")
+  const [poNumber, setPoNumber] = useState("")
   const [invoiceDate, setInvoiceDate] = useState(() => {
     const today = new Date()
     return today.toLocaleDateString('en-CA') // Formato YYYY-MM-DD en zona horaria local
@@ -305,6 +306,7 @@ export function ShipChandlerFacturacionModal({
     
     setGeneratedXml("")
     setXmlValidation(null)
+    setPoNumber("")
     setIsSendingToSap(false)
     setSapLogs([])
     setShowSapLogs(false)
@@ -662,7 +664,7 @@ export function ShipChandlerFacturacionModal({
       
       console.log("🔍 ShipChandlerFacturacionModal - xmlData final que se enviará:", xmlData)
       
-      await onFacturar(newInvoiceNumber, xmlData, invoiceDate)
+      await onFacturar(newInvoiceNumber, xmlData, invoiceDate, poNumber)
       
       const xmlMessage = xmlData?.isValid 
         ? " XML generado y validado correctamente."
@@ -777,6 +779,23 @@ export function ShipChandlerFacturacionModal({
               />
               <p className="text-xs text-muted-foreground">
                 Fecha obtenida automáticamente del registro (Date). Puede editarla si es necesario.
+              </p>
+            </div>
+
+            {/* Número de PO */}
+            <div className="space-y-2">
+              <Label htmlFor="po-number" className="text-sm font-semibold">
+                Numero de PO (opcional)
+              </Label>
+              <Input
+                id="po-number"
+                value={poNumber}
+                onChange={(e) => setPoNumber(e.target.value.toUpperCase())}
+                placeholder="Ej: PO-12345"
+                className="font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                Este campo aparecera solo en el PDF, no en el XML
               </p>
             </div>
 

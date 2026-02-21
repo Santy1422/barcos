@@ -5,8 +5,11 @@ export default async (req, res) => {
   try {
     const { userId } = req.params;
 
+    // Verificar roles del usuario (soportar múltiples roles)
+    const userRoles = req.user?.roles || (req.user?.role ? [req.user.role] : []);
+
     // Solo administradores pueden eliminar usuarios
-    if (req.user.role !== 'administrador') {
+    if (!userRoles.includes('administrador')) {
       return response(res, 403, { error: "No tienes permisos para eliminar usuarios" });
     }
 
