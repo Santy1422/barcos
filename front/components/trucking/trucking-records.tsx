@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Truck, Search, Download, Eye, Edit, Calendar, DollarSign, User, Loader2, Trash2, Database, Code, X, Filter } from "lucide-react"
+import { Truck, Search, Download, Eye, Edit, Calendar, DollarSign, User, Loader2, Trash2, Database, Code, X, Filter, SearchX, FileX } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 import saveAs from "file-saver"
 
 import {
@@ -727,12 +728,12 @@ export function TruckingRecords() {
             </div>
           )}
 
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                  <TableHead>Número</TableHead>
-                  <TableHead>Tipo</TableHead>
+                  <TableHead className="min-w-[120px]">Número</TableHead>
+                  <TableHead className="min-w-[100px]">Tipo</TableHead>
                   <TableHead>
                     <div className="flex items-center justify-between relative" data-client-filter>
                       <span>Cliente</span>
@@ -790,21 +791,80 @@ export function TruckingRecords() {
                       )}
                     </div>
                   </TableHead>
-                  <TableHead>Contenedor</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Total</TableHead>
-                      <TableHead>Estado</TableHead>
-                  <TableHead className="hidden md:table-cell">Notas</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead className="min-w-[140px]">Contenedor</TableHead>
+                  <TableHead className="min-w-[120px]">Fecha</TableHead>
+                  <TableHead className="min-w-[100px]">Total</TableHead>
+                      <TableHead className="min-w-[100px]">Estado</TableHead>
+                  <TableHead className="min-w-[120px] hidden md:table-cell">Notas</TableHead>
+                  <TableHead className="min-w-[200px] text-right">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={9} className="py-8 text-center"><div className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Cargando…</div></TableCell></TableRow>
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={`skeleton-${index}`}>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-24 rounded-full" /></TableCell>
+                      <TableCell className="hidden md:table-cell"><Skeleton className="h-5 w-full" /></TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Skeleton className="h-8 w-8" />
+                          <Skeleton className="h-8 w-8" />
+                          <Skeleton className="h-8 w-8" />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
                 ) : error ? (
                   <TableRow><TableCell colSpan={9} className="py-8 text-center text-red-600">{error}</TableCell></TableRow>
                 ) : filteredInvoices.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">No hay prefacturas</TableCell></TableRow>
+                  <TableRow>
+                    <TableCell colSpan={9} className="py-12">
+                      <div className="flex flex-col items-center justify-center space-y-4">
+                        {search || statusFilter !== "all" || typeFilter !== "all" || clientFilter !== "all" || isUsingPeriodFilter ? (
+                          <>
+                            <div className="rounded-full bg-orange-100 p-4">
+                              <SearchX className="h-10 w-10 text-orange-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Sin resultados</h3>
+                            <p className="text-sm text-muted-foreground text-center max-w-sm">
+                              No se encontraron prefacturas que coincidan con los filtros aplicados
+                            </p>
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setSearch("")
+                                setStatusFilter("all")
+                                setTypeFilter("all")
+                                setClientFilter("all")
+                                setIsUsingPeriodFilter(false)
+                                setStartDate("")
+                                setEndDate("")
+                              }}
+                            >
+                              <X className="mr-2 h-4 w-4" />
+                              Limpiar filtros
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rounded-full bg-blue-100 p-4">
+                              <FileX className="h-10 w-10 text-blue-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Sin prefacturas</h3>
+                            <p className="text-sm text-muted-foreground text-center max-w-sm">
+                              Aún no hay prefacturas de Trucking creadas. Las prefacturas se generan desde los registros.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 ) : (
                   filteredInvoices.map((inv: any) => {
                     const isAuth = (inv.invoiceNumber || '').toString().toUpperCase().startsWith('AUTH-')

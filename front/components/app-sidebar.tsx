@@ -203,6 +203,12 @@ export function AppSidebar() {
       href: "/usuarios",
       icon: Users,
     }] : []),
+    // Analytics - Solo administradores y facturación
+    ...(hasAnyRole(["administrador", "analytics", "facturacion"]) ? [{
+      title: "Analytics",
+      href: "/analytics",
+      icon: BarChart3,
+    }] : []),
   ]
   
   const mainNavItems = allNavItems

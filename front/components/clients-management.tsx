@@ -14,30 +14,34 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
-import { 
-  Users, 
-  Search, 
-  Plus,  
-  Edit, 
-  Trash2, 
-  Building, 
-  User, 
-  Mail, 
-  Phone, 
+import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Users,
+  Search,
+  Plus,
+  Edit,
+  Trash2,
+  Building,
+  User,
+  Mail,
+  Phone,
   MapPin,
   Filter,
   Download,
   Upload,
   CheckCircle,
-  Loader2
+  Loader2,
+  UserX,
+  SearchX
 } from "lucide-react"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { selectCurrentUser } from "@/lib/features/auth/authSlice"
-import { 
-  selectAllClients, 
+import {
+  selectAllClients,
   selectActiveClients,
   selectNaturalClients,
   selectJuridicalClients,
+  selectClientsLoading,
   addClient,
   updateClient,
   deleteClient,
@@ -105,6 +109,7 @@ export function ClientModal({
 }) {
   const dispatch = useAppDispatch()
   const allClients = useAppSelector(selectAllClients)
+  const isLoading = useAppSelector(selectClientsLoading)
   const currentUser = useAppSelector(selectCurrentUser)
   const { toast } = useToast()
   
@@ -1184,32 +1189,80 @@ export function ClientsManagement() {
           <CardTitle>Lista de Clientes</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Nombre/Empresa</TableHead>
-                  <TableHead>Documento/RUC</TableHead>
-                  <TableHead>Código SAP</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Teléfono</TableHead>
-                  <TableHead>Ubicación</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead className="min-w-[100px]">Tipo</TableHead>
+                  <TableHead className="min-w-[200px]">Nombre/Empresa</TableHead>
+                  <TableHead className="min-w-[150px]">Documento/RUC</TableHead>
+                  <TableHead className="min-w-[120px]">Código SAP</TableHead>
+                  <TableHead className="min-w-[180px]">Email</TableHead>
+                  <TableHead className="min-w-[120px]">Teléfono</TableHead>
+                  <TableHead className="min-w-[150px]">Ubicación</TableHead>
+                  <TableHead className="min-w-[100px]">Estado</TableHead>
+                  <TableHead className="text-right min-w-[120px]">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredClients.length === 0 ? (
+                {isLoading ? (
+                  // Loading Skeleton
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={`skeleton-${index}`}>
+                      <TableCell><Skeleton className="h-6 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-40" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-36" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-8 w-20 ml-auto" /></TableCell>
+                    </TableRow>
+                  ))
+                ) : filteredClients.length === 0 ? (
+                  // Empty State mejorado
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8">
-                      <div className="flex flex-col items-center space-y-2">
-                        <Users className="h-8 w-8 text-muted-foreground" />
-                        <p className="text-muted-foreground">
-                          {searchTerm || filterType !== "all" || filterStatus !== "all" 
-                            ? "No se encontraron clientes con los filtros aplicados"
-                            : "No hay clientes registrados"}
-                        </p>
+                    <TableCell colSpan={9} className="text-center py-16">
+                      <div className="flex flex-col items-center space-y-4">
+                        {searchTerm || filterType !== "all" || filterStatus !== "all" ? (
+                          <>
+                            <div className="rounded-full bg-orange-100 p-4">
+                              <SearchX className="h-10 w-10 text-orange-600" />
+                            </div>
+                            <div className="space-y-2">
+                              <h3 className="text-lg font-semibold text-gray-900">Sin resultados</h3>
+                              <p className="text-muted-foreground max-w-sm">
+                                No se encontraron clientes con los filtros aplicados.
+                                Intenta ajustar los criterios de búsqueda.
+                              </p>
+                            </div>
+                            <Button variant="outline" size="sm" onClick={() => {
+                              setSearchTerm("")
+                              setFilterType("all")
+                              setFilterStatus("all")
+                            }}>
+                              Limpiar filtros
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rounded-full bg-blue-100 p-4">
+                              <UserX className="h-10 w-10 text-blue-600" />
+                            </div>
+                            <div className="space-y-2">
+                              <h3 className="text-lg font-semibold text-gray-900">No hay clientes</h3>
+                              <p className="text-muted-foreground max-w-sm">
+                                Aún no hay clientes registrados en el sistema.
+                                Comienza agregando tu primer cliente.
+                              </p>
+                            </div>
+                            <Button onClick={() => setIsDialogOpen(true)}>
+                              <Plus className="mr-2 h-4 w-4" />
+                              Agregar Cliente
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

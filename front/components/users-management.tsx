@@ -25,7 +25,8 @@ import {
   type UserModule,
   hasPermission
 } from "@/lib/features/auth/authSlice"
-import { UserPlus, Edit, Trash2, Shield, Users, Eye, EyeOff, CheckSquare, Square, Key, Search } from "lucide-react"
+import { UserPlus, Edit, Trash2, Shield, Users, Eye, EyeOff, CheckSquare, Square, Key, Search, UserX, SearchX } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/hooks/use-toast"
 import { Switch } from "@/components/ui/switch"
 
@@ -606,18 +607,11 @@ export function UsersManagement() {
             )}
           </div>
 
-          {isLoadingUsers ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="text-center">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-                <p className="mt-2 text-sm text-muted-foreground">Cargando usuarios...</p>
-              </div>
-            </div>
-          ) : (
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-12">
+                  <TableHead className="w-12 min-w-[50px]">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -632,18 +626,71 @@ export function UsersManagement() {
                       )}
                     </Button>
                   </TableHead>
-                  <TableHead>Usuario</TableHead>
-                  <TableHead>Nombre Completo</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Rol</TableHead>
-                  <TableHead>Módulos</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Último Acceso</TableHead>
-                  <TableHead>Acciones</TableHead>
+                  <TableHead className="min-w-[120px]">Usuario</TableHead>
+                  <TableHead className="min-w-[150px]">Nombre Completo</TableHead>
+                  <TableHead className="min-w-[180px]">Email</TableHead>
+                  <TableHead className="min-w-[120px]">Rol</TableHead>
+                  <TableHead className="min-w-[150px]">Módulos</TableHead>
+                  <TableHead className="min-w-[100px]">Estado</TableHead>
+                  <TableHead className="min-w-[130px]">Último Acceso</TableHead>
+                  <TableHead className="min-w-[120px]">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredUsers.map((user) => {
+                {isLoadingUsers ? (
+                  // Loading Skeleton
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={`skeleton-${index}`}>
+                      <TableCell><Skeleton className="h-8 w-8" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-40" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-8 w-24" /></TableCell>
+                    </TableRow>
+                  ))
+                ) : filteredUsers.length === 0 ? (
+                  // Empty State mejorado
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-16">
+                      <div className="flex flex-col items-center space-y-4">
+                        {searchTerm ? (
+                          <>
+                            <div className="rounded-full bg-orange-100 p-4">
+                              <SearchX className="h-10 w-10 text-orange-600" />
+                            </div>
+                            <div className="space-y-2">
+                              <h3 className="text-lg font-semibold text-gray-900">Sin resultados</h3>
+                              <p className="text-muted-foreground max-w-sm">
+                                No se encontraron usuarios con "{searchTerm}".
+                                Intenta con otro término de búsqueda.
+                              </p>
+                            </div>
+                            <Button variant="outline" size="sm" onClick={() => setSearchTerm("")}>
+                              Limpiar búsqueda
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rounded-full bg-blue-100 p-4">
+                              <UserX className="h-10 w-10 text-blue-600" />
+                            </div>
+                            <div className="space-y-2">
+                              <h3 className="text-lg font-semibold text-gray-900">No hay usuarios</h3>
+                              <p className="text-muted-foreground max-w-sm">
+                                Aún no hay usuarios registrados en el sistema.
+                              </p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredUsers.map((user) => {
                   const isCurrentUser = user.id === currentUser?.id
                   const isSelected = selectedUsers.has(user.id)
                   
@@ -766,10 +813,11 @@ export function UsersManagement() {
                   </TableCell>
                 </TableRow>
                   )
-                })}
+                })
+                )}
               </TableBody>
             </Table>
-          )}
+          </div>
         </CardContent>
       </Card>
 

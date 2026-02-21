@@ -20,8 +20,9 @@ import {
 import {
   Car, Search, Eye, FileText, Calendar,
   User, Loader2, Trash2, Edit, RefreshCw, MapPin, ArrowRight, Paperclip,
-  Clock, Save, X, Ship, Users, Plane, Building, Plus, CheckCircle, AlertTriangle, ChevronDown
+  Clock, Save, X, Ship, Users, Plane, Building, Plus, CheckCircle, AlertTriangle, ChevronDown, SearchX, FileX
 } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { TimeInput } from "@/components/ui/time-input"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
@@ -1089,16 +1090,69 @@ export function AgencyRecords() {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={10} className="h-24 text-center">
-                      <Loader2 className="h-4 w-4 animate-spin mx-auto" />
-                      Loading services...
-                    </TableCell>
-                  </TableRow>
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={`skeleton-${index}`}>
+                      <TableCell><Skeleton className="h-5 w-20" /><Skeleton className="h-4 w-16 mt-1" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-28" /><Skeleton className="h-4 w-20 mt-1" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-24 rounded-full" /></TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Skeleton className="h-8 w-8" />
+                          <Skeleton className="h-8 w-8" />
+                          <Skeleton className="h-8 w-8" />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
                 ) : filteredServices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="h-24 text-center">
-                      No services found
+                    <TableCell colSpan={10} className="py-12">
+                      <div className="flex flex-col items-center justify-center space-y-4">
+                        {dateFilter || crewFilter || vesselFilter || routeFilter || moveTypeFilter !== "all" || flightFilter || commentsFilter || transportFilter || statusFilter.length > 0 ? (
+                          <>
+                            <div className="rounded-full bg-orange-100 p-4">
+                              <SearchX className="h-10 w-10 text-orange-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">No results found</h3>
+                            <p className="text-sm text-muted-foreground text-center max-w-sm">
+                              No services match the current filters
+                            </p>
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setDateFilter("")
+                                setCrewFilter("")
+                                setVesselFilter("")
+                                setRouteFilter("")
+                                setMoveTypeFilter("all")
+                                setFlightFilter("")
+                                setCommentsFilter("")
+                                setTransportFilter("")
+                                setStatusFilter([])
+                              }}
+                            >
+                              <X className="mr-2 h-4 w-4" />
+                              Clear filters
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rounded-full bg-blue-100 p-4">
+                              <FileX className="h-10 w-10 text-blue-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">No services</h3>
+                            <p className="text-sm text-muted-foreground text-center max-w-sm">
+                              No agency services have been created yet
+                            </p>
+                          </>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : (
