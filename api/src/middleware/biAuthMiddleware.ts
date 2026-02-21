@@ -1,12 +1,28 @@
 import { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
+import usersSchema from '../database/schemas/usersSchema';
+import { userConexion } from '../config/env';
 
 // Cache para almacenar contadores de rate limit
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
 
+// Cache para usuarios (evitar consultas repetidas a la BD)
+const userCache = new Map<string, { user: any; expiry: number }>();
+const USER_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+
+// Helper para obtener el modelo de User
+const getUserModel = () => {
+  try {
+    return mongoose.model('User');
+  } catch {
+    return mongoose.model('User', usersSchema);
+  }
+};
+
 // Middleware de autenticación para BI
-export const biAuthMiddleware = (req: Request, res: Response, next: NextFunction) => {
+export const biAuthMiddleware = async (req: Request, res: Response, next: NextFunction) => {
   // Verificar API Key en headers
   const apiKey = req.headers['x-api-key'] as string;
   const bearerToken = req.headers.authorization;
@@ -68,34 +84,80 @@ export const biAuthMiddleware = (req: Request, res: Response, next: NextFunction
   // Opción 2: Autenticación con JWT Bearer Token (para usuarios normales)
   if (bearerToken && bearerToken.startsWith('Bearer ')) {
     const token = bearerToken.slice(7);
-    
+
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
-      
+      // Usar la misma clave JWT que el resto del sistema
+      const jwtSecret = userConexion.jwtAcces || process.env.JWT_ACCESCODE || 'your-secret-key';
+      const decoded = jwt.verify(token, jwtSecret) as any;
+
+      // Obtener el ID del usuario (puede ser mongoId o id)
+      const userId = decoded.mongoId || decoded.id;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid token structure',
+          message: 'Token does not contain user identifier'
+        });
+      }
+
+      // Verificar cache primero
+      const cached = userCache.get(userId);
+      let userRoles: string[] = [];
+      let username = '';
+
+      if (cached && cached.expiry > Date.now()) {
+        userRoles = cached.user.roles || (cached.user.role ? [cached.user.role] : []);
+        username = cached.user.username || cached.user.email;
+      } else {
+        // Buscar usuario en la base de datos
+        try {
+          const User = getUserModel();
+          const user = await User.findById(userId).select('roles role username email').lean();
+
+          if (user) {
+            userRoles = (user as any).roles || ((user as any).role ? [(user as any).role] : []);
+            username = (user as any).username || (user as any).email;
+
+            // Guardar en cache
+            userCache.set(userId, {
+              user: { roles: userRoles, role: (user as any).role, username, email: (user as any).email },
+              expiry: Date.now() + USER_CACHE_TTL
+            });
+          }
+        } catch (dbError) {
+          console.error('Error fetching user for analytics:', dbError);
+          // Si falla la BD, continuar con los datos del token si existen
+          userRoles = decoded.roles || (decoded.role ? [decoded.role] : []);
+          username = decoded.username || decoded.email || '';
+        }
+      }
+
       // Verificar que el usuario tenga permisos para acceder a analytics
-      if (decoded.role && (
-        decoded.role.includes('administrador') || 
-        decoded.role.includes('analytics') ||
-        decoded.role.includes('facturacion')
-      )) {
-        (req as any).user = decoded;
+      const hasPermission = userRoles.some(role =>
+        ['administrador', 'analytics', 'facturacion'].includes(role)
+      );
+
+      if (hasPermission) {
+        (req as any).user = { ...decoded, roles: userRoles, username };
         (req as any).biContext = {
           authenticated: true,
           method: 'jwt',
-          userId: decoded.id,
-          username: decoded.username,
-          role: decoded.role
+          userId,
+          username,
+          role: userRoles
         };
         return next();
       } else {
-        return res.status(403).json({ 
+        return res.status(403).json({
           success: false,
           error: 'Insufficient permissions',
-          message: 'User does not have permission to access analytics data'
+          message: 'User does not have permission to access analytics data. Required roles: administrador, analytics, or facturacion'
         });
       }
-    } catch (error) {
-      return res.status(401).json({ 
+    } catch (error: any) {
+      console.error('JWT verification error:', error.message);
+      return res.status(401).json({
         success: false,
         error: 'Invalid token',
         message: 'The provided JWT token is invalid or expired'
