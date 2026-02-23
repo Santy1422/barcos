@@ -58,6 +58,14 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { createApiUrl } from "@/lib/api-config"
 
+// Mapeo de módulos - definido fuera del componente para evitar re-renders
+const MODULE_MAPPING: Record<string, string> = {
+  'trucking': 'trucking',
+  'shipchandler': 'shipchandler',
+  'agency': 'agency',
+  'ptyss': 'ptyss'
+}
+
 interface ClientFormData {
   type: ClientType
   // Campos para cliente natural
@@ -755,16 +763,6 @@ export function ClientsManagement() {
   const allClients = useAppSelector(selectAllClients)
   const isLoading = useAppSelector(selectClientsLoading)
   
-  // Mapeo entre módulos del usuario y módulos de clientes
-  // Los módulos del usuario son: trucking, shipchandler, agency
-  // Los módulos de clientes son: trucking, shipchandler, agency, ptyss
-  const moduleMapping: Record<string, string> = {
-    'trucking': 'trucking',
-    'shipchandler': 'shipchandler',
-    'agency': 'agency',
-    'ptyss': 'ptyss' // Mantener compatibilidad con ptyss
-  }
-
   // Filtrar clientes por módulos del usuario
   const filteredClientsByModule = useMemo(() => {
     if (!currentUser) {
@@ -787,7 +785,7 @@ export function ClientsManagement() {
     }
 
     // Mapear los módulos del usuario a los módulos de los clientes
-    const userClientModules = currentUser.modules?.map(m => moduleMapping[m] || m) || []
+    const userClientModules = currentUser.modules?.map(m => MODULE_MAPPING[m] || m) || []
 
     // Filtrar por módulos del usuario
     return allClients.filter((client: any) => {
@@ -837,7 +835,7 @@ export function ClientsManagement() {
     }
     
     // Mapear los módulos del usuario a los módulos de los clientes
-    const userClientModules = currentUser.modules?.map(m => moduleMapping[m] || m) || []
+    const userClientModules = currentUser.modules?.map(m => MODULE_MAPPING[m] || m) || []
     
     // Si el usuario tiene múltiples módulos, cargar clientes de todos ellos
     if (userClientModules.length > 1) {
@@ -847,7 +845,7 @@ export function ClientsManagement() {
     } else {
       dispatch(fetchClients())
     }
-  }, [dispatch, currentUser, moduleMapping])
+  }, [dispatch, currentUser])
 
   // Cargar clientes al montar el componente - Filtrar por módulos del usuario
   useEffect(() => {
@@ -973,8 +971,8 @@ export function ClientsManagement() {
           module={
             currentUser?.modules && currentUser.modules.length > 0
               ? (currentUser.modules.length > 1 
-                  ? currentUser.modules.map(m => moduleMapping[m] || m)
-                  : moduleMapping[currentUser.modules[0]] || currentUser.modules[0])
+                  ? currentUser.modules.map(m => MODULE_MAPPING[m] || m)
+                  : MODULE_MAPPING[currentUser.modules[0]] || currentUser.modules[0])
               : "ptyss"
           }
           onClientCreated={(client) => {
