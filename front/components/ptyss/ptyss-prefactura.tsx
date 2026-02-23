@@ -871,12 +871,7 @@ export function PTYSSPrefactura() {
   }
 
   const totalAmount = selectedRecords.reduce((sum: number, record: IndividualExcelRecord) => {
-    const data = record.data as Record<string, any>
-    // Para registros locales, usar el precio de la ruta local
-    if (data.recordType === 'local' && data.localRoutePrice) {
-      return sum + data.localRoutePrice
-    }
-    // Para otros registros, usar totalValue
+    // Siempre usar totalValue que ya incluye localRoutePrice + servicios adicionales (pesaje, retención, etc.)
     return sum + (record.totalValue || 0)
   }, 0)
   
