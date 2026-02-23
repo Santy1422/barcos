@@ -15,8 +15,15 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   FileText, Download, DollarSign, Calendar, CheckCircle, AlertTriangle,
-  Car, Users, Loader2, Eye, ArrowLeft, Plus
+  Car, Users, Loader2, Eye, ArrowLeft, Plus, X
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 
@@ -39,6 +46,7 @@ export default function AgencyInvoicePage() {
   const [activeTab, setActiveTab] = useState('create');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [viewingPrefactura, setViewingPrefactura] = useState<any>(null);
 
   // Filter services by status and date
   const completedServices = useMemo(() => {
@@ -563,7 +571,11 @@ export default function AgencyInvoicePage() {
                             ${prefactura.totalAmount?.toLocaleString() || '0'}
                           </TableCell>
                           <TableCell>
-                            <Button variant="ghost" size="sm">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setViewingPrefactura(prefactura)}
+                            >
                               <Eye className="h-4 w-4" />
                             </Button>
                           </TableCell>
@@ -577,6 +589,108 @@ export default function AgencyInvoicePage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Dialog para ver detalles de prefactura */}
+      <Dialog open={!!viewingPrefactura} onOpenChange={(open) => !open && setViewingPrefactura(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Prefactura {viewingPrefactura?.invoiceNumber}
+            </DialogTitle>
+            <DialogDescription>
+              Detalles de la prefactura
+            </DialogDescription>
+          </DialogHeader>
+
+          {viewingPrefactura && (
+            <div className="space-y-6">
+              {/* Info general */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Cliente</p>
+                  <p className="font-medium">{viewingPrefactura.clientName}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">RUC</p>
+                  <p className="font-medium">{viewingPrefactura.clientRuc || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Fecha de Emisión</p>
+                  <p className="font-medium">
+                    {viewingPrefactura.issueDate
+                      ? format(new Date(viewingPrefactura.issueDate), 'dd/MM/yyyy')
+                      : 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Fecha de Vencimiento</p>
+                  <p className="font-medium">
+                    {viewingPrefactura.dueDate
+                      ? format(new Date(viewingPrefactura.dueDate), 'dd/MM/yyyy')
+                      : 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Estado</p>
+                  {getStatusBadge(viewingPrefactura.status)}
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">SAP Number</p>
+                  <p className="font-medium">{viewingPrefactura.clientSapNumber || 'N/A'}</p>
+                </div>
+              </div>
+
+              {/* Servicios incluidos */}
+              <div>
+                <h4 className="font-semibold mb-3">Servicios Incluidos ({viewingPrefactura.details?.services?.length || 0})</h4>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Tripulante</TableHead>
+                        <TableHead>Buque</TableHead>
+                        <TableHead>Ruta</TableHead>
+                        <TableHead className="text-right">Precio</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {viewingPrefactura.details?.services?.map((service: any, idx: number) => (
+                        <TableRow key={service.id || idx}>
+                          <TableCell>
+                            {service.pickupDate
+                              ? format(new Date(service.pickupDate), 'dd/MM/yyyy')
+                              : 'N/A'}
+                          </TableCell>
+                          <TableCell>{service.crewName || 'N/A'}</TableCell>
+                          <TableCell>{service.vessel || 'N/A'}</TableCell>
+                          <TableCell>
+                            {service.pickupLocation} → {service.dropoffLocation}
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            ${service.price?.toLocaleString() || 0}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
+              {/* Total */}
+              <div className="flex justify-end border-t pt-4">
+                <div className="text-right">
+                  <p className="text-sm text-muted-foreground">Total</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    ${viewingPrefactura.totalAmount?.toLocaleString() || 0}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

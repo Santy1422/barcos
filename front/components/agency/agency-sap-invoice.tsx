@@ -52,7 +52,7 @@ export const AgencySapInvoice: React.FC = () => {
 
   // Filtros y búsqueda
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'facturado' | 'nota_de_credito'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'prefacturado' | 'facturado' | 'nota_de_credito'>('all');
   const [clientFilter, setClientFilter] = useState('all');
   const [vesselFilter, setVesselFilter] = useState('');
   const [crewRankFilter, setCrewRankFilter] = useState<'all' | 'security_guard' | 'seal_check' | 'both'>('all');
@@ -326,8 +326,8 @@ export const AgencySapInvoice: React.FC = () => {
     return (services || []).filter((service: any) => {
       // Filtrar por modo de vista primero
       if (viewMode === 'completed') {
-        // Solo mostrar servicios completados
-        if (service.status !== 'completed') {
+        // Mostrar servicios completados y prefacturados
+        if (!['completed', 'prefacturado'].includes(service.status)) {
           return false;
         }
       } else {
@@ -625,9 +625,9 @@ export const AgencySapInvoice: React.FC = () => {
           className="flex items-center gap-2"
         >
           <CheckCircle className="h-4 w-4" />
-          Servicios Completados
+          Servicios Pendientes
           <Badge variant="secondary" className={`ml-2 ${viewMode === 'completed' ? 'bg-white text-blue-600' : 'bg-gray-200'}`}>
-            {services.filter((s: any) => s.status === 'completed').length}
+            {services.filter((s: any) => ['completed', 'prefacturado'].includes(s.status)).length}
           </Badge>
         </Button>
         <Button
@@ -662,6 +662,7 @@ export const AgencySapInvoice: React.FC = () => {
                     <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="completed">Completado</SelectItem>
+                <SelectItem value="prefacturado">Prefacturado</SelectItem>
                 <SelectItem value="facturado">Facturado</SelectItem>
                 <SelectItem value="nota_de_credito">Nota de Crédito</SelectItem>
                     </SelectContent>
@@ -770,8 +771,8 @@ export const AgencySapInvoice: React.FC = () => {
               <span className="text-sm text-green-700">
                 Cliente: {getSelectedClientName()}
               </span>
-              {/* Mostrar botón Facturar solo si hay servicios completados */}
-              {services.filter((s: any) => selectedServices.includes(s._id || s.id) && s.status === 'completed').length > 0 && (
+              {/* Mostrar botón Facturar solo si hay servicios completados o prefacturados */}
+              {services.filter((s: any) => selectedServices.includes(s._id || s.id) && ['completed', 'prefacturado'].includes(s.status)).length > 0 && (
                 <Button 
                   variant="outline" 
                   size="sm" 
@@ -1069,7 +1070,7 @@ export const AgencySapInvoice: React.FC = () => {
                           <Checkbox
                             checked={selectedServices.includes(service._id || service.id)}
                             onCheckedChange={() => handleServiceSelection(service._id || service.id, getClientIdForService(service))}
-                            disabled={service.status !== 'completed'}
+                            disabled={!['completed', 'prefacturado'].includes(service.status)}
                           />
                         </TableCell>
                         <TableCell>
@@ -1131,6 +1132,10 @@ export const AgencySapInvoice: React.FC = () => {
                           <Badge variant="outline" className="text-blue-600 border-blue-600">
                             Completado
                           </Badge>
+                        ) : service.status === 'prefacturado' ? (
+                          <Badge variant="outline" className="text-purple-600 border-purple-600">
+                            Prefacturado
+                          </Badge>
                         ) : service.status === 'facturado' ? (
                           <Badge variant="outline" className="text-green-600 border-green-600">
                             Facturado
@@ -1169,8 +1174,8 @@ export const AgencySapInvoice: React.FC = () => {
                               <FileText className="h-4 w-4" />
                             </Button>
                           )}
-                          {/* Botón Facturar - Solo para completed */}
-                          {service.status === 'completed' && (
+                          {/* Botón Facturar - Para completed y prefacturado */}
+                          {['completed', 'prefacturado'].includes(service.status) && (
                             <Button 
                               variant="outline" 
                               size="sm" 
