@@ -921,6 +921,11 @@ export function PTYSSPrefactura() {
     selectedLocalRecords.forEach((record: IndividualExcelRecord) => {
       const data = record.data as Record<string, any>
 
+      console.log('🔍 useEffect recalcular servicios - record.data:', data)
+      console.log('🔍 useEffect recalcular servicios - data.ti:', data.ti)
+      console.log('🔍 useEffect recalcular servicios - data.estadia:', data.estadia)
+      console.log('🔍 useEffect recalcular servicios - data.retencion:', data.retencion)
+
       // FDA263 - monto manual (ti)
       if (data.ti && data.ti !== 'no') {
         const amount = parseFloat(data.ti)
@@ -983,10 +988,15 @@ export function PTYSSPrefactura() {
       }
     })
 
+    console.log('🔍 useEffect recalcular servicios - allLocalServices encontrados:', allLocalServices)
+    console.log('🔍 useEffect recalcular servicios - cantidad:', allLocalServices.length)
+
     // Actualizar selectedAdditionalServices manteniendo servicios no locales
     setSelectedAdditionalServices(prev => {
       const nonLocalServices = prev.filter(s => !s.isLocalService)
-      return [...nonLocalServices, ...allLocalServices]
+      const updated = [...nonLocalServices, ...allLocalServices]
+      console.log('🔍 useEffect recalcular servicios - selectedAdditionalServices actualizado:', updated)
+      return updated
     })
   }, [selectedRecordIds, ptyssRecords, fixedLocalServices])
 
