@@ -875,7 +875,10 @@ export function PTYSSPrefactura() {
     return sum + (record.totalValue || 0)
   }, 0)
   
-  const additionalServicesTotal = selectedAdditionalServices.reduce((sum, service) => sum + service.amount, 0)
+  // Solo sumar servicios adicionales que NO son locales fijos (ya que esos ya están incluidos en totalValue)
+  const additionalServicesTotal = selectedAdditionalServices
+    .filter(service => !service.isLocalService)
+    .reduce((sum, service) => sum + service.amount, 0)
   const grandTotal = totalAmount + additionalServicesTotal
   
   // Debug logs para verificar cálculos
