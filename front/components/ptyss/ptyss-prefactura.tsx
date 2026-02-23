@@ -900,14 +900,20 @@ export function PTYSSPrefactura() {
 
   // useEffect para recalcular servicios locales fijos cuando cambien los registros seleccionados
   useEffect(() => {
-    
+    console.log('🔍 useEffect recalcular servicios - INICIO')
+    console.log('🔍 useEffect recalcular servicios - selectedRecordIds:', selectedRecordIds)
+    console.log('🔍 useEffect recalcular servicios - ptyssRecords.length:', ptyssRecords.length)
+
     // Obtener todos los registros locales seleccionados
     const selectedLocalRecords = ptyssRecords.filter((record: IndividualExcelRecord) => {
       const recordId = getRecordId(record)
       const isSelected = selectedRecordIds.includes(recordId)
       const data = record.data as Record<string, any>
+      console.log('🔍 useEffect - Registro:', recordId, 'isSelected:', isSelected, 'recordType:', data.recordType, 'ti:', data.ti)
       return isSelected && data.recordType === 'local'
     })
+
+    console.log('🔍 useEffect recalcular servicios - selectedLocalRecords.length:', selectedLocalRecords.length)
 
     // Acumular todos los servicios locales fijos de todos los registros seleccionados
     const allLocalServices: Array<{
