@@ -129,15 +129,23 @@ export default function AgencyInvoicePage() {
       );
 
       // Create invoice record
+      const totalValue = calculateTotalValue();
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 30); // Vencimiento en 30 días
+
       const newPrefactura: InvoiceRecord = {
         module: 'agency',
         invoiceNumber: prefacturaNumber,
-        clientRuc: client?.taxId || client?.ruc || '',
+        clientRuc: client?.taxId || client?.ruc || 'N/A',
         clientName: clientName,
-        clientSapNumber: client?.sapNumber || '',
+        clientSapNumber: client?.sapCode || client?.sapNumber || 'N/A',
         issueDate: new Date().toISOString(),
-        totalAmount: calculateTotalValue(),
-        status: 'draft',
+        dueDate: dueDate.toISOString(),
+        currency: 'USD',
+        subtotal: totalValue,
+        taxAmount: 0,
+        totalAmount: totalValue,
+        status: 'prefactura',
         relatedRecordIds: selectedServices,
         details: {
           services: selectedServicesData.map(s => ({
@@ -153,7 +161,6 @@ export default function AgencyInvoicePage() {
           })),
           totalServices: selectedServices.length,
         },
-        createdAt: new Date().toISOString(),
       };
 
       console.log("Creating agency prefactura:", newPrefactura);
