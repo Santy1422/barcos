@@ -751,8 +751,9 @@ export function ClientsManagement() {
   const dispatch = useAppDispatch()
   const currentUser = useAppSelector(selectCurrentUser)
   const { toast } = useToast()
-  
+
   const allClients = useAppSelector(selectAllClients)
+  const isLoading = useAppSelector(selectClientsLoading)
   
   // Mapeo entre módulos del usuario y módulos de clientes
   // Los módulos del usuario son: trucking, shipchandler, agency
