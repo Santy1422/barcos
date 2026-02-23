@@ -2729,16 +2729,16 @@ export function PTYSSUpload() {
               <h3 className="text-lg font-medium">Servicios Adicionales</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="estadia">Estadia</Label>
-                  <Select value={currentRecord.estadia} onValueChange={(value) => setCurrentRecord({...currentRecord, estadia: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="si">Sí</SelectItem>
-                      <SelectItem value="no">No</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="estadia">Estadia ($)</Label>
+                  <Input
+                    id="estadia"
+                    type="number"
+                    value={currentRecord.estadia}
+                    onChange={(e) => setCurrentRecord({...currentRecord, estadia: e.target.value})}
+                    placeholder="Ingrese monto (0 si no aplica)"
+                    min="0"
+                    step="0.01"
+                  />
                 </div>
                 
                 <div className="space-y-2">
@@ -2781,16 +2781,16 @@ export function PTYSSUpload() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="ti">TI</Label>
-                  <Select value={currentRecord.ti} onValueChange={(value) => setCurrentRecord({...currentRecord, ti: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="si">Sí</SelectItem>
-                      <SelectItem value="no">No</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="ti">TI ($)</Label>
+                  <Input
+                    id="ti"
+                    type="number"
+                    value={currentRecord.ti}
+                    onChange={(e) => setCurrentRecord({...currentRecord, ti: e.target.value})}
+                    placeholder="Ingrese monto (0 si no aplica)"
+                    min="0"
+                    step="0.01"
+                  />
                 </div>
               </div>
             </div>
