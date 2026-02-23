@@ -37,9 +37,31 @@ export default function AgencyInvoicePage() {
   const [prefacturaNumber, setPrefacturaNumber] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [activeTab, setActiveTab] = useState('create');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
-  // Filter services by status
-  const completedServices = services.filter(service => service.status === 'completed');
+  // Filter services by status and date
+  const completedServices = useMemo(() => {
+    let filtered = services.filter(service => service.status === 'completed');
+
+    // Filtrar por rango de fechas
+    if (startDate || endDate) {
+      filtered = filtered.filter(service => {
+        const serviceDate = new Date(service.pickupDate);
+        if (startDate) {
+          const start = new Date(startDate + 'T00:00:00');
+          if (serviceDate < start) return false;
+        }
+        if (endDate) {
+          const end = new Date(endDate + 'T23:59:59');
+          if (serviceDate > end) return false;
+        }
+        return true;
+      });
+    }
+
+    return filtered;
+  }, [services, startDate, endDate]);
   const agencyPrefacturas = invoices.filter(inv => inv.module === 'agency' && inv.status !== 'finalized');
   const agencyFacturas = invoices.filter(inv => inv.module === 'agency' && inv.status === 'finalized');
 
@@ -295,10 +317,10 @@ export default function AgencyInvoicePage() {
         </TabsList>
 
         <TabsContent value="create" className="space-y-4">
-          {/* Prefactura Number Input */}
+          {/* Filtros y Prefactura Number Input */}
           <Card>
             <CardContent className="p-6">
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-end gap-4">
                 <div className="flex-1 max-w-xs">
                   <Label htmlFor="prefactura-number">Número de Prefactura</Label>
                   <Input
@@ -308,6 +330,38 @@ export default function AgencyInvoicePage() {
                     placeholder="AGY-PRE-000001"
                     className="font-mono"
                   />
+                </div>
+                <div className="flex gap-2">
+                  <div>
+                    <Label htmlFor="start-date">Fecha Desde</Label>
+                    <Input
+                      id="start-date"
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-40"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="end-date">Fecha Hasta</Label>
+                    <Input
+                      id="end-date"
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-40"
+                    />
+                  </div>
+                  {(startDate || endDate) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setStartDate(''); setEndDate(''); }}
+                      className="mt-auto"
+                    >
+                      Limpiar
+                    </Button>
+                  )}
                 </div>
                 <div className="flex gap-2 pt-6">
                   <Button
