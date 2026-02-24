@@ -1651,7 +1651,7 @@ export const selectRecordsByModule = createSelector(
     (state: RootState, moduleName: ExcelRecord["module"]) => moduleName
   ],
   (individualRecords, moduleName) =>
-    individualRecords.filter((record: any) => record.module === moduleName)
+    individualRecords.filter((record: any) => record.module?.toLowerCase() === moduleName?.toLowerCase())
 )
 
 export const selectPendingRecordsByModule = createSelector(
@@ -1660,7 +1660,7 @@ export const selectPendingRecordsByModule = createSelector(
     (state: RootState, moduleName: ExcelRecord["module"]) => moduleName
   ],
   (individualRecords, moduleName) =>
-    individualRecords.filter((record: any) => record.module === moduleName && record.status === "pendiente")
+    individualRecords.filter((record: any) => record.module?.toLowerCase() === moduleName?.toLowerCase() && record.status === "pendiente")
 )
 
 export const selectPendingRecordsByModuleFromDB = createSelector(
@@ -1671,8 +1671,8 @@ export const selectPendingRecordsByModuleFromDB = createSelector(
 
 export const selectInvoicesByModule = createSelector(
   [(state: RootState) => state.records.invoices, (state: RootState, moduleName: InvoiceRecord["module"]) => moduleName],
-  (invoices, moduleName) => 
-    invoices.filter((invoice: any) => invoice.module === moduleName)
+  (invoices, moduleName) =>
+    invoices.filter((invoice: any) => invoice.module?.toLowerCase() === moduleName?.toLowerCase())
 )
 
 export default recordsSlice.reducer
