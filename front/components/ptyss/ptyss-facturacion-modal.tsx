@@ -65,15 +65,19 @@ export function PTYSSFacturacionModal({
    const containerTypes = useAppSelector(selectAllContainerTypes) || []
    const recordsLoading = useAppSelector((state) => state.records.fetchingRecords)
    
-   // Debug: Verificar que los clientes se cargan correctamente
+   // Debug: Verificar estado del componente
    useEffect(() => {
-     console.log('🔍 PTYSSFacturacionModal - Clientes cargados:', clients.length)
-     console.log('🔍 PTYSSFacturacionModal - Cliente PTG existe:', clients.some((c: any) => c.companyName === "PTG"))
-     console.log('🔍 PTYSSFacturacionModal - Clientes cargando:', clientsLoading)
-     if (clients.length > 0) {
-       console.log('🔍 PTYSSFacturacionModal - Primeros 3 clientes:', clients.slice(0, 3).map((c: any) => c.companyName))
-     }
-   }, [clients, clientsLoading])
+     console.log('🔍 PTYSSFacturacionModal - ESTADO COMPLETO:')
+     console.log('  - open:', open)
+     console.log('  - invoice:', invoice?.id)
+     console.log('  - allRecords type:', typeof allRecords)
+     console.log('  - allRecords isArray:', Array.isArray(allRecords))
+     console.log('  - allRecords length:', allRecords?.length ?? 'undefined')
+     console.log('  - clients length:', clients?.length ?? 'undefined')
+     console.log('  - clientsLoading:', clientsLoading)
+     console.log('  - recordsLoading:', recordsLoading)
+     console.log('  - containerTypes length:', containerTypes?.length ?? 'undefined')
+   }, [open, invoice, allRecords, clients, clientsLoading, recordsLoading, containerTypes])
 
   // Generar número de factura por defecto
   const defaultInvoiceNumber = invoice?.invoiceNumber?.replace(/^PTY-PRE-/, "PTY-FAC-") || "PTY-FAC-000001"
@@ -308,6 +312,12 @@ export function PTYSSFacturacionModal({
       return result
     } catch (error: any) {
       console.error("❌ generateXMLForInvoice - Error:", error)
+      console.error("❌ generateXMLForInvoice - Error stack:", error.stack)
+      console.error("❌ generateXMLForInvoice - Estado al momento del error:")
+      console.error("  - allRecords type:", typeof allRecords)
+      console.error("  - allRecords isArray:", Array.isArray(allRecords))
+      console.error("  - allRecords length:", allRecords?.length ?? 'undefined')
+      console.error("  - clients length:", clients?.length ?? 'undefined')
       toast({
         title: "Error al generar XML",
         description: error.message || "No se pudo generar el XML",
