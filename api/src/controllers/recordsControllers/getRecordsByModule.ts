@@ -8,9 +8,9 @@ const getRecordsByModule = async (req: Request, res: Response) => {
     const { page, limit, status, source } = req.query;
     
     console.log("🔍 getRecordsByModule - Parámetros:", { module, page, limit, status, source });
-    
-    // Construir filtros
-    const filters: any = { module };
+
+    // Construir filtros - usar regex case-insensitive para el módulo
+    const filters: any = { module: { $regex: new RegExp(`^${module}$`, 'i') } };
     if (status) filters.status = status;
     if (source) filters.source = source;
     
