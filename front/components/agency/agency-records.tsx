@@ -99,7 +99,10 @@ export function AgencyRecords() {
   const [flightFilter, setFlightFilter] = useState("")
   const [commentsFilter, setCommentsFilter] = useState("")
   const [transportFilter, setTransportFilter] = useState("")
-  
+
+  // Waiting Time Reasons catalog
+  const [waitingTimeReasons, setWaitingTimeReasons] = useState<Array<{_id: string; name: string; description?: string}>>([])
+
   // Edit modal state
   const [editFormData, setEditFormData] = useState({
     // Basic service info
@@ -123,6 +126,7 @@ export function AgencyRecords() {
     
     // Service details
     waitingTime: 0,
+    waitingTimeReason: '',
     comments: '',
     
     // Crew members (new structure)
@@ -151,6 +155,28 @@ export function AgencyRecords() {
     fetchGroupedCatalogs()
     fetchActiveRoutes()
   }, [fetchGroupedCatalogs, fetchActiveRoutes])
+
+  // Fetch waiting time reasons from API
+  useEffect(() => {
+    const fetchWaitingTimeReasons = async () => {
+      try {
+        const token = localStorage.getItem('token')
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/local-services?module=agency&category=waitingTimeReasons`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setWaitingTimeReasons(data.data?.services || [])
+        }
+      } catch (error) {
+        console.error('Error fetching waiting time reasons:', error)
+      }
+    }
+    fetchWaitingTimeReasons()
+  }, [])
 
   // Load service data when edit modal opens
   useEffect(() => {
@@ -192,6 +218,7 @@ export function AgencyRecords() {
         
         // Service details
         waitingTime: waitingTimeInHours,
+        waitingTimeReason: selectedService.waitingTimeReason || '',
         comments: selectedService.comments || '',
         
         // Crew members (new structure)
@@ -690,6 +717,7 @@ export function AgencyRecords() {
           
           // Service details
           waitingTime: waitingTimeInMinutes, // Guardar en minutos (backend espera minutos)
+          waitingTimeReason: editFormData.waitingTimeReason,
           comments: editFormData.comments,
           
           // Crew members (new structure)
@@ -1945,26 +1973,51 @@ export function AgencyRecords() {
                 </div>
 
                 {/* Waiting Time */}
-                <div className="space-y-2">
-                  <Label htmlFor="waitingTime" className="text-sm font-medium">
-                    Waiting Time (hours)
-                  </Label>
-                  <div className="relative">
-                    <Clock className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="waitingTime"
-                      type="number"
-                      min="0"
-                      max="24"
-                      step="0.25"
-                      value={editFormData.waitingTime}
-                      onChange={(e) => setEditFormData(prev => ({ 
-                        ...prev, 
-                        waitingTime: parseFloat(e.target.value) || 0 
-                      }))}
-                      className="pl-8"
-                      placeholder="Enter waiting time in hours"
-                    />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="waitingTime" className="text-sm font-medium">
+                      Waiting Time (hours)
+                    </Label>
+                    <div className="relative">
+                      <Clock className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="waitingTime"
+                        type="number"
+                        min="0"
+                        max="24"
+                        step="0.25"
+                        value={editFormData.waitingTime}
+                        onChange={(e) => setEditFormData(prev => ({
+                          ...prev,
+                          waitingTime: parseFloat(e.target.value) || 0
+                        }))}
+                        className="pl-8"
+                        placeholder="Enter waiting time in hours"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Waiting Time Reason */}
+                  <div className="space-y-2">
+                    <Label htmlFor="waitingTimeReason" className="text-sm font-medium">
+                      Motivo de Waiting Time
+                    </Label>
+                    <Select
+                      value={editFormData.waitingTimeReason}
+                      onValueChange={(value) => setEditFormData(prev => ({ ...prev, waitingTimeReason: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar motivo..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Sin motivo</SelectItem>
+                        {waitingTimeReasons.map((reason) => (
+                          <SelectItem key={reason._id} value={reason.name}>
+                            {reason.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 

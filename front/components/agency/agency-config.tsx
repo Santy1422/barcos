@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Settings2, Plus, Edit, Trash2, Ship, Anchor, Wrench, MapPin, FileCode, Save } from "lucide-react"
+import { Settings2, Plus, Edit, Trash2, Ship, Anchor, Wrench, MapPin, FileCode, Save, Clock } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 
@@ -77,7 +77,7 @@ export function AgencyConfig() {
   
   const [showAddNavieraForm, setShowAddNavieraForm] = useState(false)
   const [navieraToDelete, setNavieraToDelete] = useState<Naviera | null>(null)
-  const [activeTab, setActiveTab] = useState<'navieras' | 'routes' | 'localRoutes' | 'services' | 'localServices' | 'sapCodes'>('navieras')
+  const [activeTab, setActiveTab] = useState<'navieras' | 'routes' | 'localRoutes' | 'services' | 'localServices' | 'sapCodes' | 'waitingTimeReasons'>('navieras')
 
   // PTYSS Routes form state
   const [showAddRouteForm, setShowAddRouteForm] = useState(false)
@@ -129,6 +129,19 @@ export function AgencyConfig() {
   const [sapServiceCodes, setSapServiceCodes] = useState<SapServiceCode[]>([])
   const [editingSapCode, setEditingSapCode] = useState<string | null>(null)
   const [sapCodesLoading, setSapCodesLoading] = useState(false)
+
+  // Waiting Time Reasons state
+  interface WaitingTimeReason {
+    _id: string;
+    name: string;
+    description?: string;
+    isActive?: boolean;
+  }
+  const [waitingTimeReasons, setWaitingTimeReasons] = useState<WaitingTimeReason[]>([])
+  const [waitingTimeReasonsLoading, setWaitingTimeReasonsLoading] = useState(false)
+  const [showAddWTReasonForm, setShowAddWTReasonForm] = useState(false)
+  const [editingWTReason, setEditingWTReason] = useState<WaitingTimeReason | null>(null)
+  const [newWTReason, setNewWTReason] = useState({ name: '', description: '' })
 
   // Cargar navieras al montar el componente
   useEffect(() => {
@@ -261,6 +274,31 @@ export function AgencyConfig() {
     }
 
     fetchSapServiceCodes()
+  }, [])
+
+  // Cargar Waiting Time Reasons
+  useEffect(() => {
+    const fetchWaitingTimeReasons = async () => {
+      setWaitingTimeReasonsLoading(true)
+      try {
+        const token = localStorage.getItem('token')
+        const response = await fetch(createApiUrl('/api/local-services?module=agency&category=waitingTimeReasons'), {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setWaitingTimeReasons(data.data?.services || [])
+        }
+      } catch (error) {
+        console.error('Error loading waiting time reasons:', error)
+      } finally {
+        setWaitingTimeReasonsLoading(false)
+      }
+    }
+    fetchWaitingTimeReasons()
   }, [])
 
   // Limpiar errores cuando cambie el tab
@@ -567,6 +605,125 @@ export function AgencyConfig() {
     setShowAddServiceForm(false)
   }
 
+  // Funciones para Waiting Time Reasons
+  const handleAddWTReason = async () => {
+    if (!newWTReason.name.trim()) {
+      toast({
+        title: "Error",
+        description: "El nombre del motivo es requerido",
+        variant: "destructive"
+      })
+      return
+    }
+
+    setWaitingTimeReasonsLoading(true)
+    try {
+      const token = localStorage.getItem('token')
+      const url = editingWTReason
+        ? createApiUrl(`/api/local-services/${editingWTReason._id}`)
+        : createApiUrl('/api/local-services')
+
+      const response = await fetch(url, {
+        method: editingWTReason ? 'PUT' : 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: newWTReason.name,
+          description: newWTReason.description || newWTReason.name,
+          module: 'agency',
+          category: 'waitingTimeReasons',
+          price: 0,
+          isActive: true
+        })
+      })
+
+      if (response.ok) {
+        toast({
+          title: editingWTReason ? "Motivo actualizado" : "Motivo agregado",
+          description: `El motivo "${newWTReason.name}" ha sido ${editingWTReason ? 'actualizado' : 'configurado'} correctamente`,
+        })
+
+        // Recargar la lista
+        const reloadResponse = await fetch(createApiUrl('/api/local-services?module=agency&category=waitingTimeReasons'), {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        if (reloadResponse.ok) {
+          const data = await reloadResponse.json()
+          setWaitingTimeReasons(data.data?.services || [])
+        }
+
+        setNewWTReason({ name: '', description: '' })
+        setEditingWTReason(null)
+        setShowAddWTReasonForm(false)
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Error al guardar')
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Error al guardar el motivo",
+        variant: "destructive"
+      })
+    } finally {
+      setWaitingTimeReasonsLoading(false)
+    }
+  }
+
+  const handleEditWTReason = (reason: WaitingTimeReason) => {
+    setEditingWTReason(reason)
+    setNewWTReason({
+      name: reason.name,
+      description: reason.description || ''
+    })
+    setShowAddWTReasonForm(true)
+  }
+
+  const handleDeleteWTReason = async (reasonId: string) => {
+    if (!confirm('¿Estás seguro de eliminar este motivo?')) return
+
+    setWaitingTimeReasonsLoading(true)
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(createApiUrl(`/api/local-services/${reasonId}`), {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.ok) {
+        toast({
+          title: "Motivo eliminado",
+          description: "El motivo ha sido eliminado correctamente",
+        })
+        setWaitingTimeReasons(prev => prev.filter(r => r._id !== reasonId))
+      } else {
+        throw new Error('Error al eliminar')
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Error al eliminar el motivo",
+        variant: "destructive"
+      })
+    } finally {
+      setWaitingTimeReasonsLoading(false)
+    }
+  }
+
+  const handleCancelAddWTReason = () => {
+    setNewWTReason({ name: '', description: '' })
+    setEditingWTReason(null)
+    setShowAddWTReasonForm(false)
+  }
+
   // Funciones para servicios locales fijos
   const handleEditLocalService = (serviceCode: string) => {
     setEditingLocalService(serviceCode)
@@ -718,6 +875,14 @@ export function AgencyConfig() {
             >
               <FileCode className="h-4 w-4 mr-2" />
               SAP Service Codes
+            </Button>
+            <Button
+              variant={activeTab === 'waitingTimeReasons' ? "default" : "outline"}
+              className={activeTab === 'waitingTimeReasons' ? "bg-orange-600 hover:bg-orange-700" : ""}
+              onClick={() => setActiveTab('waitingTimeReasons')}
+            >
+              <Clock className="h-4 w-4 mr-2" />
+              Motivos WT
             </Button>
           </div>
         </CardContent>
@@ -1707,6 +1872,134 @@ export function AgencyConfig() {
               </div>
             </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Waiting Time Reasons Tab */}
+      {activeTab === 'waitingTimeReasons' && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Motivos de Waiting Time
+                </CardTitle>
+                <CardDescription>
+                  Configure los motivos de espera que se pueden seleccionar al editar servicios
+                </CardDescription>
+              </div>
+              <Button onClick={() => setShowAddWTReasonForm(!showAddWTReasonForm)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Agregar Motivo
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {showAddWTReasonForm && (
+              <Card className="border-dashed">
+                <CardHeader>
+                  <CardTitle className="text-lg">
+                    {editingWTReason ? "Editar Motivo" : "Nuevo Motivo de Waiting Time"}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="wt-reason-name">Nombre del Motivo *</Label>
+                      <Input
+                        id="wt-reason-name"
+                        value={newWTReason.name}
+                        onChange={(e) => setNewWTReason({...newWTReason, name: e.target.value})}
+                        placeholder="Ej: Retraso en vuelo"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="wt-reason-description">Descripción</Label>
+                      <Input
+                        id="wt-reason-description"
+                        value={newWTReason.description}
+                        onChange={(e) => setNewWTReason({...newWTReason, description: e.target.value})}
+                        placeholder="Descripción opcional"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button onClick={handleAddWTReason} disabled={waitingTimeReasonsLoading}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      {waitingTimeReasonsLoading ? "Guardando..." : (editingWTReason ? "Actualizar Motivo" : "Agregar Motivo")}
+                    </Button>
+                    <Button variant="outline" onClick={handleCancelAddWTReason}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {waitingTimeReasonsLoading && waitingTimeReasons.length === 0 ? (
+              <div className="flex justify-center p-8">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : waitingTimeReasons.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No hay motivos de waiting time configurados</p>
+                <p className="text-sm">Agrega motivos para poder seleccionarlos al editar servicios</p>
+              </div>
+            ) : (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Descripción</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {waitingTimeReasons.map((reason) => (
+                      <TableRow key={reason._id}>
+                        <TableCell className="font-medium">{reason.name}</TableCell>
+                        <TableCell>{reason.description || '-'}</TableCell>
+                        <TableCell>
+                          <Badge variant={reason.isActive !== false ? "default" : "secondary"}>
+                            {reason.isActive !== false ? "Activo" : "Inactivo"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditWTReason(reason)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteWTReason(reason._id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <p className="text-sm text-orange-800">
+                <strong>Nota:</strong> Los motivos configurados aquí aparecerán en el dropdown "Motivo de Waiting Time"
+                al editar servicios en la sección de registros.
+              </p>
+            </div>
           </CardContent>
         </Card>
       )}
