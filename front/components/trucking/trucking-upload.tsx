@@ -1444,15 +1444,12 @@ export function TruckingUpload() {
               <Table className="w-full table-fixed">
                 <TableBody>
                   {filteredPreviewData.map((record, index) => {
-                    // DEBUG: Verificar valores de isMatched
-                    if (index < 3) {
-                      console.log(`RENDER TABLE - Registro ${index}: isMatched=${record.isMatched}, tipo=${typeof record.isMatched}, precio=${record.matchedPrice}`)
-                    }
                     const clientName = record.line?.trim()
                     const clientStatus = clientName ? clientCompleteness.get(clientName) : null
                     const isClickable = record.isMatched && clientName && (clientStatus ? !clientStatus.isComplete : true)
+                    const uniqueKey = `${record.containerConsecutive || ''}-${record.container || ''}-${index}`
                     return (
-                    <TableRow key={index}>
+                    <TableRow key={uniqueKey}>
                       <TableCell className="font-mono text-sm w-32">{record.container}</TableCell>
                       <TableCell className="w-32">{record.containerConsecutive}</TableCell>
                       <TableCell className="w-16">{record.fe}</TableCell>

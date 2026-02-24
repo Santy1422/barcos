@@ -2987,13 +2987,16 @@ export function PTYSSUpload() {
                     const clientName = record.associate?.trim()
                     const clientStatus = clientName ? clientCompleteness.get(clientName) : null
                     const isClickable = record.isMatched && clientStatus && !clientStatus.isComplete
-                    
+
                     // Verificar si este containerConsecutive está duplicado en el Excel
                     const isDuplicate = record.containerConsecutive && duplicateContainerConsecutives.includes(record.containerConsecutive)
-                    
+
+                    // Key único basado en containerConsecutive y container
+                    const uniqueKey = `${record.containerConsecutive || ''}-${record.container || ''}-${index}`
+
                     return (
-                      <TableRow 
-                        key={index}
+                      <TableRow
+                        key={uniqueKey}
                         className={isDuplicate ? 'bg-red-50' : ''}
                       >
                         {/* Cliente */}
