@@ -35,7 +35,7 @@ export function PTYSSRecordsViewModal({
   invoice
 }: PTYSSRecordsViewModalProps) {
   const dispatch = useAppDispatch();
-  const allRecords = useAppSelector(selectAllIndividualRecords);
+  const allRecords = useAppSelector(selectAllIndividualRecords) || [];
   const clients = useAppSelector(selectAllClients);
 
   useEffect(() => {

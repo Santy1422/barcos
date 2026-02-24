@@ -443,7 +443,7 @@ export function PTYSSPdfViewer({ open, onOpenChange, invoice, clients, allRecord
             console.warn("No se pudo cargar el logo PTYSS, usando texto fallback");
           }
 
-          const relatedRecords = allRecords.filter((record: any) =>
+          const relatedRecords = (allRecords || []).filter((record: any) =>
             invoice.relatedRecordIds.includes(record._id || record.id)
           );
           const pdfTitle = invoice.status === "facturada" ? "FACTURA" : "PREFACTURA";

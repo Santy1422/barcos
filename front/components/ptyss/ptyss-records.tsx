@@ -56,7 +56,7 @@ export function PTYSSRecords() {
   const ptyssInvoices = useAppSelector((state) => selectInvoicesByModule(state, "ptyss"))
   const isLoading = useAppSelector(selectRecordsLoading)
   const error = useAppSelector(selectRecordsError)
-  const allRecords = useAppSelector(selectAllIndividualRecords)
+  const allRecords = useAppSelector(selectAllIndividualRecords) || []
   const clients = useAppSelector((state) => state.clients.clients)
 
   // Función para obtener los contenedores de una factura
