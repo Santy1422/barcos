@@ -2003,14 +2003,17 @@ export function AgencyRecords() {
                       Motivo de Waiting Time
                     </Label>
                     <Select
-                      value={editFormData.waitingTimeReason}
-                      onValueChange={(value) => setEditFormData(prev => ({ ...prev, waitingTimeReason: value }))}
+                      value={editFormData.waitingTimeReason || "__none__"}
+                      onValueChange={(value) => setEditFormData(prev => ({
+                        ...prev,
+                        waitingTimeReason: value === "__none__" ? "" : value
+                      }))}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar motivo..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Sin motivo</SelectItem>
+                        <SelectItem value="__none__">Sin motivo</SelectItem>
                         {waitingTimeReasons.map((reason) => (
                           <SelectItem key={reason._id} value={reason.name}>
                             {reason.name}
