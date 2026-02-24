@@ -326,7 +326,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
       console.log("=== DEBUG: generateXMLForInvoice ===")
       console.log("Invoice:", invoice)
       console.log("Is AUTH Invoice:", isAuthInvoice)
-      console.log("All records:", allRecords)
+      console.log("Invoice records:", invoiceRecords)
       console.log("Autoridades records:", autoridadesRecords)
       
       if (!invoice) throw new Error("No hay datos de factura disponibles")
