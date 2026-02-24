@@ -23,7 +23,7 @@ import { useToast } from "@/hooks/use-toast"
 import { PTYSSRecordsViewModal } from "./ptyss-records-view-modal"
 import { generatePTYSSInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSapFtp, setContainerTypesMap, clearMissingContainerTypes, getMissingContainerTypes, hasMissingContainerTypes, type PTYSSInvoiceForXml } from "@/lib/xml-generator"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
-import { selectAllIndividualRecords } from "@/lib/features/records/recordsSlice"
+import { selectAllIndividualRecords, fetchAllRecordsByModule } from "@/lib/features/records/recordsSlice"
 import { selectAllContainerTypes, fetchContainerTypes } from "@/lib/features/containerTypes/containerTypesSlice"
 import saveAs from "file-saver"
 
@@ -59,10 +59,11 @@ export function PTYSSFacturacionModal({
   const [missingTypes, setMissingTypes] = useState<string[]>([])
 
      // Obtener registros asociados para generar XML
-   const allRecords = useAppSelector(selectAllIndividualRecords)
-   const clients = useAppSelector((state) => state.clients.clients)
+   const allRecords = useAppSelector(selectAllIndividualRecords) || []
+   const clients = useAppSelector((state) => state.clients.clients) || []
    const clientsLoading = useAppSelector((state) => state.clients.loading)
-   const containerTypes = useAppSelector(selectAllContainerTypes)
+   const containerTypes = useAppSelector(selectAllContainerTypes) || []
+   const recordsLoading = useAppSelector((state) => state.records.fetchingRecords)
    
    // Debug: Verificar que los clientes se cargan correctamente
    useEffect(() => {
@@ -91,11 +92,16 @@ export function PTYSSFacturacionModal({
     const today = new Date()
     setInvoiceDate(today.toLocaleDateString('en-CA'))
 
-    // Cargar container types para homologación SAP
+    // Cargar container types para homologación SAP y registros
     if (open) {
       dispatch(fetchContainerTypes())
+      // Cargar registros PTYSS si no hay registros cargados
+      if (allRecords.length === 0) {
+        console.log("🔄 PTYSSFacturacionModal - Cargando registros PTYSS...")
+        dispatch(fetchAllRecordsByModule('ptyss'))
+      }
     }
-  }, [invoice?.id, open, dispatch])
+  }, [invoice?.id, open, dispatch, allRecords.length])
 
   // Actualizar el mapa de containerTypes para homologación SAP
   useEffect(() => {
@@ -118,6 +124,9 @@ export function PTYSSFacturacionModal({
     console.log("🔍 generateXMLForInvoice - invoice:", invoice)
     console.log("🔍 generateXMLForInvoice - newInvoiceNumber:", newInvoiceNumber)
     console.log("🔍 generateXMLForInvoice - invoiceDate:", invoiceDate)
+    console.log("🔍 generateXMLForInvoice - allRecords disponibles:", allRecords?.length || 0)
+    console.log("🔍 generateXMLForInvoice - recordsLoading:", recordsLoading)
+
     try {
       if (!invoice) {
         throw new Error("No hay datos de factura disponibles")
@@ -129,6 +138,15 @@ export function PTYSSFacturacionModal({
 
       if (!invoiceDate) {
         throw new Error("Debe seleccionar la fecha de factura antes de generar el XML")
+      }
+
+      // Validar que los registros estén disponibles
+      if (!allRecords || !Array.isArray(allRecords)) {
+        throw new Error("Los registros no están disponibles. Por favor, recarga la página e intenta de nuevo.")
+      }
+
+      if (recordsLoading) {
+        throw new Error("Los registros están siendo cargados. Por favor, espera un momento e intenta de nuevo.")
       }
 
       // Obtener registros relacionados
@@ -549,15 +567,21 @@ export function PTYSSFacturacionModal({
               </div>
             </div>
 
-            {/* Advertencia si los clientes están cargando */}
-            {clientsLoading && (
+            {/* Advertencia si los clientes o registros están cargando */}
+            {(clientsLoading || recordsLoading) && (
               <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5" />
                   <div>
-                    <p className="text-sm font-medium text-yellow-900">Cargando clientes...</p>
+                    <p className="text-sm font-medium text-yellow-900">
+                      {clientsLoading && recordsLoading
+                        ? "Cargando clientes y registros..."
+                        : clientsLoading
+                          ? "Cargando clientes..."
+                          : "Cargando registros..."}
+                    </p>
                     <p className="text-xs text-yellow-700 mt-1">
-                      Espere un momento mientras se cargan los datos de los clientes antes de facturar.
+                      Espere un momento mientras se cargan los datos antes de facturar.
                     </p>
                   </div>
                 </div>
@@ -621,17 +645,17 @@ export function PTYSSFacturacionModal({
                 <Button
                   variant="outline"
                   onClick={generateXMLForInvoice}
-                  disabled={!newInvoiceNumber.trim() || !invoiceDate}
+                  disabled={!newInvoiceNumber.trim() || !invoiceDate || recordsLoading || clientsLoading}
                   className="flex items-center gap-2 text-blue-600 border-blue-600 hover:bg-blue-50 disabled:text-gray-400 disabled:border-gray-300"
                 >
                   <Code className="h-4 w-4" />
-                  Vista previa del XML
+                  {recordsLoading ? "Cargando registros..." : "Vista previa del XML"}
                 </Button>
-                {(!newInvoiceNumber.trim() || !invoiceDate) && (
+                {(!newInvoiceNumber.trim() || !invoiceDate) && !recordsLoading && (
                   <p className="text-xs text-muted-foreground text-center">
-                    {!newInvoiceNumber.trim() && !invoiceDate 
+                    {!newInvoiceNumber.trim() && !invoiceDate
                       ? "Ingrese el número y fecha de factura para generar el XML"
-                      : !newInvoiceNumber.trim() 
+                      : !newInvoiceNumber.trim()
                         ? "Ingrese el número de factura para generar el XML"
                         : "Seleccione la fecha de factura para generar el XML"
                     }
@@ -692,7 +716,7 @@ export function PTYSSFacturacionModal({
               </Button>
               <Button
                 onClick={handleFacturar}
-                disabled={isProcessing || !newInvoiceNumber.trim() || !invoiceDate || clientsLoading}
+                disabled={isProcessing || !newInvoiceNumber.trim() || !invoiceDate || clientsLoading || recordsLoading}
                 className="bg-green-600 hover:bg-green-700 text-white"
               >
                 {isProcessing ? (
@@ -700,10 +724,10 @@ export function PTYSSFacturacionModal({
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                     Facturando...
                   </>
-                ) : clientsLoading ? (
+                ) : clientsLoading || recordsLoading ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Cargando clientes...
+                    {clientsLoading ? "Cargando clientes..." : "Cargando registros..."}
                   </>
                 ) : (
                   <>
