@@ -337,12 +337,24 @@ export const AgencySapInvoice: React.FC = () => {
         }
       }
       
-      // Búsqueda - Solo por cliente y ubicaciones
+      // Búsqueda - Por cliente, ubicaciones, crew y vessel
       const clientName = getClientForService(service).toLowerCase();
-      
-      const matchesSearch = clientName.includes(q) || 
+
+      // Obtener nombres de crew members
+      let crewNames = '';
+      if (service.crewMembers && service.crewMembers.length > 0) {
+        crewNames = service.crewMembers.map((m: any) => (m.name || '').toLowerCase()).join(' ');
+      } else if (service.crewName) {
+        crewNames = service.crewName.toLowerCase();
+      }
+
+      const vesselName = (service.vessel || '').toLowerCase();
+
+      const matchesSearch = clientName.includes(q) ||
                            (service.pickupLocation || '').toLowerCase().includes(q) ||
-                           (service.dropoffLocation || '').toLowerCase().includes(q);
+                           (service.dropoffLocation || '').toLowerCase().includes(q) ||
+                           crewNames.includes(q) ||
+                           vesselName.includes(q);
       
       // Filtro de estado
       const matchesStatus = statusFilter === 'all' || service.status === statusFilter;
@@ -651,7 +663,7 @@ export const AgencySapInvoice: React.FC = () => {
                     <Input
                 value={search} 
                 onChange={(e) => setSearch(e.target.value)} 
-                placeholder="Buscar por cliente o ubicación..." 
+                placeholder="Buscar por cliente, crew, vessel o ubicación..." 
                 className="pl-9" 
                   />
                 </div>
