@@ -196,13 +196,13 @@ export const seedAgencySapCodes = async (req: Request, res: Response) => {
   try {
     const defaultCodes = [
       {
-        code: 'SHP242',
-        name: 'Crew Transport Service',
+        code: 'CLG098',
+        name: 'Agency Crew Service',
         description: 'Main service for crew member transportation',
         module: 'agency',
         profitCenter: 'PAPANC440',
-        activity: 'SHP',
-        pillar: 'NOPS',
+        activity: 'CLG',
+        pillar: 'LOGS',
         buCountry: 'PA',
         serviceCountry: 'PA',
         clientType: 'MSCGVA',

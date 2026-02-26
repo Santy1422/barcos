@@ -5,8 +5,24 @@ const { LocalService } = require('../src/database/schemas/localServiceSchema');
 const missingLocalServices = [
   {
     code: 'CLG097',
-    name: 'Customs/TI',
-    description: 'Customs/TI',
+    name: 'Spare Parts',
+    description: 'Spare Parts - PTYSS',
+    price: 10,
+    type: 'fixed',
+    active: true
+  },
+  {
+    code: 'CLG096',
+    name: 'Ship Chandler',
+    description: 'Ship Chandler - PTYSS',
+    price: 10,
+    type: 'fixed',
+    active: true
+  },
+  {
+    code: 'CLG098',
+    name: 'Agency Crew',
+    description: 'Agency Crew Service',
     price: 10,
     type: 'fixed',
     active: true
@@ -44,8 +60,8 @@ async function addMissingLocalServices() {
     console.log('\n🎉 Proceso completado');
     
     // Mostrar todos los servicios locales fijos
-    const allFixedServices = await LocalService.find({ 
-      code: { $in: ['CLG097', 'TRK163', 'TRK179', 'SLR168'] } 
+    const allFixedServices = await LocalService.find({
+      code: { $in: ['CLG096', 'CLG097', 'CLG098', 'TRK163', 'TRK179', 'SLR168'] }
     }).sort({ code: 1 });
     
     console.log('\n📋 Servicios locales fijos actuales:');

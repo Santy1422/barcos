@@ -1098,40 +1098,53 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
             
             // Agregar servicios locales fijos como otheritem adicionales
             const localFixedServiceItems: any[] = []
-            const localFixedServiceCodes = ['CLG097', 'TRK163', 'TRK179', 'SLR168', 'TRK196', 'PESAJE']
-            
+            const localFixedServiceCodes = ['CLG097', 'CLG096', 'TRK163', 'TRK179', 'SLR168', 'TRK196', 'PESAJE']
+
             if (invoice.additionalServices && invoice.additionalServices.length > 0) {
               console.log("🔍 PTYSS XML - Processing additional services:", invoice.additionalServices)
-              
+
               invoice.additionalServices.forEach((service) => {
                 // Solo procesar servicios locales fijos
                 if (localFixedServiceCodes.includes(service.serviceId)) {
                   // Mapear PESAJE a TRK196
                   const serviceCode = service.serviceId === 'PESAJE' ? 'TRK196' : service.serviceId
-                  
+
                   console.log(`🔍 PTYSS XML - Adding local fixed service: ${serviceCode} - Amount: ${service.amount}`)
-                  
-                  // Determinar el valor de Pillar según el código de servicio para registros locales
+
+                  // Determinar valores según el código de servicio
                   let pillarValue = "TRSP" // Valor por defecto
+                  let profitCenter = "PAPANC110" // Valor por defecto
+                  let clientType = "MEDLOG" // Valor por defecto
+
+                  // CLG097 - Spare Parts: PAPANC321, CLG, LOGS, PA, MSCGVA
                   if (serviceCode === 'CLG097') {
                     pillarValue = "LOGS"
-                  } else if (serviceCode === 'SLR168') {
+                    profitCenter = "PAPANC321"
+                    clientType = "MSCGVA"
+                  }
+                  // CLG096 - Ship Chandler: PAPANC441, CLG, LOGS, PA, MSCGVA
+                  else if (serviceCode === 'CLG096') {
+                    pillarValue = "LOGS"
+                    profitCenter = "PAPANC441"
+                    clientType = "MSCGVA"
+                  }
+                  else if (serviceCode === 'SLR168') {
                     pillarValue = "NOPS"
                   }
-                  
+
                   localFixedServiceItems.push({
                     "IncomeRebateCode": "I",
                     "AmntTransacCur": (-service.amount).toFixed(3),
                     "BaseUnitMeasure": "EA", // Each (unidad) para servicios fijos
                     "Qty": "1.00",
-                    "ProfitCenter": "PAPANC110",
+                    "ProfitCenter": profitCenter,
                     "ReferencePeriod": formatReferencePeriod(invoice.date),
                     "Service": serviceCode,
                     "Activity": serviceCode.startsWith('CLG') ? "CLG" : serviceCode.startsWith('SLR') ? "SLR" : "TRK",
                     "Pillar": pillarValue,
                     "BUCountry": "PA",
                     "ServiceCountry": "PA",
-                    "ClientType": "MEDLOG",
+                    "ClientType": clientType,
                     "BusinessType": "E", // EXPORT para PTYSS
                     "FullEmpty": "FULL"
                   })
@@ -1616,19 +1629,19 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
     throw new Error("Datos requeridos faltantes para generar XML de Agency")
   }
 
-  // Calcular el total de los servicios (SHP242)
-  const ship242Total = invoice.services.reduce((sum, service) => sum + (service.price || 0), 0)
+  // Calcular el total de los servicios (CLG098 - antes SHP242)
+  const clg098Total = invoice.services.reduce((sum, service) => sum + (service.price || 0), 0)
   
   // Obtener el monto del servicio adicional (TRK137) - Waiting Time
   // Sumar todos los waitingTimePrice de los servicios
   const trk137Total = invoice.services.reduce((sum, service) => sum + (service.waitingTimePrice || 0), 0) || invoice.additionalService?.amount || 0
   
   // El total de la factura debe ser la suma de ambos
-  const totalAmount = ship242Total + trk137Total
-  
+  const totalAmount = clg098Total + trk137Total
+
   console.log('=== DEBUG: generateAgencyInvoiceXML ===')
   console.log('Number of services:', invoice.services.length)
-  console.log('SHP242 Total:', ship242Total)
+  console.log('CLG098 Total:', clg098Total)
   console.log('TRK137 Total (Waiting Time):', trk137Total)
   console.log('Total Amount:', totalAmount)
   console.log('Services with waiting time:', invoice.services.filter(s => (s.waitingTime || 0) > 0).length)
@@ -1636,7 +1649,7 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
   // Crear array de OtherItems dinámicamente
   const otherItems: any[] = [];
   
-  // Agregar un SHP242 por cada servicio
+  // Agregar un CLG098 por cada servicio (antes era SHP242)
   invoice.services.forEach((service, index) => {
     otherItems.push({
       "IncomeRebateCode": "I",
@@ -1645,9 +1658,9 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
       "Qty": "1.00",
       "ProfitCenter": "PAPANC440",
       "ReferencePeriod": formatReferencePeriod(invoice.invoiceDate),
-      "Service": "SHP242",
-      "Activity": "SHP",
-      "Pillar": "NOPS",
+      "Service": "CLG098",
+      "Activity": "CLG",
+      "Pillar": "LOGS",
       "BUCountry": "PA",
       "ServiceCountry": "PA",
       "ClientType": "MSCGVA"

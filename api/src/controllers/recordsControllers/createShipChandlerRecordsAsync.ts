@@ -158,31 +158,67 @@ async function processRecordsInBackground(
       const batch = recordsToProcess.slice(i, i + BATCH_SIZE);
 
       try {
-        const recordsToInsert = batch.map((recordData) => {
+        const recordsToInsert = batch.map((recordData, idx) => {
           const data = recordData.data || {};
           const invoiceNo = data.invoiceNo ? String(data.invoiceNo).trim() : null;
 
-          return {
+          // Validar clientId
+          let clientObjectId = undefined;
+          if (data.clientId) {
+            try {
+              clientObjectId = new mongoose.Types.ObjectId(data.clientId);
+            } catch (e) {
+              console.warn(`⚠️ clientId inválido en registro ${idx}: ${data.clientId}`);
+            }
+          }
+
+          const record = {
             excelId: excelId,
             module: 'shipchandler',
             type: 'supply-order',
             status: 'completado',
-            totalValue: recordData.totalValue || data.total || 0,
+            totalValue: Number(recordData.totalValue) || Number(data.total) || 0,
             data,
-            clientId: data.clientId ? new mongoose.Types.ObjectId(data.clientId) : undefined,
+            clientId: clientObjectId,
             containerConsecutive: invoiceNo,
             createdBy: userId
           };
+
+          console.log(`📝 Registro ${idx} preparado:`, {
+            invoiceNo,
+            totalValue: record.totalValue,
+            hasClientId: !!clientObjectId
+          });
+
+          return record;
         });
 
         const insertedRecords = await records.insertMany(recordsToInsert, { ordered: false })
           .catch(async (err) => {
+            console.error("❌ insertMany error:", err.message);
+            console.error("❌ Error code:", err.code);
+            console.error("❌ Error details:", JSON.stringify(err.errors || err.writeErrors, null, 2));
+
             if (err.writeErrors) {
               err.writeErrors.forEach((writeErr: any) => {
                 uploadErrors.push({
                   row: i + writeErr.index,
-                  message: writeErr.errmsg || 'Error de inserción'
+                  message: writeErr.errmsg || writeErr.err?.message || 'Error de inserción'
                 });
+              });
+            } else if (err.errors) {
+              // Mongoose validation errors
+              Object.keys(err.errors).forEach((field) => {
+                uploadErrors.push({
+                  row: i,
+                  message: `Campo ${field}: ${err.errors[field].message}`
+                });
+              });
+            } else {
+              // Generic error
+              uploadErrors.push({
+                row: i,
+                message: err.message || 'Error desconocido'
               });
             }
             return err.insertedDocs || [];

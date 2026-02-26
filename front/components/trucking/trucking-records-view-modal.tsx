@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -16,16 +16,16 @@ import {
   FileText,
   Truck,
   Clock,
-  Container
+  Container,
+  Loader2
 } from "lucide-react";
 import { useAppSelector, useAppDispatch } from "@/lib/hooks";
-import { 
-  selectAllIndividualRecords, 
-  fetchAllRecordsByModule, 
+import {
   selectAutoridadesRecords,
-  fetchAutoridadesRecords 
+  fetchAutoridadesRecords
 } from "@/lib/features/records/recordsSlice";
 import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSlice";
+import { createApiUrl } from "@/lib/api-config";
 
 interface TruckingRecordsViewModalProps {
   open: boolean;
@@ -35,60 +35,81 @@ interface TruckingRecordsViewModalProps {
 
 export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: TruckingRecordsViewModalProps) {
   const dispatch = useAppDispatch();
-  const allRecords = useAppSelector(selectAllIndividualRecords);
   const autoridadesRecords = useAppSelector(selectAutoridadesRecords);
   const clients = useAppSelector(selectAllClients);
 
-  // Determinar si es una factura AUTH
-  const isAuthInvoice = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-');
+  // State para registros cargados directamente del backend
+  const [fetchedRecords, setFetchedRecords] = useState<any[]>([]);
+  const [isLoadingRecords, setIsLoadingRecords] = useState(false);
 
-              useEffect(() => {
-              if (open) {
-                console.log("=== DEBUG: Modal abierto ===");
-                console.log("Invoice Number:", invoice?.invoiceNumber);
-                console.log("Is AUTH Invoice:", isAuthInvoice);
-                
-                if (isAuthInvoice) {
-                  console.log("Cargando registros de autoridades...");
-                  dispatch(fetchAutoridadesRecords());
-                } else {
-                  console.log("Cargando registros de trasiego...");
-                  dispatch(fetchAllRecordsByModule("trucking"));
-                }
-                dispatch(fetchClients());
-              }
-            }, [open, dispatch, isAuthInvoice, invoice?.invoiceNumber]);
+  // Determinar si es una factura AUTH (por prefijo AUTH-, sufijo AUT, o documentType)
+  const isAuthInvoice = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-')
+    || invoice?.invoiceNumber?.toString().toUpperCase().endsWith(' AUT')
+    || invoice?.details?.documentType === 'gastos-autoridades';
+
+  useEffect(() => {
+    if (open) {
+      console.log("=== DEBUG: Modal abierto ===");
+      console.log("Invoice Number:", invoice?.invoiceNumber);
+      console.log("Is AUTH Invoice:", isAuthInvoice);
+
+      dispatch(fetchClients());
+
+      if (isAuthInvoice) {
+        console.log("Cargando registros de autoridades...");
+        dispatch(fetchAutoridadesRecords());
+      } else if (invoice?.relatedRecordIds?.length > 0) {
+        // Cargar registros directamente del backend por IDs
+        console.log("Cargando registros por IDs del backend...");
+        const loadRecords = async () => {
+          setIsLoadingRecords(true);
+          try {
+            const token = document.cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1]
+              || localStorage.getItem('token');
+            const response = await fetch(createApiUrl('/api/records/by-ids'), {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+              },
+              body: JSON.stringify({ ids: invoice.relatedRecordIds })
+            });
+            const result = await response.json();
+            if (result.success) {
+              console.log(`Cargados ${result.data.length} records de ${invoice.relatedRecordIds.length} IDs`);
+              setFetchedRecords(result.data);
+            } else {
+              console.error("Error cargando records por IDs:", result.message);
+              setFetchedRecords([]);
+            }
+          } catch (error) {
+            console.error("Error fetching records by IDs:", error);
+            setFetchedRecords([]);
+          } finally {
+            setIsLoadingRecords(false);
+          }
+        };
+        loadRecords();
+      }
+    } else {
+      // Reset al cerrar
+      setFetchedRecords([]);
+    }
+  }, [open, dispatch, isAuthInvoice, invoice?.invoiceNumber, invoice?.relatedRecordIds]);
 
   const getRelatedRecords = () => {
     if (!invoice?.relatedRecordIds) return [];
-    
-    const sourceRecords = isAuthInvoice ? autoridadesRecords : allRecords;
-    if (sourceRecords.length === 0) return [];
-    
-    console.log("=== DEBUG: getRelatedRecords ===");
-    console.log("Invoice:", invoice);
-    console.log("Invoice Number:", invoice.invoiceNumber);
-    console.log("Invoice Number Type:", typeof invoice.invoiceNumber);
-    console.log("Invoice Number startsWith AUTH-:", invoice.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-'));
-    console.log("Is AUTH Invoice:", isAuthInvoice);
-    console.log("Source records disponibles:", sourceRecords.length);
-    console.log("Related record IDs:", invoice.relatedRecordIds);
-    
-    // Debug: verificar si los IDs existen en los registros
-    const availableIds = sourceRecords.map(r => r._id || r.id);
-    console.log("IDs disponibles en registros:", availableIds.slice(0, 10)); // Solo mostrar los primeros 10
-    
-    const filtered = sourceRecords.filter((record: any) => invoice.relatedRecordIds.includes(record._id || record.id));
-    console.log("Registros filtrados encontrados:", filtered.length);
-    console.log("Registros filtrados:", filtered);
-    
-    // Debug: verificar qué IDs no se encontraron
-    const notFoundIds = invoice.relatedRecordIds.filter(id => !availableIds.includes(id));
-    if (notFoundIds.length > 0) {
-      console.log("IDs NO encontrados en registros:", notFoundIds);
+
+    if (isAuthInvoice) {
+      // Para AUTH, filtrar de autoridades records
+      if (autoridadesRecords.length === 0) return [];
+      return autoridadesRecords.filter((record: any) =>
+        invoice.relatedRecordIds.includes(record._id || record.id)
+      );
+    } else {
+      // Para trasiego, usar los records cargados directamente
+      return fetchedRecords;
     }
-    
-    return filtered;
   };
 
   const relatedRecords = getRelatedRecords();
@@ -156,7 +177,12 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
               <Container className="h-5 w-5" /> Registros Asociados ({relatedRecords.length})
             </h3>
 
-            {relatedRecords.length === 0 ? (
+            {isLoadingRecords ? (
+              <div className="text-center py-8 text-muted-foreground flex items-center justify-center gap-2">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Cargando registros...
+              </div>
+            ) : relatedRecords.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">No se encontraron registros asociados</div>
             ) : (
               relatedRecords.map((record: any, index: number) => {
