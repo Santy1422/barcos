@@ -163,11 +163,16 @@ export default function TruckingRecordsOptimizadoPage() {
       if (!response.ok) throw new Error('Error al cargar facturas')
 
       const data = await response.json()
-      console.log('Invoices response:', data)
 
-      // Handle response - check for data in multiple formats
-      const invoiceData = data.data || data.invoices || []
-      console.log('Invoice data:', invoiceData)
+      // Handle response - the backend returns { payload: { invoices: [...] } } or { invoices: [...] } or { data: [...] }
+      let invoiceData: any[] = []
+      if (data.payload && data.payload.invoices) {
+        invoiceData = data.payload.invoices
+      } else if (data.invoices) {
+        invoiceData = data.invoices
+      } else if (data.data) {
+        invoiceData = data.data
+      }
 
       setInvoices(invoiceData.map((inv: any) => ({ ...inv, id: inv._id || inv.id })))
       setPagination(data.pagination || { current: page, pages: 1, total: invoiceData.length })
