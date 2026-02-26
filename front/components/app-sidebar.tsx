@@ -38,6 +38,7 @@ import {
   Settings2,
   User,
   Plus,
+  Zap,
   History,
   Car,
   BookOpen,
@@ -113,6 +114,9 @@ export function AppSidebar() {
         ] : []),
         ...(hasSectionAccess(currentUser, "trucking", "records") ? [
           { title: "Facturas", href: "/trucking/records", icon: ListOrdered }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "trucking", "records") ? [
+          { title: "Facturas (Rápido)", href: "/trucking/records-optimizado", icon: Zap }
         ] : []),
         ...(hasSectionAccess(currentUser, "trucking", "config") ? [
           { title: "Catálogos", href: "/trucking/config", icon: BookOpen }
