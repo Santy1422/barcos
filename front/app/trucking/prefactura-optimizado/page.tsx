@@ -641,12 +641,9 @@ export default function TruckingPrefacturaOptimizadoPage() {
     }
   }
 
-  // PDF generation
-  const handleGeneratePDF = () => {
-    if (selectedRecords.length === 0) {
-      toast({ title: "Sin registros", description: "Selecciona al menos un registro", variant: "destructive" })
-      return
-    }
+  // PDF generation with autoTable and full formatting
+  const generatePrefacturaPdf = () => {
+    if (selectedRecords.length === 0) return null
 
     const clientName = getSelectedClientName() || "Cliente"
     const client = getClient(clientName)
@@ -654,7 +651,10 @@ export default function TruckingPrefacturaOptimizadoPage() {
 
     const doc = new jsPDF()
     const lightBlue = [59, 130, 246]
+    const tableWidth = 180
+    const tableX = 15
 
+    // Logo
     if (logoBase64) {
       doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
     } else {
@@ -666,6 +666,7 @@ export default function TruckingPrefacturaOptimizadoPage() {
       doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
     }
 
+    // Header
     doc.setTextColor(0, 0, 0)
     doc.setFontSize(14)
     doc.setFont(undefined as any, 'bold')
@@ -679,14 +680,20 @@ export default function TruckingPrefacturaOptimizadoPage() {
     doc.text('DATE:', 195, 30, { align: 'right' })
     doc.setFontSize(12)
     doc.text(`${day} ${month} ${year}`, 195, 35, { align: 'right' })
+    doc.setFontSize(8)
+    doc.text('DAY MO YR', 195, 40, { align: 'right' })
 
+    // Issuer info
     doc.setFontSize(9)
     doc.setFont(undefined as any, 'bold')
     const issuerName = issuer ? ((issuer as any).type === 'natural' ? (issuer as any).fullName : (issuer as any).companyName) : 'PTG'
     doc.text(issuerName || 'PTG', 15, 50)
     doc.setFontSize(8)
     doc.setFont(undefined as any, 'normal')
+    const issuerRuc = issuer ? ((issuer as any).type === 'natural' ? (issuer as any).documentNumber : (issuer as any).ruc) : ''
+    if (issuerRuc) doc.text(`RUC: ${issuerRuc}`, 15, 54)
 
+    // Customer info
     doc.setFontSize(9)
     doc.setFont(undefined as any, 'bold')
     doc.text('CUSTOMER:', 15, 82)
@@ -695,13 +702,18 @@ export default function TruckingPrefacturaOptimizadoPage() {
     const ruc = (client as any)?.ruc || (client as any)?.documentNumber || 'N/A'
     const sap = (client as any)?.sapCode || ''
     const clientDisplay = client ? ((client as any).type === 'natural' ? (client as any).fullName : (client as any).companyName) : clientName
+    const address = (client as any)?.address
+      ? (typeof (client as any).address === 'string' ? (client as any).address : `${(client as any).address?.district || ''}, ${(client as any).address?.province || ''}`)
+      : 'N/A'
+    const phone = (client as any)?.phone || 'N/A'
     doc.text(clientDisplay, 15, 86)
     doc.text(`RUC: ${ruc}`, 15, 90)
     if (sap) doc.text(`SAP: ${sap}`, 60, 90)
+    doc.text(`ADDRESS: ${address}`, 15, 94)
+    doc.text(`TELEPHONE: ${phone}`, 15, 98)
 
+    // Table header
     const startY = 115
-    const tableWidth = 180
-    const tableX = 15
     doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
     doc.rect(tableX, startY, tableWidth, 8, 'F')
     doc.setTextColor(255, 255, 255)
@@ -712,41 +724,139 @@ export default function TruckingPrefacturaOptimizadoPage() {
     doc.text('PRICE', 140, startY + 5)
     doc.text('TOTAL', 170, startY + 5)
 
-    let yPos = startY + 15
-    doc.setTextColor(0, 0, 0)
-    doc.setFontSize(8)
-    doc.setFont(undefined as any, 'normal')
-
-    selectedRecords.forEach((r: any, idx: number) => {
-      const container = r.data?.container || r.data?.contenedor || 'N/A'
+    // Group records by similar characteristics
+    const groupedRecords = new Map<string, { records: any[], price: number, count: number }>()
+    selectedRecords.forEach((r: any) => {
+      const moveType = (r.data?.moveType || 'SINGLE').toString().toUpperCase()
+      const routeType = (r.data?.route || 'PACIFIC').toString().toUpperCase()
       const leg = r.data?.leg || `${r.data?.from || ''} / ${r.data?.to || ''}`
-      const price = r.data?.matchedPrice || r.totalValue || 0
+      const fe = r.data?.fe ? (r.data.fe.toString().toUpperCase().trim() === 'F' ? 'FULL' : 'EMPTY') : 'FULL'
+      const size = r.data?.size || r.data?.containerSize || ''
+      const type = r.data?.type || r.data?.containerType || ''
+      const price = (r.data?.matchedPrice || r.totalValue || 0)
+      const groupKey = `${moveType}|${routeType}|${leg}|${fe}|${size}|${type}|${price}`
 
-      doc.text('1', 25, yPos)
-      doc.text(`${container} - ${leg}`.substring(0, 50), 35, yPos)
-      doc.text(`$${price.toFixed(2)}`, 140, yPos)
-      doc.text(`$${price.toFixed(2)}`, 170, yPos)
-      yPos += 6
+      if (!groupedRecords.has(groupKey)) {
+        groupedRecords.set(groupKey, { records: [], price: price, count: 0 })
+      }
+      const group = groupedRecords.get(groupKey)!
+      group.records.push(r)
+      group.count += 1
     })
 
+    // Create body rows
+    const bodyRows = Array.from(groupedRecords.entries()).map(([groupKey, group]) => {
+      const [moveType, routeType, leg, fe, size, type] = groupKey.split('|')
+      const totalPrice = group.price * group.count
+      const desc = `${moveType} ${routeType} - ${leg}/${fe}/${size}/${type}`
+      return [group.count, desc, group.price.toFixed(2), totalPrice.toFixed(2)]
+    })
+
+    // Add additional services
     if (selectedAdditionalServices.length > 0) {
-      yPos += 4
-      selectedAdditionalServices.forEach(s => {
-        doc.text('1', 25, yPos)
-        doc.text(s.name.substring(0, 50), 35, yPos)
-        doc.text(`$${s.amount.toFixed(2)}`, 140, yPos)
-        doc.text(`$${s.amount.toFixed(2)}`, 170, yPos)
-        yPos += 6
+      selectedAdditionalServices.forEach(svc => {
+        const amount = Number(svc.amount || 0)
+        bodyRows.push([1, svc.description || svc.name, amount.toFixed(2), amount.toFixed(2)])
       })
     }
 
-    yPos += 10
+    // Add PTG taxes for full containers
+    const fullContainers = selectedRecords.filter((r: any) => {
+      const fe = r?.data?.fe || ''
+      return fe.toString().toUpperCase().trim() === 'F'
+    })
+    const totalFullContainers = fullContainers.length
+
+    if (totalFullContainers > 0) {
+      const customsTax = services.find(s => s.module === 'trucking' && s.name === 'Aduana' && s.isActive)
+      const adminFeeTax = services.find(s => s.module === 'trucking' && s.name === 'Administration Fee' && s.isActive)
+
+      if (customsTax && customsTax.price > 0) {
+        const customsTotal = customsTax.price * totalFullContainers
+        bodyRows.push([totalFullContainers, 'Aduana', customsTax.price.toFixed(2), customsTotal.toFixed(2)])
+      }
+
+      if (adminFeeTax && adminFeeTax.price > 0) {
+        const adminFeeTotal = adminFeeTax.price * totalFullContainers
+        bodyRows.push([totalFullContainers, 'Administration Fee', adminFeeTax.price.toFixed(2), adminFeeTotal.toFixed(2)])
+      }
+    }
+
+    autoTable(doc, {
+      startY: startY + 10,
+      head: [],
+      body: bodyRows,
+      theme: 'grid',
+      styles: { fontSize: 9, lineWidth: 0.2, lineColor: [180, 180, 180] },
+      columnStyles: { 0: { cellWidth: 20 }, 1: { cellWidth: 90 }, 2: { cellWidth: 35, halign: 'right' }, 3: { cellWidth: 35, halign: 'right' } },
+      margin: { left: tableX },
+    })
+
+    let y = (doc as any).lastAutoTable.finalY + 8
+
+    // Total
+    doc.setTextColor(0, 0, 0)
     doc.setFont(undefined as any, 'bold')
     doc.setFontSize(12)
-    doc.text(`TOTAL: $${totalSelected.toFixed(2)}`, 170, yPos, { align: 'right' })
+    doc.text('TOTAL:', 120, y)
+    doc.setFontSize(16)
+    doc.text(`$${totalSelected.toFixed(2)}`, 195, y, { align: 'right' })
+    y += 14
 
-    doc.save(`Prefactura_${prefacturaData.prefacturaNumber}.pdf`)
-    toast({ title: 'PDF generado', description: 'El archivo se ha descargado' })
+    // Terms and conditions
+    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+    doc.rect(15, y, tableWidth, 8, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(10)
+    doc.setFont(undefined as any, 'bold')
+    doc.text('TERMS AND CONDITIONS', 20, y + 5)
+    doc.setTextColor(0, 0, 0)
+    y += 14
+    doc.setFont(undefined as any, 'normal')
+    doc.setFontSize(9)
+    doc.text(`Make check payments payable to: ${issuerName || 'PTG'}`, 15, y)
+    y += 4
+    doc.text('Money transfer to: Banco General - Checking Account', 15, y)
+    y += 4
+    doc.text('Account No. 03-72-01-124081-1', 15, y)
+    y += 8
+    doc.text('I Confirmed that I have received the original prefactura and documents.', 15, y)
+    y += 8
+    doc.text('Received by: ____________', 15, y)
+    doc.text('Date: ____________', 90, y)
+
+    return doc.output('blob')
+  }
+
+  const handleGeneratePDF = () => {
+    if (selectedRecords.length === 0) {
+      toast({ title: "Sin registros", description: "Selecciona al menos un registro", variant: "destructive" })
+      return
+    }
+
+    try {
+      const pdfBlob = generatePrefacturaPdf()
+      if (pdfBlob instanceof Blob) {
+        const clientName = getSelectedClientName() || 'Cliente'
+        const client = getClient(clientName)
+        const clientDisplay = client ? ((client as any).type === 'natural' ? (client as any).fullName : (client as any).companyName) : clientName
+        const safeName = (clientDisplay || 'cliente').replace(/[^a-z0-9_-]+/gi, '_')
+
+        const url = URL.createObjectURL(pdfBlob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `prefactura_trucking_${safeName}.pdf`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+
+        toast({ title: 'PDF generado', description: 'El archivo se ha descargado' })
+      }
+    } catch (error) {
+      console.error('Error generando PDF:', error)
+      toast({ title: 'Error', description: 'No se pudo generar el PDF', variant: 'destructive' })
+    }
   }
 
   return (

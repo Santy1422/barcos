@@ -510,20 +510,16 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
     }
   }
 
-  // PDF generation
-  const handleGeneratePDF = () => {
-    if (selectedRecords.length === 0) {
-      toast({ title: "Sin registros", description: "Selecciona al menos un BL", variant: "destructive" })
-      return
-    }
-
-    const customerName = getSelectedCustomerName() || "Cliente"
-    const client = getClient(customerName)
-    const issuer = getClient('PTG')
+  // PDF generation with autoTable and full formatting
+  const generateAutoridadesPdf = () => {
+    if (selectedRecords.length === 0) return null
 
     const doc = new jsPDF()
     const lightBlue = [59, 130, 246]
+    const tableWidth = 180
+    const tableX = 15
 
+    // Logo
     if (logoBase64) {
       doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
     } else {
@@ -535,10 +531,11 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
       doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
     }
 
+    // Header
     doc.setTextColor(0, 0, 0)
     doc.setFontSize(14)
     doc.setFont(undefined as any, 'bold')
-    doc.text(`PREFACTURA No. ${documentData.number}`, 195, 20, { align: 'right' })
+    doc.text(`GASTOS AUTORIDADES No. ${documentData.number}`, 195, 20, { align: 'right' })
 
     const currentDate = new Date()
     const day = currentDate.getDate().toString().padStart(2, '0')
@@ -549,68 +546,225 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
     doc.setFontSize(12)
     doc.text(`${day} ${month} ${year}`, 195, 35, { align: 'right' })
 
+    // Issuer info (PTG)
     doc.setFontSize(9)
     doc.setFont(undefined as any, 'bold')
-    const issuerName = issuer ? ((issuer as any).type === 'natural' ? (issuer as any).fullName : (issuer as any).companyName) : 'PTG'
-    doc.text(issuerName || 'PTG', 15, 50)
+    doc.text('PTG', 15, 50)
+    doc.setFontSize(8)
+    doc.setFont(undefined as any, 'normal')
+    doc.text('RUC: 2207749-1-774410 DV 10', 15, 54)
+    doc.text('Howard, Panama Pacifico', 15, 58)
+    doc.text('TEL: (507) 838-7470', 15, 62)
+
+    // Customer info
+    const firstRecord = selectedRecords[0]
+    const customerName = firstRecord?.customer || 'Cliente'
+    let customer = null
+    if (firstRecord?.clientId) {
+      customer = clients.find((c: any) => (c._id || c.id) === firstRecord.clientId)
+    }
+    if (!customer) {
+      customer = getClient(customerName)
+    }
 
     doc.setFontSize(9)
     doc.setFont(undefined as any, 'bold')
     doc.text('CUSTOMER:', 15, 82)
     doc.setFontSize(8)
     doc.setFont(undefined as any, 'normal')
-    const ruc = (client as any)?.ruc || (client as any)?.documentNumber || 'N/A'
-    const sap = (client as any)?.sapCode || ''
-    const clientDisplay = client ? ((client as any).type === 'natural' ? (client as any).fullName : (client as any).companyName) : customerName
+
+    const clientDisplay = customer
+      ? ((customer as any).type === 'natural' ? (customer as any).fullName : (customer as any).companyName)
+      : customerName
+    const ruc = (customer as any)?.ruc || (customer as any)?.documentNumber || 'N/A'
+    const sap = (customer as any)?.sapCode || ''
+    const address = (customer as any)?.address
+      ? (typeof (customer as any).address === 'string' ? (customer as any).address : `${(customer as any).address?.district || ''}, ${(customer as any).address?.province || ''}`)
+      : 'N/A'
+    const phone = (customer as any)?.phone || 'N/A'
+
     doc.text(clientDisplay, 15, 86)
     doc.text(`RUC: ${ruc}`, 15, 90)
     if (sap) doc.text(`SAP: ${sap}`, 60, 90)
+    doc.text(`ADDRESS: ${address}`, 15, 94)
+    doc.text(`TELEPHONE: ${phone}`, 15, 98)
 
     // Table header
     const startY = 115
-    const tableWidth = 180
-    const tableX = 15
     doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
     doc.rect(tableX, startY, tableWidth, 8, 'F')
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(10)
     doc.setFont(undefined as any, 'bold')
-    doc.text('BL NUMBER', 25, startY + 5)
-    doc.text('CONTAINER', 70, startY + 5)
-    doc.text('NOTF', 110, startY + 5)
-    doc.text('SEAL', 140, startY + 5)
+    doc.text('BL NUMBER', 15, startY + 5)
+    doc.text('CLIENT', 45, startY + 5)
+    doc.text('CONTAINERS', 75, startY + 5)
+    doc.text('AUTH', 105, startY + 5)
+    doc.text('PRICE', 130, startY + 5)
     doc.text('TOTAL', 170, startY + 5)
 
-    let yPos = startY + 15
-    doc.setTextColor(0, 0, 0)
-    doc.setFontSize(8)
-    doc.setFont(undefined as any, 'normal')
+    // Create rows grouped by BL Number
+    const bodyRows: any[] = []
+    let grandTotal = 0
 
-    selectedBLNumbers.forEach((blNumber) => {
+    selectedBLNumbers.forEach(blNumber => {
       const groupRecords = selectedRecordsCache.get(blNumber) || groupedByBL.get(blNumber) || []
+      const containers = groupRecords.map((r: any) => r.container).join(', ')
+      const auth = groupRecords[0]?.auth || ''
 
-      groupRecords.forEach((r: any) => {
-        const container = r.container || 'N/A'
-        const notf = r.notf || 0
-        const seal = r.seal || 0
-        const recordTotal = (parseFloat(notf) || 0) + (parseFloat(seal) || 0)
+      // NOTF: once per BL Number
+      let notfRecord = groupRecords
+        .filter((r: any) => {
+          const hasValidOrder = r.order && !isNaN(parseFloat(r.order))
+          if (!hasValidOrder) return false
+          const notfStr = r.notf ? String(r.notf).trim() : ''
+          if (!notfStr || notfStr === 'N/A' || notfStr === '') return false
+          const parsed = parseFloat(notfStr)
+          return !isNaN(parsed) && parsed > 0
+        })
+        .sort((a: any, b: any) => parseFloat(a.order) - parseFloat(b.order))[0]
 
-        doc.text(blNumber.substring(0, 15), 25, yPos)
-        doc.text(container.substring(0, 15), 70, yPos)
-        doc.text(`$${parseFloat(notf || 0).toFixed(2)}`, 110, yPos)
-        doc.text(`$${parseFloat(seal || 0).toFixed(2)}`, 140, yPos)
-        doc.text(`$${recordTotal.toFixed(2)}`, 170, yPos)
-        yPos += 6
-      })
+      if (!notfRecord) {
+        notfRecord = groupRecords.find((r: any) => {
+          const notfStr = r.notf ? String(r.notf).trim() : ''
+          if (!notfStr || notfStr === 'N/A' || notfStr === '') return false
+          const parsed = parseFloat(notfStr)
+          return !isNaN(parsed) && parsed > 0
+        })
+      }
+
+      let notfValue = 0
+      if (notfRecord?.notf) {
+        const notfStr = String(notfRecord.notf).trim()
+        if (notfStr && notfStr !== 'N/A' && notfStr !== '') {
+          const parsed = parseFloat(notfStr)
+          if (!isNaN(parsed) && parsed > 0) {
+            notfValue = parsed
+          }
+        }
+      }
+
+      // SEAL: per container
+      const sealTotal = groupRecords.reduce((sum: number, r: any) => {
+        if (r.seal) {
+          const sealStr = String(r.seal).trim()
+          if (sealStr && sealStr !== 'N/A' && sealStr !== '') {
+            const parsed = parseFloat(sealStr)
+            if (!isNaN(parsed) && parsed > 0) {
+              return sum + parsed
+            }
+          }
+        }
+        return sum
+      }, 0)
+
+      const blTotal = notfValue + sealTotal
+      grandTotal += blTotal
+
+      const priceDescription = []
+      if (notfValue > 0) priceDescription.push(`NOTF: $${notfValue.toFixed(2)}`)
+      if (sealTotal > 0) priceDescription.push(`SEAL: $${sealTotal.toFixed(2)}`)
+
+      bodyRows.push([
+        blNumber,
+        groupRecords[0]?.customer || 'N/A',
+        containers,
+        auth,
+        priceDescription.join('\n') || '-',
+        `$${blTotal.toFixed(2)}`
+      ])
     })
 
-    yPos += 10
+    autoTable(doc, {
+      startY: startY + 10,
+      head: [],
+      body: bodyRows,
+      theme: 'grid',
+      styles: { fontSize: 9, lineWidth: 0.2, lineColor: [180, 180, 180] },
+      columnStyles: {
+        0: { cellWidth: 30 },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 40 },
+        3: { cellWidth: 20 },
+        4: { cellWidth: 40 },
+        5: { cellWidth: 20, halign: 'right' }
+      },
+      margin: { left: tableX },
+    })
+
+    let y = (doc as any).lastAutoTable.finalY + 10
+
+    // Total
+    doc.setTextColor(0, 0, 0)
     doc.setFont(undefined as any, 'bold')
     doc.setFontSize(12)
-    doc.text(`TOTAL: $${totalSelected.toFixed(2)}`, 170, yPos, { align: 'right' })
+    doc.text('TOTAL GENERAL:', 120, y)
+    doc.setFontSize(16)
+    doc.text(`$${grandTotal.toFixed(2)}`, 195, y, { align: 'right' })
+    y += 20
 
-    doc.save(`Prefactura_${documentData.number}.pdf`)
-    toast({ title: 'PDF generado', description: 'El archivo se ha descargado' })
+    // Notes
+    if (documentData.notes) {
+      doc.setTextColor(0, 0, 0)
+      doc.setFontSize(10)
+      doc.setFont(undefined as any, 'bold')
+      doc.text('NOTAS:', 15, y)
+      doc.setFont(undefined as any, 'normal')
+      y += 5
+      const notes = doc.splitTextToSize(documentData.notes, 180)
+      doc.text(notes, 15, y)
+      y += 10
+    }
+
+    // Terms and conditions
+    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+    doc.rect(15, y, tableWidth, 8, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(10)
+    doc.setFont(undefined as any, 'bold')
+    doc.text('TERMS AND CONDITIONS', 20, y + 5)
+    doc.setTextColor(0, 0, 0)
+    y += 14
+    doc.setFont(undefined as any, 'normal')
+    doc.setFontSize(9)
+    doc.text('Make check payments payable to: PTG', 15, y)
+    y += 4
+    doc.text('Money transfer to: Banco General - Checking Account', 15, y)
+    y += 4
+    doc.text('Account No. 03-72-01-124081-1', 15, y)
+    y += 8
+    doc.text('I Confirmed that I have received the original prefactura and documents.', 15, y)
+    y += 8
+    doc.text('Received by: ____________', 15, y)
+    doc.text('Date: ____________', 90, y)
+
+    return doc.output('blob')
+  }
+
+  const handleGeneratePDF = () => {
+    if (selectedRecords.length === 0) {
+      toast({ title: "Sin registros", description: "Selecciona al menos un BL", variant: "destructive" })
+      return
+    }
+
+    try {
+      const pdfBlob = generateAutoridadesPdf()
+      if (pdfBlob instanceof Blob) {
+        const url = URL.createObjectURL(pdfBlob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `gastos_autoridades_${documentData.number}.pdf`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+
+        toast({ title: 'PDF generado', description: 'El archivo se ha descargado' })
+      }
+    } catch (error) {
+      console.error('Error generando PDF:', error)
+      toast({ title: 'Error', description: 'No se pudo generar el PDF', variant: 'destructive' })
+    }
   }
 
   return (
