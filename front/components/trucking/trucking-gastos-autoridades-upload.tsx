@@ -703,10 +703,25 @@ export function TruckingGastosAutoridadesUpload() {
           }
         }
        
-              toast({ 
-          title: "Carga completada", 
-          description: `Se procesaron ${totalRecords} registros. ${totalCreatedRecords} registros nuevos fueron guardados exitosamente.` 
-        });
+              // Mensaje claro según el resultado
+        if (totalCreatedRecords === 0) {
+          toast({
+            title: "⚠️ Todos los registros son duplicados",
+            description: `Los ${totalRecords} registros ya existen en el sistema. No se crearon registros nuevos porque ya fueron cargados anteriormente.`,
+            variant: "destructive"
+          });
+        } else if (totalCreatedRecords < totalRecords) {
+          const duplicateCount = totalRecords - totalCreatedRecords;
+          toast({
+            title: "Carga parcial completada",
+            description: `Se crearon ${totalCreatedRecords} registros nuevos. ${duplicateCount} registros ya existían (duplicados).`
+          });
+        } else {
+          toast({
+            title: "✅ Carga completada",
+            description: `Se guardaron ${totalCreatedRecords} registros nuevos exitosamente.`
+          });
+        }
       
       // Limpiar progreso
       setUploadProgress(null);
