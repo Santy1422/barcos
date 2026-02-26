@@ -109,8 +109,14 @@ export function AppSidebar() {
         ...(hasSectionAccess(currentUser, "trucking", "prefactura") ? [
           { title: "Crear Prefactura", href: "/trucking/prefactura", icon: FilePlus2 }
         ] : []),
+        ...(hasSectionAccess(currentUser, "trucking", "prefactura") ? [
+          { title: "Prefactura (Rápido)", href: "/trucking/prefactura-optimizado", icon: Zap }
+        ] : []),
         ...(hasSectionAccess(currentUser, "trucking", "gastos-autoridades") ? [
           { title: "Gastos Autoridades", href: "/trucking/gastos-autoridades", icon: Briefcase }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "trucking", "gastos-autoridades") ? [
+          { title: "Gastos Auth (Rápido)", href: "/trucking/gastos-autoridades-optimizado", icon: Zap }
         ] : []),
         ...(hasSectionAccess(currentUser, "trucking", "records") ? [
           { title: "Facturas", href: "/trucking/records", icon: ListOrdered }

@@ -19,8 +19,8 @@ export default async (req, res) => {
     const limitNum = parseInt(limit as string) || 50;
     const skip = (pageNum - 1) * limitNum;
 
-    // Build query
-    const query: any = { module };
+    // Build query - use case-insensitive match for module
+    const query: any = { module: { $regex: new RegExp(`^${module}$`, 'i') } };
 
     // Status filter
     if (status && status !== 'all') {
