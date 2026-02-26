@@ -163,13 +163,16 @@ export default function TruckingRecordsOptimizadoPage() {
       if (!response.ok) throw new Error('Error al cargar facturas')
 
       const data = await response.json()
+      console.log('Invoices response:', data)
 
-      if (data.success) {
-        const invoiceData = data.data || data.invoices || []
-        setInvoices(invoiceData.map((inv: any) => ({ ...inv, id: inv._id || inv.id })))
-        setPagination(data.pagination || { current: page, pages: 1, total: invoiceData.length })
-      }
+      // Handle response - check for data in multiple formats
+      const invoiceData = data.data || data.invoices || []
+      console.log('Invoice data:', invoiceData)
+
+      setInvoices(invoiceData.map((inv: any) => ({ ...inv, id: inv._id || inv.id })))
+      setPagination(data.pagination || { current: page, pages: 1, total: invoiceData.length })
     } catch (err) {
+      console.error('Error fetching invoices:', err)
       setError(err instanceof Error ? err.message : 'Error desconocido')
     } finally {
       setLoading(false)
