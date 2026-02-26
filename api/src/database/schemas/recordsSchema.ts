@@ -46,12 +46,12 @@ const excelRecordSchema = new mongoose.Schema({
 
   // Numero de orden consecutivo (formato: ORD-XXXXXX)
   // Sirve como referencia tipo PO para el registro
+  // NOTA: NO usar default: null porque sparse solo ignora undefined, no null
   orderNumber: {
     type: String,
     required: false,
     unique: true,
-    sparse: true,
-    default: null
+    sparse: true
   },
 
   // Relaciones
