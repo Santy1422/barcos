@@ -65,7 +65,10 @@ export default async (req, res) => {
 
     // Get total count for pagination
     const total = await invoices.countDocuments(query);
-    const pages = Math.ceil(total / limitNum);
+    const pages = Math.ceil(total / limitNum) || 1;
+
+    console.log(`[getInvoicesByModule] module=${module}, page=${pageNum}, limit=${limitNum}, total=${total}, pages=${pages}`);
+    console.log(`[getInvoicesByModule] query:`, JSON.stringify(query));
 
     // Get paginated results
     const moduleInvoices = await invoices
@@ -73,6 +76,8 @@ export default async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limitNum);
+
+    console.log(`[getInvoicesByModule] returned ${moduleInvoices.length} invoices`);
 
     return response(res, 200, {
       success: true,

@@ -163,6 +163,7 @@ export default function TruckingRecordsOptimizadoPage() {
       if (!response.ok) throw new Error('Error al cargar facturas')
 
       const data = await response.json()
+      console.log('[fetchInvoices] Raw response:', data)
 
       // Handle response - the backend returns { error: false, payload: { invoices: [...], pagination: {...} } }
       let invoiceData: any[] = []
@@ -172,10 +173,12 @@ export default function TruckingRecordsOptimizadoPage() {
         // Response wrapped in payload
         invoiceData = data.payload.invoices || data.payload.data || []
         paginationData = data.payload.pagination || paginationData
+        console.log('[fetchInvoices] From payload - invoices:', invoiceData.length, 'pagination:', paginationData)
       } else {
         // Direct response
         invoiceData = data.invoices || data.data || []
         paginationData = data.pagination || paginationData
+        console.log('[fetchInvoices] Direct - invoices:', invoiceData.length, 'pagination:', paginationData)
       }
 
       setInvoices(invoiceData.map((inv: any) => ({ ...inv, id: inv._id || inv.id })))
