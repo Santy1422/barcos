@@ -164,18 +164,22 @@ export default function TruckingRecordsOptimizadoPage() {
 
       const data = await response.json()
 
-      // Handle response - the backend returns { payload: { invoices: [...] } } or { invoices: [...] } or { data: [...] }
+      // Handle response - the backend returns { error: false, payload: { invoices: [...], pagination: {...} } }
       let invoiceData: any[] = []
-      if (data.payload && data.payload.invoices) {
-        invoiceData = data.payload.invoices
-      } else if (data.invoices) {
-        invoiceData = data.invoices
-      } else if (data.data) {
-        invoiceData = data.data
+      let paginationData = { current: page, pages: 1, total: 0 }
+
+      if (data.payload) {
+        // Response wrapped in payload
+        invoiceData = data.payload.invoices || data.payload.data || []
+        paginationData = data.payload.pagination || paginationData
+      } else {
+        // Direct response
+        invoiceData = data.invoices || data.data || []
+        paginationData = data.pagination || paginationData
       }
 
       setInvoices(invoiceData.map((inv: any) => ({ ...inv, id: inv._id || inv.id })))
-      setPagination(data.pagination || { current: page, pages: 1, total: invoiceData.length })
+      setPagination(paginationData)
     } catch (err) {
       console.error('Error fetching invoices:', err)
       setError(err instanceof Error ? err.message : 'Error desconocido')
