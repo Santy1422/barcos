@@ -67,7 +67,7 @@ interface PaginationInfo {
   total: number
 }
 
-const ITEMS_PER_PAGE = 50
+const ITEMS_PER_PAGE = 15
 
 export default function TruckingRecordsOptimizadoPage() {
   const dispatch = useAppDispatch()
