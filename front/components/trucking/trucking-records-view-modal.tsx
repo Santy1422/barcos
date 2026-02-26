@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,9 @@ import {
   Truck,
   Clock,
   Container,
-  Loader2
+  Loader2,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { useAppSelector, useAppDispatch } from "@/lib/hooks";
 import {
@@ -26,6 +28,8 @@ import {
 } from "@/lib/features/records/recordsSlice";
 import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSlice";
 import { createApiUrl } from "@/lib/api-config";
+
+const RECORDS_PER_PAGE = 10;
 
 interface TruckingRecordsViewModalProps {
   open: boolean;
@@ -42,6 +46,9 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
   const [fetchedRecords, setFetchedRecords] = useState<any[]>([]);
   const [isLoadingRecords, setIsLoadingRecords] = useState(false);
 
+  // State para paginación
+  const [currentPage, setCurrentPage] = useState(1);
+
   // Determinar si es una factura AUTH (por prefijo AUTH-, sufijo AUT, o documentType)
   const isAuthInvoice = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-')
     || invoice?.invoiceNumber?.toString().toUpperCase().endsWith(' AUT')
@@ -49,6 +56,9 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
 
   useEffect(() => {
     if (open) {
+      // Reset pagination cuando se abre el modal
+      setCurrentPage(1);
+
       console.log("=== DEBUG: Modal abierto ===");
       console.log("Invoice Number:", invoice?.invoiceNumber);
       console.log("Is AUTH Invoice:", isAuthInvoice);
@@ -94,6 +104,7 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
     } else {
       // Reset al cerrar
       setFetchedRecords([]);
+      setCurrentPage(1);
     }
   }, [open, dispatch, isAuthInvoice, invoice?.invoiceNumber, invoice?.relatedRecordIds]);
 
@@ -113,6 +124,20 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
   };
 
   const relatedRecords = getRelatedRecords();
+
+  // Paginación
+  const totalPages = Math.ceil(relatedRecords.length / RECORDS_PER_PAGE);
+  const paginatedRecords = useMemo(() => {
+    const start = (currentPage - 1) * RECORDS_PER_PAGE;
+    const end = start + RECORDS_PER_PAGE;
+    return relatedRecords.slice(start, end);
+  }, [relatedRecords, currentPage]);
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
 
   const formatDateTime = (dateString: string) => {
     if (!dateString) return { date: 'N/A', time: 'N/A' };
@@ -134,7 +159,7 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5" /> 
+            <Database className="h-5 w-5" />
             Registros Asociados - {invoice.invoiceNumber}
             <Badge variant={isAuthInvoice ? "default" : "secondary"} className={isAuthInvoice ? "bg-orange-600 text-white" : ""}>
               {isAuthInvoice ? "Gastos Auth" : "Trasiego"}
@@ -155,7 +180,7 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
               </div>
               <div>
                 <span className="font-medium text-blue-700">Total:</span>
-                <div className="text-blue-900 font-bold">${invoice.totalAmount.toFixed(2)}</div>
+                <div className="text-blue-900 font-bold">${invoice.totalAmount?.toFixed(2) || '0.00'}</div>
               </div>
               <div>
                 <span className="font-medium text-blue-700">Registros:</span>
@@ -173,9 +198,16 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              <Container className="h-5 w-5" /> Registros Asociados ({relatedRecords.length})
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Container className="h-5 w-5" /> Registros Asociados ({relatedRecords.length})
+              </h3>
+              {totalPages > 1 && (
+                <span className="text-sm text-muted-foreground">
+                  Página {currentPage} de {totalPages}
+                </span>
+              )}
+            </div>
 
             {isLoadingRecords ? (
               <div className="text-center py-8 text-muted-foreground flex items-center justify-center gap-2">
@@ -185,128 +217,187 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
             ) : relatedRecords.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">No se encontraron registros asociados</div>
             ) : (
-              relatedRecords.map((record: any, index: number) => {
-                // Para registros de autoridades, los datos están directamente en el record, no en record.data
-                const data = isAuthInvoice ? record : (record.data as Record<string, any>);
-                const { date, time } = formatDateTime(record.createdAt);
-                const client = clients.find((c: any) => (c._id || c.id) === data?.clientId);
-                const displayClientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : (data?.associate || data?.line || invoice.clientName || "Cliente");
-                const displayOrder = data?.order || data?.containerConsecutive || "N/A";
-                const displayContainerSize = data?.containerSize || data?.size || "N/A";
-                const displayContainerType = data?.containerType || data?.type || "N/A";
-                const displayLine = data?.line || data?.route || data?.ruta || "N/A";
+              <>
+                {paginatedRecords.map((record: any, index: number) => {
+                  // Para registros de autoridades, los datos están directamente en el record, no en record.data
+                  const data = isAuthInvoice ? record : (record.data as Record<string, any>);
+                  const { date, time } = formatDateTime(record.createdAt);
+                  const client = clients.find((c: any) => (c._id || c.id) === data?.clientId);
+                  const displayClientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : (data?.associate || data?.line || invoice.clientName || "Cliente");
+                  const displayOrder = data?.order || data?.containerConsecutive || "N/A";
+                  const displayContainerSize = data?.containerSize || data?.size || "N/A";
+                  const displayContainerType = data?.containerType || data?.type || "N/A";
+                  const displayLine = data?.line || data?.route || data?.ruta || "N/A";
+                  const globalIndex = (currentPage - 1) * RECORDS_PER_PAGE + index;
 
-                return (
-                  <div key={record._id || record.id} className="border border-gray-200 rounded-lg p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-semibold text-lg flex items-center gap-2">
-                        <Container className="h-4 w-4" />
-                        Registro #{index + 1}
-                      </h4>
-                      <Badge variant="outline" className="font-mono">{record._id || record.id}</Badge>
-                    </div>
+                  return (
+                    <div key={record._id || record.id} className="border border-gray-200 rounded-lg p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold text-lg flex items-center gap-2">
+                          <Container className="h-4 w-4" />
+                          Registro #{globalIndex + 1}
+                        </h4>
+                        <Badge variant="outline" className="font-mono text-xs">{(record._id || record.id).slice(-8)}</Badge>
+                      </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {isAuthInvoice ? (
-                        // Vista para registros de autoridades
-                        <>
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> BL Number</Label>
-                            <p className="text-sm font-medium">{data.blNumber || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">Orden: {data.order || "N/A"}</p>
-                          </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {isAuthInvoice ? (
+                          // Vista para registros de autoridades
+                          <>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> BL Number</Label>
+                              <p className="text-sm font-medium">{data.blNumber || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">Orden: {data.order || "N/A"}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Container className="h-3 w-3" /> Contenedor</Label>
-                            <p className="text-sm font-medium">{data.container || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">{data.size || "N/A"} {data.type || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">F/E: {data.fe || "N/A"}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Container className="h-3 w-3" /> Contenedor</Label>
+                              <p className="text-sm font-medium">{data.container || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">{data.size || "N/A"} {data.type || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">F/E: {data.fe || "N/A"}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><MapPin className="h-3 w-3" /> Autoridad</Label>
-                            <p className="text-sm">{data.auth || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">Ruta: {data.ruta || "N/A"}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><MapPin className="h-3 w-3" /> Autoridad</Label>
+                              <p className="text-sm">{data.auth || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">Ruta: {data.ruta || "N/A"}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> Invoice</Label>
-                            <p className="text-sm">{data.noInvoice || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">Fecha: {data.dateOfInvoice ? new Date(data.dateOfInvoice).toLocaleDateString('es-ES') : "N/A"}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> Invoice</Label>
+                              <p className="text-sm">{data.noInvoice || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">Fecha: {data.dateOfInvoice ? new Date(data.dateOfInvoice).toLocaleDateString('es-ES') : "N/A"}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><DollarSign className="h-3 w-3" /> Costos</Label>
-                            <p className="text-xs text-muted-foreground">NOTF: ${(parseFloat(data.notf) || 0).toFixed(2)}</p>
-                            <p className="text-xs text-muted-foreground">Seal: ${(parseFloat(data.seal) || 0).toFixed(2)}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><DollarSign className="h-3 w-3" /> Costos</Label>
+                              <p className="text-xs text-muted-foreground">NOTF: ${(parseFloat(data.notf) || 0).toFixed(2)}</p>
+                              <p className="text-xs text-muted-foreground">Seal: ${(parseFloat(data.seal) || 0).toFixed(2)}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Truck className="h-3 w-3" /> Transporte</Label>
-                            <p className="text-xs text-muted-foreground">Transporte: {data.transport || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">Peso: {data.totalWeight ? `${data.totalWeight} kg` : "N/A"}</p>
-                          </div>
-                        </>
-                      ) : (
-                        // Vista para registros de trasiego (normal)
-                        <>
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><User className="h-3 w-3" /> Cliente</Label>
-                            <p className="text-sm">{displayClientName}</p>
-                            <p className="text-xs text-muted-foreground">Orden: {displayOrder}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Truck className="h-3 w-3" /> Transporte</Label>
+                              <p className="text-xs text-muted-foreground">Transporte: {data.transport || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">Peso: {data.totalWeight ? `${data.totalWeight} kg` : "N/A"}</p>
+                            </div>
+                          </>
+                        ) : (
+                          // Vista para registros de trasiego (normal)
+                          <>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><User className="h-3 w-3" /> Cliente</Label>
+                              <p className="text-sm">{displayClientName}</p>
+                              <p className="text-xs text-muted-foreground">Orden: {displayOrder}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> Contenedor</Label>
-                            <p className="text-sm font-medium">{data.container || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">{displayContainerSize} {displayContainerType}</p>
-                            <p className="text-xs text-muted-foreground">F/E: {data.fe || "N/A"}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> Contenedor</Label>
+                              <p className="text-sm font-medium">{data?.container || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">{displayContainerSize} {displayContainerType}</p>
+                              <p className="text-xs text-muted-foreground">F/E: {data?.fe || "N/A"}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><MapPin className="h-3 w-3" /> Ruta</Label>
-                            <p className="text-sm">{data.from || "N/A"} → {data.to || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">Línea: {displayLine}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><MapPin className="h-3 w-3" /> Ruta</Label>
+                              <p className="text-sm">{data?.from || "N/A"} → {data?.to || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">Línea: {displayLine}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Calendar className="h-3 w-3" /> Fecha Movimiento</Label>
-                            <p className="text-sm">{data.moveDate ? new Date(data.moveDate).toLocaleDateString('es-ES') : "N/A"}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Calendar className="h-3 w-3" /> Fecha Movimiento</Label>
+                              <p className="text-sm">{data?.moveDate ? new Date(data.moveDate).toLocaleDateString('es-ES') : "N/A"}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><DollarSign className="h-3 w-3" /> Valor Total</Label>
-                            <p className="text-sm font-bold text-green-600">${(record.totalValue || 0).toFixed(2)}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><DollarSign className="h-3 w-3" /> Valor Total</Label>
+                              <p className="text-sm font-bold text-green-600">${(record.totalValue || 0).toFixed(2)}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Truck className="h-3 w-3" /> Transporte</Label>
-                            <p className="text-xs text-muted-foreground">Conductor: {data.conductor || data.driverName || 'N/A'}</p>
-                            <p className="text-xs text-muted-foreground">Matrícula: {data.matriculaCamion || data.plate || 'N/A'}</p>
-                          </div>
-                        </>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Truck className="h-3 w-3" /> Transporte</Label>
+                              <p className="text-xs text-muted-foreground">Conductor: {data?.conductor || data?.driverName || 'N/A'}</p>
+                              <p className="text-xs text-muted-foreground">Matrícula: {data?.matriculaCamion || data?.plate || 'N/A'}</p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      <Separator />
+
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Clock className="h-3 w-3" /> Información del Sistema</Label>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <div className="flex items-center gap-1"><span className="font-medium">Creado:</span> <span>{date} {time}</span></div>
+                          <div className="flex items-center gap-1"><span className="font-medium">Estado:</span> <Badge variant="outline" className="text-xs">{record.status || "pendiente"}</Badge></div>
+                        </div>
+                      </div>
+
+                      {data?.notes && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-600">Notas</Label>
+                          <p className="text-sm bg-gray-50 p-2 rounded-md">{data.notes}</p>
+                        </div>
                       )}
                     </div>
+                  );
+                })}
 
-                    <Separator />
+                {/* Paginación */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between pt-4 border-t">
+                    <span className="text-sm text-muted-foreground">
+                      Mostrando {(currentPage - 1) * RECORDS_PER_PAGE + 1} - {Math.min(currentPage * RECORDS_PER_PAGE, relatedRecords.length)} de {relatedRecords.length}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage <= 1}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        Anterior
+                      </Button>
 
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Clock className="h-3 w-3" /> Información del Sistema</Label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        <div className="flex items-center gap-1"><span className="font-medium">Creado:</span> <span>{date} {time}</span></div>
-                        <div className="flex items-center gap-1"><span className="font-medium">Estado:</span> <Badge variant="outline" className="text-xs">{record.status || "pendiente"}</Badge></div>
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                          let pageNum;
+                          if (totalPages <= 5) {
+                            pageNum = i + 1;
+                          } else if (currentPage <= 3) {
+                            pageNum = i + 1;
+                          } else if (currentPage >= totalPages - 2) {
+                            pageNum = totalPages - 4 + i;
+                          } else {
+                            pageNum = currentPage - 2 + i;
+                          }
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={pageNum === currentPage ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => goToPage(pageNum)}
+                              className="w-8 h-8 p-0"
+                            >
+                              {pageNum}
+                            </Button>
+                          );
+                        })}
                       </div>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage >= totalPages}
+                      >
+                        Siguiente
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
                     </div>
-
-                    {data.notes && (
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-600">Notas</Label>
-                        <p className="text-sm bg-gray-50 p-2 rounded-md">{data.notes}</p>
-                      </div>
-                    )}
                   </div>
-                );
-              })
+                )}
+              </>
             )}
           </div>
         </div>
@@ -318,5 +409,3 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
     </Dialog>
   );
 }
-
-
