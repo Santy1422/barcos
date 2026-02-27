@@ -65,6 +65,8 @@ export function TruckingGastosAutoridadesUpload() {
       prefacturado: any[];
       facturado: any[];
     } | null;
+    resetExisting?: boolean;
+    skipExisting?: boolean;
   }>({ checking: false, summary: null, existingRecords: null });
 
   // Estados para manejo de clientes (similar a trucking-upload)
@@ -534,6 +536,37 @@ export function TruckingGastosAutoridadesUpload() {
         })
         return
       }
+
+      // Si hay registros existentes y el usuario eligió resetearlos
+      if (existingRecordsCheck.summary?.existing && existingRecordsCheck.summary.existing > 0 && (existingRecordsCheck as any).resetExisting) {
+        toast({
+          title: "Reseteando registros existentes...",
+          description: `Preparando ${existingRecordsCheck.summary.existing} registros para volver a facturar`
+        });
+
+        const token = localStorage.getItem('token');
+        const orderColumn = columns.find(col => ['Order', 'ORDER', 'order'].includes(col)) || 'Order';
+        const orders = excelRows.map(row => String(row[orderColumn])).filter(Boolean);
+
+        const resetResponse = await fetch(createApiUrl('/api/records/autoridades/reset-status'), {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ orders })
+        });
+
+        if (!resetResponse.ok) {
+          throw new Error('Error al resetear registros existentes');
+        }
+
+        const resetData = await resetResponse.json();
+        toast({
+          title: "✅ Registros reseteados",
+          description: resetData.message
+        });
+      }
       
       // Verificar que todos los clientes estén completos antes de continuar
       if (!areAllClientsComplete()) {
@@ -896,10 +929,48 @@ export function TruckingGastosAutoridadesUpload() {
                   )}
                 </div>
                 {existingRecordsCheck.summary.existing > 0 && (
-                  <p className="text-xs text-amber-700 mt-2">
-                    <Info className="h-3 w-3 inline mr-1" />
-                    Solo se cargarán los {existingRecordsCheck.summary.new} registros nuevos. Los {existingRecordsCheck.summary.existing} existentes serán ignorados automáticamente.
-                  </p>
+                  <div className="mt-3 p-3 bg-white/80 rounded border border-amber-200">
+                    <p className="text-sm text-amber-800 font-medium mb-2">
+                      ¿Qué desea hacer con los {existingRecordsCheck.summary.existing} registros existentes?
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-amber-700 border-amber-400 hover:bg-amber-100"
+                        onClick={() => {
+                          // Marcar que queremos resetear los existentes
+                          setExistingRecordsCheck(prev => ({
+                            ...prev,
+                            resetExisting: true
+                          } as any));
+                          toast({
+                            title: "✅ Confirmado",
+                            description: "Los registros existentes se resetearán a 'cargado' al subir"
+                          });
+                        }}
+                      >
+                        Resetear a "cargado" y volver a facturar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-gray-600"
+                        onClick={() => {
+                          setExistingRecordsCheck(prev => ({
+                            ...prev,
+                            skipExisting: true
+                          } as any));
+                          toast({
+                            title: "OK",
+                            description: "Solo se subirán los registros nuevos"
+                          });
+                        }}
+                      >
+                        Solo subir nuevos
+                      </Button>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>

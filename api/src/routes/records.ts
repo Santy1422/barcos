@@ -5,6 +5,7 @@ import { createAutoridadesRecord } from '../controllers/recordsControllers/creat
 import { getAllAutoridadesRecords } from '../controllers/recordsControllers/getAllAutoridadesRecords';
 import { deleteAutoridadesRecord } from '../controllers/recordsControllers/deleteAutoridadesRecord';
 import { checkExistingAutoridadesRecords } from '../controllers/recordsControllers/checkExistingAutoridadesRecords';
+import { resetAutoridadesRecords } from '../controllers/recordsControllers/resetAutoridadesRecords';
 import recordsAutoridadesControllers from '../controllers/recordsControllers/recordsAutoridadesControllers';
 import { requireShipchandlerModule, requirePtyssModule, requireAnyRole } from '../middlewares/authorization';
 import createTruckingRecordsAsync from '../controllers/recordsControllers/createTruckingRecordsAsync';
@@ -51,6 +52,7 @@ router.post('/shipchandler/bulk-async', jwtUtils, requireShipchandlerModule, req
 router.post('/autoridades', jwtUtils, catchedAsync(recordsAutoridadesControllers.createAutoridadesRecord));
 router.post('/autoridades/bulk', jwtUtils, catchedAsync(recordsAutoridadesControllers.createAutoridadesRecords));
 router.post('/autoridades/check-existing', jwtUtils, catchedAsync(checkExistingAutoridadesRecords));
+router.post('/autoridades/reset-status', jwtUtils, catchedAsync(resetAutoridadesRecords));
 router.get('/autoridades', jwtUtils, catchedAsync(recordsAutoridadesControllers.getAllAutoridadesRecords));
 router.put('/autoridades/:id', jwtUtils, catchedAsync(recordsAutoridadesControllers.updateAutoridadesRecord));
 router.delete('/autoridades/:id', jwtUtils, catchedAsync(recordsAutoridadesControllers.deleteAutoridadesRecord));
