@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   Loader2, Search, ChevronLeft, ChevronRight, RefreshCw, Truck,
   Eye, Edit, Calendar, DollarSign, User, Trash2, Database, Code, X,
-  Filter, SearchX, FileX, Zap
+  Filter, SearchX, FileX, Zap, Info
 } from "lucide-react"
 import { createApiUrl } from "@/lib/api-config"
 import { SectionGuard } from "@/components/section-guard"
@@ -647,6 +647,21 @@ export default function TruckingRecordsOptimizadoPage() {
           <div>
             <h1 className="text-2xl font-bold">Facturas - PTG</h1>
             <p className="text-muted-foreground">Prefacturas y Facturas de Trasiego</p>
+          </div>
+        </div>
+
+        {/* Banner informativo */}
+        <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100">
+            <Info className="h-4 w-4 text-blue-600" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-blue-800">
+              Mostrando {pagination.total} prefacturas y facturas
+            </p>
+            <p className="text-xs text-blue-600">
+              Aquí aparecen las prefacturas ya creadas. Para crear nuevas prefacturas, ve a "Trasiego Rápido" o "Gastos Autoridades Rápido" y selecciona los registros pendientes.
+            </p>
           </div>
         </div>
 

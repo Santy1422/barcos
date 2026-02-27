@@ -949,6 +949,21 @@ export default function TruckingPrefacturaOptimizadoPage() {
                 </div>
               )}
 
+              {/* Info banner explaining what records are shown */}
+              <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <div className="flex items-center justify-center h-8 w-8 rounded-full bg-emerald-100">
+                  <Check className="h-4 w-4 text-emerald-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-emerald-800">
+                    Mostrando {pagination.total} registros pendientes de trasiego
+                  </p>
+                  <p className="text-xs text-emerald-600">
+                    Solo se muestran registros listos para prefacturar. Los registros ya prefacturados o facturados no aparecen aqui.
+                  </p>
+                </div>
+              </div>
+
               {/* Records table */}
               <div className="rounded-md border overflow-x-auto">
                 <Table>
