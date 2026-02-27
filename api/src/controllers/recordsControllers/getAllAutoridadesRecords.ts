@@ -30,9 +30,15 @@ export async function getAllAutoridadesRecords(req: AuthenticatedRequest, res: R
     // Build query
     const query: any = {};
 
-    // Status filter (exclude prefacturado/facturado by default unless specified)
-    if (status && status !== 'all') {
+    // Status filter (exclude prefacturado/facturado by default unless status=all)
+    if (status === 'all') {
+      // No filter - show all statuses including prefacturado/facturado
+    } else if (status && status !== 'all') {
+      // Specific status filter
       query.status = status;
+    } else {
+      // Default: exclude prefacturado and facturado (only show pending/cargado records)
+      query.status = { $nin: ['prefacturado', 'facturado'] };
     }
 
     // Auth type filter (APA/QUA)

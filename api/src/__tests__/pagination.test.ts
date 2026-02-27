@@ -181,6 +181,49 @@ describe('Pagination Tests', () => {
         })
       );
     });
+
+    it('should exclude prefacturado/facturado by default', async () => {
+      mockRecordsModel.find.mockReturnThis();
+      mockRecordsModel.populate.mockReturnThis();
+      mockRecordsModel.sort.mockReturnThis();
+      mockRecordsModel.skip.mockReturnThis();
+      mockRecordsModel.limit.mockResolvedValue([]);
+      mockRecordsModel.countDocuments.mockResolvedValue(0);
+
+      const { req, res } = createMockReqRes(
+        { module: 'trucking' },
+        { page: '1', limit: '20' }
+      );
+
+      await getRecordsByModule(req, res);
+
+      // Should exclude prefacturado and facturado by default
+      expect(mockRecordsModel.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: { $nin: ['prefacturado', 'facturado'] },
+        })
+      );
+    });
+
+    it('should include all statuses when status=all', async () => {
+      mockRecordsModel.find.mockReturnThis();
+      mockRecordsModel.populate.mockReturnThis();
+      mockRecordsModel.sort.mockReturnThis();
+      mockRecordsModel.skip.mockReturnThis();
+      mockRecordsModel.limit.mockResolvedValue([]);
+      mockRecordsModel.countDocuments.mockResolvedValue(0);
+
+      const { req, res } = createMockReqRes(
+        { module: 'trucking' },
+        { page: '1', limit: '20', status: 'all' }
+      );
+
+      await getRecordsByModule(req, res);
+
+      // Should NOT have $nin status filter when status=all
+      const callArgs = mockRecordsModel.find.mock.calls[0][0];
+      expect(callArgs.status).toBeUndefined();
+    });
   });
 
   describe('getAllAutoridadesRecords', () => {
@@ -305,6 +348,47 @@ describe('Pagination Tests', () => {
       expect(mockRecordsAutoridadesModel.skip).not.toHaveBeenCalled();
       expect(mockRecordsAutoridadesModel.limit).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith(mockRecords);
+    });
+
+    it('should exclude prefacturado/facturado by default', async () => {
+      mockRecordsAutoridadesModel.find.mockReturnThis();
+      mockRecordsAutoridadesModel.sort.mockReturnThis();
+      mockRecordsAutoridadesModel.skip.mockReturnThis();
+      mockRecordsAutoridadesModel.limit.mockResolvedValue([]);
+      mockRecordsAutoridadesModel.countDocuments.mockResolvedValue(0);
+
+      const { req, res } = createMockReqRes(
+        {},
+        { page: '1', limit: '20' }
+      );
+
+      await getAllAutoridadesRecords(req as any, res);
+
+      // Should exclude prefacturado and facturado by default
+      expect(mockRecordsAutoridadesModel.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: { $nin: ['prefacturado', 'facturado'] },
+        })
+      );
+    });
+
+    it('should include all statuses when status=all', async () => {
+      mockRecordsAutoridadesModel.find.mockReturnThis();
+      mockRecordsAutoridadesModel.sort.mockReturnThis();
+      mockRecordsAutoridadesModel.skip.mockReturnThis();
+      mockRecordsAutoridadesModel.limit.mockResolvedValue([]);
+      mockRecordsAutoridadesModel.countDocuments.mockResolvedValue(0);
+
+      const { req, res } = createMockReqRes(
+        {},
+        { page: '1', limit: '20', status: 'all' }
+      );
+
+      await getAllAutoridadesRecords(req as any, res);
+
+      // Should NOT have status filter when status=all
+      const callArgs = mockRecordsAutoridadesModel.find.mock.calls[0][0];
+      expect(callArgs.status).toBeUndefined();
     });
   });
 

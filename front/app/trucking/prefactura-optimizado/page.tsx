@@ -244,10 +244,10 @@ export default function TruckingPrefacturaOptimizadoPage() {
       }
 
       // Filter for trasiego records only (client-side for now since backend doesn't support this filter)
+      // Note: Backend now excludes prefacturado/facturado by default
       const isTrasiego = (rec: any) => !!(rec?.data?.leg || rec?.data?.matchedPrice || rec?.data?.line)
-      const isNotClosed = (rec: any) => !['prefacturado', 'facturado'].includes((rec?.status || '').toLowerCase())
 
-      let filteredRecords = recordsData.filter(isTrasiego).filter(isNotClosed)
+      let filteredRecords = recordsData.filter(isTrasiego)
 
       // Apply client filter client-side if needed
       if (filters?.client && filters.client !== 'all') {

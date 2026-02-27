@@ -155,13 +155,8 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
         paginationData = { current: 1, pages: 1, total: data.length }
       }
 
-      // Filter out prefacturado/facturado records client-side
-      const filteredRecords = recordsData.filter((record: any) => {
-        const status = (record.status || '').toLowerCase()
-        return status !== 'prefacturado' && status !== 'facturado'
-      })
-
-      setRecords(filteredRecords)
+      // Backend now filters out prefacturado/facturado by default
+      setRecords(recordsData)
       setPagination(paginationData)
     } catch (err) {
       console.error('Error fetching autoridades records:', err)
