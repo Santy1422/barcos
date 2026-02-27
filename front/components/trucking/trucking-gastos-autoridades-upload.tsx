@@ -11,8 +11,9 @@ import { ClientModal } from "@/components/clients-management";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { selectCurrentUser } from "@/lib/features/auth/authSlice";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, AlertCircle } from "lucide-react";
+import { CheckCircle2, AlertCircle, AlertTriangle, FileWarning, Info } from "lucide-react";
 import * as XLSX from "xlsx";
+import { createApiUrl } from "@/lib/api-config";
 
 const REQUIRED_COLUMNS = [
   "Auth",
@@ -47,7 +48,25 @@ export function TruckingGastosAutoridadesUpload() {
   const [fileName, setFileName] = useState<string>("");
   const loading = useAppSelector(selectCreatingRecords);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
-  
+
+  // Estado para verificación de registros existentes
+  const [existingRecordsCheck, setExistingRecordsCheck] = useState<{
+    checking: boolean;
+    summary: {
+      total: number;
+      existing: number;
+      new: number;
+      cargado: number;
+      prefacturado: number;
+      facturado: number;
+    } | null;
+    existingRecords: {
+      cargado: any[];
+      prefacturado: any[];
+      facturado: any[];
+    } | null;
+  }>({ checking: false, summary: null, existingRecords: null });
+
   // Estados para manejo de clientes (similar a trucking-upload)
   const [missingClients, setMissingClients] = useState<Array<{ name: string; records: any[] }>>([]);
   const [showClientModal, setShowClientModal] = useState(false);
@@ -247,6 +266,60 @@ export function TruckingGastosAutoridadesUpload() {
     }
   }, [clients, clientCompleteness.size, findClientByNameInModule, checkClientCompleteness])
 
+  // Función para verificar registros existentes en la base de datos
+  const checkExistingRecords = async (orders: string[]) => {
+    setExistingRecordsCheck({ checking: true, summary: null, existingRecords: null });
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No autenticado');
+      }
+
+      const response = await fetch(createApiUrl('/api/records/autoridades/check-existing'), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ orders })
+      });
+
+      if (!response.ok) {
+        throw new Error('Error verificando registros existentes');
+      }
+
+      const data = await response.json();
+
+      setExistingRecordsCheck({
+        checking: false,
+        summary: data.summary,
+        existingRecords: data.existingRecords
+      });
+
+      // Mostrar toast con resumen
+      if (data.summary.existing > 0) {
+        const { cargado, prefacturado, facturado } = data.summary;
+        toast({
+          title: "⚠️ Registros existentes detectados",
+          description: `De ${data.summary.total} registros: ${data.summary.new} nuevos, ${cargado} cargados, ${prefacturado} prefacturados, ${facturado} facturados`,
+          variant: "default"
+        });
+      }
+
+      return data;
+    } catch (error: any) {
+      console.error('Error checking existing records:', error);
+      setExistingRecordsCheck({ checking: false, summary: null, existingRecords: null });
+      toast({
+        title: "Error",
+        description: "No se pudieron verificar los registros existentes: " + error.message,
+        variant: "destructive"
+      });
+      return null;
+    }
+  };
+
   const processMissingClients = async (excelData: any[]): Promise<{ data: any[], hasMissingClients: boolean }> => {
     const grouped = new Map<string, any[]>()
     const newCompleteness = new Map<string, { isComplete: boolean; missingFields: string[] }>()
@@ -335,6 +408,8 @@ export function TruckingGastosAutoridadesUpload() {
     const file = e.target.files?.[0];
     if (!file) return;
     setFileName(file.name);
+    // Reset existing records check
+    setExistingRecordsCheck({ checking: false, summary: null, existingRecords: null });
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -398,10 +473,20 @@ export function TruckingGastosAutoridadesUpload() {
       return;
     }
     
+    // Primero verificar registros existentes en la base de datos
+    const orderColumn = fileColumns.find(col =>
+      ['Order', 'ORDER', 'order'].includes(col)
+    ) || 'Order';
+    const orders = (json as any[]).map(row => String(row[orderColumn])).filter(Boolean);
+
+    if (orders.length > 0) {
+      await checkExistingRecords(orders);
+    }
+
     // Procesar clientes faltantes usando la columna 'customer' del Excel
     const { data: processedData, hasMissingClients } = await processMissingClients(json);
     setExcelRows(processedData);
-    
+
     // Si hay clientes faltantes, no permitir continuar con la subida
     if (hasMissingClients) {
       return; // Pausar el proceso hasta que se completen los clientes
@@ -750,6 +835,77 @@ export function TruckingGastosAutoridadesUpload() {
         <Input type="file" accept=".xlsx,.xls" onChange={handleFileChange} />
         {fileName && <div className="text-sm text-muted-foreground">Archivo: {fileName}</div>}
         
+        {/* Banner de verificación de registros existentes */}
+        {existingRecordsCheck.checking && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="flex items-center gap-2">
+              <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full" />
+              <span className="text-sm text-blue-800 font-medium">
+                Verificando registros existentes...
+              </span>
+            </div>
+          </div>
+        )}
+
+        {existingRecordsCheck.summary && (
+          <div className={`border rounded-lg p-4 ${
+            existingRecordsCheck.summary.existing > 0
+              ? 'bg-amber-50 border-amber-300'
+              : 'bg-green-50 border-green-300'
+          }`}>
+            <div className="flex items-start gap-3">
+              {existingRecordsCheck.summary.existing > 0 ? (
+                <FileWarning className="h-5 w-5 text-amber-600 mt-0.5" />
+              ) : (
+                <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5" />
+              )}
+              <div className="flex-1">
+                <h4 className={`font-medium ${
+                  existingRecordsCheck.summary.existing > 0 ? 'text-amber-800' : 'text-green-800'
+                }`}>
+                  {existingRecordsCheck.summary.existing > 0
+                    ? '⚠️ Se encontraron registros existentes'
+                    : '✅ Todos los registros son nuevos'}
+                </h4>
+                <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div className="bg-white/60 rounded p-2">
+                    <span className="text-gray-600">Total en Excel:</span>
+                    <span className="font-bold ml-1">{existingRecordsCheck.summary.total}</span>
+                  </div>
+                  <div className="bg-white/60 rounded p-2">
+                    <span className="text-green-700">Nuevos:</span>
+                    <span className="font-bold text-green-700 ml-1">{existingRecordsCheck.summary.new}</span>
+                  </div>
+                  {existingRecordsCheck.summary.cargado > 0 && (
+                    <div className="bg-white/60 rounded p-2">
+                      <span className="text-blue-700">Ya cargados:</span>
+                      <span className="font-bold text-blue-700 ml-1">{existingRecordsCheck.summary.cargado}</span>
+                    </div>
+                  )}
+                  {existingRecordsCheck.summary.prefacturado > 0 && (
+                    <div className="bg-white/60 rounded p-2">
+                      <span className="text-orange-700">Prefacturados:</span>
+                      <span className="font-bold text-orange-700 ml-1">{existingRecordsCheck.summary.prefacturado}</span>
+                    </div>
+                  )}
+                  {existingRecordsCheck.summary.facturado > 0 && (
+                    <div className="bg-white/60 rounded p-2">
+                      <span className="text-purple-700">Facturados:</span>
+                      <span className="font-bold text-purple-700 ml-1">{existingRecordsCheck.summary.facturado}</span>
+                    </div>
+                  )}
+                </div>
+                {existingRecordsCheck.summary.existing > 0 && (
+                  <p className="text-xs text-amber-700 mt-2">
+                    <Info className="h-3 w-3 inline mr-1" />
+                    Solo se cargarán los {existingRecordsCheck.summary.new} registros nuevos. Los {existingRecordsCheck.summary.existing} existentes serán ignorados automáticamente.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {hasPendingClients && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
             <div className="flex items-center gap-2">
