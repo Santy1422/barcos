@@ -872,7 +872,41 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[50px]"></TableHead>
+                      <TableHead className="w-[50px]">
+                        <Checkbox
+                          checked={groupedByBL.size > 0 && Array.from(groupedByBL.keys()).every(bl => selectedBLNumbers.includes(bl))}
+                          ref={(el) => {
+                            if (el) {
+                              const allBLs = Array.from(groupedByBL.keys());
+                              const selectedCount = allBLs.filter(bl => selectedBLNumbers.includes(bl)).length;
+                              (el as any).indeterminate = selectedCount > 0 && selectedCount < allBLs.length;
+                            }
+                          }}
+                          onCheckedChange={(checked) => {
+                            const allBLs = Array.from(groupedByBL.keys());
+                            if (checked) {
+                              // Select all BLs on current page
+                              const newSelected = [...new Set([...selectedBLNumbers, ...allBLs])];
+                              setSelectedBLNumbers(newSelected);
+                              // Cache records for all selected BLs
+                              const newCache = new Map(selectedRecordsCache);
+                              allBLs.forEach(bl => {
+                                const blRecords = groupedByBL.get(bl) || [];
+                                newCache.set(bl, blRecords);
+                              });
+                              setSelectedRecordsCache(newCache);
+                              toast({
+                                title: "Selección",
+                                description: `${allBLs.length} BL Numbers seleccionados de esta página`
+                              });
+                            } else {
+                              // Deselect all BLs on current page
+                              setSelectedBLNumbers(prev => prev.filter(bl => !allBLs.includes(bl)));
+                            }
+                          }}
+                          title="Seleccionar todos de esta página"
+                        />
+                      </TableHead>
                       <TableHead className="w-[50px]"></TableHead>
                       <TableHead>BL Number</TableHead>
                       <TableHead>Cliente</TableHead>
