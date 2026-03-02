@@ -1016,7 +1016,7 @@ export const deleteAutoridadesRecord = createAsyncThunk(
   }
 )
 
-// Nueva acción async para actualizar múltiples registros de autoridades
+// Nueva acción async para actualizar múltiples registros de autoridades (bulk update)
 export const updateMultipleAutoridadesStatusAsync = createAsyncThunk(
   'records/updateMultipleAutoridadesStatus',
   async ({ recordIds, status, invoiceId }: { recordIds: string[]; status: string; invoiceId: string }, { rejectWithValue }) => {
@@ -1027,35 +1027,30 @@ export const updateMultipleAutoridadesStatusAsync = createAsyncThunk(
       }
 
       console.log(`🔍 updateMultipleAutoridadesStatusAsync - Actualizando ${recordIds.length} registros de autoridades a estado: ${status}`)
-      
-      // Actualizar cada registro individualmente usando la API de autoridades
-      const updatePromises = recordIds.map(async (recordId) => {
-        console.log(`🔍 Actualizando registro de autoridades ${recordId} a estado ${status}`)
-        
-        const response = await fetch(createApiUrl(`/api/records/autoridades/${recordId}`), {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            status: status,
-            invoiceId: invoiceId
-          })
+
+      // Usar endpoint de actualización masiva (una sola petición)
+      const response = await fetch(createApiUrl(`/api/records/autoridades/bulk-update`), {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          recordIds: recordIds,
+          status: status,
+          invoiceId: invoiceId
         })
-        
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(`Error actualizando registro de autoridades ${recordId}: ${errorData.message || response.statusText}`)
-        }
-        
-        return await response.json()
       })
-      
-      const results = await Promise.all(updatePromises)
-      console.log(`✅ updateMultipleAutoridadesStatusAsync - ${results.length} registros de autoridades actualizados exitosamente`)
-      
-      return { recordIds, status, invoiceId, results }
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(`Error actualizando registros de autoridades: ${errorData.message || response.statusText}`)
+      }
+
+      const result = await response.json()
+      console.log(`✅ updateMultipleAutoridadesStatusAsync - ${result.modifiedCount} registros de autoridades actualizados exitosamente`)
+
+      return { recordIds, status, invoiceId, results: result }
     } catch (error: any) {
       console.error('❌ Error en updateMultipleAutoridadesStatusAsync:', error)
       return rejectWithValue(error.message)

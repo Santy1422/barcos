@@ -54,6 +54,7 @@ router.post('/autoridades/bulk', jwtUtils, catchedAsync(recordsAutoridadesContro
 router.post('/autoridades/check-existing', jwtUtils, catchedAsync(checkExistingAutoridadesRecords));
 router.post('/autoridades/reset-status', jwtUtils, catchedAsync(resetAutoridadesRecords));
 router.get('/autoridades', jwtUtils, catchedAsync(recordsAutoridadesControllers.getAllAutoridadesRecords));
+router.put('/autoridades/bulk-update', jwtUtils, catchedAsync(recordsAutoridadesControllers.bulkUpdateAutoridadesRecords));
 router.put('/autoridades/:id', jwtUtils, catchedAsync(recordsAutoridadesControllers.updateAutoridadesRecord));
 router.delete('/autoridades/:id', jwtUtils, catchedAsync(recordsAutoridadesControllers.deleteAutoridadesRecord));
 
