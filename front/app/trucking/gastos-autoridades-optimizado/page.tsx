@@ -57,6 +57,11 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
   const [selectedBLNumbers, setSelectedBLNumbers] = useState<string[]>([])
   const [selectedRecordsCache, setSelectedRecordsCache] = useState<Map<string, any[]>>(new Map())
 
+  // "Select All" mode - when true, all records matching filters are selected
+  const [selectAllMode, setSelectAllMode] = useState(false)
+  const [isLoadingAllBLs, setIsLoadingAllBLs] = useState(false)
+  const [allBLNumbersCount, setAllBLNumbersCount] = useState(0)
+
   // Expansion state
   const [expandedBLNumbers, setExpandedBLNumbers] = useState<string[]>([])
 
@@ -214,8 +219,17 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
     return groups
   }, [records])
 
+  // Reset selectAllMode when filters change
+  useEffect(() => {
+    setSelectAllMode(false)
+  }, [authFilter, search, isUsingPeriodFilter, startDate, endDate])
+
   // Selection functions
   const toggleBLSelection = (blNumber: string, checked: boolean) => {
+    // If in selectAllMode, any manual toggle should exit that mode
+    if (selectAllMode) {
+      setSelectAllMode(false)
+    }
     if (checked) {
       setSelectedBLNumbers(prev => [...prev, blNumber])
       const blRecords = groupedByBL.get(blNumber) || []
@@ -230,6 +244,81 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
   const clearSelection = () => {
     setSelectedBLNumbers([])
     setSelectedRecordsCache(new Map())
+    setSelectAllMode(false)
+  }
+
+  // Fetch all BL numbers (for "Select All" feature)
+  const fetchAllBLNumbers = async () => {
+    setIsLoadingAllBLs(true)
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) throw new Error('No autenticado')
+
+      // Fetch all records with a high limit to get all BL numbers
+      let url = createApiUrl(`/api/records/autoridades?page=1&limit=10000`)
+
+      if (authFilter && authFilter !== 'all') {
+        url += `&auth=${authFilter}`
+      }
+      if (search) {
+        url += `&search=${encodeURIComponent(search)}`
+      }
+      if (isUsingPeriodFilter && startDate) {
+        url += `&startDate=${startDate}`
+      }
+      if (isUsingPeriodFilter && endDate) {
+        url += `&endDate=${endDate}`
+      }
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) throw new Error('Error al cargar registros')
+
+      const data = await response.json()
+      let allRecords: any[] = []
+
+      if (data.success) {
+        allRecords = data.data || []
+      } else if (Array.isArray(data)) {
+        allRecords = data
+      }
+
+      // Group by BL number
+      const blGroups = new Map<string, any[]>()
+      allRecords.forEach((record: any) => {
+        const blNumber = record.blNumber || 'Sin BL'
+        if (!blGroups.has(blNumber)) {
+          blGroups.set(blNumber, [])
+        }
+        blGroups.get(blNumber)!.push(record)
+      })
+
+      // Set all BL numbers as selected
+      const allBLs = Array.from(blGroups.keys())
+      setSelectedBLNumbers(allBLs)
+      setSelectedRecordsCache(blGroups)
+      setSelectAllMode(true)
+      setAllBLNumbersCount(allBLs.length)
+
+      toast({
+        title: "Todos seleccionados",
+        description: `${allBLs.length} BL Numbers seleccionados (${allRecords.length} registros)`
+      })
+    } catch (err) {
+      console.error('Error fetching all BL numbers:', err)
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar todos los registros",
+        variant: "destructive"
+      })
+    } finally {
+      setIsLoadingAllBLs(false)
+    }
   }
 
   // Get all selected records
@@ -791,11 +880,27 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
                     <RefreshCw className="h-4 w-4 mr-1" />
                     Actualizar
                   </Button>
+                  {!selectAllMode && pagination.total > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={fetchAllBLNumbers}
+                      disabled={isLoadingAllBLs}
+                      className="bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100"
+                    >
+                      {isLoadingAllBLs ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <Check className="h-4 w-4 mr-1" />
+                      )}
+                      Seleccionar Todos ({pagination.total})
+                    </Button>
+                  )}
                   {selectedBLNumbers.length > 0 && (
                     <>
                       <Button variant="outline" size="sm" onClick={clearSelection}>
                         <X className="h-4 w-4 mr-1" />
-                        Limpiar
+                        Limpiar ({selectedBLNumbers.length})
                       </Button>
                       <Button onClick={handleNextStep}>
                         Continuar ({selectedBLNumbers.length})
@@ -866,6 +971,51 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
                   </p>
                 </div>
               </div>
+
+              {/* Select All banner - appears when current page is fully selected */}
+              {!selectAllMode && groupedByBL.size > 0 &&
+               Array.from(groupedByBL.keys()).every(bl => selectedBLNumbers.includes(bl)) &&
+               pagination.pages > 1 && (
+                <div className="flex items-center justify-center gap-3 p-3 bg-blue-50 border border-blue-300 rounded-lg">
+                  <span className="text-sm text-blue-800">
+                    Todos los {groupedByBL.size} BL Numbers de esta página están seleccionados.
+                  </span>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onClick={fetchAllBLNumbers}
+                    disabled={isLoadingAllBLs}
+                    className="text-blue-600 hover:text-blue-800 font-semibold p-0 h-auto"
+                  >
+                    {isLoadingAllBLs ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        Cargando...
+                      </>
+                    ) : (
+                      `Seleccionar TODOS los ${pagination.total} registros`
+                    )}
+                  </Button>
+                </div>
+              )}
+
+              {/* Select All Mode active banner */}
+              {selectAllMode && (
+                <div className="flex items-center justify-center gap-3 p-3 bg-green-50 border border-green-300 rounded-lg">
+                  <Check className="h-5 w-5 text-green-600" />
+                  <span className="text-sm font-medium text-green-800">
+                    TODOS los {allBLNumbersCount} BL Numbers están seleccionados ({selectedRecords.length} registros)
+                  </span>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onClick={clearSelection}
+                    className="text-green-600 hover:text-green-800 font-semibold p-0 h-auto"
+                  >
+                    Limpiar selección
+                  </Button>
+                </div>
+              )}
 
               {/* Records table grouped by BL */}
               <div className="rounded-md border overflow-x-auto">
