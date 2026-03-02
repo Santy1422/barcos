@@ -1074,25 +1074,27 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
               // Determinar FullEmpty
               const fullEmpty = isTrasiego ? 'FULL' : 'FULL'
 
+              // ACTUALIZADO: Valores fijos para PTG según requerimiento SAP
+              // ProfitCenter: PAPANB110, Service: TRK002, BusinessType: I, Container: 42H0/RE/40/A
               return {
                 "IncomeRebateCode": "I",
                 "AmntTransacCur": (-totalPrice).toFixed(3),
                 "BaseUnitMeasure": "CTR",
                 "Qty": group.count.toString(),
-                "ProfitCenter": "PAPANC110",
+                "ProfitCenter": "PAPANB110",
                 "ReferencePeriod": formatReferencePeriod(invoice.date),
-                "Service": serviceCode,
+                "Service": "TRK002",
                 "Activity": "TRK",
                 "Pillar": "TRSP",
                 "BUCountry": "PA",
                 "ServiceCountry": "PA",
                 "ClientType": "MEDLOG",
-                "BusinessType": "E", // EXPORT para PTYSS trasiego
-                "FullEmpty": fullEmpty,
-                "CtrISOcode": ctrISOcode,
-                "CtrType": containerType,
-                "CtrSize": containerSize,
-                "CtrCategory": ctrCategory
+                "BusinessType": "I",
+                "FullEmpty": "FULL",
+                "CtrISOcode": "42H0",
+                "CtrType": "RE",
+                "CtrSize": "40",
+                "CtrCategory": "A"
               }
             })
             
@@ -1132,20 +1134,21 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                     pillarValue = "NOPS"
                   }
 
+                  // ACTUALIZADO: Servicios adicionales de PTG también usan valores fijos
                   localFixedServiceItems.push({
                     "IncomeRebateCode": "I",
                     "AmntTransacCur": (-service.amount).toFixed(3),
-                    "BaseUnitMeasure": "EA", // Each (unidad) para servicios fijos
+                    "BaseUnitMeasure": "EA",
                     "Qty": "1.00",
-                    "ProfitCenter": profitCenter,
+                    "ProfitCenter": "PAPANB110",
                     "ReferencePeriod": formatReferencePeriod(invoice.date),
-                    "Service": serviceCode,
-                    "Activity": serviceCode.startsWith('CLG') ? "CLG" : serviceCode.startsWith('SLR') ? "SLR" : "TRK",
-                    "Pillar": pillarValue,
+                    "Service": "TRK002",
+                    "Activity": "TRK",
+                    "Pillar": "TRSP",
                     "BUCountry": "PA",
                     "ServiceCountry": "PA",
-                    "ClientType": clientType,
-                    "BusinessType": "E", // EXPORT para PTYSS
+                    "ClientType": "MEDLOG",
+                    "BusinessType": "I",
                     "FullEmpty": "FULL"
                   })
                 }
@@ -1667,22 +1670,21 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
       "ClientType": "MSCGVA"
     });
     
-    // Si el servicio tiene waiting time, agregar un TRK137
+    // ACTUALIZADO: Waiting time también usa CLG098 con mismos valores fijos de Agency
     if (service.waitingTimePrice && service.waitingTimePrice > 0) {
       otherItems.push({
         "IncomeRebateCode": "I",
         "AmntTransacCur": (-(service.waitingTimePrice || 0)).toFixed(2),
         "BaseUnitMeasure": "EA",
         "Qty": "1.00",
-        "ProfitCenter": "PAPANC430",
+        "ProfitCenter": "PAPANC440",
         "ReferencePeriod": formatReferencePeriod(invoice.invoiceDate),
-        "Service": "TRK137",
-        "Activity": "TRK",
-        "Pillar": "TRSP",
+        "Service": "CLG098",
+        "Activity": "CLG",
+        "Pillar": "LOGS",
         "BUCountry": "PA",
         "ServiceCountry": "PA",
-        "ClientType": "MSCGVA",
-        "FullEmpty": "FULL"
+        "ClientType": "MSCGVA"
       });
     }
   });
