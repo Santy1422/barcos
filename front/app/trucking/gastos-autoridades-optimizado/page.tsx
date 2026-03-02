@@ -81,57 +81,6 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
   const [isCreatingPrefactura, setIsCreatingPrefactura] = useState(false)
   const [selectedClientId, setSelectedClientId] = useState<string>("")
 
-  // Generar PDF en tiempo real para vista previa
-  const generateRealtimePDF = useCallback(() => {
-    if (selectedRecords.length === 0 || !documentData.number) return
-
-    try {
-      const blob = generateAutoridadesPdf()
-      if (blob instanceof Blob) {
-        if (pdfPreviewUrl) {
-          try { URL.revokeObjectURL(pdfPreviewUrl) } catch {}
-        }
-        const url = URL.createObjectURL(blob)
-        setPdfPreviewUrl(url)
-      }
-    } catch (error) {
-      console.error('Error generando PDF preview:', error)
-    }
-  }, [selectedRecords.length, documentData.number, pdfPreviewUrl])
-
-  // Regenerar PDF cuando cambien los datos del documento o el cliente seleccionado
-  useEffect(() => {
-    if (step === 'pdf' && selectedRecords.length > 0 && documentData.number) {
-      const timeoutId = setTimeout(() => generateRealtimePDF(), 150)
-      return () => clearTimeout(timeoutId)
-    }
-  }, [documentData, step, selectedRecords.length, selectedClientId])
-
-  // Auto-detectar cliente cuando se pasa al paso de PDF
-  useEffect(() => {
-    if (step === 'pdf' && selectedRecords.length > 0 && clients.length > 0 && !selectedClientId) {
-      const firstRecord = selectedRecords[0]
-      const customerName = firstRecord?.customer || ''
-
-      // Intentar buscar por clientId primero
-      if (firstRecord?.clientId) {
-        const clientById = clients.find((c: any) => (c._id || c.id) === firstRecord.clientId)
-        if (clientById) {
-          setSelectedClientId(clientById._id || clientById.id)
-          console.log('Auto-detectado cliente por clientId:', clientById.companyName || clientById.fullName)
-          return
-        }
-      }
-
-      // Intentar buscar por nombre
-      const found = getClient(customerName)
-      if (found) {
-        setSelectedClientId(found._id || found.id)
-        console.log('Auto-detectado cliente por nombre:', found.companyName || found.fullName)
-      }
-    }
-  }, [step, selectedRecords, clients, selectedClientId])
-
   // Limpiar URL del PDF al desmontar
   useEffect(() => {
     return () => {
@@ -598,6 +547,52 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
     if (selectedRecords.length === 0) return null
     return selectedRecords[0].customer || 'Cliente'
   }
+
+  // Auto-detectar cliente cuando se pasa al paso de PDF
+  useEffect(() => {
+    if (step === 'pdf' && selectedRecords.length > 0 && clients.length > 0 && !selectedClientId) {
+      const firstRecord = selectedRecords[0]
+      const customerName = firstRecord?.customer || ''
+
+      // Intentar buscar por clientId primero
+      if (firstRecord?.clientId) {
+        const clientById = clients.find((c: any) => (c._id || c.id) === firstRecord.clientId)
+        if (clientById) {
+          setSelectedClientId(clientById._id || clientById.id)
+          console.log('Auto-detectado cliente por clientId:', clientById.companyName || clientById.fullName)
+          return
+        }
+      }
+
+      // Intentar buscar por nombre
+      const found = getClient(customerName)
+      if (found) {
+        setSelectedClientId(found._id || found.id)
+        console.log('Auto-detectado cliente por nombre:', found.companyName || found.fullName)
+      }
+    }
+  }, [step, selectedRecords, clients, selectedClientId])
+
+  // Regenerar PDF cuando cambien los datos del documento o el cliente seleccionado
+  useEffect(() => {
+    if (step === 'pdf' && selectedRecords.length > 0 && documentData.number && selectedClientId) {
+      const timeoutId = setTimeout(() => {
+        try {
+          const blob = generateAutoridadesPdf()
+          if (blob instanceof Blob) {
+            if (pdfPreviewUrl) {
+              try { URL.revokeObjectURL(pdfPreviewUrl) } catch {}
+            }
+            const url = URL.createObjectURL(blob)
+            setPdfPreviewUrl(url)
+          }
+        } catch (error) {
+          console.error('Error generando PDF preview:', error)
+        }
+      }, 150)
+      return () => clearTimeout(timeoutId)
+    }
+  }, [documentData, step, selectedRecords.length, selectedClientId])
 
   // Step navigation
   const handleNextStep = () => {
