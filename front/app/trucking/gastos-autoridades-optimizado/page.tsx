@@ -78,8 +78,66 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
   // PDF states
   const [documentData, setDocumentData] = useState({ number: `AUTH-${Date.now().toString().slice(-5)}`, notes: "" })
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null)
-  const [showPdfPreview, setShowPdfPreview] = useState(false)
   const [isCreatingPrefactura, setIsCreatingPrefactura] = useState(false)
+  const [selectedClientId, setSelectedClientId] = useState<string>("")
+
+  // Generar PDF en tiempo real para vista previa
+  const generateRealtimePDF = useCallback(() => {
+    if (selectedRecords.length === 0 || !documentData.number) return
+
+    try {
+      const blob = generateAutoridadesPdf()
+      if (blob instanceof Blob) {
+        if (pdfPreviewUrl) {
+          try { URL.revokeObjectURL(pdfPreviewUrl) } catch {}
+        }
+        const url = URL.createObjectURL(blob)
+        setPdfPreviewUrl(url)
+      }
+    } catch (error) {
+      console.error('Error generando PDF preview:', error)
+    }
+  }, [selectedRecords.length, documentData.number, pdfPreviewUrl])
+
+  // Regenerar PDF cuando cambien los datos del documento o el cliente seleccionado
+  useEffect(() => {
+    if (step === 'pdf' && selectedRecords.length > 0 && documentData.number) {
+      const timeoutId = setTimeout(() => generateRealtimePDF(), 150)
+      return () => clearTimeout(timeoutId)
+    }
+  }, [documentData, step, selectedRecords.length, selectedClientId])
+
+  // Auto-detectar cliente cuando se pasa al paso de PDF
+  useEffect(() => {
+    if (step === 'pdf' && selectedRecords.length > 0 && clients.length > 0 && !selectedClientId) {
+      const firstRecord = selectedRecords[0]
+      const customerName = firstRecord?.customer || ''
+
+      // Intentar buscar por clientId primero
+      if (firstRecord?.clientId) {
+        const clientById = clients.find((c: any) => (c._id || c.id) === firstRecord.clientId)
+        if (clientById) {
+          setSelectedClientId(clientById._id || clientById.id)
+          console.log('Auto-detectado cliente por clientId:', clientById.companyName || clientById.fullName)
+          return
+        }
+      }
+
+      // Intentar buscar por nombre
+      const found = getClient(customerName)
+      if (found) {
+        setSelectedClientId(found._id || found.id)
+        console.log('Auto-detectado cliente por nombre:', found.companyName || found.fullName)
+      }
+    }
+  }, [step, selectedRecords, clients, selectedClientId])
+
+  // Limpiar URL del PDF al desmontar
+  useEffect(() => {
+    return () => {
+      if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl)
+    }
+  }, [pdfPreviewUrl])
 
   // Redux state
   const clients = useAppSelector(selectAllClients)
@@ -106,7 +164,7 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
       .catch(() => console.warn("No se pudo cargar el logo PTG"))
   }, [dispatch])
 
-  // Fetch records with server-side pagination
+  // Fetch records - traer todos sin paginación (como la versión normal)
   const fetchRecords = useCallback(async (page: number, filters?: {
     auth?: string
     search?: string
@@ -120,21 +178,30 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
       const token = localStorage.getItem('token')
       if (!token) throw new Error('No autenticado')
 
-      let url = createApiUrl(`/api/records/autoridades?page=${page}&limit=${ITEMS_PER_PAGE}`)
+      // Sin paginación - traer todos los registros
+      let url = createApiUrl(`/api/records/autoridades`)
+
+      // Agregar filtros con el separador correcto
+      const params = new URLSearchParams()
 
       if (filters?.auth && filters.auth !== 'all') {
-        url += `&auth=${filters.auth}`
+        params.append('auth', filters.auth)
       }
 
       if (filters?.search) {
-        url += `&search=${encodeURIComponent(filters.search)}`
+        params.append('search', filters.search)
       }
 
       if (filters?.startDate) {
-        url += `&startDate=${filters.startDate}`
+        params.append('startDate', filters.startDate)
       }
       if (filters?.endDate) {
-        url += `&endDate=${filters.endDate}`
+        params.append('endDate', filters.endDate)
+      }
+
+      const queryString = params.toString()
+      if (queryString) {
+        url += `?${queryString}`
       }
 
       const response = await fetch(url, {
@@ -149,20 +216,19 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
       const data = await response.json()
 
       let recordsData: any[] = []
-      let paginationData = { current: page, pages: 1, total: 0 }
 
-      if (data.success) {
+      if (data.success && data.data) {
+        // Formato con paginación (cuando se usa page/limit)
         recordsData = data.data || []
-        paginationData = data.pagination || paginationData
       } else if (Array.isArray(data)) {
-        // Legacy format - no pagination
+        // Formato sin paginación - array directo
         recordsData = data
-        paginationData = { current: 1, pages: 1, total: data.length }
       }
 
-      // Backend now filters out prefacturado/facturado by default
+      // Backend ya filtra prefacturado/facturado por defecto
       setRecords(recordsData)
-      setPagination(paginationData)
+      // Actualizar paginación con el total de registros
+      setPagination({ current: 1, pages: 1, total: recordsData.length })
     } catch (err) {
       console.error('Error fetching autoridades records:', err)
       setError(err instanceof Error ? err.message : 'Error desconocido')
@@ -245,6 +311,7 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
     setSelectedBLNumbers([])
     setSelectedRecordsCache(new Map())
     setSelectAllMode(false)
+    setSelectedClientId("")
   }
 
   // Fetch all BL numbers (for "Select All" feature)
@@ -478,10 +545,52 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
 
   const getClient = (name: string) => {
     const target = normalizeName(name)
-    return clients.find((c: any) => {
-      const n = c.type === 'juridico' ? (c.companyName || '') : (c.fullName || '')
-      return normalizeName(n) === target
+    console.log('getClient - Buscando cliente:', name, '-> normalized:', target)
+    console.log('getClient - Total clients disponibles:', clients.length)
+    if (!target) return null
+
+    // 1. Buscar coincidencia exacta en campo 'name' (alias corto) - PRIORIDAD
+    let found = clients.find((c: any) => {
+      const clientName = normalizeName(c.name || '')
+      if (clientName === target) {
+        console.log('getClient - ENCONTRADO por name exacto:', c.name, c.companyName || c.fullName)
+      }
+      return clientName === target
     })
+
+    // 2. Buscar coincidencia exacta en nombre completo
+    if (!found) {
+      found = clients.find((c: any) => {
+        const n = c.type === 'juridico' ? (c.companyName || '') : (c.fullName || '')
+        return normalizeName(n) === target
+      })
+    }
+
+    // 3. Buscar coincidencia parcial en campo 'name'
+    if (!found) {
+      found = clients.find((c: any) => {
+        const clientName = normalizeName(c.name || '')
+        return clientName && (clientName.includes(target) || target.includes(clientName))
+      })
+    }
+
+    // 4. Buscar coincidencia parcial en nombre completo
+    if (!found) {
+      found = clients.find((c: any) => {
+        const n = c.type === 'juridico' ? (c.companyName || '') : (c.fullName || '')
+        const normalized = normalizeName(n)
+        return normalized.includes(target) || target.includes(normalized)
+      })
+    }
+
+    if (!found) {
+      console.log('getClient - NO ENCONTRADO. Mostrando names disponibles:')
+      clients.slice(0, 20).forEach((c: any) => {
+        console.log('  -', c.name, '|', c.companyName || c.fullName)
+      })
+    }
+
+    return found
   }
 
   // Get customer name from first selected record
@@ -521,22 +630,36 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
       return
     }
 
+    if (!selectedClientId) {
+      toast({ title: 'Sin cliente', description: 'Selecciona un cliente', variant: 'destructive' })
+      return
+    }
+
     setIsCreatingPrefactura(true)
 
     try {
-      const customerName = getSelectedCustomerName() || 'Cliente'
-      const client = getClient(customerName)
-      const displayRuc = (client as any)?.ruc || (client as any)?.documentNumber || ''
+      // Usar el cliente seleccionado del dropdown
+      const client = clients.find((c: any) => (c._id || c.id) === selectedClientId)
+
+      const displayName = client
+        ? (client.type === 'natural' ? client.fullName : client.companyName)
+        : 'Cliente'
+      const displayRuc = client?.ruc || client?.documentNumber || ''
 
       const relatedIds = selectedRecords.map((r: any) => r._id || r.id)
+
+      // Obtener dirección del cliente
+      const clientAddress = client?.address
+        ? (typeof client.address === 'string' ? client.address : `${client.address?.district || ''}, ${client.address?.province || ''}`)
+        : 'N/A'
 
       const newPrefactura: PersistedInvoiceRecord = {
         id: `AUTH-${Date.now().toString().slice(-6)}`,
         module: 'trucking',
         invoiceNumber: documentData.number,
-        clientName: customerName,
+        clientName: displayName,
         clientRuc: displayRuc,
-        clientSapNumber: (client as any)?.sapCode || '',
+        clientSapNumber: client?.sapCode || '',
         issueDate: new Date().toLocaleDateString('en-CA'),
         dueDate: new Date().toLocaleDateString('en-CA'),
         currency: 'USD',
@@ -549,7 +672,9 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
         notes: documentData.notes,
         details: {
           documentType: 'gastos-autoridades',
-          blNumbers: selectedBLNumbers
+          blNumbers: selectedBLNumbers,
+          clientAddress: clientAddress,
+          clientPhone: client?.phone || '',
         },
         createdAt: new Date().toISOString(),
       }
@@ -640,16 +765,10 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
     doc.text('Howard, Panama Pacifico', 15, 58)
     doc.text('TEL: (507) 838-7470', 15, 62)
 
-    // Customer info
-    const firstRecord = selectedRecords[0]
-    const customerName = firstRecord?.customer || 'Cliente'
-    let customer = null
-    if (firstRecord?.clientId) {
-      customer = clients.find((c: any) => (c._id || c.id) === firstRecord.clientId)
-    }
-    if (!customer) {
-      customer = getClient(customerName)
-    }
+    // Customer info - usar el cliente seleccionado del dropdown
+    const customer = selectedClientId
+      ? clients.find((c: any) => (c._id || c.id) === selectedClientId)
+      : null
 
     doc.setFontSize(9)
     doc.setFont(undefined as any, 'bold')
@@ -659,7 +778,7 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
 
     const clientDisplay = customer
       ? ((customer as any).type === 'natural' ? (customer as any).fullName : (customer as any).companyName)
-      : customerName
+      : (selectedRecords[0]?.customer || 'Cliente')
     const ruc = (customer as any)?.ruc || (customer as any)?.documentNumber || 'N/A'
     const sap = (customer as any)?.sapCode || ''
     const address = (customer as any)?.address
@@ -964,10 +1083,10 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium text-emerald-800">
-                    Mostrando {pagination.total} registros pendientes
+                    Mostrando <strong>{groupedByBL.size} BL Numbers</strong> (grupos únicos) con <strong>{pagination.total} contenedores</strong> (registros totales)
                   </p>
                   <p className="text-xs text-emerald-600">
-                    Solo se muestran registros listos para prefacturar. Los registros ya prefacturados o facturados no aparecen aqui.
+                    Solo se muestran registros listos para prefacturar. Los ya prefacturados o facturados no aparecen aquí.
                   </p>
                 </div>
               </div>
@@ -1265,116 +1384,162 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
         )}
 
         {step === 'pdf' && (
-          <Card>
-            <CardHeader className="pb-4">
-              <CardTitle className="flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" onClick={handlePrevStep}>
-                    <ArrowLeft className="h-4 w-4 mr-1" />
-                    Volver
-                  </Button>
-                  Prefactura de Gastos
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={handleGeneratePDF}>
-                    <Download className="h-4 w-4 mr-1" />
-                    Descargar PDF
-                  </Button>
-                  <Button onClick={handleCreatePrefactura} disabled={isCreatingPrefactura}>
-                    {isCreatingPrefactura && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-                    <Check className="h-4 w-4 mr-1" />
-                    Crear Prefactura
-                  </Button>
+          <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-xl">
+            <CardHeader className="bg-gradient-to-r from-slate-700 to-slate-800 text-white rounded-t-lg">
+              <CardTitle className="flex items-center gap-3">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <FileText className="h-6 w-6" />
                 </div>
+                <div className="text-xl font-bold">Paso 2: Configuración de Prefactura Auth</div>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="text-sm text-muted-foreground">Cliente</div>
-                    <div className="text-lg font-semibold">{getSelectedCustomerName()}</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="text-sm text-muted-foreground">BL Numbers seleccionados</div>
-                    <div className="text-lg font-semibold">{selectedBLNumbers.length}</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="text-sm text-muted-foreground">Total</div>
-                    <div className="text-2xl font-bold text-green-600">${totalSelected.toFixed(2)}</div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Document data */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Número de Prefactura</Label>
-                  <Input
-                    value={documentData.number}
-                    onChange={(e) => setDocumentData(prev => ({ ...prev, number: e.target.value }))}
-                  />
+            <CardContent className="space-y-4 pt-4">
+              {/* Resumen de selección */}
+              <div className="bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-3 rounded-lg shadow-sm">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1.5 bg-slate-600 rounded-md text-white">
+                    <Check className="h-4 w-4" />
+                  </div>
+                  <h3 className="font-semibold text-slate-900 text-base">Resumen de Selección</h3>
                 </div>
-                <div className="space-y-2">
-                  <Label>Notas</Label>
-                  <Textarea
-                    value={documentData.notes}
-                    onChange={(e) => setDocumentData(prev => ({ ...prev, notes: e.target.value }))}
-                    placeholder="Notas adicionales..."
-                    rows={2}
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                  <div className="bg-white/60 p-2 rounded-md">
+                    <span className="text-slate-600 font-medium">Cliente:</span>
+                    <div className="text-sm font-semibold text-slate-900">{getSelectedCustomerName()}</div>
+                  </div>
+                  <div className="bg-white/60 p-2 rounded-md">
+                    <span className="text-slate-600 font-medium">BL Numbers:</span>
+                    <div className="text-sm font-semibold text-slate-900">{selectedBLNumbers.length} (con {selectedRecords.length} contenedores)</div>
+                  </div>
+                  <div className="bg-white/60 p-2 rounded-md">
+                    <span className="text-slate-600 font-medium">Total:</span>
+                    <div className="text-sm font-semibold text-green-600">${totalSelected.toFixed(2)}</div>
+                  </div>
                 </div>
               </div>
 
-              {/* Selected BL summary */}
-              <div className="space-y-2">
-                <h3 className="font-semibold">BL Numbers Incluidos ({selectedBLNumbers.length})</h3>
-                <div className="max-h-64 overflow-y-auto border rounded-md">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>BL Number</TableHead>
-                        <TableHead>Contenedores</TableHead>
-                        <TableHead className="text-right">NOTF</TableHead>
-                        <TableHead className="text-right">SEAL</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedBLNumbers.map((blNumber) => {
-                        const blRecords = selectedRecordsCache.get(blNumber) || groupedByBL.get(blNumber) || []
-                        let notfTotal = 0
-                        let sealTotal = 0
-                        const notfRecord = blRecords.find((r: any) => {
-                          const notfStr = r.notf ? String(r.notf).trim() : ''
-                          if (!notfStr || notfStr === 'N/A') return false
-                          return !isNaN(parseFloat(notfStr)) && parseFloat(notfStr) > 0
-                        })
-                        if (notfRecord?.notf) {
-                          notfTotal = parseFloat(String(notfRecord.notf)) || 0
-                        }
-                        blRecords.forEach((r: any) => {
-                          if (r.seal) {
-                            sealTotal += parseFloat(String(r.seal)) || 0
-                          }
-                        })
-                        return (
-                          <TableRow key={blNumber}>
-                            <TableCell className="font-mono text-sm">{blNumber}</TableCell>
-                            <TableCell>{blRecords.length}</TableCell>
-                            <TableCell className="text-right">${notfTotal.toFixed(2)}</TableCell>
-                            <TableCell className="text-right">${sealTotal.toFixed(2)}</TableCell>
-                            <TableCell className="text-right font-medium">${(notfTotal + sealTotal).toFixed(2)}</TableCell>
-                          </TableRow>
-                        )
-                      })}
-                    </TableBody>
-                  </Table>
+              {/* Configuración y vista previa lado a lado */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* Columna izquierda: Configuración */}
+                <div className="lg:col-span-1 space-y-4">
+                  <div className="bg-gradient-to-br from-slate-50 to-blue-50 p-3 rounded-lg border border-slate-300">
+                    <h3 className="text-lg font-bold text-slate-900 border-b border-slate-300 pb-2 mb-2">Configuración</h3>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-semibold text-slate-700">Cliente *</Label>
+                        <Select value={selectedClientId} onValueChange={setSelectedClientId}>
+                          <SelectTrigger className="bg-white border-slate-300">
+                            <SelectValue placeholder="Selecciona un cliente" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-[300px]">
+                            {clients
+                              .filter((c: any) => c.isActive !== false)
+                              .sort((a: any, b: any) => {
+                                const nameA = a.name || a.companyName || a.fullName || ''
+                                const nameB = b.name || b.companyName || b.fullName || ''
+                                return nameA.localeCompare(nameB)
+                              })
+                              .map((c: any) => (
+                                <SelectItem key={c._id || c.id} value={c._id || c.id}>
+                                  {c.name || c.companyName || c.fullName} {c.ruc ? `(${c.ruc})` : ''}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                        {selectedClientId && (() => {
+                          const sc = clients.find((c: any) => (c._id || c.id) === selectedClientId)
+                          return sc ? (
+                            <div className="text-xs text-slate-500 mt-1">
+                              <div><strong>Nombre:</strong> {sc.companyName || sc.fullName}</div>
+                              <div><strong>RUC:</strong> {sc.ruc || sc.documentNumber || 'N/A'}</div>
+                              <div><strong>Dirección:</strong> {sc.address || 'N/A'}</div>
+                            </div>
+                          ) : null
+                        })()}
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-semibold text-slate-700">Número de Prefactura *</Label>
+                        <Input
+                          value={documentData.number}
+                          onChange={(e) => setDocumentData(prev => ({ ...prev, number: e.target.value }))}
+                          placeholder="AUTH-00001"
+                          className="bg-white border-slate-300"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-semibold text-slate-700">Notas (Opcional)</Label>
+                        <Textarea
+                          value={documentData.notes}
+                          onChange={(e) => setDocumentData(prev => ({ ...prev, notes: e.target.value }))}
+                          placeholder="Notas adicionales..."
+                          rows={4}
+                          className="bg-white border-slate-300"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Columna derecha: Vista previa del PDF */}
+                <div className="lg:col-span-2 bg-gradient-to-br from-slate-50 to-blue-50 p-3 rounded-lg border border-slate-300">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-lg font-bold text-slate-900">Vista Previa del PDF</h3>
+                  </div>
+                  {!pdfPreviewUrl ? (
+                    <div className="flex items-center justify-center h-[600px] border-2 border-dashed border-slate-300 rounded-lg">
+                      <div className="text-center text-slate-500">
+                        <Loader2 className="h-12 w-12 mx-auto mb-4 animate-spin" />
+                        <p className="text-sm">Generando vista previa...</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-full h-[600px] border border-slate-300 rounded-lg overflow-hidden">
+                      <iframe
+                        src={pdfPreviewUrl}
+                        className="w-full h-full"
+                        title="Vista previa del documento"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Botones de navegación */}
+              <div className="flex justify-between pt-4">
+                <Button
+                  variant="outline"
+                  onClick={handlePrevStep}
+                  className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold px-6 py-3"
+                >
+                  <ArrowLeft className="mr-2 h-5 w-5" />
+                  Volver al Paso 1
+                </Button>
+                <div className="flex gap-3">
+                  <Button
+                    onClick={handleGeneratePDF}
+                    variant="outline"
+                    className="border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold px-6 py-3"
+                  >
+                    <Download className="mr-2 h-5 w-5" />
+                    Descargar PDF
+                  </Button>
+                  <Button
+                    onClick={handleCreatePrefactura}
+                    className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-semibold px-8 py-3 shadow-lg"
+                    disabled={!documentData.number || selectedRecords.length === 0 || isCreatingPrefactura}
+                  >
+                    {isCreatingPrefactura ? (
+                      <>
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                        Creando...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="mr-2 h-5 w-5" />
+                        Crear Prefactura Auth
+                      </>
+                    )}
+                  </Button>
                 </div>
               </div>
             </CardContent>
