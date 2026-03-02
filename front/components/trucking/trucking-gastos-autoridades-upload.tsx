@@ -824,20 +824,20 @@ export function TruckingGastosAutoridadesUpload() {
               // Mensaje claro según el resultado
         if (totalCreatedRecords === 0) {
           toast({
-            title: "⚠️ Todos los registros son duplicados",
-            description: `Los ${totalRecords} registros ya existen en el sistema. No se crearon registros nuevos porque ya fueron cargados anteriormente.`,
+            title: "⚠️ Error al cargar registros",
+            description: `No se pudo crear ningún registro. Verifica que los campos obligatorios estén completos.`,
             variant: "destructive"
           });
         } else if (totalCreatedRecords < totalRecords) {
-          const duplicateCount = totalRecords - totalCreatedRecords;
+          const errorCount = totalRecords - totalCreatedRecords;
           toast({
             title: "Carga parcial completada",
-            description: `Se crearon ${totalCreatedRecords} registros nuevos. ${duplicateCount} registros ya existían (duplicados).`
+            description: `Se crearon ${totalCreatedRecords} de ${totalRecords} registros. ${errorCount} registros tuvieron errores de validación.`
           });
         } else {
           toast({
             title: "✅ Carga completada",
-            description: `Se guardaron ${totalCreatedRecords} registros nuevos exitosamente.`
+            description: `Se guardaron ${totalCreatedRecords} registros exitosamente.`
           });
         }
       
@@ -860,7 +860,7 @@ export function TruckingGastosAutoridadesUpload() {
          <CardTitle>Subir Excel Gastos Autoridades</CardTitle>
          <div className="text-sm text-muted-foreground space-y-1">
            <p>• Los campos <strong>Order</strong>, <strong>Container</strong> y <strong>BL Number</strong> son obligatorios</p>
-           <p>• Cada número de <strong>Order</strong> debe ser único (no duplicado)</p>
+           <p>• Se permite subir el mismo <strong>Order</strong> múltiples veces (para re-facturación)</p>
            <p>• Los campos opcionales se llenarán automáticamente con valores por defecto</p>
          </div>
        </CardHeader>
