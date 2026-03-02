@@ -892,18 +892,33 @@ export function TruckingGastosAutoridadesPage() {
             </div>
             <div className="flex items-center gap-3">
               <div className="text-sm opacity-90">{selectedBLNumbers.length} BL seleccionados, {selectedRecords.length} registros</div>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => {
                   dispatch(fetchAutoridadesRecords())
                   toast({ title: "Refrescando datos", description: "Actualizando registros de autoridades..." })
-                }} 
+                }}
                 className="bg-white/10 hover:bg-white/20 border-white/30 text-white"
                 disabled={loading}
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Refrescar
               </Button>
+              {totalBLNumbers.length > 0 && selectedBLNumbers.length < totalBLNumbers.length && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSelectedBLNumbers([...totalBLNumbers])
+                    toast({
+                      title: "Todos seleccionados",
+                      description: `${totalBLNumbers.length} BL Numbers seleccionados`
+                    })
+                  }}
+                  className="bg-green-600/90 hover:bg-green-700/90 border-green-500/50 text-white"
+                >
+                  ✓ Seleccionar Todos ({totalBLNumbers.length})
+                </Button>
+              )}
               <Button variant="outline" disabled={selectedBLNumbers.length === 0} onClick={clearSelection} className="bg-white/10 hover:bg-white/20 border-white/30 text-white">
                 Limpiar Selección
               </Button>
