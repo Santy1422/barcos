@@ -1318,14 +1318,15 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
             let lineNbr = 1
             
             // Mapeo de campos a service codes con sus configuraciones
+            // ACTUALIZADO: Todos los servicios de ShipChandler usan CLG096, CLG, LOGS, MSCGVA
             const serviceCodeConfig: Record<string, { code: string; activity: string; pillar: string }> = {
-              deliveryExpenses: { code: 'TRK237', activity: 'TRK', pillar: 'TRSP' },
+              deliveryExpenses: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' },
               portEntryFee: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' },
-              customsFee: { code: 'CHB123', activity: 'CHB', pillar: 'LOGS' },
-              authorities: { code: 'TRK130', activity: 'TRK', pillar: 'TRSP' },
-              otherExpenses: { code: 'CHB122', activity: 'CHB', pillar: 'LOGS' },
-              overTime: { code: 'WRH156', activity: 'WRH', pillar: 'INFR' },
-              total: { code: 'SHP243', activity: 'SHP', pillar: 'NOPS' }
+              customsFee: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' },
+              authorities: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' },
+              otherExpenses: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' },
+              overTime: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' },
+              total: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' }
             }
             
             // Procesar cada registro
@@ -1362,7 +1363,7 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
                     "Pillar": config.pillar,
                     "BUCountry": "PA",
                     "ServiceCountry": "PA",
-                    "ClientType": "MEDLOG",
+                    "ClientType": "MSCGVA",
                     "BusinessType": "I" // Siempre IMPORT para ShipChandler
                     // SubContracting eliminado según requerimientos
                   }
