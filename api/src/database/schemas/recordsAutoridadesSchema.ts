@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const recordsAutoridadesSchema = new mongoose.Schema({
-  order: { type: String, required: true, unique: true },
+  order: { type: String, required: true }, // SIN unique - permite duplicados para re-facturación
   auth: { type: String, required: false, default: 'N/A' },
   nombreListado: { type: String, required: false, default: 'N/A' },
   no: { type: String, required: false, default: 'N/A' },

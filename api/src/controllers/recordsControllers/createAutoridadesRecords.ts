@@ -38,78 +38,13 @@ export async function createAutoridadesRecords(req: AuthenticatedRequest, res: R
       });
     }
 
-    // 1. Verificar duplicados DENTRO del mismo batch
-    const orderNumbers = recordsData.map(record => record.order).filter(Boolean);
-    const duplicatesInBatch: string[] = [];
-    const seenInBatch = new Set<string>();
-
-    orderNumbers.forEach(order => {
-      if (seenInBatch.has(order)) {
-        duplicatesInBatch.push(order);
-      } else {
-        seenInBatch.add(order);
-      }
-    });
-
-    if (duplicatesInBatch.length > 0) {
-      console.log('createAutoridadesRecords - Duplicados encontrados DENTRO del batch:', duplicatesInBatch.length);
-    }
-
-    // 2. Verificar duplicados contra la base de datos existente
-    const existingOrders = await recordsAutoridades.find({ order: { $in: orderNumbers } }).select('order');
-    const existingOrderNumbers = existingOrders.map(record => record.order);
-
-    const duplicatesInDB = orderNumbers.filter(order => existingOrderNumbers.includes(order));
-    if (duplicatesInDB.length > 0) {
-      console.log('createAutoridadesRecords - Duplicados encontrados en BD:', duplicatesInDB.length);
-    }
-
-    // Combinar todos los duplicados
-    const allDuplicates = Array.from(new Set([...duplicatesInDB, ...duplicatesInBatch]));
-
-    // Filtrar registros: excluir duplicados de DB y mantener solo primera aparición en batch
-    const processedOrders = new Set<string>();
-    const recordsToProcess = recordsData.filter(record => {
-      const order = record.order;
-      if (!order) return true; // Si no tiene order, procesarlo
-
-      // Excluir si ya existe en DB
-      if (existingOrderNumbers.includes(order)) return false;
-
-      // Excluir si ya procesamos este order en el batch
-      if (processedOrders.has(order)) return false;
-
-      // Marcar como procesado
-      processedOrders.add(order);
-      return true;
-    });
+    // NOTA: Para gastos de autoridades NO se validan duplicados
+    // Se permite subir el mismo order múltiples veces (re-facturación)
+    const recordsToProcess = recordsData;
 
     console.log('createAutoridadesRecords - Registros a procesar:', recordsToProcess.length);
     console.log('  - Total original:', recordsData.length);
-    console.log('  - Duplicados en DB:', duplicatesInDB.length);
-    console.log('  - Duplicados en batch:', duplicatesInBatch.length);
-
-    // Si no hay registros válidos para procesar, retornar respuesta con 0 creados
-    if (recordsToProcess.length === 0) {
-      console.log('createAutoridadesRecords - No hay registros válidos para procesar');
-      const responseData: any = {
-        records: [],
-        count: 0,
-        totalProcessed: recordsData.length
-      };
-
-      if (allDuplicates.length > 0) {
-        responseData.duplicates = {
-          count: allDuplicates.length,
-          orders: allDuplicates.filter((order, index) => allDuplicates.indexOf(order) === index),
-          inDatabase: duplicatesInDB.length,
-          inBatch: duplicatesInBatch.length
-        };
-        responseData.message = `Todos los registros eran duplicados (${duplicatesInDB.length} en DB, ${duplicatesInBatch.length} en batch). 0 registros nuevos fueron creados.`;
-      }
-
-      return response(res, 201, responseData);
-    }
+    console.log('  - SIN validación de duplicados (permitido en autoridades)');
      
           // Preparar datos para inserción masiva
      const recordsToInsert = recordsToProcess.map(data => {
@@ -153,16 +88,7 @@ export async function createAutoridadesRecords(req: AuthenticatedRequest, res: R
               const record = await recordsAutoridades.create(data);
               createdRecords.push(record);
             } catch (e: any) {
-              // Manejar error de duplicado silenciosamente
-              if (e.code === 11000) {
-                const dupKey = e.keyValue?.order;
-                if (dupKey && !allDuplicates.includes(dupKey)) {
-                  allDuplicates.push(dupKey);
-                }
-                console.warn(`createAutoridadesRecords - Registro ${i + 1} omitido - duplicado:`, dupKey);
-              } else {
-                console.error(`createAutoridadesRecords - Error creando registro ${i + 1}:`, e.message);
-              }
+              console.error(`createAutoridadesRecords - Error creando registro ${i + 1}:`, e.message);
               // Continuar con el siguiente
             }
           }
@@ -175,20 +101,13 @@ export async function createAutoridadesRecords(req: AuthenticatedRequest, res: R
     
     console.log('createAutoridadesRecords - Total de registros creados:', createdRecords.length);
 
-    // Preparar respuesta con información sobre duplicados si los hubo
+    // Preparar respuesta
     const responseData: any = {
       records: createdRecords || [],
       count: createdRecords ? createdRecords.length : 0,
-      totalProcessed: recordsData.length
+      totalProcessed: recordsData.length,
+      message: `Se crearon ${createdRecords.length} registros exitosamente.`
     };
-
-    if (allDuplicates.length > 0) {
-      responseData.duplicates = {
-        count: allDuplicates.length,
-        orders: allDuplicates.filter((order, index) => allDuplicates.indexOf(order) === index)
-      };
-      responseData.message = `Se crearon ${createdRecords.length} registros. ${allDuplicates.length} duplicados fueron omitidos.`;
-    }
 
     return response(res, 201, responseData);
   } catch (error) {
