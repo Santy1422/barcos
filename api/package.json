@@ -31,7 +31,8 @@
     "migrate:container-type-categories": "ts-node src/database/migrations/updateContainerTypeCategories.ts",
     "migrate:ptyss-local-routes": "ts-node scripts/migratePTYSSLocalRoutes.ts",
     "migrate:clients-to-ptyss-agency": "node scripts/migrateClientsToPTYSSAndAgency.js",
-    "test:seed": "ts-node scripts/test-seed-endpoint.ts"
+    "test:seed": "ts-node scripts/test-seed-endpoint.ts",
+    "migrate:drop-autoridades-index": "ts-node src/database/migrations/dropAutoridadesOrderIndex.ts"
   },
   "keywords": [],
   "author": "",
