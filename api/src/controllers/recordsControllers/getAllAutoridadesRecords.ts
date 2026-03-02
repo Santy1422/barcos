@@ -30,12 +30,16 @@ export async function getAllAutoridadesRecords(req: AuthenticatedRequest, res: R
     // Build query
     const query: any = {};
 
-    // Status filter - GASTOS AUTORIDADES muestra TODOS por defecto (sin filtro)
-    // Solo filtra si se especifica un status específico
-    if (status && status !== 'all') {
+    // Status filter - Por defecto solo mostrar "cargado" (pendientes)
+    // Excluir prefacturado/facturado a menos que se pida status=all
+    if (status === 'all') {
+      // No filter - show all statuses
+    } else if (status && status !== 'all') {
       query.status = status;
+    } else {
+      // Default: solo mostrar cargado (pendientes de facturar)
+      query.status = { $nin: ['prefacturado', 'facturado'] };
     }
-    // Si status='all' o no se especifica, NO se aplica filtro de status
 
     // Auth type filter (APA/QUA)
     if (auth && auth !== 'all') {
