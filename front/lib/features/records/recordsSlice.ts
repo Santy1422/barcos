@@ -588,7 +588,7 @@ export const createInvoiceAsync = createAsyncThunk(
       
       console.log("Enviando factura al backend:", invoiceData)
       
-      const response = await fetch('/api/invoices', {
+      const response = await fetch(createApiUrl('/api/invoices'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

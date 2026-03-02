@@ -109,16 +109,31 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
   }, [open, dispatch, isAuthInvoice, invoice?.invoiceNumber, invoice?.relatedRecordIds]);
 
   const getRelatedRecords = () => {
-    if (!invoice?.relatedRecordIds) return [];
-
     if (isAuthInvoice) {
       // Para AUTH, filtrar de autoridades records
       if (autoridadesRecords.length === 0) return [];
-      return autoridadesRecords.filter((record: any) =>
-        invoice.relatedRecordIds.includes(record._id || record.id)
-      );
+
+      // Primero intentar por relatedRecordIds
+      if (invoice?.relatedRecordIds?.length > 0) {
+        const byIds = autoridadesRecords.filter((record: any) =>
+          invoice.relatedRecordIds.includes(record._id || record.id)
+        );
+        if (byIds.length > 0) return byIds;
+      }
+
+      // Fallback: buscar por invoiceId en los registros
+      const invoiceId = invoice?._id || invoice?.id;
+      if (invoiceId) {
+        const byInvoiceId = autoridadesRecords.filter((record: any) =>
+          record.invoiceId === invoiceId
+        );
+        if (byInvoiceId.length > 0) return byInvoiceId;
+      }
+
+      return [];
     } else {
       // Para trasiego, usar los records cargados directamente
+      if (!invoice?.relatedRecordIds) return [];
       return fetchedRecords;
     }
   };
