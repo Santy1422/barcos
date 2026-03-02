@@ -643,6 +643,9 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
 
       const relatedIds = selectedRecords.map((r: any) => r._id || r.id)
 
+      console.log('🔍 handleCreatePrefactura - selectedRecords:', selectedRecords.length)
+      console.log('🔍 handleCreatePrefactura - relatedIds:', relatedIds.length, relatedIds.slice(0, 5))
+
       // Obtener dirección del cliente
       const clientAddress = client?.address
         ? (typeof client.address === 'string' ? client.address : `${client.address?.district || ''}, ${client.address?.province || ''}`)
