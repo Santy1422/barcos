@@ -641,10 +641,19 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
         : 'Cliente'
       const displayRuc = client?.ruc || client?.documentNumber || ''
 
-      const relatedIds = selectedRecords.map((r: any) => r._id || r.id)
+      const relatedIds = selectedRecords.map((r: any) => r._id || r.id).filter(Boolean)
 
       console.log('🔍 handleCreatePrefactura - selectedRecords:', selectedRecords.length)
+      console.log('🔍 handleCreatePrefactura - selectedRecords[0]:', selectedRecords[0])
       console.log('🔍 handleCreatePrefactura - relatedIds:', relatedIds.length, relatedIds.slice(0, 5))
+      console.log('🔍 handleCreatePrefactura - selectedBLNumbers:', selectedBLNumbers.length)
+
+      if (relatedIds.length === 0) {
+        console.error('❌ ERROR: relatedIds está vacío!')
+        toast({ title: 'Error', description: 'No se encontraron IDs de registros', variant: 'destructive' })
+        setIsCreatingPrefactura(false)
+        return
+      }
 
       // Obtener dirección del cliente
       const clientAddress = client?.address
