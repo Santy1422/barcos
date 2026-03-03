@@ -28,7 +28,17 @@ const recordsAutoridadesSchema = new mongoose.Schema({
   invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'invoices', required: false },
   createdBy: { type: String, required: false, default: null },
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: {
+    virtuals: true,
+    transform: function(doc, ret) {
+      // Ensure both _id and id are available
+      ret.id = ret._id.toString();
+      delete ret.__v;
+      return ret;
+    }
+  },
+  toObject: { virtuals: true }
 });
 
 // Índices para mejorar el rendimiento de las consultas

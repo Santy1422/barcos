@@ -66,8 +66,32 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
       dispatch(fetchClients());
 
       if (isAuthInvoice) {
-        console.log("Cargando registros de autoridades...");
-        dispatch(fetchAutoridadesRecords());
+        console.log("Cargando registros de autoridades para AUTH invoice...");
+        // Fetch ALL autoridades records (including prefacturado/facturado)
+        // because we need to find records by relatedRecordIds or invoiceId
+        const loadAuthRecords = async () => {
+          setIsLoadingRecords(true);
+          try {
+            const token = localStorage.getItem('token');
+            // Add status=all to get prefacturado/facturado records too
+            const response = await fetch(createApiUrl('/api/records/autoridades?status=all'), {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            const data = await response.json();
+            const records = Array.isArray(data) ? data : (data.data || []);
+            console.log(`Cargados ${records.length} registros de autoridades (todos los estados)`);
+            setFetchedRecords(records);
+          } catch (error) {
+            console.error("Error loading autoridades records:", error);
+            setFetchedRecords([]);
+          } finally {
+            setIsLoadingRecords(false);
+          }
+        };
+        loadAuthRecords();
       } else if (invoice?.relatedRecordIds?.length > 0) {
         // Cargar registros directamente del backend por IDs
         console.log("Cargando registros por IDs del backend...");
@@ -110,26 +134,44 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
 
   const getRelatedRecords = () => {
     if (isAuthInvoice) {
-      // Para AUTH, filtrar de autoridades records
-      if (autoridadesRecords.length === 0) return [];
+      // Para AUTH, usar los registros cargados directamente (incluye prefacturado/facturado)
+      const authRecords = fetchedRecords.length > 0 ? fetchedRecords : autoridadesRecords;
+      console.log("🔍 getRelatedRecords AUTH - usando:", fetchedRecords.length > 0 ? "fetchedRecords" : "autoridadesRecords", authRecords.length);
+      console.log("🔍 getRelatedRecords AUTH - invoice.relatedRecordIds:", invoice?.relatedRecordIds?.length, invoice?.relatedRecordIds?.slice(0, 3));
+
+      if (authRecords.length === 0) {
+        console.log("⚠️ No hay registros de autoridades disponibles");
+        return [];
+      }
 
       // Primero intentar por relatedRecordIds
       if (invoice?.relatedRecordIds?.length > 0) {
-        const byIds = autoridadesRecords.filter((record: any) =>
-          invoice.relatedRecordIds.includes(record._id || record.id)
-        );
+        // Log sample data for debugging
+        console.log("🔍 Sample relatedRecordId:", invoice.relatedRecordIds[0], typeof invoice.relatedRecordIds[0]);
+        console.log("🔍 Sample authRecord:", authRecords[0]?._id, authRecords[0]?.id);
+
+        // Normalize IDs for comparison (convert to strings)
+        const relatedIdSet = new Set(invoice.relatedRecordIds.map((id: any) => String(id)));
+        const byIds = authRecords.filter((record: any) => {
+          const recordId = String(record._id || record.id);
+          return relatedIdSet.has(recordId);
+        });
+        console.log("🔍 Found by relatedRecordIds:", byIds.length);
         if (byIds.length > 0) return byIds;
       }
 
       // Fallback: buscar por invoiceId en los registros
-      const invoiceId = invoice?._id || invoice?.id;
+      const invoiceId = String(invoice?._id || invoice?.id);
+      console.log("🔍 Fallback: buscando por invoiceId:", invoiceId);
       if (invoiceId) {
-        const byInvoiceId = autoridadesRecords.filter((record: any) =>
-          record.invoiceId === invoiceId
+        const byInvoiceId = authRecords.filter((record: any) =>
+          String(record.invoiceId) === invoiceId
         );
+        console.log("🔍 Found by invoiceId:", byInvoiceId.length);
         if (byInvoiceId.length > 0) return byInvoiceId;
       }
 
+      console.log("⚠️ No se encontraron registros");
       return [];
     } else {
       // Para trasiego, usar los records cargados directamente

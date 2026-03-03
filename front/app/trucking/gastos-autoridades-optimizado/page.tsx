@@ -175,6 +175,13 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
       }
 
       // Backend ya filtra prefacturado/facturado por defecto
+      // Debug: Log record structure
+      if (recordsData.length > 0) {
+        console.log('🔍 fetchRecords - Total records:', recordsData.length)
+        console.log('🔍 fetchRecords - First record keys:', Object.keys(recordsData[0]))
+        console.log('🔍 fetchRecords - First record _id:', recordsData[0]._id)
+        console.log('🔍 fetchRecords - First record id:', recordsData[0].id)
+      }
       setRecords(recordsData)
       // Actualizar paginación con el total de registros
       setPagination({ current: 1, pages: 1, total: recordsData.length })
@@ -641,16 +648,25 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
         : 'Cliente'
       const displayRuc = client?.ruc || client?.documentNumber || ''
 
-      const relatedIds = selectedRecords.map((r: any) => r._id || r.id).filter(Boolean)
+      // Extract record IDs - try _id first, then id
+      const relatedIds = selectedRecords.map((r: any) => {
+        const recordId = r._id || r.id
+        if (!recordId) {
+          console.warn('⚠️ Record without ID:', r)
+        }
+        return recordId
+      }).filter(Boolean)
 
       console.log('🔍 handleCreatePrefactura - selectedRecords:', selectedRecords.length)
-      console.log('🔍 handleCreatePrefactura - selectedRecords[0]:', selectedRecords[0])
+      console.log('🔍 handleCreatePrefactura - selectedRecords[0]:', JSON.stringify(selectedRecords[0], null, 2))
+      console.log('🔍 handleCreatePrefactura - selectedRecords[0] keys:', selectedRecords[0] ? Object.keys(selectedRecords[0]) : 'N/A')
       console.log('🔍 handleCreatePrefactura - relatedIds:', relatedIds.length, relatedIds.slice(0, 5))
       console.log('🔍 handleCreatePrefactura - selectedBLNumbers:', selectedBLNumbers.length)
 
       if (relatedIds.length === 0) {
         console.error('❌ ERROR: relatedIds está vacío!')
-        toast({ title: 'Error', description: 'No se encontraron IDs de registros', variant: 'destructive' })
+        console.error('❌ selectedRecords sample:', selectedRecords.slice(0, 3))
+        toast({ title: 'Error', description: 'No se encontraron IDs de registros. Revisa la consola para más detalles.', variant: 'destructive' })
         setIsCreatingPrefactura(false)
         return
       }
@@ -689,7 +705,10 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
       const response = await dispatch(createInvoiceAsync(newPrefactura))
 
       if (createInvoiceAsync.fulfilled.match(response)) {
-        const createdId = response.payload.id
+        // Get invoice ID - try both _id and id
+        const createdId = response.payload._id || response.payload.id
+        console.log('🔍 handleCreatePrefactura - Invoice created:', response.payload)
+        console.log('🔍 handleCreatePrefactura - Invoice ID:', createdId)
 
         await dispatch(updateMultipleAutoridadesStatusAsync({
           recordIds: relatedIds,
