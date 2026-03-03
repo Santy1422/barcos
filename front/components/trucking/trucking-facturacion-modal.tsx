@@ -10,7 +10,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { FileText, Code, AlertTriangle, CheckCircle, Calendar, DollarSign, User, Eye, Download } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
-import { selectAutoridadesRecords, fetchAutoridadesRecords } from "@/lib/features/records/recordsSlice"
 import { selectAllServices, fetchServices } from "@/lib/features/services/servicesSlice"
 import { selectAllContainerTypes, fetchContainerTypes } from "@/lib/features/containerTypes/containerTypesSlice"
 import { generateInvoiceXML, validateXMLForSAP, generateXmlFileName, sendXmlToSapFtp, setContainerTypesMap, clearMissingContainerTypes, getMissingContainerTypes, hasMissingContainerTypes } from "@/lib/xml-generator"
@@ -40,8 +39,9 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
   const [missingTypes, setMissingTypes] = useState<string[]>([])
   const [invoiceRecords, setInvoiceRecords] = useState<any[]>([])
   const [isLoadingRecords, setIsLoadingRecords] = useState(false)
+  const [authRecordsFromApi, setAuthRecordsFromApi] = useState<any[]>([])
+  const [isLoadingAuthRecords, setIsLoadingAuthRecords] = useState(false)
 
-  const autoridadesRecords = useAppSelector(selectAutoridadesRecords)
   const services = useAppSelector(selectAllServices)
   const containerTypes = useAppSelector(selectAllContainerTypes)
 
@@ -64,6 +64,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
     setShowMissingTypesModal(false)
     setMissingTypes([])
     setInvoiceRecords([])
+    setAuthRecordsFromApi([])
 
     // Cargar servicios para los impuestos PTG y container types para homologación
     if (open) {
@@ -80,13 +81,36 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
     const today = new Date(); setInvoiceDate(today.toLocaleDateString('en-CA'))
   }, [invoice?.id, open, dispatch])
 
-  // Cargar registros de autoridades cuando se abre el modal
+  // Cargar registros de autoridades cuando se abre el modal (TODOS los estados)
   useEffect(() => {
     if (open && isAuthInvoice) {
-      console.log("Cargando registros de autoridades para factura AUTH...")
-      dispatch(fetchAutoridadesRecords())
+      const loadAuthRecords = async () => {
+        setIsLoadingAuthRecords(true)
+        try {
+          console.log("Cargando TODOS los registros de autoridades para factura AUTH...")
+          const token = document.cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1]
+            || localStorage.getItem('token')
+
+          // Cargar TODOS los registros de autoridades (todos los estados)
+          const response = await fetch(createApiUrl('/api/records/autoridades?status=all'), {
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            }
+          })
+          const data = await response.json()
+          const records = Array.isArray(data) ? data : (data.data || [])
+          console.log(`Cargados ${records.length} registros de autoridades (todos los estados) para XML`)
+          setAuthRecordsFromApi(records)
+        } catch (error) {
+          console.error("Error cargando registros de autoridades:", error)
+        } finally {
+          setIsLoadingAuthRecords(false)
+        }
+      }
+      loadAuthRecords()
     }
-  }, [open, isAuthInvoice, dispatch])
+  }, [open, isAuthInvoice])
 
   // Cargar records de la factura directamente del backend (no de Redux)
   useEffect(() => {
@@ -136,13 +160,13 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
   // Debug: monitorear cambios en registros de autoridades
   useEffect(() => {
     console.log("=== DEBUG: Autoridades records changed ===")
-    console.log("autoridadesRecords.length:", autoridadesRecords.length)
+    console.log("authRecordsFromApi.length:", authRecordsFromApi.length)
     console.log("isAuthInvoice:", isAuthInvoice)
     console.log("invoice.relatedRecordIds:", invoice?.relatedRecordIds)
-    if (autoridadesRecords.length > 0) {
-      console.log("Primeros 3 registros de autoridades:", autoridadesRecords.slice(0, 3))
+    if (authRecordsFromApi.length > 0) {
+      console.log("Primeros 3 registros de autoridades:", authRecordsFromApi.slice(0, 3))
     }
-  }, [autoridadesRecords, isAuthInvoice, invoice?.relatedRecordIds])
+  }, [authRecordsFromApi, isAuthInvoice, invoice?.relatedRecordIds])
 
   // Función para generar XML específico para facturas AUTH
   const generateAuthXML = (records: any[]) => {
@@ -332,16 +356,19 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
       console.log("Invoice:", invoice)
       console.log("Is AUTH Invoice:", isAuthInvoice)
       console.log("Invoice records:", invoiceRecords)
-      console.log("Autoridades records:", autoridadesRecords)
-      
+      console.log("Auth records from API:", authRecordsFromApi.length)
+
       if (!invoice) throw new Error("No hay datos de factura disponibles")
       if (!newInvoiceNumber.trim()) throw new Error("Debe ingresar el número de factura")
       if (!invoiceDate) throw new Error("Debe seleccionar la fecha de factura")
-      
+
       // Usar los registros correctos según el tipo de factura
       if (isAuthInvoice) {
         // Para facturas AUTH, verificar que se hayan cargado los registros de autoridades
-        if (autoridadesRecords.length === 0) {
+        if (isLoadingAuthRecords) {
+          throw new Error("Los registros de autoridades se están cargando. Espera un momento e intenta de nuevo.")
+        }
+        if (authRecordsFromApi.length === 0) {
           throw new Error("Los registros de autoridades no están cargados. Intenta cerrar y abrir el modal nuevamente.")
         }
       } else {
@@ -354,7 +381,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
         }
       }
 
-      const recordsToSearch = isAuthInvoice ? autoridadesRecords : invoiceRecords
+      const recordsToSearch = isAuthInvoice ? authRecordsFromApi : invoiceRecords
       console.log("Records to search in:", recordsToSearch)
       console.log("recordsToSearch.length:", recordsToSearch.length)
 
@@ -788,8 +815,8 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
             
             {!generatedXml ? (
               <div className="flex flex-col items-center space-y-2 p-4 border border-dashed border-gray-300 rounded-lg">
-                <Button variant="outline" onClick={generateXMLForInvoice} disabled={!newInvoiceNumber.trim() || !invoiceDate || isLoadingRecords} className="flex items-center gap-2 text-blue-600 border-blue-600 hover:bg-blue-50 disabled:text-gray-400 disabled:border-gray-300">
-                  <Code className="h-4 w-4" /> {isLoadingRecords ? 'Cargando registros...' : 'Generar Vista Previa del XML'}
+                <Button variant="outline" onClick={generateXMLForInvoice} disabled={!newInvoiceNumber.trim() || !invoiceDate || isLoadingRecords || isLoadingAuthRecords} className="flex items-center gap-2 text-blue-600 border-blue-600 hover:bg-blue-50 disabled:text-gray-400 disabled:border-gray-300">
+                  <Code className="h-4 w-4" /> {(isLoadingRecords || isLoadingAuthRecords) ? 'Cargando registros...' : 'Generar Vista Previa del XML'}
                 </Button>
               </div>
             ) : (
@@ -828,7 +855,7 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
 
           <div className="flex justify-end gap-3 pt-4">
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isProcessing}>Cancelar</Button>
-            <Button onClick={handleFacturar} disabled={isProcessing || !newInvoiceNumber.trim() || !invoiceDate} className="bg-green-600 hover:bg-green-700 text-white">
+            <Button onClick={handleFacturar} disabled={isProcessing || !newInvoiceNumber.trim() || !invoiceDate || isLoadingRecords || isLoadingAuthRecords} className="bg-green-600 hover:bg-green-700 text-white">
               {isProcessing ? (<><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>Facturando...</>) : (<><FileText className="h-4 w-4 mr-2" />Facturar</>)}
             </Button>
           </div>
