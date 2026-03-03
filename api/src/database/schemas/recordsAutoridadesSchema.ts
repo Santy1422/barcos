@@ -25,6 +25,7 @@ const recordsAutoridadesSchema = new mongoose.Schema({
   customer: { type: String, required: false, default: 'N/A' }, // Cliente al que facturar
   clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'clients', required: false }, // Referencia al cliente en la base de datos
   status: { type: String, enum: ['cargado', 'prefacturado', 'facturado'], default: 'cargado' },
+  invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'invoices', required: false },
   createdBy: { type: String, required: false, default: null },
 }, {
   timestamps: true
@@ -35,6 +36,7 @@ recordsAutoridadesSchema.index({ blNumber: 1 });
 recordsAutoridadesSchema.index({ customer: 1 });
 recordsAutoridadesSchema.index({ clientId: 1 });
 recordsAutoridadesSchema.index({ status: 1 });
+recordsAutoridadesSchema.index({ invoiceId: 1 });
 recordsAutoridadesSchema.index({ createdAt: -1 });
 
 export default recordsAutoridadesSchema;
