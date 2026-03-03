@@ -116,10 +116,7 @@ export function AppSidebar() {
           { title: "Gastos Autoridades", href: "/trucking/gastos-autoridades-optimizado", icon: Briefcase }
         ] : []),
         ...(hasSectionAccess(currentUser, "trucking", "records") ? [
-          { title: "Facturas", href: "/trucking/records", icon: ListOrdered }
-        ] : []),
-        ...(hasSectionAccess(currentUser, "trucking", "records") ? [
-          { title: "Facturas (Rápido)", href: "/trucking/records-optimizado", icon: Zap }
+          { title: "Facturas", href: "/trucking/records-optimizado", icon: ListOrdered }
         ] : []),
         ...(hasSectionAccess(currentUser, "trucking", "config") ? [
           { title: "Catálogos", href: "/trucking/config", icon: BookOpen }
