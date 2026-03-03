@@ -13,6 +13,7 @@ import { useAppSelector } from "@/lib/hooks";
 import { selectAllIndividualRecords, selectAutoridadesRecords } from "@/lib/features/records/recordsSlice";
 import { selectAllClients } from "@/lib/features/clients/clientsSlice";
 import { selectAllServices } from "@/lib/features/services/servicesSlice";
+import { createApiUrl } from "@/lib/api-config";
 
 interface TruckingPdfViewerProps {
   open: boolean;
@@ -616,9 +617,49 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
           let pdf: Blob;
 
           if (isAuthInvoice) {
-            relatedRecords = autoridadesRecords.filter((record: any) =>
-              invoice.relatedRecordIds.includes(record._id || record.id)
-            );
+            // For AUTH invoices, fetch ALL autoridades records (including prefacturado/facturado)
+            // because Redux only has cargado records
+            let authRecords = autoridadesRecords;
+
+            if (!invoice.relatedRecordIds?.length) {
+              throw new Error("No hay registros relacionados");
+            }
+
+            // Try to find records in Redux first
+            const relatedIdSet = new Set(invoice.relatedRecordIds.map((id: any) => String(id)));
+            relatedRecords = autoridadesRecords.filter((record: any) => {
+              const recordId = String(record._id || record.id);
+              return relatedIdSet.has(recordId);
+            });
+
+            console.log(`🔍 PDF Viewer: Found ${relatedRecords.length} of ${invoice.relatedRecordIds.length} records in Redux`);
+
+            // If not found in Redux, fetch ALL records from API
+            if (relatedRecords.length === 0) {
+              console.log("🔍 PDF Viewer: Fetching ALL autoridades records from API...");
+              const token = localStorage.getItem('token');
+              const response = await fetch(createApiUrl('/api/records/autoridades?status=all'), {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              const data = await response.json();
+              authRecords = Array.isArray(data) ? data : (data.data || []);
+              console.log(`🔍 PDF Viewer: Fetched ${authRecords.length} total records`);
+
+              // Now filter by relatedRecordIds
+              relatedRecords = authRecords.filter((record: any) => {
+                const recordId = String(record._id || record.id);
+                return relatedIdSet.has(recordId);
+              });
+              console.log(`🔍 PDF Viewer: Found ${relatedRecords.length} related records`);
+            }
+
+            if (relatedRecords.length === 0) {
+              throw new Error("No se encontraron registros para generar el PDF");
+            }
+
             const pdfTitle = invoice.status === "facturada" ? "GASTOS AUTORIDADES" : "GASTOS AUTORIDADES";
             pdf = generateAutoridadesPdf(invoice, relatedRecords, pdfTitle, logoBase64);
           } else {
@@ -636,7 +677,7 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
           setPdfBlob(pdf);
         } catch (error) {
           console.error("Error generando PDF:", error);
-          toast({ title: "Error", description: "Error al generar el PDF", variant: "destructive" });
+          toast({ title: "Error", description: error instanceof Error ? error.message : "Error al generar el PDF", variant: "destructive" });
         } finally {
           setIsGenerating(false);
         }
