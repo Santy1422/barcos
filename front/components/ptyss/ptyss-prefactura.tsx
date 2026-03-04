@@ -1314,9 +1314,10 @@ export function PTYSSPrefactura() {
         serviceId: service._id,
         name: service.name,
         description: service.description,
-        amount: service.price // Usar el precio predefinido del servicio
+        amount: service.price, // Usar el precio predefinido del servicio
+        isLocalService: true // IMPORTANTE: Marcar como servicio local para evitar doble conteo
       }
-      
+
       console.log('🔍 handleAddLocalService - New local service to add:', newLocalService)
       
       setSelectedAdditionalServices(prev => {
