@@ -372,7 +372,7 @@ export function PTYSSRecords() {
     // Determinar el tipo basándose en los registros relacionados
     // Si todos son del mismo tipo, usar ese tipo
     // Si hay mezcla, usar el tipo más común
-    const recordTypes = relatedRecords.map((record: any) => getRecordType(record))
+    const recordTypes: ("local" | "trasiego")[] = relatedRecords.map((record: any) => getRecordType(record))
     const trasiegoCount = recordTypes.filter(t => t === "trasiego").length
     const localCount = recordTypes.filter(t => t === "local").length
     
