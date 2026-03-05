@@ -54,6 +54,7 @@ interface TruckingRoutesState {
     containerType: string
     routeType: string
     status: string
+    cliente: string
   }
 }
 
@@ -66,25 +67,26 @@ const initialState: TruckingRoutesState = {
     search: '',
     containerType: 'all',
     routeType: 'all',
-    status: 'all'
+    status: 'all',
+    cliente: 'all'
   }
 }
 
 // Async thunks para conectar con API
 export const fetchTruckingRoutes = createAsyncThunk(
   'truckingRoutes/fetchRoutes',
-  async (params: { page?: number; limit?: number; search?: string; containerType?: string; routeType?: string; status?: string } = {}, { rejectWithValue }) => {
+  async (params: { page?: number; limit?: number; search?: string; containerType?: string; routeType?: string; status?: string; cliente?: string } = {}, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem('token')
-      
+
       if (!token) {
         throw new Error('No se encontró token de autenticación')
       }
-      
+
       if (token === 'undefined' || token === 'null') {
         throw new Error('Token inválido en localStorage')
       }
-      
+
       // Construir query string
       const queryParams = new URLSearchParams()
       if (params.page) queryParams.append('page', params.page.toString())
@@ -93,6 +95,7 @@ export const fetchTruckingRoutes = createAsyncThunk(
       if (params.containerType && params.containerType !== 'all') queryParams.append('containerType', params.containerType)
       if (params.routeType && params.routeType !== 'all') queryParams.append('routeType', params.routeType)
       if (params.status && params.status !== 'all') queryParams.append('status', params.status)
+      if (params.cliente && params.cliente !== 'all') queryParams.append('cliente', params.cliente)
       
       const queryString = queryParams.toString()
       const url = `/api/trucking-routes${queryString ? `?${queryString}` : ''}`

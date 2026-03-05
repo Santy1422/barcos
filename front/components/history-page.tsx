@@ -573,8 +573,14 @@ export function HistoryPage() {
                     )}
                     {selectedRecord.data?.moveDate && (
                       <div>
-                        <Label className="text-sm font-medium">Fecha de Movimiento</Label>
+                        <Label className="text-sm font-medium">Fecha Inicial</Label>
                         <p className="text-sm text-gray-600">{selectedRecord.data.moveDate}</p>
+                      </div>
+                    )}
+                    {selectedRecord.data?.endDate && (
+                      <div>
+                        <Label className="text-sm font-medium">Fecha Fin</Label>
+                        <p className="text-sm text-gray-600">{selectedRecord.data.endDate}</p>
                       </div>
                     )}
                   </div>

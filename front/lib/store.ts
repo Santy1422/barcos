@@ -16,6 +16,7 @@ import agencyCatalogsReducer from './features/agencyServices/agencyCatalogsSlice
 import agencyPricingConfigReducer from './features/agencyServices/agencyPricingConfigSlice'
 import agencyRoutesReducer from './features/agencyServices/agencyRoutesSlice'
 import containerTypesReducer from './features/containerTypes/containerTypesSlice'
+import analyticsReducer from './features/analytics/analyticsSlice'
 import { loadState, saveState } from './storage'
 
 export const makeStore = () => {
@@ -41,6 +42,7 @@ export const makeStore = () => {
       agencyPricingConfig: agencyPricingConfigReducer,
       agencyRoutes: agencyRoutesReducer,
       containerTypes: containerTypesReducer,
+      analytics: analyticsReducer,
     },
     preloadedState: persistedState
   })

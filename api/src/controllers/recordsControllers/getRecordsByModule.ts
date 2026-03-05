@@ -8,10 +8,20 @@ const getRecordsByModule = async (req: Request, res: Response) => {
     const { page, limit, status, source } = req.query;
     
     console.log("🔍 getRecordsByModule - Parámetros:", { module, page, limit, status, source });
-    
-    // Construir filtros
-    const filters: any = { module };
-    if (status) filters.status = status;
+
+    // Construir filtros - usar regex case-insensitive para el módulo
+    const filters: any = { module: { $regex: new RegExp(`^${module}$`, 'i') } };
+
+    // Status filter: exclude prefacturado/facturado by default unless status=all
+    if (status === 'all') {
+      // No filter - show all statuses
+    } else if (status) {
+      filters.status = status;
+    } else {
+      // Default: exclude prefacturado and facturado
+      filters.status = { $nin: ['prefacturado', 'facturado'] };
+    }
+
     if (source) filters.source = source;
     
     console.log("🔍 getRecordsByModule - Filtros:", filters);

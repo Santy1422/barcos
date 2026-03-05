@@ -52,7 +52,7 @@ export const AgencySapInvoice: React.FC = () => {
 
   // Filtros y búsqueda
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'facturado' | 'nota_de_credito'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'prefacturado' | 'facturado' | 'nota_de_credito'>('all');
   const [clientFilter, setClientFilter] = useState('all');
   const [vesselFilter, setVesselFilter] = useState('');
   const [crewRankFilter, setCrewRankFilter] = useState<'all' | 'security_guard' | 'seal_check' | 'both'>('all');
@@ -90,22 +90,26 @@ export const AgencySapInvoice: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
-    
+
+    let year: number, month: number, day: number;
+
     if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const [year, month, day] = dateString.split('-').map(Number);
-      const date = new Date(year, month - 1, day);
-      return date.toLocaleDateString('es-ES');
-    }
-    
-    if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+      [year, month, day] = dateString.split('-').map(Number);
+    } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
       const datePart = dateString.split('T')[0];
-      const [year, month, day] = datePart.split('-').map(Number);
-      const date = new Date(year, month - 1, day);
-      return date.toLocaleDateString('es-ES');
+      [year, month, day] = datePart.split('-').map(Number);
+    } else {
+      const parsed = new Date(dateString);
+      if (isNaN(parsed.getTime())) return 'N/A';
+      year = parsed.getFullYear();
+      month = parsed.getMonth() + 1;
+      day = parsed.getDate();
     }
-    
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return 'N/A';
+
+    // Validate year is within reasonable range (1900-2100)
+    if (year < 1900 || year > 2100) return 'N/A';
+
+    const date = new Date(year, month - 1, day);
     return date.toLocaleDateString('es-ES');
   };
 
@@ -322,8 +326,8 @@ export const AgencySapInvoice: React.FC = () => {
     return (services || []).filter((service: any) => {
       // Filtrar por modo de vista primero
       if (viewMode === 'completed') {
-        // Solo mostrar servicios completados
-        if (service.status !== 'completed') {
+        // Mostrar servicios completados y prefacturados
+        if (!['completed', 'prefacturado'].includes(service.status)) {
           return false;
         }
       } else {
@@ -333,12 +337,24 @@ export const AgencySapInvoice: React.FC = () => {
         }
       }
       
-      // Búsqueda - Solo por cliente y ubicaciones
+      // Búsqueda - Por cliente, ubicaciones, crew y vessel
       const clientName = getClientForService(service).toLowerCase();
-      
-      const matchesSearch = clientName.includes(q) || 
+
+      // Obtener nombres de crew members
+      let crewNames = '';
+      if (service.crewMembers && service.crewMembers.length > 0) {
+        crewNames = service.crewMembers.map((m: any) => (m.name || '').toLowerCase()).join(' ');
+      } else if (service.crewName) {
+        crewNames = service.crewName.toLowerCase();
+      }
+
+      const vesselName = (service.vessel || '').toLowerCase();
+
+      const matchesSearch = clientName.includes(q) ||
                            (service.pickupLocation || '').toLowerCase().includes(q) ||
-                           (service.dropoffLocation || '').toLowerCase().includes(q);
+                           (service.dropoffLocation || '').toLowerCase().includes(q) ||
+                           crewNames.includes(q) ||
+                           vesselName.includes(q);
       
       // Filtro de estado
       const matchesStatus = statusFilter === 'all' || service.status === statusFilter;
@@ -621,9 +637,9 @@ export const AgencySapInvoice: React.FC = () => {
           className="flex items-center gap-2"
         >
           <CheckCircle className="h-4 w-4" />
-          Servicios Completados
+          Servicios Pendientes
           <Badge variant="secondary" className={`ml-2 ${viewMode === 'completed' ? 'bg-white text-blue-600' : 'bg-gray-200'}`}>
-            {services.filter((s: any) => s.status === 'completed').length}
+            {services.filter((s: any) => ['completed', 'prefacturado'].includes(s.status)).length}
           </Badge>
         </Button>
         <Button
@@ -647,7 +663,7 @@ export const AgencySapInvoice: React.FC = () => {
                     <Input
                 value={search} 
                 onChange={(e) => setSearch(e.target.value)} 
-                placeholder="Buscar por cliente o ubicación..." 
+                placeholder="Buscar por cliente, crew, vessel o ubicación..." 
                 className="pl-9" 
                   />
                 </div>
@@ -658,6 +674,7 @@ export const AgencySapInvoice: React.FC = () => {
                     <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="completed">Completado</SelectItem>
+                <SelectItem value="prefacturado">Prefacturado</SelectItem>
                 <SelectItem value="facturado">Facturado</SelectItem>
                 <SelectItem value="nota_de_credito">Nota de Crédito</SelectItem>
                     </SelectContent>
@@ -766,8 +783,8 @@ export const AgencySapInvoice: React.FC = () => {
               <span className="text-sm text-green-700">
                 Cliente: {getSelectedClientName()}
               </span>
-              {/* Mostrar botón Facturar solo si hay servicios completados */}
-              {services.filter((s: any) => selectedServices.includes(s._id || s.id) && s.status === 'completed').length > 0 && (
+              {/* Mostrar botón Facturar solo si hay servicios completados o prefacturados */}
+              {services.filter((s: any) => selectedServices.includes(s._id || s.id) && ['completed', 'prefacturado'].includes(s.status)).length > 0 && (
                 <Button 
                   variant="outline" 
                   size="sm" 
@@ -1065,7 +1082,7 @@ export const AgencySapInvoice: React.FC = () => {
                           <Checkbox
                             checked={selectedServices.includes(service._id || service.id)}
                             onCheckedChange={() => handleServiceSelection(service._id || service.id, getClientIdForService(service))}
-                            disabled={service.status !== 'completed'}
+                            disabled={!['completed', 'prefacturado'].includes(service.status)}
                           />
                         </TableCell>
                         <TableCell>
@@ -1127,6 +1144,10 @@ export const AgencySapInvoice: React.FC = () => {
                           <Badge variant="outline" className="text-blue-600 border-blue-600">
                             Completado
                           </Badge>
+                        ) : service.status === 'prefacturado' ? (
+                          <Badge variant="outline" className="text-purple-600 border-purple-600">
+                            Prefacturado
+                          </Badge>
                         ) : service.status === 'facturado' ? (
                           <Badge variant="outline" className="text-green-600 border-green-600">
                             Facturado
@@ -1165,8 +1186,8 @@ export const AgencySapInvoice: React.FC = () => {
                               <FileText className="h-4 w-4" />
                             </Button>
                           )}
-                          {/* Botón Facturar - Solo para completed */}
-                          {service.status === 'completed' && (
+                          {/* Botón Facturar - Para completed y prefacturado */}
+                          {['completed', 'prefacturado'].includes(service.status) && (
                             <Button 
                               variant="outline" 
                               size="sm" 

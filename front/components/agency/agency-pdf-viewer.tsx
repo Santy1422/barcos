@@ -43,18 +43,22 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
     });
   };
 
-  const generateAgencyInvoicePDF = (serviceData: any, pdfTitle: string, allServices?: any[]) => {
+  const generateAgencyInvoicePDF = (serviceData: any, pdfTitle: string, allServices?: any[], logoBase64?: string) => {
     const issuer = getClient('PTYSS')
     const doc = new jsPDF()
 
-    // Colores / encabezado
+    // Logo de la empresa
     const lightBlue = [59, 130, 246]
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14)
-    doc.setFont(undefined, 'bold')
-    doc.text('PTYSS', 30, 23, { align: 'center', baseline: 'middle' })
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('PTYSS', 30, 23, { align: 'center', baseline: 'middle' })
+    }
 
     // Número de factura y fecha
     doc.setTextColor(0, 0, 0)
@@ -63,33 +67,48 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
     doc.text(`${pdfTitle} No. ${serviceData.invoiceNumber}`, 195, 20, { align: 'right' })
 
     // Formatear fecha de factura
-    const formatInvoiceDate = (dateString: string) => {
-      if (!dateString) return new Date()
-      
+    const formatInvoiceDate = (dateString: string): Date | null => {
+      if (!dateString) return null
+
+      let year: number, month: number, day: number
+
       if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        const [year, month, day] = dateString.split('-').map(Number)
-        return new Date(year, month - 1, day)
-      }
-      
-      if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+        [year, month, day] = dateString.split('-').map(Number)
+      } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
         const datePart = dateString.split('T')[0]
-        const [year, month, day] = datePart.split('-').map(Number)
-        return new Date(year, month - 1, day)
+        ;[year, month, day] = datePart.split('-').map(Number)
+      } else {
+        const parsed = new Date(dateString)
+        if (isNaN(parsed.getTime())) return null
+        year = parsed.getFullYear()
+        month = parsed.getMonth() + 1
+        day = parsed.getDate()
       }
-      
-      return new Date(dateString)
+
+      // Validate year is within reasonable range (1900-2100)
+      if (year < 1900 || year > 2100) return null
+
+      return new Date(year, month - 1, day)
     }
     
     const invoiceDate = formatInvoiceDate(serviceData.invoiceDate)
-    const day = invoiceDate.getDate().toString().padStart(2, '0')
-    const month = (invoiceDate.getMonth() + 1).toString().padStart(2, '0')
-    const year = invoiceDate.getFullYear()
+    const day = invoiceDate ? invoiceDate.getDate().toString().padStart(2, '0') : 'N/A'
+    const month = invoiceDate ? (invoiceDate.getMonth() + 1).toString().padStart(2, '0') : 'N/A'
+    const year = invoiceDate ? invoiceDate.getFullYear() : 'N/A'
     doc.setFontSize(10)
     doc.text('DATE:', 195, 30, { align: 'right' })
     doc.setFontSize(12)
     doc.text(`${day} ${month} ${year}`, 195, 35, { align: 'right' })
     doc.setFontSize(8)
     doc.text('DAY MO YR', 195, 40, { align: 'right' })
+
+    // PO Number (solo si existe)
+    if (serviceData.poNumber) {
+      doc.setFontSize(10)
+      doc.setFont(undefined, 'bold')
+      doc.text(`PO: ${serviceData.poNumber}`, 195, 46, { align: 'right' })
+      doc.setFont(undefined, 'normal')
+    }
 
     // Información empresa (PTYSS)
     doc.setFontSize(9)
@@ -200,7 +219,9 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
     const processService = (svc: any, rows: any[]) => {
       // Formatear fecha del servicio
       const serviceDate = formatInvoiceDate(svc.pickupDate)
-      const formattedDate = `${serviceDate.getDate().toString().padStart(2, '0')}/${(serviceDate.getMonth() + 1).toString().padStart(2, '0')}/${serviceDate.getFullYear()}`
+      const formattedDate = serviceDate
+        ? `${serviceDate.getDate().toString().padStart(2, '0')}/${(serviceDate.getMonth() + 1).toString().padStart(2, '0')}/${serviceDate.getFullYear()}`
+        : 'N/A'
       
       // Descripción del servicio principal
       let route = `${svc.pickupLocation} TO ${svc.dropoffLocation}`
@@ -367,19 +388,37 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
   useEffect(() => {
     if (open && (service || (isMultipleServices && services.length > 0))) {
       setIsGenerating(true)
-      try {
-        // Para múltiples servicios, usar el primer servicio como base para datos del cliente
-        const baseService = isMultipleServices && services.length > 0 ? services[0] : service;
-        const pdfTitle = baseService.status === 'facturado' ? 'INVOICE' : 'PRE-INVOICE'
-        const doc = generateAgencyInvoicePDF(baseService, pdfTitle, isMultipleServices ? services : undefined)
-        const blob = doc.output('blob')
-        setPdfBlob(blob)
-      } catch (error) {
-        console.error('Error generating PDF:', error)
-        toast({ title: "Error", description: "No se pudo generar el PDF", variant: "destructive" })
-      } finally {
-        setIsGenerating(false)
-      }
+
+      const loadLogoAndGenerate = async () => {
+        try {
+          // Cargar logo PTYSS
+          let logoBase64: string | undefined;
+          try {
+            const response = await fetch('/logos/logo_PTYSS.png');
+            const blob = await response.blob();
+            logoBase64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+          } catch (e) {
+            console.warn("No se pudo cargar el logo PTYSS, usando texto fallback");
+          }
+
+          const baseService = isMultipleServices && services.length > 0 ? services[0] : service;
+          const pdfTitle = baseService.status === 'facturado' ? 'INVOICE' : 'PRE-INVOICE'
+          const doc = generateAgencyInvoicePDF(baseService, pdfTitle, isMultipleServices ? services : undefined, logoBase64)
+          const blob = doc.output('blob')
+          setPdfBlob(blob)
+        } catch (error) {
+          console.error('Error generating PDF:', error)
+          toast({ title: "Error", description: "No se pudo generar el PDF", variant: "destructive" })
+        } finally {
+          setIsGenerating(false)
+        }
+      };
+
+      loadLogoAndGenerate();
     }
   }, [open, service, services, isMultipleServices, toast, ranks])
 

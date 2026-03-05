@@ -19,146 +19,107 @@ interface AuthenticatedRequest extends Request {
 export async function createAutoridadesRecords(req: AuthenticatedRequest, res: Response) {
   try {
     console.log('createAutoridadesRecords - Body recibido:', req.body);
-    console.log('createAutoridadesRecords - Headers:', req.headers);
-    
+
     const { recordsData } = req.body;
     const userId = req.user?._id;
 
-    console.log('createAutoridadesRecords - recordsData:', recordsData);
+    console.log('createAutoridadesRecords - recordsData:', recordsData?.length);
     console.log('createAutoridadesRecords - userId:', userId);
 
     if (!recordsData || !Array.isArray(recordsData) || !userId) {
-      console.log('createAutoridadesRecords - Validación fallida:', { 
-        hasRecordsData: !!recordsData, 
-        isArray: Array.isArray(recordsData), 
-        hasUserId: !!userId 
-      });
       return response(res, 400, {
         error: 'Faltan datos requeridos: recordsData (array), usuario autenticado',
       });
     }
 
-         // Verificar duplicados contra la base de datos existente
-     const orderNumbers = recordsData.map(record => record.order);
-     const existingOrders = await recordsAutoridades.find({ order: { $in: orderNumbers } }).select('order');
-     const existingOrderNumbers = existingOrders.map(record => record.order);
-     
-     const duplicateOrders = orderNumbers.filter(order => existingOrderNumbers.includes(order));
-     if (duplicateOrders.length > 0) {
-       // Usar filter para obtener valores únicos en lugar de Set
-       const uniqueDuplicates = duplicateOrders.filter((order, index) => duplicateOrders.indexOf(order) === index);
-       console.log('createAutoridadesRecords - Orders duplicados encontrados en BD:', uniqueDuplicates);
-       
-       // Filtrar registros duplicados para continuar con los válidos
-       const validRecords = recordsData.filter(record => !existingOrderNumbers.includes(record.order));
-       console.log(`createAutoridadesRecords - ${validRecords.length} registros válidos (sin duplicados) de ${recordsData.length} total`);
-       
-       if (validRecords.length === 0) {
-         console.log('createAutoridadesRecords - Todos los registros son duplicados, continuando con proceso vacío...');
-         // Continuar con el proceso aunque no haya registros válidos
-       }
-       
-       // Continuar con los registros válidos
-       console.log('createAutoridadesRecords - Continuando con registros válidos...');
-     }
-    
-         // Usar registros válidos (sin duplicados) si los hay, o todos si no hay duplicados
-     const recordsToProcess = duplicateOrders.length > 0 ? 
-       recordsData.filter(record => !existingOrderNumbers.includes(record.order)) : 
-       recordsData;
-     
-     console.log('createAutoridadesRecords - Registros a procesar:', recordsToProcess.length);
-     
-     // Si no hay registros válidos para procesar, retornar respuesta con 0 creados
-     if (recordsToProcess.length === 0) {
-       console.log('createAutoridadesRecords - No hay registros válidos para procesar');
-       const responseData: any = { 
-         records: [], 
-         count: 0,
-         totalProcessed: recordsData.length
-       };
-       
-       if (duplicateOrders.length > 0) {
-         responseData.duplicates = {
-           count: duplicateOrders.length,
-           orders: duplicateOrders.filter((order, index) => duplicateOrders.indexOf(order) === index)
-         };
-         responseData.message = `Todos los registros eran duplicados. 0 registros nuevos fueron creados.`;
-       }
-       
-       return response(res, 201, responseData);
-     }
-     
-          // Preparar datos para inserción masiva
-     const recordsToInsert = recordsToProcess.map(data => {
-       // Extraer clientId si viene del frontend
-       const { clientId, ...restData } = data;
-       
-       return {
-         ...restData,
-         clientId: clientId || null, // Guardar clientId si existe
-         status: data.status || 'cargado',
-         createdBy: userId
-       };
-     });
-     
-     console.log('createAutoridadesRecords - Iniciando inserción masiva de', recordsToInsert.length, 'registros');
-     console.log('createAutoridadesRecords - Primer registro de ejemplo:', JSON.stringify(recordsToInsert[0], null, 2));
-     
-     // Inserción masiva usando insertMany (mucho más rápido)
-     let createdRecords;
-     try {
-       createdRecords = await recordsAutoridades.insertMany(recordsToInsert, { 
-         ordered: false, // No fallar si hay errores individuales
-         rawResult: false // Retornar documentos creados
-       });
-       console.log('createAutoridadesRecords - Inserción masiva exitosa:', createdRecords.length, 'registros creados');
-     } catch (bulkError: any) {
-       console.error('createAutoridadesRecords - Error en inserción masiva:', bulkError);
-       
-       // Si falla la inserción masiva, intentar inserción individual como fallback
-       console.log('createAutoridadesRecords - Intentando inserción individual como fallback...');
-       createdRecords = [];
-       
-       for (let i = 0; i < recordsToProcess.length; i++) {
-         const data = recordsToProcess[i];
-         try {
-           // Extraer clientId si viene del frontend
-           const { clientId, ...restData } = data;
-           
-           const record = await recordsAutoridades.create({
-             ...restData,
-             clientId: clientId || null, // Guardar clientId si existe
-             status: data.status || 'cargado',
-             createdBy: userId
-           });
-           createdRecords.push(record);
-         } catch (e) {
-           console.error(`createAutoridadesRecords - Error creando registro ${i + 1}:`, e);
-           // Continuar con el siguiente
-         }
-       }
-     }
-    
-         console.log('createAutoridadesRecords - Total de registros creados:', createdRecords.length);
-     
-     // Preparar respuesta con información sobre duplicados si los hubo
-     const responseData: any = { 
-       records: createdRecords || [], 
-       count: createdRecords ? createdRecords.length : 0,
-       totalProcessed: recordsData.length
-     };
-     
-     if (duplicateOrders.length > 0) {
-       responseData.duplicates = {
-         count: duplicateOrders.length,
-         orders: duplicateOrders.filter((order, index) => duplicateOrders.indexOf(order) === index)
-       };
-       responseData.message = `Se procesaron ${createdRecords.length} registros válidos. ${duplicateOrders.length} registros duplicados fueron omitidos.`;
-     }
-     
-     return response(res, 201, responseData);
-  } catch (error) {
+    // NOTA: Para gastos de autoridades NO se validan duplicados
+    // Se permite subir el mismo order múltiples veces (re-facturación)
+    console.log('createAutoridadesRecords - Total a procesar:', recordsData.length);
+    console.log('  - SIN validación de duplicados (permitido en autoridades)');
+
+    // Preparar datos para inserción - asegurar que campos requeridos tengan valor
+    const recordsToInsert = recordsData.map(data => {
+      const { clientId, ...restData } = data;
+
+      return {
+        ...restData,
+        // Asegurar que campos requeridos tengan al menos un valor por defecto
+        order: data.order || `AUTO-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        container: data.container || 'N/A',
+        blNumber: data.blNumber || 'N/A',
+        clientId: clientId || null,
+        status: data.status || 'cargado',
+        createdBy: userId
+      };
+    });
+
+    console.log('createAutoridadesRecords - Iniciando inserción de', recordsToInsert.length, 'registros');
+
+    // Inserción masiva - TODOS los registros deben insertarse
+    let createdRecords: any[] = [];
+    let validationErrors: any[] = [];
+
+    try {
+      // Intentar inserción masiva primero
+      createdRecords = await recordsAutoridades.insertMany(recordsToInsert, {
+        ordered: false,
+        rawResult: false
+      });
+      console.log('createAutoridadesRecords - Inserción masiva exitosa:', createdRecords.length);
+    } catch (bulkError: any) {
+      console.log('createAutoridadesRecords - Error en bulk insert:', bulkError.message);
+      console.log('createAutoridadesRecords - Error code:', bulkError.code);
+      console.log('createAutoridadesRecords - Write errors count:', bulkError.writeErrors?.length || 0);
+
+      // Obtener registros que sí se insertaron (si hay)
+      if (bulkError.insertedDocs && bulkError.insertedDocs.length > 0) {
+        createdRecords = bulkError.insertedDocs;
+        console.log('createAutoridadesRecords - Registros insertados parcialmente:', createdRecords.length);
+      }
+
+      // Guardar errores para diagnóstico
+      if (bulkError.writeErrors) {
+        validationErrors = bulkError.writeErrors.map((we: any) => ({
+          index: we.index,
+          message: we.errmsg || we.err?.errmsg || 'Error desconocido'
+        }));
+      }
+
+      // Si no se insertaron registros, intentar uno por uno
+      if (createdRecords.length === 0) {
+        console.log('createAutoridadesRecords - Intentando inserción individual...');
+        for (let i = 0; i < recordsToInsert.length; i++) {
+          try {
+            const record = await recordsAutoridades.create(recordsToInsert[i]);
+            createdRecords.push(record);
+          } catch (e: any) {
+            console.error(`Error en registro ${i}:`, e.message);
+            validationErrors.push({ index: i, message: e.message });
+          }
+        }
+      }
+    }
+
+    console.log('createAutoridadesRecords - Total creados:', createdRecords.length);
+    console.log('createAutoridadesRecords - Total errores:', validationErrors.length);
+
+    // Preparar respuesta con información detallada
+    const responseData: any = {
+      records: createdRecords || [],
+      count: createdRecords.length,
+      totalProcessed: recordsData.length,
+      errors: validationErrors.length > 0 ? {
+        count: validationErrors.length,
+        details: validationErrors.slice(0, 10) // Solo primeros 10 para no saturar
+      } : null,
+      message: createdRecords.length === recordsData.length
+        ? `Se crearon ${createdRecords.length} registros exitosamente.`
+        : `Se crearon ${createdRecords.length} de ${recordsData.length} registros. ${validationErrors.length} errores.`
+    };
+
+    return response(res, 201, responseData);
+  } catch (error: any) {
+    console.error('createAutoridadesRecords - Error fatal:', error);
     return response(res, 500, { error: 'Error al crear registros de autoridades', details: error.message });
   }
 }

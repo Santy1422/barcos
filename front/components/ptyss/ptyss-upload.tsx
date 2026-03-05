@@ -12,10 +12,10 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
-import { 
-  FileText, 
-  Plus, 
-  AlertCircle, 
+import {
+  FileText,
+  Plus,
+  AlertCircle,
   CheckCircle2,
   Ship,
   Database,
@@ -25,12 +25,14 @@ import {
   Loader2,
   Check,
   Send,
-  X
+  X,
+  Search
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { selectCurrentUser, type UserRole } from "@/lib/features/auth/authSlice"
-import { createTruckingRecords, createPTYSSRecords, selectCreatingRecords, selectRecordsError, selectRecordsByModule, fetchRecordsByModule, updateRecordAsync, deleteRecordAsync, type ExcelRecord } from "@/lib/features/records/recordsSlice"
+import { createTruckingRecords, createPTYSSRecords, createPTYSSRecordsAsync, getUploadJobStatus, selectCreatingRecords, selectRecordsError, selectRecordsByModule, fetchRecordsByModule, updateRecordAsync, deleteRecordAsync, type ExcelRecord } from "@/lib/features/records/recordsSlice"
+import { Progress } from "@/components/ui/progress"
 import { 
   selectAllClients,
   createClientAsync,
@@ -88,6 +90,7 @@ interface PTYSSRecordData {
   conductor: string
   numeroChasisPlaca: string
   moveDate: string
+  endDate: string
   notes: string
   totalValue: number
   recordType: "local" | "trasiego" // Campo para identificar registros locales o de trasiego
@@ -115,6 +118,7 @@ const initialRecordData: PTYSSRecordData = {
   conductor: "",
   numeroChasisPlaca: "",
   moveDate: "",
+  endDate: "",
   notes: "",
   totalValue: 0,
   recordType: "local",
@@ -147,7 +151,30 @@ export function PTYSSUpload() {
   const [previewData, setPreviewData] = useState<TruckingExcelData[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  
+
+  // Estado para el procesamiento asíncrono de uploads
+  const [uploadJob, setUploadJob] = useState<{
+    jobId: string | null
+    status: 'idle' | 'pending' | 'processing' | 'completed' | 'failed'
+    progress: number
+    totalRecords: number
+    processedRecords: number
+    createdRecords: number
+    duplicateRecords: number
+    errorRecords: number
+    message: string
+  }>({
+    jobId: null,
+    status: 'idle',
+    progress: 0,
+    totalRecords: 0,
+    processedRecords: 0,
+    createdRecords: 0,
+    duplicateRecords: 0,
+    errorRecords: 0,
+    message: ''
+  })
+
   // Obtener clientes y navieras del store de Redux
   const clients = useAppSelector(selectAllClients)
   const navieras = useAppSelector(selectActiveNavieras)
@@ -174,7 +201,7 @@ export function PTYSSUpload() {
   const ptyssRecords = useAppSelector((state) => selectRecordsByModule(state, "ptyss"))
 
   // Estado para filtro de estado de registros locales
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pendiente' | 'completado' | 'cancelado'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pendiente' | 'en_progreso' | 'completado' | 'cancelado'>('all')
   
   // Estado para filtro por cliente
   const [clientFilter, setClientFilter] = useState<string>('all')
@@ -182,6 +209,9 @@ export function PTYSSUpload() {
   // Estado para filtro por fecha de movimiento
   const [moveDateStart, setMoveDateStart] = useState<string>('')
   const [moveDateEnd, setMoveDateEnd] = useState<string>('')
+
+  // Estado para búsqueda de registros locales
+  const [localRecordSearchTerm, setLocalRecordSearchTerm] = useState<string>('')
 
   // Estado para crear rutas desde registros sin match
   const [showCreateRouteModal, setShowCreateRouteModal] = useState(false)
@@ -233,14 +263,91 @@ export function PTYSSUpload() {
     dispatch(fetchRecordsByModule("ptyss"))
   }, [dispatch])
 
+  // Polling para monitorear el estado del job de upload
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  const pollJobStatus = useCallback(async (jobId: string) => {
+    try {
+      const result = await dispatch(getUploadJobStatus(jobId)).unwrap()
+      console.log("📊 Job status:", result)
+
+      setUploadJob(prev => ({
+        ...prev,
+        status: result.status,
+        progress: result.progress || 0,
+        totalRecords: result.totalRecords || 0,
+        processedRecords: result.processedRecords || 0,
+        createdRecords: result.createdRecords || 0,
+        duplicateRecords: result.duplicateRecords || 0,
+        errorRecords: result.errorRecords || 0,
+        message: result.result?.message || ''
+      }))
+
+      if (result.status === 'completed' || result.status === 'failed') {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current)
+          pollingIntervalRef.current = null
+        }
+
+        if (result.status === 'completed') {
+          toast({
+            title: "Carga completada",
+            description: `${result.createdRecords || 0} registros creados, ${result.duplicateRecords || 0} duplicados, ${result.errorRecords || 0} errores`
+          })
+          setPreviewData([])
+          setSelectedFile(null)
+          dispatch(fetchRecordsByModule("ptyss"))
+        } else {
+          toast({
+            title: "Error en la carga",
+            description: result.result?.message || "Hubo un error procesando los registros",
+            variant: "destructive"
+          })
+        }
+
+        setTimeout(() => {
+          setUploadJob({
+            jobId: null,
+            status: 'idle',
+            progress: 0,
+            totalRecords: 0,
+            processedRecords: 0,
+            createdRecords: 0,
+            duplicateRecords: 0,
+            errorRecords: 0,
+            message: ''
+          })
+        }, 3000)
+      }
+    } catch (error) {
+      console.error("Error polling job status:", error)
+    }
+  }, [dispatch, toast])
+
+  useEffect(() => {
+    if (uploadJob.jobId && (uploadJob.status === 'pending' || uploadJob.status === 'processing')) {
+      pollingIntervalRef.current = setInterval(() => {
+        pollJobStatus(uploadJob.jobId!)
+      }, 2000)
+      pollJobStatus(uploadJob.jobId)
+    }
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+        pollingIntervalRef.current = null
+      }
+    }
+  }, [uploadJob.jobId, uploadJob.status, pollJobStatus])
+
   // Filtrar registros locales (pendientes, completados y cancelados)
   const pendingLocalRecords = useMemo(() => {
     const filtered = ptyssRecords.filter((record: ExcelRecord) => {
       const data = record.data as Record<string, any>
       // Filtrar solo registros locales (tienen recordType = "local")
       // Mostrar pendientes, completados y cancelados (excluir solo los que ya tienen factura)
-      return data.recordType === "local" && 
-             (record.status === "pendiente" || record.status === "completado" || record.status === "cancelado") && 
+      return data.recordType === "local" &&
+             (record.status === "pendiente" || record.status === "en_progreso" || record.status === "completado" || record.status === "cancelado") &&
              !record.invoiceId
     })
     
@@ -265,29 +372,56 @@ export function PTYSSUpload() {
       result = result.filter((record: ExcelRecord) => {
         const data = record.data as Record<string, any>
         const moveDate = data.moveDate
-        
+
         if (!moveDate) return false
-        
+
         const recordDate = new Date(moveDate)
-        
+
         if (moveDateStart) {
           const startDate = new Date(moveDateStart)
           startDate.setHours(0, 0, 0, 0)
           if (recordDate < startDate) return false
         }
-        
+
         if (moveDateEnd) {
           const endDate = new Date(moveDateEnd)
           endDate.setHours(23, 59, 59, 999)
           if (recordDate > endDate) return false
         }
-        
+
         return true
       })
     }
-    
+
+    // Aplicar filtro de búsqueda por texto
+    if (localRecordSearchTerm.trim()) {
+      const searchLower = localRecordSearchTerm.toLowerCase().trim()
+      result = result.filter((record: ExcelRecord) => {
+        const data = record.data as Record<string, any>
+        const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
+        const clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : ""
+
+        // Buscar en múltiples campos
+        const searchableFields = [
+          data.container || "",           // Contenedor
+          data.order || "",               // Orden
+          clientName,                     // Cliente
+          data.from || "",                // Origen
+          data.to || "",                  // Destino
+          data.conductor || "",           // Conductor
+          data.matriculaCamion || "",     // Matrícula camión
+          data.naviera || "",             // Naviera
+          data.operationType || "",       // Tipo de operación
+        ]
+
+        return searchableFields.some(field =>
+          field.toLowerCase().includes(searchLower)
+        )
+      })
+    }
+
     return result
-  }, [ptyssRecords, statusFilter, clientFilter, moveDateStart, moveDateEnd, clients])
+  }, [ptyssRecords, statusFilter, clientFilter, moveDateStart, moveDateEnd, localRecordSearchTerm, clients])
 
   // Función para re-procesar el Excel (simula el handleFileChange pero sin seleccionar archivo)
   const reprocessExcel = useCallback(async () => {
@@ -394,26 +528,32 @@ export function PTYSSUpload() {
   // Función helper para formatear fechas correctamente (evitar problema de zona horaria)
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A'
-    
+
+    let year: number, month: number, day: number
+
     // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
     if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const [year, month, day] = dateString.split('-').map(Number)
-      const date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
-      return date.toLocaleDateString('es-ES')
+      [year, month, day] = dateString.split('-').map(Number)
     }
-    
     // Si la fecha está en formato ISO con zona horaria UTC (ej: 2025-09-09T00:00:00.000+00:00)
     // Extraer solo la parte de la fecha y crear un objeto Date en zona horaria local
-    if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+    else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
       const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
-      const [year, month, day] = datePart.split('-').map(Number)
-      const date = new Date(year, month - 1, day) // Crear en zona horaria local
-      return date.toLocaleDateString('es-ES')
+      ;[year, month, day] = datePart.split('-').map(Number)
     }
-    
     // Para otros formatos, usar el método normal
-    const date = new Date(dateString)
-    if (isNaN(date.getTime())) return 'N/A'
+    else {
+      const date = new Date(dateString)
+      if (isNaN(date.getTime())) return 'N/A'
+      year = date.getFullYear()
+      month = date.getMonth() + 1
+      day = date.getDate()
+    }
+
+    // Year validation to prevent year 40000 issue
+    if (year < 1900 || year > 2100) return 'N/A'
+
+    const date = new Date(year, month - 1, day)
     return date.toLocaleDateString('es-ES')
   }
 
@@ -435,9 +575,9 @@ export function PTYSSUpload() {
           const data = await response.json()
           const services = data.data?.services || []
           
-          // Filtrar solo los servicios locales fijos
-          const fixedServices = services.filter((service: any) => 
-            ['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)
+          // Filtrar solo los servicios locales fijos (FDA codes)
+          const fixedServices = services.filter((service: any) =>
+            ['FDA263', 'FDA047', 'FDA059'].includes(service.code)
           )
           
           setLocalServices(fixedServices)
@@ -997,8 +1137,9 @@ export function PTYSSUpload() {
     // Verificar que el cliente tenga rutas locales asociadas
     const clientRoutes = getLocalRoutesByRealClientId(currentRecord.clientId)
     
-    if (!currentRecord.clientId || !currentRecord.order || !currentRecord.container || !currentRecord.naviera || 
-        !currentRecord.localRouteId || !currentRecord.operationType || !currentRecord.containerSize || 
+    // Nota: El campo contenedor es opcional para exportaciones donde no se conoce hasta el retiro del puerto
+    if (!currentRecord.clientId || !currentRecord.order || !currentRecord.naviera ||
+        !currentRecord.localRouteId || !currentRecord.operationType || !currentRecord.containerSize ||
         !currentRecord.containerType || !currentRecord.conductor) {
       toast({
         title: "Error",
@@ -1154,32 +1295,33 @@ export function PTYSSUpload() {
       return localService?.price || 10 // Fallback a $10 si no se encuentra
     }
     
-    // Calcular servicios locales basados en la configuración
-    // TI (CLG097) - precio fijo
-    if (record.ti === 'si') {
-      total += getServicePrice('CLG097')
-    }
-    
-    // Estadia (TRK179) - precio fijo
-    if (record.estadia === 'si') {
-      total += getServicePrice('TRK179')
-    }
-    
-    // Retencion (TRK163) - precio por día después del tercer día
-    if (record.retencion && parseFloat(record.retencion) > 0) {
-      const dias = parseFloat(record.retencion)
-      if (dias > 3) {
-        const diasCobrables = dias - 3 // Solo cobrar días después del tercero
-        total += getServicePrice('TRK163') * diasCobrables
+    // Calcular servicios locales FDA (montos manuales)
+    // FDA263 - monto manual (ti)
+    if (record.ti && record.ti !== 'no') {
+      const amount = parseFloat(record.ti)
+      if (!isNaN(amount) && amount > 0) {
+        total += amount
       }
-      // Si son 3 días o menos, no se cobra nada
     }
-    
-    // Genset (SLR168) - precio por día
+
+    // FDA047 - monto manual (estadia)
+    if (record.estadia && record.estadia !== 'no') {
+      const amount = parseFloat(record.estadia)
+      if (!isNaN(amount) && amount > 0) {
+        total += amount
+      }
+    }
+
+    // FDA059 - monto manual (retencion)
+    if (record.retencion && parseFloat(record.retencion) > 0) {
+      total += parseFloat(record.retencion)
+    }
+
+    // Genset - monto manual
     if (record.genset && parseFloat(record.genset) > 0) {
-      total += getServicePrice('SLR168') * parseFloat(record.genset)
+      total += parseFloat(record.genset)
     }
-    
+
     // Agregar pesaje directamente (monto fijo)
     if (record.pesaje) total += parseFloat(record.pesaje) || 0
     
@@ -1609,105 +1751,46 @@ export function PTYSSUpload() {
       console.log("=== DATOS A GUARDAR ===")
       console.log("Primer registro completo:", recordsData[0])
       console.log("ContainerConsecutive del primer registro:", recordsData[0]?.data?.containerConsecutive)
-      console.log("Todos los containerConsecutive:", recordsData.map(r => r.data.containerConsecutive))
       console.log("Records data preparado:", recordsData)
-      console.log("Payload a enviar:", {
+
+      // Usar versión asíncrona para evitar timeouts en cargas grandes
+      const result = await dispatch(createPTYSSRecordsAsync({
         excelId: tempObjectId,
         recordsData
-      })
-      
-      const result = await dispatch(createPTYSSRecords({
-        excelId: tempObjectId, // Use the generated ObjectId
-        recordsData
       })).unwrap()
-      
-      console.log("=== RESULTADO DEL GUARDADO ===")
+
+      console.log("=== JOB CREADO ===")
       console.log("Result:", result)
-      console.log("Result.count:", result.count)
-      console.log("Result.duplicates:", result.duplicates)
-      console.log("Result.records:", result.records)
-      console.log("Result.totalProcessed:", result.totalProcessed)
-      console.log("Result completo (JSON):", JSON.stringify(result, null, 2))
-      
-      // Manejar respuesta con información de duplicados (igual que Trucking)
-      let successMessage = ""
-      
-      // Obtener el conteo de registros creados de diferentes formas posibles
-      let recordsCreated = 0
-      if (typeof result.count === 'number') {
-        recordsCreated = result.count
-      } else if (Array.isArray(result.records)) {
-        recordsCreated = result.records.length
-      } else if (Array.isArray(result)) {
-        recordsCreated = result.length
-      }
-      
-      console.log("=== PROCESANDO MENSAJE ===")
-      console.log("recordsCreated:", recordsCreated)
-      console.log("result.duplicates:", result.duplicates)
-      console.log("result.duplicates?.count:", result.duplicates?.count)
-      console.log("previewData.length:", previewData.length)
-      console.log("matchedRecords.length:", matchedRecords.length)
-      
-      // Manejar diferentes casos de respuesta
-      if (result.duplicates && result.duplicates.count > 0) {
-        // Caso con duplicados (puede haber 0 o más registros nuevos guardados)
-        if (recordsCreated === 0) {
-          // Todos eran duplicados
-          successMessage = `Todos los registros ya existen en la base de datos. 0 registros nuevos guardados, ${result.duplicates.count} duplicados omitidos.`
-          console.log("Caso 1: Todos duplicados - Mensaje:", successMessage)
-        } else {
-          // Algunos duplicados, algunos nuevos
-          successMessage = `${recordsCreated} registros nuevos guardados. ${result.duplicates.count} registros duplicados omitidos (ya existían en DB).`
-          console.log("Caso 2: Parcialmente duplicados - Mensaje:", successMessage)
-        }
-        if (result.duplicates.containerConsecutives) {
-          console.log("ContainerConsecutives duplicados:", result.duplicates.containerConsecutives)
-        }
-      } else if (recordsCreated > 0) {
-        // Sin duplicados, registros guardados exitosamente
-        const omittedCount = previewData.length - matchedRecords.length
-        if (omittedCount > 0) {
-          successMessage = `${recordsCreated} registros guardados correctamente (${omittedCount} sin match omitidos)`
-        } else {
-          successMessage = `${recordsCreated} registros guardados correctamente`
-        }
-        console.log("Caso 3: Sin duplicados - Mensaje:", successMessage)
+
+      if (result.jobId) {
+        setUploadJob({
+          jobId: result.jobId,
+          status: 'pending',
+          progress: 0,
+          totalRecords: result.totalRecords || recordsData.length,
+          processedRecords: 0,
+          createdRecords: 0,
+          duplicateRecords: 0,
+          errorRecords: 0,
+          message: 'Procesamiento iniciado...'
+        })
+
+        toast({
+          title: "Procesamiento iniciado",
+          description: `Se están procesando ${recordsData.length} registros. Puedes ver el progreso en la barra.`
+        })
       } else {
-        // No se guardó nada y no hay información de duplicados
-        successMessage = "No se guardaron registros. Verifica la consola para más detalles."
-        console.log("Caso 4: Sin guardar y sin info de duplicados - Mensaje:", successMessage)
+        throw new Error("No se recibió jobId del servidor")
       }
-      
-      console.log("Mensaje final:", successMessage)
-      
-      // Determinar el título del toast según el resultado
-      const toastTitle = recordsCreated > 0 ? "Éxito" : "Información"
-      const toastVariant = recordsCreated === 0 && result.duplicates ? "default" : undefined
-      
-      toast({
-        title: toastTitle,
-        description: successMessage,
-        variant: toastVariant
-      })
-      
-      // Limpiar el estado
-      setPreviewData([])
-      setSelectedFile(null)
-      setMatchFilter('all')
-      setClientCompleteness(new Map())
-      
+
     } catch (error: any) {
       console.error("❌ Error al guardar registros PTYSS:", error)
-      console.error("❌ Error completo:", JSON.stringify(error, null, 2))
-      console.error("❌ Error.message:", error?.message)
-      console.error("❌ recordsError:", recordsError)
-      
       toast({
         title: "Error al guardar",
-        description: error?.message || recordsError || "Error al guardar los registros. Revisa la consola para más detalles.",
+        description: error?.message || recordsError || "Error al guardar los registros.",
         variant: "destructive"
       })
+      setUploadJob(prev => ({ ...prev, status: 'idle' }))
     } finally {
       setIsLoading(false)
     }
@@ -1896,12 +1979,37 @@ export function PTYSSUpload() {
           <CardContent>
             {/* Filtros */}
             <div className="space-y-4 mb-4">
+              {/* Campo de búsqueda */}
+              <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border">
+                <Label htmlFor="local-record-search" className="text-sm font-medium whitespace-nowrap">Buscar:</Label>
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="local-record-search"
+                    placeholder="Buscar por contenedor, cliente, orden, ruta..."
+                    value={localRecordSearchTerm}
+                    onChange={(e) => setLocalRecordSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                {localRecordSearchTerm && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setLocalRecordSearchTerm('')}
+                    className="h-8 w-8 p-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+
               {/* Filtros de Estado y Cliente en la misma fila */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Filtro de Estado */}
                 <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border">
                   <Label htmlFor="status-filter" className="text-sm font-medium whitespace-nowrap">Filtrar por estado:</Label>
-                  <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as 'all' | 'pendiente' | 'completado' | 'cancelado')}>
+                  <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as 'all' | 'pendiente' | 'en_progreso' | 'completado' | 'cancelado')}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Seleccionar estado" />
                     </SelectTrigger>
@@ -1916,6 +2024,12 @@ export function PTYSSUpload() {
                         Pendientes ({ptyssRecords.filter((r: ExcelRecord) => {
                           const data = r.data as Record<string, any>
                           return data.recordType === "local" && r.status === "pendiente" && !r.invoiceId
+                        }).length})
+                      </SelectItem>
+                      <SelectItem value="en_progreso">
+                        En Progreso ({ptyssRecords.filter((r: ExcelRecord) => {
+                          const data = r.data as Record<string, any>
+                          return data.recordType === "local" && r.status === "en_progreso" && !r.invoiceId
                         }).length})
                       </SelectItem>
                       <SelectItem value="completado">
@@ -1986,9 +2100,9 @@ export function PTYSSUpload() {
                 </div>
               </div>
               
-              {/* Filtro por Fecha de Movimiento */}
+              {/* Filtro por Fecha Inicial */}
               <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border">
-                <Label htmlFor="move-date-start" className="text-sm font-medium whitespace-nowrap">Filtrar por fecha de movimiento:</Label>
+                <Label htmlFor="move-date-start" className="text-sm font-medium whitespace-nowrap">Filtrar por Fecha Inicial:</Label>
                 <div className="flex items-center gap-2">
                   <Input
                     id="move-date-start"
@@ -2024,16 +2138,17 @@ export function PTYSSUpload() {
               </div>
               
               {/* Botón para limpiar todos los filtros */}
-              {(statusFilter !== 'all' || clientFilter !== 'all' || moveDateStart || moveDateEnd) && (
+              {(statusFilter !== 'all' || clientFilter !== 'all' || moveDateStart || moveDateEnd || localRecordSearchTerm) && (
                 <div className="flex justify-end">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => {
                       setStatusFilter('all')
                       setClientFilter('all')
                       setMoveDateStart('')
                       setMoveDateEnd('')
+                      setLocalRecordSearchTerm('')
                     }}
                     className="text-xs"
                   >
@@ -2052,7 +2167,7 @@ export function PTYSSUpload() {
                     <TableHead className="font-semibold">Orden</TableHead>
                     <TableHead className="font-semibold">Ruta</TableHead>
                     <TableHead className="font-semibold">Operación</TableHead>
-                    <TableHead className="font-semibold">Fecha Movimiento</TableHead>
+                    <TableHead className="font-semibold">Fecha Inicial</TableHead>
                     <TableHead className="font-semibold">Estado</TableHead>
                     <TableHead className="font-semibold text-center">Acciones</TableHead>
                   </TableRow>
@@ -2425,7 +2540,7 @@ export function PTYSSUpload() {
               <h3 className="text-lg font-medium">Información del Contenedor</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="container">Contenedor *</Label>
+                  <Label htmlFor="container">Contenedor (opcional en exportación)</Label>
                   <Input
                     id="container"
                     value={currentRecord.container}
@@ -2439,7 +2554,6 @@ export function PTYSSUpload() {
                     maxLength={11}
                     pattern="[A-Z0-9]+"
                     title="Solo letras y números, máximo 11 caracteres"
-                    required
                   />
                 </div>
                 
@@ -2615,16 +2729,16 @@ export function PTYSSUpload() {
               <h3 className="text-lg font-medium">Servicios Adicionales</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="estadia">Estadia</Label>
-                  <Select value={currentRecord.estadia} onValueChange={(value) => setCurrentRecord({...currentRecord, estadia: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="si">Sí</SelectItem>
-                      <SelectItem value="no">No</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="estadia">Estadia ($)</Label>
+                  <Input
+                    id="estadia"
+                    type="number"
+                    value={currentRecord.estadia}
+                    onChange={(e) => setCurrentRecord({...currentRecord, estadia: e.target.value})}
+                    placeholder="Ingrese monto (0 si no aplica)"
+                    min="0"
+                    step="0.01"
+                  />
                 </div>
                 
                 <div className="space-y-2">
@@ -2667,16 +2781,16 @@ export function PTYSSUpload() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="ti">TI</Label>
-                  <Select value={currentRecord.ti} onValueChange={(value) => setCurrentRecord({...currentRecord, ti: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="si">Sí</SelectItem>
-                      <SelectItem value="no">No</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="ti">TI ($)</Label>
+                  <Input
+                    id="ti"
+                    type="number"
+                    value={currentRecord.ti}
+                    onChange={(e) => setCurrentRecord({...currentRecord, ti: e.target.value})}
+                    placeholder="Ingrese monto (0 si no aplica)"
+                    min="0"
+                    step="0.01"
+                  />
                 </div>
               </div>
             </div>
@@ -2719,7 +2833,7 @@ export function PTYSSUpload() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="moveDate">Fecha de Movimiento</Label>
+                  <Label htmlFor="moveDate">Fecha Inicial</Label>
                   <Input
                     id="moveDate"
                     type="date"
@@ -2727,11 +2841,21 @@ export function PTYSSUpload() {
                     onChange={(e) => setCurrentRecord({...currentRecord, moveDate: e.target.value})}
                   />
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="endDate">Fecha Fin</Label>
+                  <Input
+                    id="endDate"
+                    type="date"
+                    value={currentRecord.endDate}
+                    onChange={(e) => setCurrentRecord({...currentRecord, endDate: e.target.value})}
+                  />
+                </div>
               </div>
             </div>
-            
+
             <Separator />
-            
+
             {/* Notas */}
             <div className="space-y-4">
               <h3 className="text-lg font-medium">Notas Adicionales</h3>
@@ -2863,13 +2987,16 @@ export function PTYSSUpload() {
                     const clientName = record.associate?.trim()
                     const clientStatus = clientName ? clientCompleteness.get(clientName) : null
                     const isClickable = record.isMatched && clientStatus && !clientStatus.isComplete
-                    
+
                     // Verificar si este containerConsecutive está duplicado en el Excel
                     const isDuplicate = record.containerConsecutive && duplicateContainerConsecutives.includes(record.containerConsecutive)
-                    
+
+                    // Key único basado en containerConsecutive y container
+                    const uniqueKey = `${record.containerConsecutive || ''}-${record.container || ''}-${index}`
+
                     return (
-                      <TableRow 
-                        key={index}
+                      <TableRow
+                        key={uniqueKey}
                         className={isDuplicate ? 'bg-red-50' : ''}
                       >
                         {/* Cliente */}
@@ -3061,9 +3188,9 @@ export function PTYSSUpload() {
                 })()}
               </div>
               
-              <Button 
+              <Button
                 onClick={handleUpload}
-                disabled={isLoading || isCreatingRecords || !areAllClientsComplete() || previewData.filter(record => !record.isMatched).length > 0}
+                disabled={isLoading || isCreatingRecords || !areAllClientsComplete() || previewData.filter(record => !record.isMatched).length > 0 || uploadJob.status === 'pending' || uploadJob.status === 'processing'}
                 className={`${areAllClientsComplete() && previewData.filter(record => !record.isMatched).length === 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
               >
                 {isLoading || isCreatingRecords ? (
@@ -3076,6 +3203,54 @@ export function PTYSSUpload() {
                 )}
               </Button>
             </div>
+
+            {/* Barra de progreso para carga asíncrona */}
+            {(uploadJob.status === 'pending' || uploadJob.status === 'processing') && (
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                    <span className="text-sm font-medium text-blue-700">
+                      {uploadJob.status === 'pending' ? 'Iniciando procesamiento...' : 'Procesando registros...'}
+                    </span>
+                  </div>
+                  <span className="text-sm text-blue-600 font-mono">{uploadJob.progress}%</span>
+                </div>
+                <Progress value={uploadJob.progress} className="h-2 bg-blue-100" />
+                <div className="mt-2 flex justify-between text-xs text-blue-600">
+                  <span>{uploadJob.processedRecords} de {uploadJob.totalRecords} procesados</span>
+                  <span>
+                    {uploadJob.createdRecords > 0 && `${uploadJob.createdRecords} creados`}
+                    {uploadJob.duplicateRecords > 0 && ` · ${uploadJob.duplicateRecords} duplicados`}
+                    {uploadJob.errorRecords > 0 && ` · ${uploadJob.errorRecords} errores`}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {uploadJob.status === 'completed' && (
+              <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  <span className="text-sm font-medium text-green-700">Carga completada</span>
+                </div>
+                <p className="mt-1 text-sm text-green-600">
+                  {uploadJob.createdRecords} registros creados
+                  {uploadJob.duplicateRecords > 0 && `, ${uploadJob.duplicateRecords} duplicados omitidos`}
+                  {uploadJob.errorRecords > 0 && `, ${uploadJob.errorRecords} errores`}
+                </p>
+              </div>
+            )}
+
+            {uploadJob.status === 'failed' && (
+              <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-5 w-5 text-red-600" />
+                  <span className="text-sm font-medium text-red-700">Error en la carga</span>
+                </div>
+                <p className="mt-1 text-sm text-red-600">{uploadJob.message || 'Hubo un error al procesar los registros'}</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

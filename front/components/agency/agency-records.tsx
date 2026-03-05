@@ -9,11 +9,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { 
-  Car, Search, Eye, FileText, Calendar, 
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Car, Search, Eye, FileText, Calendar,
   User, Loader2, Trash2, Edit, RefreshCw, MapPin, ArrowRight, Paperclip,
-  Clock, Save, X, Ship, Users, Plane, Building, Plus, CheckCircle, AlertTriangle
+  Clock, Save, X, Ship, Users, Plane, Building, Plus, CheckCircle, AlertTriangle, ChevronDown, SearchX, FileX
 } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { TimeInput } from "@/components/ui/time-input"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
@@ -62,13 +71,38 @@ export function AgencyRecords() {
     findRouteByLocations
   } = useAgencyRoutes()
 
+  // Status options for multi-select
+  const statusOptions = [
+    { value: 'pending', label: 'Pending' },
+    { value: 'tentative', label: 'Tentative' },
+    { value: 'in_progress', label: 'In Progress' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'prefacturado', label: 'Prefacturado' },
+    { value: 'facturado', label: 'Facturado' },
+    { value: 'cancelled', label: 'Cancelled' },
+  ]
+
   // Local state
   const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [clientFilter, setClientFilter] = useState("all")
   const [vesselFilter, setVesselFilter] = useState("")
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
   const [selectedService, setSelectedService] = useState<any>(null)
-  
+
+  // Column filters
+  const [dateFilter, setDateFilter] = useState("")
+  const [crewFilter, setCrewFilter] = useState("")
+  const [routeFilter, setRouteFilter] = useState("")
+  const [moveTypeFilter, setMoveTypeFilter] = useState("all")
+  const [flightFilter, setFlightFilter] = useState("")
+  const [commentsFilter, setCommentsFilter] = useState("")
+  const [transportFilter, setTransportFilter] = useState("")
+
+  // Waiting Time Reasons catalog
+  const [waitingTimeReasons, setWaitingTimeReasons] = useState<Array<{_id: string; name: string; description?: string}>>([])
+
   // Edit modal state
   const [editFormData, setEditFormData] = useState({
     // Basic service info
@@ -92,6 +126,7 @@ export function AgencyRecords() {
     
     // Service details
     waitingTime: 0,
+    waitingTimeReason: '',
     comments: '',
     
     // Crew members (new structure)
@@ -115,12 +150,33 @@ export function AgencyRecords() {
   })
   const [editFormErrors, setEditFormErrors] = useState<Record<string, string>>({})
 
-  // Load services and catalogs on component mount
+  // Load catalogs on component mount (services are loaded by the filters useEffect)
   useEffect(() => {
-    fetchServices({ page: 1, limit: 20 })
     fetchGroupedCatalogs()
     fetchActiveRoutes()
-  }, [fetchServices, fetchGroupedCatalogs, fetchActiveRoutes])
+  }, [fetchGroupedCatalogs, fetchActiveRoutes])
+
+  // Fetch waiting time reasons from API
+  useEffect(() => {
+    const fetchWaitingTimeReasons = async () => {
+      try {
+        const token = localStorage.getItem('token')
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/local-services?module=agency&category=waitingTimeReasons`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setWaitingTimeReasons(data.data?.services || [])
+        }
+      } catch (error) {
+        console.error('Error fetching waiting time reasons:', error)
+      }
+    }
+    fetchWaitingTimeReasons()
+  }, [])
 
   // Load service data when edit modal opens
   useEffect(() => {
@@ -162,6 +218,7 @@ export function AgencyRecords() {
         
         // Service details
         waitingTime: waitingTimeInHours,
+        waitingTimeReason: selectedService.waitingTimeReason || '',
         comments: selectedService.comments || '',
         
         // Crew members (new structure)
@@ -179,20 +236,19 @@ export function AgencyRecords() {
     }
   }, [modals?.showEditModal, selectedService])
 
+  // Check if any column filter is active (requires all data loaded)
+  const hasColumnFilters = !!(dateFilter || crewFilter || routeFilter || moveTypeFilter !== "all" || flightFilter || commentsFilter || transportFilter)
+
   // Apply filters
   useEffect(() => {
     const filterObj: any = {}
-    
+
     if (searchTerm) {
       filterObj.search = searchTerm
     }
-    if (statusFilter !== "all") {
-      // If filtering by "completed", include prefacturado, facturado and nota_de_credito as well
-      if (statusFilter === "completed") {
-        filterObj.statusIn = ['completed', 'prefacturado', 'facturado', 'nota_de_credito']
-      } else {
-        filterObj.status = statusFilter
-      }
+    if (statusFilter.length > 0) {
+      // Use statusIn for multiple status filter
+      filterObj.statusIn = statusFilter
     }
     if (clientFilter !== "all") {
       filterObj.clientId = clientFilter
@@ -200,19 +256,134 @@ export function AgencyRecords() {
     if (vesselFilter) {
       filterObj.vessel = vesselFilter
     }
+    if (startDate) {
+      filterObj.startDate = startDate
+    }
+    if (endDate) {
+      // Set end of day for the endDate so it includes the full day
+      filterObj.endDate = endDate + 'T23:59:59.999Z'
+    }
 
     setFilters(filterObj)
-    fetchServices({ page: 1, limit: 20, filters: filterObj })
-  }, [searchTerm, statusFilter, clientFilter, vesselFilter, setFilters, fetchServices])
+    // When column filters are active, load all records to filter client-side
+    const limit = hasColumnFilters ? 500 : 20
+    fetchServices({ page: 1, limit, filters: filterObj })
+  }, [searchTerm, statusFilter, clientFilter, vesselFilter, startDate, endDate, hasColumnFilters, setFilters, fetchServices])
 
   const handleClearFilters = () => {
     setSearchTerm("")
-    setStatusFilter("all")
+    setStatusFilter([])
     setClientFilter("all")
     setVesselFilter("")
+    setStartDate("")
+    setEndDate("")
+    setDateFilter("")
+    setCrewFilter("")
+    setRouteFilter("")
+    setMoveTypeFilter("all")
+    setFlightFilter("")
+    setCommentsFilter("")
+    setTransportFilter("")
     clearFilters()
     fetchServices({ page: 1, limit: 20 })
   }
+
+  // Safe string conversion for filtering - handles numbers, objects, arrays, etc.
+  const toStr = (val: any): string => {
+    if (val == null) return ''
+    if (typeof val === 'string') return val
+    return String(val)
+  }
+
+  // Client-side filtering for column filters
+  const filteredServices = (services && Array.isArray(services) ? services : []).filter((service) => {
+    if (!service) return false
+
+    try {
+      // Global search
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase()
+        const matchesSearch =
+          (service.crewMembers?.some((m: any) => toStr(m?.name).toLowerCase().includes(term))) ||
+          toStr(service.crewName).toLowerCase().includes(term) ||
+          toStr(service.vessel).toLowerCase().includes(term) ||
+          toStr(service.pickupLocation).toLowerCase().includes(term) ||
+          toStr(service.dropoffLocation).toLowerCase().includes(term)
+        if (!matchesSearch) return false
+      }
+
+      // Status filter (multi-select)
+      if (statusFilter.length > 0 && !statusFilter.includes(service.status)) return false
+
+      // Vessel filter
+      if (vesselFilter && !toStr(service.vessel).toLowerCase().includes(vesselFilter.toLowerCase())) return false
+
+      // Date filter
+      if (dateFilter) {
+        const dateStr = (formatSafeDate(service.pickupDate) || '').toLowerCase()
+        const timeStr = toStr(service.pickupTime).toLowerCase()
+        if (!dateStr.includes(dateFilter.toLowerCase()) && !timeStr.includes(dateFilter.toLowerCase())) return false
+      }
+
+      // Crew filter
+      if (crewFilter) {
+        const term = crewFilter.toLowerCase()
+        const matchesCrew =
+          service.crewMembers?.some((m: any) =>
+            toStr(m?.name).toLowerCase().includes(term) ||
+            toStr(m?.crewRank).toLowerCase().includes(term) ||
+            toStr(m?.nationality).toLowerCase().includes(term)
+          ) ||
+          toStr(service.crewName).toLowerCase().includes(term)
+        if (!matchesCrew) return false
+      }
+
+      // Route filter
+      if (routeFilter) {
+        const term = routeFilter.toLowerCase()
+        if (
+          !toStr(service.pickupLocation).toLowerCase().includes(term) &&
+          !toStr(service.dropoffLocation).toLowerCase().includes(term) &&
+          !toStr(service.returnDropoffLocation).toLowerCase().includes(term)
+        ) return false
+      }
+
+      // Move type filter
+      if (moveTypeFilter !== "all" && service.moveType !== moveTypeFilter) return false
+
+      // Flight filter
+      if (flightFilter) {
+        const term = flightFilter.toLowerCase()
+        const matchesFlight = service.crewMembers?.some((m: any) =>
+          toStr(m?.flight).toLowerCase().includes(term)
+        )
+        if (!matchesFlight) return false
+      }
+
+      // Comments filter
+      if (commentsFilter) {
+        const term = commentsFilter.toLowerCase()
+        if (
+          !toStr(service.comments).toLowerCase().includes(term) &&
+          !toStr(service.notes).toLowerCase().includes(term)
+        ) return false
+      }
+
+      // Transport/Driver filter
+      if (transportFilter) {
+        const term = transportFilter.toLowerCase()
+        if (
+          !toStr(service.transportCompany).toLowerCase().includes(term) &&
+          !toStr(service.driver).toLowerCase().includes(term)
+        ) return false
+      }
+
+      return true
+    } catch (error) {
+      console.error('Error filtering service:', service._id, error)
+      return true // Include the service if filtering fails
+    }
+  })
 
   const handleStatusChange = async (serviceId: string, newStatus: string) => {
     try {
@@ -546,6 +717,7 @@ export function AgencyRecords() {
           
           // Service details
           waitingTime: waitingTimeInMinutes, // Guardar en minutos (backend espera minutos)
+          waitingTimeReason: editFormData.waitingTimeReason,
           comments: editFormData.comments,
           
           // Crew members (new structure)
@@ -579,6 +751,8 @@ export function AgencyRecords() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
+      case 'tentative':
+        return 'bg-purple-100 text-purple-800'
       case 'pending':
         return 'bg-yellow-100 text-yellow-800'
       case 'in_progress':
@@ -597,15 +771,20 @@ export function AgencyRecords() {
 
   const getStatusLabel = (status: string) => {
     switch (status) {
+      case 'tentative':
+        return 'Tentative'
       case 'pending':
         return 'Pending'
       case 'in_progress':
         return 'In Progress'
       case 'completed':
-      case 'prefacturado':
-      case 'facturado':
-      case 'nota_de_credito':
         return 'Completed'
+      case 'prefacturado':
+        return 'Prefacturado'
+      case 'facturado':
+        return 'Facturado'
+      case 'nota_de_credito':
+        return 'Nota de Crédito'
       case 'cancelled':
         return 'Cancelled'
       default:
@@ -615,30 +794,41 @@ export function AgencyRecords() {
 
   const formatSafeDate = (dateValue: any) => {
     if (!dateValue) return 'N/A'
-    
+
     try {
+      let year: number, month: number, day: number
+
       // Si ya es una fecha válida
       if (dateValue instanceof Date && !isNaN(dateValue.getTime())) {
+        year = dateValue.getFullYear()
+        // Validate year is within reasonable range (1900-2100)
+        if (year < 1900 || year > 2100) return 'N/A'
         return format(dateValue, 'MMM dd, yyyy')
       }
-      
+
       // Si es string, extraer solo la parte de fecha para evitar cambios de zona horaria
       if (typeof dateValue === 'string') {
         const dateOnly = dateValue.split('T')[0] // Extraer solo la parte de fecha
-        const [year, month, day] = dateOnly.split('-')
-        const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+        ;[year, month, day] = dateOnly.split('-').map(Number)
+        // Validate year is within reasonable range (1900-2100)
+        if (year < 1900 || year > 2100) return 'N/A'
+        const date = new Date(year, month - 1, day)
         return format(date, 'MMM dd, yyyy')
       }
-      
+
       // Si es otro tipo, intentar parsearlo
       const date = new Date(dateValue)
       if (isNaN(date.getTime())) {
-        return 'Invalid Date'
+        return 'N/A'
       }
-      
+
+      // Validate year is within reasonable range (1900-2100)
+      year = date.getFullYear()
+      if (year < 1900 || year > 2100) return 'N/A'
+
       return format(date, 'MMM dd, yyyy')
     } catch (error) {
-      return 'Invalid Date'
+      return 'N/A'
     }
   }
 
@@ -672,11 +862,19 @@ export function AgencyRecords() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-6">
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold">{totalServices || 0}</div>
             <p className="text-xs text-muted-foreground">Total Services</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold text-purple-600">
+              {services && Array.isArray(services) ? services.filter(s => s?.status === 'tentative').length : 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Tentative</p>
           </CardContent>
         </Card>
         <Card>
@@ -713,42 +911,58 @@ export function AgencyRecords() {
         </Card>
       </div>
 
-      {/* Filters */}
+      {/* Global Search & Filters */}
       <Card>
-        <CardContent className="p-4">
-          <div className="grid gap-4 md:grid-cols-5">
-            <div className="relative">
+        <CardContent className="p-4 space-y-3">
+          <div className="flex gap-4 items-center">
+            <div className="relative flex-1">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search crew, vessel..."
+                placeholder="Search crew, vessel, location..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-8"
               />
             </div>
-            
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="in_progress">In Progress</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Input
-              placeholder="Filter by vessel..."
-              value={vesselFilter}
-              onChange={(e) => setVesselFilter(e.target.value)}
-            />
 
             <Button variant="outline" onClick={handleClearFilters}>
               Clear Filters
             </Button>
+          </div>
+
+          {/* Date Range Filter */}
+          <div className="flex gap-4 items-center">
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-medium whitespace-nowrap">Date Range:</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-40"
+                placeholder="From"
+              />
+              <span className="text-sm text-muted-foreground">to</span>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-40"
+                min={startDate || undefined}
+                placeholder="To"
+              />
+            </div>
+            {(startDate || endDate) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setStartDate(""); setEndDate("") }}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -756,39 +970,221 @@ export function AgencyRecords() {
       {/* Services Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Services ({services && Array.isArray(services) ? services.length : 0})</CardTitle>
+          <CardTitle>Services ({filteredServices.length})</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Crew</TableHead>
-                  <TableHead>Vessel</TableHead>
-                  <TableHead>Route</TableHead>
-                  <TableHead>Move Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="hidden md:table-cell">Notes</TableHead>
-                  <TableHead>Actions</TableHead>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Date</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Crew</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Vessel</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Route</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Move Type</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Flight</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Comments</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Transport</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Status</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Actions</TableHead>
+                </TableRow>
+                <TableRow className="border-b bg-background">
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter date..."
+                      value={dateFilter}
+                      onChange={(e) => setDateFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
+                  </TableHead>
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter crew..."
+                      value={crewFilter}
+                      onChange={(e) => setCrewFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
+                  </TableHead>
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter vessel..."
+                      value={vesselFilter}
+                      onChange={(e) => setVesselFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
+                  </TableHead>
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter route..."
+                      value={routeFilter}
+                      onChange={(e) => setRouteFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
+                  </TableHead>
+                  <TableHead className="py-1.5 px-2">
+                    <Select value={moveTypeFilter} onValueChange={setMoveTypeFilter}>
+                      <SelectTrigger className="h-7 text-xs bg-muted/30 border-dashed">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All</SelectItem>
+                        <SelectItem value="SINGLE">Single</SelectItem>
+                        <SelectItem value="RT">Round Trip</SelectItem>
+                        <SelectItem value="INTERNAL">Internal</SelectItem>
+                        <SelectItem value="BAGS_CLAIM">Bags Claim</SelectItem>
+                        <SelectItem value="DOCUMENTATION">Documentation</SelectItem>
+                        <SelectItem value="NO_SHOW">No Show</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </TableHead>
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter flight..."
+                      value={flightFilter}
+                      onChange={(e) => setFlightFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
+                  </TableHead>
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter..."
+                      value={commentsFilter}
+                      onChange={(e) => setCommentsFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
+                  </TableHead>
+                  <TableHead className="py-1.5 px-2">
+                    <Input
+                      placeholder="Filter..."
+                      value={transportFilter}
+                      onChange={(e) => setTransportFilter(e.target.value)}
+                      className="h-7 text-xs bg-muted/30 border-dashed"
+                    />
+                  </TableHead>
+                  <TableHead className="py-1.5 px-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="h-7 text-xs bg-muted/30 border-dashed w-full justify-between font-normal"
+                        >
+                          {statusFilter.length === 0
+                            ? "All"
+                            : statusFilter.length === 1
+                            ? statusOptions.find(s => s.value === statusFilter[0])?.label
+                            : `${statusFilter.length} selected`}
+                          <ChevronDown className="ml-1 h-3 w-3 opacity-50" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-48" align="start">
+                        <DropdownMenuLabel className="text-xs flex items-center justify-between">
+                          Filter by Status
+                          {statusFilter.length > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 px-1 text-xs"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                setStatusFilter([])
+                              }}
+                            >
+                              Clear
+                            </Button>
+                          )}
+                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {statusOptions.map((option) => (
+                          <DropdownMenuCheckboxItem
+                            key={option.value}
+                            checked={statusFilter.includes(option.value)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setStatusFilter([...statusFilter, option.value])
+                              } else {
+                                setStatusFilter(statusFilter.filter(s => s !== option.value))
+                              }
+                            }}
+                            onSelect={(e) => e.preventDefault()}
+                          >
+                            {option.label}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableHead>
+                  <TableHead className="py-1.5 px-2" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={`skeleton-${index}`}>
+                      <TableCell><Skeleton className="h-5 w-20" /><Skeleton className="h-4 w-16 mt-1" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-28" /><Skeleton className="h-4 w-20 mt-1" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-24 rounded-full" /></TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Skeleton className="h-8 w-8" />
+                          <Skeleton className="h-8 w-8" />
+                          <Skeleton className="h-8 w-8" />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : filteredServices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
-                      <Loader2 className="h-4 w-4 animate-spin mx-auto" />
-                      Loading services...
-                    </TableCell>
-                  </TableRow>
-                ) : !services || !Array.isArray(services) || services.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
-                      No services found
+                    <TableCell colSpan={10} className="py-12">
+                      <div className="flex flex-col items-center justify-center space-y-4">
+                        {dateFilter || crewFilter || vesselFilter || routeFilter || moveTypeFilter !== "all" || flightFilter || commentsFilter || transportFilter || statusFilter.length > 0 ? (
+                          <>
+                            <div className="rounded-full bg-orange-100 p-4">
+                              <SearchX className="h-10 w-10 text-orange-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">No results found</h3>
+                            <p className="text-sm text-muted-foreground text-center max-w-sm">
+                              No services match the current filters
+                            </p>
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setDateFilter("")
+                                setCrewFilter("")
+                                setVesselFilter("")
+                                setRouteFilter("")
+                                setMoveTypeFilter("all")
+                                setFlightFilter("")
+                                setCommentsFilter("")
+                                setTransportFilter("")
+                                setStatusFilter([])
+                              }}
+                            >
+                              <X className="mr-2 h-4 w-4" />
+                              Clear filters
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rounded-full bg-blue-100 p-4">
+                              <FileX className="h-10 w-10 text-blue-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">No services</h3>
+                            <p className="text-sm text-muted-foreground text-center max-w-sm">
+                              No agency services have been created yet
+                            </p>
+                          </>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  services.map((service) => (
+                  filteredServices.map((service) => (
                     <TableRow key={service._id}>
                       <TableCell>
                         <div>
@@ -800,67 +1196,38 @@ export function AgencyRecords() {
                           </div>
                         </div>
                       </TableCell>
-                      
+
                       <TableCell>
-                        <div>
+                        <div className="text-sm space-y-0.5">
                           {service?.crewMembers && Array.isArray(service.crewMembers) && service.crewMembers.length > 0 ? (
-                            <>
-                              <div className="font-medium">
-                                {service.crewMembers[0].name}
-                                {service.crewMembers.length > 1 && (
-                                  <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                                    +{service.crewMembers.length - 1} más
-                                  </span>
-                                )}
+                            service.crewMembers.map((m: any, i: number) => (
+                              <div key={i} className="font-medium leading-tight">
+                                {m.name || '-'}
                               </div>
-                              {service.crewMembers[0].crewRank && (
-                                <div className="text-sm text-muted-foreground">
-                                  {service.crewMembers[0].crewRank}
-                                </div>
-                              )}
-                              {service.crewMembers[0].nationality && (
-                                <div className="text-xs text-muted-foreground">
-                                  {service.crewMembers[0].nationality}
-                                </div>
-                              )}
-                            </>
+                            ))
                           ) : (
-                            <>
-                              <div className="font-medium">{service.crewName || '-'}</div>
-                              {service.crewRank && (
-                                <div className="text-sm text-muted-foreground">
-                                  {service.crewRank}
-                                </div>
-                              )}
-                              {service.nationality && (
-                                <div className="text-xs text-muted-foreground">
-                                  {service.nationality}
-                                </div>
-                              )}
-                            </>
+                            <div className="font-medium">{service.crewName || '-'}</div>
                           )}
                         </div>
                       </TableCell>
-                      
+
                       <TableCell>
-                        <div className="font-medium">{service.vessel}</div>
+                        <div className="font-medium">{service.vessel || '-'}</div>
                         {service.voyage && (
                           <div className="text-sm text-muted-foreground">
                             Voyage: {service.voyage}
                           </div>
                         )}
                       </TableCell>
-                      
+
                       <TableCell>
                         <div className="text-sm">
-                          {/* First leg */}
                           <div className="flex items-center">
                             <MapPin className="h-3 w-3 mr-1" />
                             {service.pickupLocation}
                             <ArrowRight className="h-3 w-3 mx-2" />
                             {service.dropoffLocation}
                           </div>
-                          {/* Second leg for Round Trip */}
                           {service.moveType === 'RT' && service.returnDropoffLocation && (
                             <div className="flex items-center mt-1 text-xs text-muted-foreground">
                               <MapPin className="h-3 w-3 mr-1" />
@@ -871,37 +1238,88 @@ export function AgencyRecords() {
                             </div>
                           )}
                         </div>
-                        {service.transportCompany && (
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {service.transportCompany}
-                          </div>
-                        )}
                       </TableCell>
-                      
+
                       <TableCell>
                         <Badge variant="outline" className="font-medium">
                           {service.moveType === 'RT' ? 'Round Trip' :
                            service.moveType === 'SINGLE' ? 'Single' :
                            service.moveType === 'INTERNAL' ? 'Internal' :
                            service.moveType === 'BAGS_CLAIM' ? 'Bags Claim' :
-                           service.moveType === 'DOCUMENTATION' ? 'Documentation' : 'Single'}
+                           service.moveType === 'DOCUMENTATION' ? 'Documentation' :
+                           service.moveType === 'NO_SHOW' ? 'No Show' : 'Single'}
                         </Badge>
                       </TableCell>
-                      
+
+                      {/* Flight column */}
+                      <TableCell>
+                        <div className="text-sm">
+                          {service?.crewMembers && Array.isArray(service.crewMembers) && service.crewMembers.length > 0 ? (
+                            <>
+                              {service.crewMembers[0].flight ? (
+                                <div className="flex items-center gap-1">
+                                  <Plane className="h-3 w-3 text-muted-foreground" />
+                                  <span>{service.crewMembers[0].flight}</span>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                              {service.crewMembers.length > 1 && service.crewMembers.some((m: any) => m.flight) && (
+                                <div className="text-xs text-muted-foreground mt-0.5">
+                                  +{service.crewMembers.filter((m: any) => m.flight).length - (service.crewMembers[0].flight ? 1 : 0)} más
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </div>
+                      </TableCell>
+
+                      {/* Comments column */}
+                      <TableCell className="max-w-32">
+                        {service.comments || service.notes ? (
+                          <div
+                            className="text-sm text-gray-600 truncate cursor-help"
+                            title={toStr(service.comments || service.notes)}
+                          >
+                            {toStr(service.comments || service.notes)}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-sm">-</span>
+                        )}
+                      </TableCell>
+
+                      {/* Transport / Driver column */}
+                      <TableCell>
+                        <div className="text-sm">
+                          {service.transportCompany ? (
+                            <div className="flex items-center gap-1">
+                              <Building className="h-3 w-3 text-muted-foreground" />
+                              <span className="font-medium">{service.transportCompany}</span>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                          {service.driver && (
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                              <User className="h-3 w-3" />
+                              <span>{service.driver}</span>
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+
                       <TableCell>
                         <div className="space-y-2">
                           <Badge className={getStatusColor(service.status)}>
                             {getStatusLabel(service.status)}
                           </Badge>
-                          
-                          {/* Progress indicator for each service */}
+
                           {(() => {
                             const isRoundTrip = service.moveType === 'RT'
-                            
-                            // For Round Trip, always 9 fields total (8 basic + 1 optional return dropoff)
-                            // For Single and other types, 8 fields total
                             const totalFields = isRoundTrip ? 9 : 8
-                            
+
                             const completedFields = [
                               service.pickupDate,
                               service.pickupTime,
@@ -910,17 +1328,14 @@ export function AgencyRecords() {
                               service.vessel,
                               service.transportCompany,
                               service.driver,
-                              service.crewMembers?.length > 0 || service.crewName,
-                              // For Round Trip, count return dropoff if it's filled (optional)
+                              (service.crewMembers?.length ?? 0) > 0 || service.crewName,
                               isRoundTrip ? service.returnDropoffLocation : true
                             ].filter(Boolean).length
-                            
-                            // Cap the completed fields to the total to avoid percentages > 100%
+
                             const actualCompletedFields = Math.min(completedFields, totalFields)
-                            
                             const percentage = Math.round((actualCompletedFields / totalFields) * 100)
                             const isComplete = actualCompletedFields === totalFields
-                            
+
                             return (
                               <div className="flex items-center gap-1 text-xs">
                                 <div className={`w-1.5 h-1.5 rounded-full ${isComplete ? 'bg-green-500' : actualCompletedFields > totalFields / 2 ? 'bg-yellow-500' : 'bg-red-500'}`} />
@@ -933,20 +1348,7 @@ export function AgencyRecords() {
                           })()}
                         </div>
                       </TableCell>
-                      
-                      <TableCell className="max-w-32 hidden md:table-cell">
-                        {service.notes ? (
-                          <div 
-                            className="text-sm text-gray-600 truncate cursor-help" 
-                            title={service.notes}
-                          >
-                            {service.notes}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 text-sm">-</span>
-                        )}
-                      </TableCell>
-                      
+
                       <TableCell>
                         <div className="flex gap-1">
                           <Button
@@ -957,19 +1359,18 @@ export function AgencyRecords() {
                           >
                             <Eye className="h-3 w-3" />
                           </Button>
-                          
-                          {/* Solo mostrar acciones de edición/cambio si no está completado, prefacturado, facturado, nota_de_credito o cancelado */}
+
                           {!['completed', 'prefacturado', 'facturado', 'nota_de_credito', 'cancelled'].includes(service.status) && (
                             <>
                               <Button
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => handleOpenEditModal(service._id)}
-                                disabled={!['pending', 'in_progress'].includes(service.status)}
+                                disabled={!['tentative', 'pending', 'in_progress'].includes(service.status)}
                               >
                                 <Edit className="h-3 w-3" />
                               </Button>
-                              
+
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -980,8 +1381,7 @@ export function AgencyRecords() {
                               </Button>
                             </>
                           )}
-                          
-                          {/* Botón de eliminar siempre visible */}
+
                           <Button
                             size="sm"
                             variant="ghost"
@@ -1037,89 +1437,88 @@ export function AgencyRecords() {
           <DialogHeader>
             <DialogTitle>Change Service Status</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <p id="status-dialog-description" className="text-sm text-muted-foreground">
-              Select the new status for this service
-            </p>
-            
-            {/* Show warning if Round Trip without return dropoff */}
-            {(() => {
-              const service = services.find(s => s._id === selectedService)
-              return service?.moveType === 'RT' && !service?.returnDropoffLocation && (
-                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                  <p className="text-xs text-yellow-800">
-                    ⚠️ This Round Trip service does not have a Return Drop-off Location. Please edit the service to add it before marking as completed.
-                  </p>
+          {(() => {
+            const currentService = services.find(s => s._id === selectedService)
+            const currentStatus = currentService?.status || ''
+
+            // Valid forward transitions per the flow diagram
+            const validTransitions: Record<string, string[]> = {
+              'pending': ['tentative', 'in_progress'],
+              'tentative': ['in_progress'],
+              'in_progress': ['completed'],
+              'completed': ['prefacturado'],
+              'prefacturado': ['facturado'],
+              'facturado': ['nota_de_credito'],
+              'cancelled': [],
+              'nota_de_credito': []
+            }
+
+            const allowedStatuses = validTransitions[currentStatus] || []
+
+            // Always allow rollback to pending (except from pending, facturado, cancelled, nota_de_credito)
+            const canRollbackToPending = !['pending', 'facturado', 'cancelled', 'nota_de_credito'].includes(currentStatus)
+
+            // Always allow cancellation (except from facturado, cancelled, nota_de_credito)
+            const canCancel = !['facturado', 'cancelled', 'nota_de_credito'].includes(currentStatus)
+
+            const isRtMissingReturn = currentService?.moveType === 'RT' && !currentService?.returnDropoffLocation
+
+            const statusOptions = [
+              { value: 'tentative', label: 'Tentative', color: 'bg-purple-100 text-purple-800' },
+              { value: 'pending', label: 'Pending', color: 'bg-yellow-100 text-yellow-800' },
+              { value: 'in_progress', label: 'In Progress', color: 'bg-blue-100 text-blue-800' },
+              { value: 'completed', label: 'Completed', color: 'bg-green-100 text-green-800' },
+              { value: 'cancelled', label: 'Cancelled', color: 'bg-red-100 text-red-800' },
+            ]
+
+            return (
+              <div className="space-y-4">
+                <p id="status-dialog-description" className="text-sm text-muted-foreground">
+                  Current status: <Badge className={getStatusColor(currentStatus)}>{getStatusLabel(currentStatus)}</Badge>
+                </p>
+
+                {isRtMissingReturn && (
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <p className="text-xs text-yellow-800">
+                      This Round Trip service does not have a Return Drop-off Location. Please edit the service to add it before marking as completed.
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {statusOptions.map(opt => {
+                    const isForwardTransition = allowedStatuses.includes(opt.value)
+                    const isRollback = opt.value === 'pending' && canRollbackToPending
+                    const isCancelOption = opt.value === 'cancelled' && canCancel
+                    const isAllowed = isForwardTransition || isRollback || isCancelOption
+
+                    if (!isAllowed) return null
+
+                    const isDisabled = opt.value === 'completed' && isRtMissingReturn
+
+                    return (
+                      <Button
+                        key={opt.value}
+                        variant="outline"
+                        className="w-full justify-start"
+                        disabled={isDisabled}
+                        onClick={() => {
+                          if (selectedService) {
+                            handleStatusChange(selectedService, opt.value)
+                          }
+                        }}
+                      >
+                        <Badge className={`${opt.color} mr-2`}>
+                          {opt.label}
+                        </Badge>
+                        Set as {opt.label}
+                      </Button>
+                    )
+                  })}
                 </div>
-              )
-            })()}
-            
-            <div className="space-y-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => {
-                  if (selectedService) {
-                    handleStatusChange(selectedService, 'pending')
-                  }
-                }}
-              >
-                <Badge className="bg-yellow-100 text-yellow-800 mr-2">
-                  Pending
-                </Badge>
-                Set as Pending
-              </Button>
-              
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => {
-                  if (selectedService) {
-                    handleStatusChange(selectedService, 'in_progress')
-                  }
-                }}
-              >
-                <Badge className="bg-blue-100 text-blue-800 mr-2">
-                  In Progress
-                </Badge>
-                Set as In Progress
-              </Button>
-              
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                disabled={(() => {
-                  const service = services.find(s => s._id === selectedService)
-                  return service?.moveType === 'RT' && !service?.returnDropoffLocation
-                })()}
-                onClick={() => {
-                  if (selectedService) {
-                    handleStatusChange(selectedService, 'completed')
-                  }
-                }}
-              >
-                <Badge className="bg-green-100 text-green-800 mr-2">
-                  Completed
-                </Badge>
-                Set as Completed
-              </Button>
-              
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => {
-                  if (selectedService) {
-                    handleStatusChange(selectedService, 'cancelled')
-                  }
-                }}
-              >
-                <Badge className="bg-red-100 text-red-800 mr-2">
-                  Cancelled
-                </Badge>
-                Set as Cancelled
-              </Button>
-            </div>
-          </div>
+              </div>
+            )
+          })()}
           <DialogFooter>
             <Button variant="outline" onClick={closeModals}>
               Cancel
@@ -1574,26 +1973,54 @@ export function AgencyRecords() {
                 </div>
 
                 {/* Waiting Time */}
-                <div className="space-y-2">
-                  <Label htmlFor="waitingTime" className="text-sm font-medium">
-                    Waiting Time (hours)
-                  </Label>
-                  <div className="relative">
-                    <Clock className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="waitingTime"
-                      type="number"
-                      min="0"
-                      max="24"
-                      step="0.25"
-                      value={editFormData.waitingTime}
-                      onChange={(e) => setEditFormData(prev => ({ 
-                        ...prev, 
-                        waitingTime: parseFloat(e.target.value) || 0 
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="waitingTime" className="text-sm font-medium">
+                      Waiting Time (hours)
+                    </Label>
+                    <div className="relative">
+                      <Clock className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="waitingTime"
+                        type="number"
+                        min="0"
+                        max="24"
+                        step="0.25"
+                        value={editFormData.waitingTime}
+                        onChange={(e) => setEditFormData(prev => ({
+                          ...prev,
+                          waitingTime: parseFloat(e.target.value) || 0
+                        }))}
+                        className="pl-8"
+                        placeholder="Enter waiting time in hours"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Waiting Time Reason */}
+                  <div className="space-y-2">
+                    <Label htmlFor="waitingTimeReason" className="text-sm font-medium">
+                      Motivo de Waiting Time
+                    </Label>
+                    <Select
+                      value={editFormData.waitingTimeReason || "__none__"}
+                      onValueChange={(value) => setEditFormData(prev => ({
+                        ...prev,
+                        waitingTimeReason: value === "__none__" ? "" : value
                       }))}
-                      className="pl-8"
-                      placeholder="Enter waiting time in hours"
-                    />
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar motivo..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Sin motivo</SelectItem>
+                        {waitingTimeReasons.map((reason) => (
+                          <SelectItem key={reason._id} value={reason.name}>
+                            {reason.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 

@@ -9,7 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Database, Code, X, Edit } from "lucide-react"
+import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Database, Code, X, Edit, SearchX, FileX } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { selectInvoicesByModule, fetchInvoicesAsync, deleteInvoiceAsync, selectRecordsLoading, selectRecordsError, updateInvoiceAsync, updateInvoiceStatus, selectAllIndividualRecords, fetchAllRecordsByModule, markRecordsAsInvoiced, updateMultipleRecordsStatusAsync } from "@/lib/features/records/recordsSlice"
@@ -55,7 +56,7 @@ export function PTYSSRecords() {
   const ptyssInvoices = useAppSelector((state) => selectInvoicesByModule(state, "ptyss"))
   const isLoading = useAppSelector(selectRecordsLoading)
   const error = useAppSelector(selectRecordsError)
-  const allRecords = useAppSelector(selectAllIndividualRecords)
+  const allRecords = useAppSelector(selectAllIndividualRecords) || []
   const clients = useAppSelector((state) => state.clients.clients)
 
   // Función para obtener los contenedores de una factura
@@ -429,26 +430,32 @@ export function PTYSSRecords() {
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A'
-    
+
+    let year: number, month: number, day: number
+
     // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
     if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const [year, month, day] = dateString.split('-').map(Number)
-      const date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
-      return date.toLocaleDateString('es-ES')
+      [year, month, day] = dateString.split('-').map(Number)
     }
-    
     // Si la fecha está en formato ISO con zona horaria UTC (ej: 2025-09-09T00:00:00.000+00:00)
     // Extraer solo la parte de la fecha y crear un objeto Date en zona horaria local
-    if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+    else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
       const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
-      const [year, month, day] = datePart.split('-').map(Number)
-      const date = new Date(year, month - 1, day) // Crear en zona horaria local
-      return date.toLocaleDateString('es-ES')
+      ;[year, month, day] = datePart.split('-').map(Number)
     }
-    
     // Para otros formatos, usar el método normal
-    const date = new Date(dateString)
-    if (isNaN(date.getTime())) return 'N/A'
+    else {
+      const date = new Date(dateString)
+      if (isNaN(date.getTime())) return 'N/A'
+      year = date.getFullYear()
+      month = date.getMonth() + 1
+      day = date.getDate()
+    }
+
+    // Year validation to prevent year 40000 issue
+    if (year < 1900 || year > 2100) return 'N/A'
+
+    const date = new Date(year, month - 1, day)
     return date.toLocaleDateString('es-ES')
   }
 
@@ -470,21 +477,26 @@ export function PTYSSRecords() {
           if (!open) setFacturarInvoice(null)
         }}
         invoice={facturarInvoice}
-        onFacturar={async (newInvoiceNumber: string, xmlData?: { xml: string; isValid: boolean; sentToSap?: boolean; sentToSapAt?: string }, invoiceDate?: string) => {
+        onFacturar={async (newInvoiceNumber: string, xmlData?: { xml: string; isValid: boolean; sentToSap?: boolean; sentToSapAt?: string }, invoiceDate?: string, poNumber?: string) => {
           if (!facturarInvoice) return
-          
+
           const currentInvoice = facturarInvoice // Guardar referencia antes de cerrar modal
-          
+
           try {
             // Preparar las actualizaciones de la factura
-            const updates: any = { 
-              status: "facturada", 
-              invoiceNumber: newInvoiceNumber 
+            const updates: any = {
+              status: "facturada",
+              invoiceNumber: newInvoiceNumber
             }
-            
+
             // Actualizar fecha de emisión si se proporcionó
             if (invoiceDate) {
               updates.issueDate = invoiceDate
+            }
+
+            // Agregar PO Number si se proporcionó
+            if (poNumber) {
+              updates.poNumber = poNumber
             }
             
             // Agregar XML si está disponible
@@ -785,30 +797,40 @@ export function PTYSSRecords() {
 
           </div>
 
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Número</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Contenedor</TableHead>
-                  <TableHead>Fecha Emisión</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="hidden md:table-cell">Notas</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead className="min-w-[120px]">Número</TableHead>
+                  <TableHead className="min-w-[150px]">Cliente</TableHead>
+                  <TableHead className="min-w-[140px]">Contenedor</TableHead>
+                  <TableHead className="min-w-[130px]">Fecha Emisión</TableHead>
+                  <TableHead className="min-w-[100px]">Total</TableHead>
+                  <TableHead className="min-w-[100px]">Estado</TableHead>
+                  <TableHead className="min-w-[120px] hidden md:table-cell">Notas</TableHead>
+                  <TableHead className="min-w-[200px] text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
-                      <div className="flex items-center justify-center space-x-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Cargando prefacturas...</span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={`skeleton-${index}`}>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-24 rounded-full" /></TableCell>
+                      <TableCell className="hidden md:table-cell"><Skeleton className="h-5 w-full" /></TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end space-x-2">
+                          <Skeleton className="h-8 w-8" />
+                          <Skeleton className="h-8 w-8" />
+                          <Skeleton className="h-8 w-8" />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
                 ) : error ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8">
@@ -971,10 +993,44 @@ export function PTYSSRecords() {
                   )})
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                      {ptyssInvoices.length === 0
-                        ? "No hay prefacturas PTYSS creadas"
-                        : "No se encontraron prefacturas que coincidan con los filtros"}
+                    <TableCell colSpan={8} className="py-12">
+                      <div className="flex flex-col items-center justify-center space-y-4">
+                        {searchTerm || statusFilter !== "all" || recordTypeFilter !== "all" || isUsingPeriodFilter ? (
+                          <>
+                            <div className="rounded-full bg-orange-100 p-4">
+                              <SearchX className="h-10 w-10 text-orange-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Sin resultados</h3>
+                            <p className="text-sm text-muted-foreground text-center max-w-sm">
+                              No se encontraron prefacturas que coincidan con los filtros aplicados
+                            </p>
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setSearchTerm("")
+                                setStatusFilter("all")
+                                setRecordTypeFilter("all")
+                                setIsUsingPeriodFilter(false)
+                                setStartDate("")
+                                setEndDate("")
+                              }}
+                            >
+                              <X className="mr-2 h-4 w-4" />
+                              Limpiar filtros
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rounded-full bg-blue-100 p-4">
+                              <FileX className="h-10 w-10 text-blue-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Sin prefacturas</h3>
+                            <p className="text-sm text-muted-foreground text-center max-w-sm">
+                              Aún no hay prefacturas PTYSS creadas. Las prefacturas se generan desde los registros locales.
+                            </p>
+                          </>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}

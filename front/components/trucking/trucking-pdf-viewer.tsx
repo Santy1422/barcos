@@ -13,6 +13,7 @@ import { useAppSelector } from "@/lib/hooks";
 import { selectAllIndividualRecords, selectAutoridadesRecords } from "@/lib/features/records/recordsSlice";
 import { selectAllClients } from "@/lib/features/clients/clientsSlice";
 import { selectAllServices } from "@/lib/features/services/servicesSlice";
+import { createApiUrl } from "@/lib/api-config";
 
 interface TruckingPdfViewerProps {
   open: boolean;
@@ -42,22 +43,23 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     });
   };
 
-  const generateTruckingPrefacturaPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string) => {
+  const generateTruckingPrefacturaPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string, logoBase64?: string) => {
     // Adaptar la función exacta de trucking-prefactura.tsx
     const issuer = getClient('PTG')
     const doc = new jsPDF()
 
-    // Colores / encabezado
+    // Logo de la empresa
     const lightBlue = [59, 130, 246]
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    // Texto 'PTG' grande, centrado y con padding visual
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14)
-    doc.setFont(undefined, 'bold')
-    // Centramos vertical y horizontalmente dentro del rectángulo (15,15,30,15)
-    // Centro X = 15 + 30/2 = 30, Centro Y = 15 + 15/2 = 22.5
-    doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    }
 
     // Número de prefactura y fecha
     doc.setTextColor(0, 0, 0)
@@ -69,24 +71,32 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     // Aplicar la misma lógica de corrección de zona horaria que en trucking-records.tsx
     const formatInvoiceDate = (dateString: string) => {
       if (!dateString) return new Date()
-      
+
       // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
       if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
         const [year, month, day] = dateString.split('-').map(Number)
-        return new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+        // Validar año razonable (1900-2100)
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+        }
+        return new Date() // Año fuera de rango, usar fecha actual
       }
-      
+
       // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
       if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
         const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
         const [year, month, day] = datePart.split('-').map(Number)
-        return new Date(year, month - 1, day) // Crear en zona horaria local
+        // Validar año razonable (1900-2100)
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day) // Crear en zona horaria local
+        }
+        return new Date() // Año fuera de rango, usar fecha actual
       }
-      
-      // Para otros formatos, usar el método normal
-      return new Date(dateString)
+
+      // Para otros formatos, no usar new Date() genérico - usar fecha actual
+      return new Date()
     }
-    
+
     const invoiceDate = formatInvoiceDate(invoiceData.issueDate)
     const day = invoiceDate.getDate().toString().padStart(2, '0')
     const month = (invoiceDate.getMonth() + 1).toString().padStart(2, '0')
@@ -97,6 +107,14 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     doc.text(`${day} ${month} ${year}`, 195, 35, { align: 'right' })
     doc.setFontSize(8)
     doc.text('DAY MO YR', 195, 40, { align: 'right' })
+
+    // PO Number (solo si existe)
+    if (invoiceData.poNumber) {
+      doc.setFontSize(10)
+      doc.setFont(undefined, 'bold')
+      doc.text(`PO: ${invoiceData.poNumber}`, 195, 46, { align: 'right' })
+      doc.setFont(undefined, 'normal')
+    }
 
     // Información empresa (PTG)
     doc.setFontSize(9)
@@ -275,22 +293,24 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     return new Blob([doc.output('blob')], { type: 'application/pdf' });
   };
 
-  const generateAutoridadesPdf = (invoiceData: any, selectedRecords: any[], pdfTitle: string) => {
+  const generateAutoridadesPdf = (invoiceData: any, selectedRecords: any[], pdfTitle: string, logoBase64?: string) => {
     // Usar EXACTAMENTE la misma función del paso 2 de trucking-gastos-autoridades-page.tsx
     if (selectedRecords.length === 0) return null
 
     const doc = new jsPDF()
 
-    // Colores / encabezado
+    // Logo de la empresa
     const lightBlue = [59, 130, 246]
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    
-    // Texto 'PTG' grande, centrado
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14)
-    doc.setFont(undefined, 'bold')
-    doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    }
 
     // Número de documento y fecha
     doc.setTextColor(0, 0, 0)
@@ -302,24 +322,32 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     // Aplicar la misma lógica de corrección de zona horaria que en trucking-records.tsx
     const formatInvoiceDate = (dateString: string) => {
       if (!dateString) return new Date()
-      
+
       // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
       if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
         const [year, month, day] = dateString.split('-').map(Number)
-        return new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+        // Validar año razonable (1900-2100)
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
+        }
+        return new Date() // Año fuera de rango, usar fecha actual
       }
-      
+
       // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
       if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
         const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
         const [year, month, day] = datePart.split('-').map(Number)
-        return new Date(year, month - 1, day) // Crear en zona horaria local
+        // Validar año razonable (1900-2100)
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day) // Crear en zona horaria local
+        }
+        return new Date() // Año fuera de rango, usar fecha actual
       }
-      
-      // Para otros formatos, usar el método normal
-      return new Date(dateString)
+
+      // Para otros formatos, no usar new Date() genérico - usar fecha actual
+      return new Date()
     }
-    
+
     const invoiceDate = formatInvoiceDate(invoiceData.issueDate)
     const day = invoiceDate.getDate().toString().padStart(2, '0')
     const month = (invoiceDate.getMonth() + 1).toString().padStart(2, '0')
@@ -330,6 +358,14 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     doc.text(`${day} ${month} ${year}`, 195, 35, { align: 'right' })
     doc.setFontSize(8)
     doc.text('DAY MO YR', 195, 40, { align: 'right' })
+
+    // PO Number (solo si existe)
+    if (invoiceData.poNumber) {
+      doc.setFontSize(10)
+      doc.setFont(undefined, 'bold')
+      doc.text(`PO: ${invoiceData.poNumber}`, 195, 46, { align: 'right' })
+      doc.setFont(undefined, 'normal')
+    }
 
     // Información empresa (PTG)
     doc.setFontSize(9)
@@ -559,50 +595,95 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
 
   useEffect(() => {
     if (open && invoice) {
-      console.log("=== DEBUG: Generando PDF ===");
-      console.log("Invoice:", invoice);
-      console.log("Is AUTH Invoice:", isAuthInvoice);
-      console.log("Autoridades records disponibles:", autoridadesRecords.length);
-      console.log("All records disponibles:", allRecords.length);
-      console.log("Related record IDs:", invoice.relatedRecordIds);
-      
       setIsGenerating(true);
-      try {
-        let relatedRecords: any[] = [];
-        let pdf: Blob;
-        
-        if (isAuthInvoice) {
-          // Para facturas AUTH, usar registros de autoridades
-          relatedRecords = autoridadesRecords.filter((record: any) => 
-            invoice.relatedRecordIds.includes(record._id || record.id)
-          );
-          console.log("Registros de autoridades encontrados:", relatedRecords.length);
-          console.log("Registros encontrados:", relatedRecords);
-          
-          const pdfTitle = invoice.status === "facturada" ? "GASTOS AUTORIDADES" : "GASTOS AUTORIDADES";
-          pdf = generateAutoridadesPdf(invoice, relatedRecords, pdfTitle);
-        } else {
-          // Para facturas normales, usar registros de trasiego
-          relatedRecords = allRecords.filter((record: any) => 
-            invoice.relatedRecordIds.includes(record._id || record.id)
-          );
-          console.log("Registros de trasiego encontrados:", relatedRecords.length);
-          
-          const pdfTitle = invoice.status === "facturada" ? "FACTURA" : "PREFACTURA";
-          pdf = generateTruckingPrefacturaPDF(invoice, relatedRecords, pdfTitle);
+
+      const loadLogoAndGenerate = async () => {
+        try {
+          // Cargar logo PTG
+          let logoBase64: string | undefined;
+          try {
+            const response = await fetch('/logos/logo_PTG.png');
+            const blob = await response.blob();
+            logoBase64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+          } catch (e) {
+            console.warn("No se pudo cargar el logo PTG, usando texto fallback");
+          }
+
+          let relatedRecords: any[] = [];
+          let pdf: Blob;
+
+          if (isAuthInvoice) {
+            // For AUTH invoices, fetch ALL autoridades records (including prefacturado/facturado)
+            // because Redux only has cargado records
+            let authRecords = autoridadesRecords;
+
+            if (!invoice.relatedRecordIds?.length) {
+              throw new Error("No hay registros relacionados");
+            }
+
+            // Try to find records in Redux first
+            const relatedIdSet = new Set(invoice.relatedRecordIds.map((id: any) => String(id)));
+            relatedRecords = autoridadesRecords.filter((record: any) => {
+              const recordId = String(record._id || record.id);
+              return relatedIdSet.has(recordId);
+            });
+
+            console.log(`🔍 PDF Viewer: Found ${relatedRecords.length} of ${invoice.relatedRecordIds.length} records in Redux`);
+
+            // If not found in Redux, fetch ALL records from API
+            if (relatedRecords.length === 0) {
+              console.log("🔍 PDF Viewer: Fetching ALL autoridades records from API...");
+              const token = localStorage.getItem('token');
+              const response = await fetch(createApiUrl('/api/records/autoridades?status=all'), {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              const data = await response.json();
+              authRecords = Array.isArray(data) ? data : (data.data || []);
+              console.log(`🔍 PDF Viewer: Fetched ${authRecords.length} total records`);
+
+              // Now filter by relatedRecordIds
+              relatedRecords = authRecords.filter((record: any) => {
+                const recordId = String(record._id || record.id);
+                return relatedIdSet.has(recordId);
+              });
+              console.log(`🔍 PDF Viewer: Found ${relatedRecords.length} related records`);
+            }
+
+            if (relatedRecords.length === 0) {
+              throw new Error("No se encontraron registros para generar el PDF");
+            }
+
+            const pdfTitle = invoice.status === "facturada" ? "GASTOS AUTORIDADES" : "GASTOS AUTORIDADES";
+            pdf = generateAutoridadesPdf(invoice, relatedRecords, pdfTitle, logoBase64);
+          } else {
+            relatedRecords = allRecords.filter((record: any) =>
+              invoice.relatedRecordIds.includes(record._id || record.id)
+            );
+            const pdfTitle = invoice.status === "facturada" ? "FACTURA" : "PREFACTURA";
+            pdf = generateTruckingPrefacturaPDF(invoice, relatedRecords, pdfTitle, logoBase64);
+          }
+
+          if (!pdf) {
+            throw new Error("No se pudo generar el PDF");
+          }
+
+          setPdfBlob(pdf);
+        } catch (error) {
+          console.error("Error generando PDF:", error);
+          toast({ title: "Error", description: error instanceof Error ? error.message : "Error al generar el PDF", variant: "destructive" });
+        } finally {
+          setIsGenerating(false);
         }
-        
-        if (!pdf) {
-          throw new Error("No se pudo generar el PDF");
-        }
-        
-        setPdfBlob(pdf);
-      } catch (error) {
-        console.error("Error generando PDF:", error);
-        toast({ title: "Error", description: "Error al generar el PDF", variant: "destructive" });
-      } finally {
-        setIsGenerating(false);
-      }
+      };
+
+      loadLogoAndGenerate();
     }
   }, [open, invoice, allRecords, autoridadesRecords, clients, toast, isAuthInvoice]);
 

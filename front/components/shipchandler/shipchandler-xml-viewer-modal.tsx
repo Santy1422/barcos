@@ -5,7 +5,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Copy, Download, Send, CheckCircle, AlertTriangle, FileText, Info, ScrollText } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import { Copy, Download, Send, CheckCircle, AlertTriangle, FileText, Info, ScrollText, Edit3, RefreshCw, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import saveAs from "file-saver"
 import { generateXmlFileName, sendXmlToSapFtp } from "@/lib/xml-generator"
@@ -17,11 +18,11 @@ interface ShipChandlerXmlViewerModalProps {
   onXmlSentToSap?: () => void // Callback para notificar al padre que se envió a SAP
 }
 
-export function ShipChandlerXmlViewerModal({ 
-  open, 
-  onOpenChange, 
+export function ShipChandlerXmlViewerModal({
+  open,
+  onOpenChange,
   invoice,
-  onXmlSentToSap 
+  onXmlSentToSap
 }: ShipChandlerXmlViewerModalProps) {
   const { toast } = useToast()
   const [isSendingToSap, setIsSendingToSap] = useState(false)
@@ -31,6 +32,9 @@ export function ShipChandlerXmlViewerModal({
   const [localSentToSap, setLocalSentToSap] = useState<boolean | null>(null)
   const [localSentToSapAt, setLocalSentToSapAt] = useState<string | null>(null)
   const [localSapFileName, setLocalSapFileName] = useState<string | null>(null)
+  // Estado para modo edición
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedXml, setEditedXml] = useState<string>("")
 
   // Resetear estado local cuando cambie el invoice (ANTES del return condicional)
   useEffect(() => {
@@ -40,6 +44,8 @@ export function ShipChandlerXmlViewerModal({
       setLocalSapFileName(null)
       setSapLogs([])
       setShowSapLogs(false)
+      setIsEditing(false)
+      setEditedXml("")
     }
   }, [invoice?.id])
 
@@ -47,6 +53,21 @@ export function ShipChandlerXmlViewerModal({
   if (!invoice || !invoice.xmlData) return null
 
   const { xml, isValid, generatedAt } = invoice.xmlData
+
+  // XML actual a usar (editado o original)
+  const currentXml = isEditing && editedXml ? editedXml : xml
+
+  // Función para iniciar edición
+  const handleStartEditing = () => {
+    setEditedXml(xml)
+    setIsEditing(true)
+  }
+
+  // Función para cancelar edición
+  const handleCancelEditing = () => {
+    setEditedXml("")
+    setIsEditing(false)
+  }
 
   // Usar el estado local si está disponible, sino usar los datos del invoice
   // Los datos de SAP ahora están en campos directos del invoice, no en xmlData
@@ -59,7 +80,7 @@ export function ShipChandlerXmlViewerModal({
   // Función para copiar XML al portapapeles
   const handleCopyXml = async () => {
     try {
-      await navigator.clipboard.writeText(xml)
+      await navigator.clipboard.writeText(currentXml)
       toast({
         title: "XML copiado",
         description: "El contenido del XML ha sido copiado al portapapeles.",
@@ -75,35 +96,39 @@ export function ShipChandlerXmlViewerModal({
 
   // Función para descargar XML
   const handleDownloadXml = () => {
-    const blob = new Blob([xml], { type: "application/xml;charset=utf-8" })
-    
+    const blob = new Blob([currentXml], { type: "application/xml;charset=utf-8" })
+
     // Usar el nombre de SAP si existe, sino generar uno nuevo para la descarga
     const downloadFileName = sapFileName || generateXmlFileName('9326')
-    
+
     saveAs(blob, downloadFileName)
-    toast({ 
-      title: "XML descargado", 
-      description: `El archivo XML ha sido descargado como ${downloadFileName}` 
+    toast({
+      title: "XML descargado",
+      description: `El archivo XML ha sido descargado como ${downloadFileName}`
     })
   }
 
-  // Función para enviar a SAP
-  const handleSendToSap = async () => {
+  // Función para enviar a SAP (permite reenvío con XML editado)
+  const handleSendToSap = async (forceResend: boolean = false) => {
     setIsSendingToSap(true)
     setSapLogs([])
     setShowSapLogs(true)
-    
+
     try {
-      // Generar nombre de archivo solo si no existe uno previo
-      const fileNameToSend = sapFileName || generateXmlFileName('9326')
-      
-      console.log("🚀 ShipChandler - Enviando XML a SAP vía FTP:", { 
-        invoiceId: invoice.id, 
-        fileName: fileNameToSend
+      // Si es reenvío, generar nuevo nombre de archivo para evitar conflictos
+      const fileNameToSend = forceResend
+        ? generateXmlFileName('9326')
+        : (sapFileName || generateXmlFileName('9326'))
+
+      console.log("🚀 ShipChandler - Enviando XML a SAP vía FTP:", {
+        invoiceId: invoice.id,
+        fileName: fileNameToSend,
+        isResend: forceResend,
+        isEdited: isEditing
       })
-      
-      // Usar FTP tradicional (método que funciona)
-      const result = await sendXmlToSapFtp(invoice.id, xml, fileNameToSend)
+
+      // Usar el XML actual (editado o original)
+      const result = await sendXmlToSapFtp(invoice.id, currentXml, fileNameToSend)
       
       console.log("✅ ShipChandler - Respuesta de SAP:", result)
       setSapLogs(result.logs || [])
@@ -254,8 +279,10 @@ export function ShipChandlerXmlViewerModal({
           {/* Contenido del XML */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Contenido XML</h3>
-              <div className="flex gap-2">
+              <h3 className="font-semibold text-gray-900">
+                Contenido XML {isEditing && <Badge variant="outline" className="ml-2 text-orange-600 border-orange-300">Editando</Badge>}
+              </h3>
+              <div className="flex gap-2 flex-wrap justify-end">
                 <Button
                   variant="outline"
                   size="sm"
@@ -274,41 +301,88 @@ export function ShipChandlerXmlViewerModal({
                   <Download className="h-4 w-4" />
                   Descargar
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSendToSap}
-                  disabled={isSendingToSap || !isValid || effectiveSentToSap}
-                  className={`flex items-center gap-2 ${
-                    effectiveSentToSap 
-                      ? 'text-green-600 border-green-600 bg-green-50' 
-                      : 'text-blue-600 border-blue-600 hover:bg-blue-50'
-                  }`}
-                >
-                  {isSendingToSap ? (
-                    <>
-                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                      Enviando...
-                    </>
-                  ) : effectiveSentToSap ? (
-                    <>
-                      <CheckCircle className="h-3 w-3" />
-                      Enviado
-                    </>
-                  ) : (
-                    <>
-                      <Send className="h-3 w-3" />
-                      Enviar a SAP
-                    </>
-                  )}
-                </Button>
+                {!isEditing ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleStartEditing}
+                    className="flex items-center gap-2 text-orange-600 border-orange-300 hover:bg-orange-50"
+                  >
+                    <Edit3 className="h-4 w-4" />
+                    Editar
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCancelEditing}
+                    className="flex items-center gap-2 text-gray-600"
+                  >
+                    <X className="h-4 w-4" />
+                    Cancelar
+                  </Button>
+                )}
+                {effectiveSentToSap && !isEditing ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSendToSap(true)}
+                    disabled={isSendingToSap}
+                    className="flex items-center gap-2 text-purple-600 border-purple-300 hover:bg-purple-50"
+                  >
+                    {isSendingToSap ? (
+                      <>
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-purple-600"></div>
+                        Reenviando...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-3 w-3" />
+                        Reenviar a SAP
+                      </>
+                    )}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSendToSap(isEditing)}
+                    disabled={isSendingToSap || !isValid}
+                    className={`flex items-center gap-2 ${
+                      isEditing
+                        ? 'text-orange-600 border-orange-600 hover:bg-orange-50'
+                        : 'text-blue-600 border-blue-600 hover:bg-blue-50'
+                    }`}
+                  >
+                    {isSendingToSap ? (
+                      <>
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                        Enviando...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-3 w-3" />
+                        {isEditing ? 'Enviar XML Editado' : 'Enviar a SAP'}
+                      </>
+                    )}
+                  </Button>
+                )}
               </div>
             </div>
-            <div className="border rounded-md p-3 bg-gray-50 min-h-[300px] max-h-[400px] overflow-auto">
-              <pre className="font-mono text-xs whitespace-pre-wrap text-gray-800">
-                {xml}
-              </pre>
-            </div>
+            {isEditing ? (
+              <Textarea
+                value={editedXml}
+                onChange={(e) => setEditedXml(e.target.value)}
+                className="font-mono text-xs min-h-[400px] bg-white"
+                placeholder="Edita el XML aquí..."
+              />
+            ) : (
+              <div className="border rounded-md p-3 bg-gray-50 min-h-[300px] max-h-[400px] overflow-auto">
+                <pre className="font-mono text-xs whitespace-pre-wrap text-gray-800">
+                  {xml}
+                </pre>
+              </div>
+            )}
           </div>
 
           {/* Logs de envío a SAP */}

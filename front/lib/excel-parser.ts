@@ -39,6 +39,7 @@ export interface TruckingExcelData {
   isMatched?: boolean;
   sapCode?:string;
   detectedContainerType?: "dry" | "reefer"; // Tipo de contenedor detectado por el matching
+  matchFailReason?: string; // Razón por la que falló el matching (para diagnóstico)
   // Campos extraídos del leg para PTYSS
   from?: string;
   to?: string;
@@ -178,6 +179,7 @@ export const matchTruckingDataWithRoutes = async (
     console.log(`  Type: "${record.type}"`)
     console.log(`  Line (Cliente): "${record.line}"`)
     console.log(`  Size: "${record.size}"`)
+    console.log(`  F/E: "${record.fe}"`)
     
     // OPTIMIZACIÓN: Filtrar por criterios más específicos primero
     
@@ -194,11 +196,12 @@ export const matchTruckingDataWithRoutes = async (
         matchedRouteId: '',
         matchedRouteName: '',
         isMatched: false,
-        sapCode: 'TRK002'
+        sapCode: 'TRK002',
+        matchFailReason: `No existe ruta "${normalizedLeg}". Créala en Catálogos.`
       });
       continue;
     }
-    
+
     // 2. Filtrar por moveType (solo 2 valores posibles)
     const normalizedMoveType = record.moveType?.trim().toLowerCase() || '';
     const targetRouteType = 
@@ -213,14 +216,15 @@ export const matchTruckingDataWithRoutes = async (
         matchedRouteId: '',
         matchedRouteName: '',
         isMatched: false,
-        sapCode: 'TRK002'
+        sapCode: 'TRK002',
+        matchFailReason: `MoveType "${normalizedMoveType}" no válido. Debe ser S/Single o RT.`
       });
       continue;
     }
-    
+
     candidateRoutes = candidateRoutes.filter(route => route.routeType === targetRouteType);
     console.log(`  Rutas candidatas después de filtrar por moveType "${targetRouteType}": ${candidateRoutes.length}`)
-    
+
     if (candidateRoutes.length === 0) {
       console.log(`  ❌ No hay rutas con moveType "${targetRouteType}"`)
       results.push({
@@ -229,11 +233,12 @@ export const matchTruckingDataWithRoutes = async (
         matchedRouteId: '',
         matchedRouteName: '',
         isMatched: false,
-        sapCode: 'TRK002'
+        sapCode: 'TRK002',
+        matchFailReason: `No existe ruta "${normalizedLeg}" con tipo ${targetRouteType}. Créala en Catálogos.`
       });
       continue;
     }
-    
+
     // 3. Verificar que el tipo de contenedor existe en la BD
     const normalizedType = record.type?.trim().toUpperCase() || '';
     const containerTypeExists = containerTypesFromBackend.some(ct =>
@@ -243,7 +248,7 @@ export const matchTruckingDataWithRoutes = async (
     if (!containerTypeExists && normalizedType) {
       console.warn(`    ⚠️  Tipo de contenedor "${normalizedType}" no existe en la base de datos de tipos de contenedores`);
     }
-    
+
     if (!containerTypeExists) {
       console.log(`  ❌ Tipo de contenedor "${normalizedType}" no existe en BD`)
       results.push({
@@ -252,17 +257,19 @@ export const matchTruckingDataWithRoutes = async (
         matchedRouteId: '',
         matchedRouteName: '',
         isMatched: false,
-        sapCode: 'TRK002'
+        sapCode: 'TRK002',
+        matchFailReason: `Tipo "${normalizedType}" no existe en Catálogos. Créalo primero.`
       });
       continue;
     }
     
     // 4. Filtrar por tipo de contenedor
-    candidateRoutes = candidateRoutes.filter(route => 
+    const routesBeforeContainerType = candidateRoutes.length;
+    candidateRoutes = candidateRoutes.filter(route =>
       route.containerType?.trim().toUpperCase() === normalizedType
     );
     console.log(`  Rutas candidatas después de filtrar por tipo "${normalizedType}": ${candidateRoutes.length}`)
-    
+
     if (candidateRoutes.length === 0) {
       console.log(`  ❌ No hay rutas con tipo de contenedor "${normalizedType}"`)
       results.push({
@@ -271,31 +278,94 @@ export const matchTruckingDataWithRoutes = async (
         matchedRouteId: '',
         matchedRouteName: '',
         isMatched: false,
-        sapCode: 'TRK002'
+        sapCode: 'TRK002',
+        matchFailReason: `Ruta "${normalizedLeg}" existe pero no para contenedor "${normalizedType}". Crea ruta con ese tipo.`
       });
       continue;
     }
-    
+
     // 5. Filtrar por cliente (si existe en el registro)
     const normalizedLine = record.line?.trim().toLowerCase() || '';
+    const routesBeforeClient = candidateRoutes.length;
     if (normalizedLine) {
       candidateRoutes = candidateRoutes.filter(route => {
         const normalizedCliente = route.cliente?.trim().toLowerCase() || '';
         return normalizedCliente === normalizedLine;
       });
       console.log(`  Rutas candidatas después de filtrar por cliente "${normalizedLine}": ${candidateRoutes.length}`)
+
+      if (candidateRoutes.length === 0) {
+        console.log(`  ❌ No hay rutas para cliente "${normalizedLine}"`)
+        results.push({
+          ...record,
+          matchedPrice: 0,
+          matchedRouteId: '',
+          matchedRouteName: '',
+          isMatched: false,
+          sapCode: 'TRK002',
+          matchFailReason: `Ruta "${normalizedLeg}" con tipo "${normalizedType}" existe, pero no para cliente "${normalizedLine.toUpperCase()}". Crea ruta para ese cliente.`
+        });
+        continue;
+      }
     }
-    
+
     // 6. Filtrar por tamaño (si existe en el registro)
     const normalizedSize = record.size?.trim().toUpperCase() || '';
+    const routesBeforeSize = candidateRoutes.length;
     if (normalizedSize) {
       candidateRoutes = candidateRoutes.filter(route => {
         const normalizedSizeContenedor = route.sizeContenedor?.trim().toUpperCase() || '';
         return normalizedSizeContenedor === normalizedSize;
       });
       console.log(`  Rutas candidatas después de filtrar por tamaño "${normalizedSize}": ${candidateRoutes.length}`)
+
+      if (candidateRoutes.length === 0) {
+        console.log(`  ❌ No hay rutas para tamaño "${normalizedSize}"`)
+        results.push({
+          ...record,
+          matchedPrice: 0,
+          matchedRouteId: '',
+          matchedRouteName: '',
+          isMatched: false,
+          sapCode: 'TRK002',
+          matchFailReason: `Ruta "${normalizedLeg}" tipo "${normalizedType}" cliente "${normalizedLine.toUpperCase()}" existe, pero no para tamaño ${normalizedSize}. Crea ruta con tamaño ${normalizedSize}.`
+        });
+        continue;
+      }
     }
-    
+
+    // 7. Filtrar por status (FULL/EMPTY) basado en el campo F/E del Excel
+    const feValue = record.fe?.toString().trim().toUpperCase() || '';
+    // Mapear valores de F/E a status:
+    // - "F", "FULL", "2" → FULL
+    // - "E", "EMPTY", "1", "0", "" → EMPTY
+    const targetStatus: "FULL" | "EMPTY" | null =
+      (feValue === 'F' || feValue === 'FULL' || feValue === '2') ? 'FULL' :
+      (feValue === 'E' || feValue === 'EMPTY' || feValue === '1' || feValue === '0') ? 'EMPTY' : null;
+
+    const routesBeforeStatus = candidateRoutes.length;
+    if (targetStatus) {
+      candidateRoutes = candidateRoutes.filter(route => route.status === targetStatus);
+      console.log(`  Rutas candidatas después de filtrar por status "${targetStatus}" (F/E="${feValue}"): ${candidateRoutes.length}`)
+
+      // Si no hay rutas con ese status específico, intentar con el status opuesto como fallback
+      if (candidateRoutes.length === 0 && routesBeforeStatus > 0) {
+        console.log(`  ⚠️  No hay rutas con status "${targetStatus}", usando fallback...`)
+        // Restaurar las rutas candidatas sin filtro de status
+        candidateRoutes = routesByName.get(normalizedLeg) || [];
+        candidateRoutes = candidateRoutes.filter(route => route.routeType === targetRouteType);
+        candidateRoutes = candidateRoutes.filter(route => route.containerType?.trim().toUpperCase() === normalizedType);
+        if (normalizedLine) {
+          candidateRoutes = candidateRoutes.filter(route => route.cliente?.trim().toLowerCase() === normalizedLine);
+        }
+        if (normalizedSize) {
+          candidateRoutes = candidateRoutes.filter(route => route.sizeContenedor?.trim().toUpperCase() === normalizedSize);
+        }
+      }
+    } else {
+      console.log(`  F/E no especificado o no reconocido ("${feValue}"), no se filtra por status`)
+    }
+
     // Buscar la mejor coincidencia (ya filtradas las candidatas)
     const matchedRoute = candidateRoutes[0]; // Tomar la primera coincidencia ya que ya están filtradas
     
@@ -379,17 +449,23 @@ export const matchTruckingDataWithRoutes = async (
       }
       
       console.log(`  ❌ NO SE ENCONTRÓ NINGÚN MATCH`)
+      // Construir mensaje de fallo detallado
+      const targetStatus = (feValue === 'F' || feValue === 'FULL' || feValue === '2') ? 'FULL' :
+        (feValue === 'E' || feValue === 'EMPTY' || feValue === '1' || feValue === '0') ? 'EMPTY' : null;
+      const failReason = `No existe ruta exacta para: ${normalizedLeg}, tipo ${normalizedType}, cliente ${normalizedLine.toUpperCase()}, tamaño ${normalizedSize}${targetStatus ? `, status ${targetStatus}` : ''}. Crea la ruta en Catálogos.`;
+
       results.push({
         ...record,
         matchedPrice: 0,
         matchedRouteId: '',
         matchedRouteName: '',
         isMatched: false,
-        sapCode: 'TRK002'
+        sapCode: 'TRK002',
+        matchFailReason: failReason
       });
     }
   }
-  
+
   return results;
 };
 
@@ -805,7 +881,79 @@ export const parseShipChandlerExcel = async (file: File): Promise<ShipChandlerEx
               }
               return 0;
             };
-            
+
+            // Función helper para obtener fecha en formato YYYY-MM-DD
+            const getDate = (colName: string): string => {
+              const value = getValue(colName);
+
+              // Si es un número (serial de Excel), convertir a fecha
+              if (typeof value === 'number' && value > 0 && value < 100000) {
+                // Excel serial date: 1 = 1900-01-01
+                // Ajuste: Excel cuenta el 29/02/1900 como válido, pero JavaScript no
+                const excelEpoch = new Date(1900, 0, 1);
+                const millisecondsPerDay = 24 * 60 * 60 * 1000;
+                const adjustedSerialNumber = value > 59 ? value - 1 : value;
+                const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay);
+
+                if (!isNaN(date.getTime())) {
+                  const year = date.getFullYear();
+                  if (year >= 1900 && year <= 2100) {
+                    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                    const day = date.getDate().toString().padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                  }
+                }
+              }
+
+              // Si es string que parece ser un serial de Excel (solo dígitos)
+              if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (trimmed.match(/^\d+$/) && parseInt(trimmed, 10) > 0 && parseInt(trimmed, 10) < 100000) {
+                  const serial = parseInt(trimmed, 10);
+                  const excelEpoch = new Date(1900, 0, 1);
+                  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+                  const adjustedSerialNumber = serial > 59 ? serial - 1 : serial;
+                  const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay);
+
+                  if (!isNaN(date.getTime())) {
+                    const year = date.getFullYear();
+                    if (year >= 1900 && year <= 2100) {
+                      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                      const day = date.getDate().toString().padStart(2, '0');
+                      return `${year}-${month}-${day}`;
+                    }
+                  }
+                }
+
+                // Si ya está en formato YYYY-MM-DD, retornar tal cual
+                if (trimmed.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                  return trimmed;
+                }
+
+                // Si está en formato DD-MM-YYYY o DD/MM/YYYY, convertir
+                if (trimmed.match(/^\d{2}[-\/]\d{2}[-\/]\d{4}$/)) {
+                  const parts = trimmed.split(/[-\/]/);
+                  if (parts.length === 3) {
+                    const [part1, part2, year] = parts;
+                    // Asumir DD-MM-YYYY (formato común en Panamá/Latinoamérica)
+                    return `${year}-${part2.padStart(2, '0')}-${part1.padStart(2, '0')}`;
+                  }
+                }
+
+                // Si está en formato MM/DD/YYYY (formato US)
+                if (trimmed.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+                  const parts = trimmed.split('/');
+                  if (parts.length === 3) {
+                    const [month, day, year] = parts;
+                    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+                  }
+                }
+              }
+
+              // Fallback: retornar el valor como string
+              return String(value || '').trim();
+            };
+
             const invoiceType = String(getValue('invoiceType')).trim();
             
             // Solo procesar registros con Invoice Type = "Invoice"
@@ -820,7 +968,7 @@ export const parseShipChandlerExcel = async (file: File): Promise<ShipChandlerEx
               invoiceNo: String(getValue('invoiceNo')).trim(),
               invoiceType: invoiceType,
               vessel: String(getValue('vessel')).trim(),
-              date: String(getValue('date')).trim(),
+              date: getDate('date'), // Usar getDate para convertir seriales de Excel correctamente
               referenceNo: String(getValue('referenceNo')).trim(),
               deliveryAddress: String(getValue('deliveryAddress')).trim(),
               discount: getNumber('discount'),

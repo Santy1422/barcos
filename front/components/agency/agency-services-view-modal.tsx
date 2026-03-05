@@ -63,7 +63,14 @@ export function AgencyServicesViewModal({ open, onOpenChange, invoice }: AgencyS
   const relatedServices = getRelatedServices();
 
   const formatDateTime = (dateString: string) => {
+    if (!dateString) return { date: 'N/A', time: 'N/A' };
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return { date: 'N/A', time: 'N/A' };
+
+    // Validate year is within reasonable range (1900-2100)
+    const year = date.getFullYear();
+    if (year < 1900 || year > 2100) return { date: 'N/A', time: 'N/A' };
+
     return {
       date: date.toLocaleDateString('es-ES'),
       time: date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -73,6 +80,12 @@ export function AgencyServicesViewModal({ open, onOpenChange, invoice }: AgencyS
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'N/A';
+
+    // Validate year is within reasonable range (1900-2100)
+    const year = date.getFullYear();
+    if (year < 1900 || year > 2100) return 'N/A';
+
     return date.toLocaleDateString('es-ES');
   };
 

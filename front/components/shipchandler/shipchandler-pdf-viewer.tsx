@@ -21,7 +21,7 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Función para generar el PDF (basada en la lógica de ShipChandler prefactura)
-  const generateShipChandlerPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string) => {
+  const generateShipChandlerPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string, logoBase64?: string) => {
     if (selectedRecords.length === 0) {
       return new Blob([], { type: 'application/pdf' })
     }
@@ -48,14 +48,18 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
 
     const doc = new jsPDF()
 
-    // Colores / encabezado
+    // Logo de la empresa
     const lightBlue = [59, 130, 246]
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14)
-    doc.setFont(undefined, 'bold')
-    doc.text('SCH', 30, 23, { align: 'center', baseline: 'middle' })
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('SCH', 30, 23, { align: 'center', baseline: 'middle' })
+    }
 
     // Número de factura/prefactura y fecha
     doc.setTextColor(0, 0, 0)
@@ -68,53 +72,86 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
       if (!records || records.length === 0) {
         return null
       }
-      
+
       const firstRecord = records[0]
       const data = firstRecord?.data || {}
-      const recordDate = data?.date
-      
+      let recordDate = data?.date
+
       if (!recordDate) {
         return null
       }
-      
-      // Si es string en formato DD-MM-YYYY
-      if (typeof recordDate === 'string' && recordDate.match(/^\d{2}-\d{2}-\d{4}$/)) {
-        const [day, month, year] = recordDate.split('-').map(Number)
-        return new Date(year, month - 1, day)
+
+      // Si es string, limpiar espacios y caracteres especiales
+      if (typeof recordDate === 'string') {
+        recordDate = recordDate.trim()
       }
-      
+
+      // Si es string en formato DD-MM-YYYY (incluyendo variantes con espacios)
+      if (typeof recordDate === 'string' && recordDate.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+        const parts = recordDate.split('-')
+        if (parts.length === 3) {
+          const [part1, part2, year] = parts.map(Number)
+          // Si el primer número es > 12, es DD-MM-YYYY
+          if (part1 > 12) {
+            return new Date(year, part2 - 1, part1)
+          }
+          // Si el segundo número es > 12, es MM-DD-YYYY
+          if (part2 > 12) {
+            return new Date(year, part1 - 1, part2)
+          }
+          // Asumir DD-MM-YYYY por defecto (formato europeo/latinoamericano)
+          return new Date(year, part2 - 1, part1)
+        }
+      }
+
       // Si es string en formato YYYY-MM-DD
-      if (typeof recordDate === 'string' && recordDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      if (typeof recordDate === 'string' && recordDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
         const [year, month, day] = recordDate.split('-').map(Number)
-        return new Date(year, month - 1, day)
+        // Validar que el año sea razonable (entre 1900 y 2100)
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day)
+        }
       }
-      
+
+      // Si es string en formato ISO con T
+      if (typeof recordDate === 'string' && recordDate.includes('T')) {
+        const datePart = recordDate.split('T')[0]
+        if (datePart.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+          const [year, month, day] = datePart.split('-').map(Number)
+          if (year >= 1900 && year <= 2100) {
+            return new Date(year, month - 1, day)
+          }
+        }
+      }
+
       // Si es string con formato DD/MM/YYYY
       if (typeof recordDate === 'string' && recordDate.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
         const parts = recordDate.split('/')
         if (parts.length === 3) {
-          const [day, month, year] = parts.map(Number)
-          return new Date(year, month - 1, day)
+          const [part1, part2, year] = parts.map(Number)
+          // Si el primer número es > 12, es DD/MM/YYYY
+          if (part1 > 12) {
+            return new Date(year, part2 - 1, part1)
+          }
+          // Asumir DD/MM/YYYY por defecto
+          return new Date(year, part2 - 1, part1)
         }
       }
-      
-      // Si es número (serie de Excel)
-      if (typeof recordDate === 'number') {
+
+      // Si es número (serie de Excel) - solo valores razonables (1 a 100000)
+      if (typeof recordDate === 'number' && recordDate > 0 && recordDate < 100000) {
         const excelEpoch = new Date(1900, 0, 1)
         const millisecondsPerDay = 24 * 60 * 60 * 1000
         const adjustedSerialNumber = recordDate > 59 ? recordDate - 1 : recordDate
         const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
-        if (!isNaN(date.getTime())) {
+        if (!isNaN(date.getTime()) && date.getFullYear() >= 1900 && date.getFullYear() <= 2100) {
           return date
         }
       }
-      
-      // Intentar parsear como fecha ISO o cualquier otro formato
-      const date = new Date(recordDate)
-      if (!isNaN(date.getTime())) {
-        return date
-      }
-      
+
+      // NO usar new Date(recordDate) genérico - puede producir años inválidos
+      // En su lugar, usar fecha actual como fallback
+      console.warn('getDateFromFirstRecord: No se pudo parsear la fecha:', recordDate)
       return null
     }
     
@@ -122,19 +159,46 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
     const formatInvoiceDate = (dateString: string) => {
       if (!dateString) return null
 
-      if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        const [year, month, day] = dateString.split('-').map(Number)
-        return new Date(year, month - 1, day)
+      // Limpiar espacios
+      const cleanDate = typeof dateString === 'string' ? dateString.trim() : String(dateString)
+
+      // Formato YYYY-MM-DD
+      if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+        const [year, month, day] = cleanDate.split('-').map(Number)
+        // Validar año razonable
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day)
+        }
       }
 
-      if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-        const datePart = dateString.split('T')[0]
+      // Formato ISO con T
+      if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}T/)) {
+        const datePart = cleanDate.split('T')[0]
         const [year, month, day] = datePart.split('-').map(Number)
-        return new Date(year, month - 1, day)
+        if (year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, day)
+        }
       }
 
-      const parsed = new Date(dateString)
-      return isNaN(parsed.getTime()) ? null : parsed
+      // Formato DD-MM-YYYY
+      if (cleanDate.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+        const parts = cleanDate.split('-')
+        if (parts.length === 3) {
+          const [part1, part2, year] = parts.map(Number)
+          if (year >= 1900 && year <= 2100) {
+            // Si part1 > 12, es DD-MM-YYYY
+            if (part1 > 12) {
+              return new Date(year, part2 - 1, part1)
+            }
+            // Asumir DD-MM-YYYY
+            return new Date(year, part2 - 1, part1)
+          }
+        }
+      }
+
+      // NO usar new Date(dateString) genérico - puede producir años inválidos
+      console.warn('formatInvoiceDate: No se pudo parsear la fecha:', dateString)
+      return null
     }
 
     // Obtener fecha: primero intentar fecha del primer registro (invoice date), luego issueDate, finalmente fecha de hoy
@@ -165,6 +229,14 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
     doc.text(`${day} ${month} ${year}`, 195, 35, { align: 'right' })
     doc.setFontSize(8)
     doc.text('DAY MO YR', 195, 40, { align: 'right' })
+
+    // PO Number (solo si existe)
+    if (invoiceData.poNumber) {
+      doc.setFontSize(10)
+      doc.setFont(undefined, 'bold')
+      doc.text(`PO: ${invoiceData.poNumber}`, 195, 46, { align: 'right' })
+      doc.setFont(undefined, 'normal')
+    }
 
     // Información empresa
     doc.setFontSize(9)
@@ -314,24 +386,42 @@ export function ShipChandlerPdfViewer({ open, onOpenChange, invoice, clients, al
   useEffect(() => {
     if (open && invoice) {
       setIsGenerating(true);
-      try {
-        // Obtener los registros relacionados con esta factura
-        const relatedRecords = allRecords.filter((record: any) =>
-          invoice.relatedRecordIds.includes(record._id || record.id)
-        );
-        const pdfTitle = invoice.status === "facturada" ? "FACTURA" : "PREFACTURA";
-        const pdf = generateShipChandlerPDF(invoice, relatedRecords, pdfTitle);
-        setPdfBlob(pdf);
-      } catch (error) {
-        console.error("Error generando PDF:", error);
-        toast({
-          title: "Error",
-          description: "Error al generar el PDF",
-          variant: "destructive"
-        });
-      } finally {
-        setIsGenerating(false);
-      }
+
+      const loadLogoAndGenerate = async () => {
+        try {
+          // Cargar logo PTYSS (ShipChandler es parte de PTY Ship Suppliers)
+          let logoBase64: string | undefined;
+          try {
+            const response = await fetch('/logos/logo_PTYSS.png');
+            const blob = await response.blob();
+            logoBase64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+          } catch (e) {
+            console.warn("No se pudo cargar el logo PTYSS, usando texto fallback");
+          }
+
+          const relatedRecords = allRecords.filter((record: any) =>
+            invoice.relatedRecordIds.includes(record._id || record.id)
+          );
+          const pdfTitle = invoice.status === "facturada" ? "FACTURA" : "PREFACTURA";
+          const pdf = generateShipChandlerPDF(invoice, relatedRecords, pdfTitle, logoBase64);
+          setPdfBlob(pdf);
+        } catch (error) {
+          console.error("Error generando PDF:", error);
+          toast({
+            title: "Error",
+            description: "Error al generar el PDF",
+            variant: "destructive"
+          });
+        } finally {
+          setIsGenerating(false);
+        }
+      };
+
+      loadLogoAndGenerate();
     }
   }, [open, invoice, clients, allRecords, toast]);
 

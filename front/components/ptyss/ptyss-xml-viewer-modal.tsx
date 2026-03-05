@@ -259,7 +259,13 @@ export function PTYSSXmlViewerModal({
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('es-ES')
+    if (!dateString) return 'N/A'
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return 'N/A'
+    const year = date.getFullYear()
+    // Year validation to prevent year 40000 issue
+    if (year < 1900 || year > 2100) return 'N/A'
+    return date.toLocaleString('es-ES')
   }
 
   return (

@@ -21,7 +21,7 @@ const invoicesSchema = new mongoose.Schema({
   },
   clientSapNumber: {
     type: String,
-    required: true
+    required: false // Campo opcional - no todos los clientes tienen SAP code
   },
   issueDate: {
     type: Date,

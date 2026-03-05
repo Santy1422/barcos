@@ -40,33 +40,33 @@ import { selectAllLocalServices, selectLocalServicesLoading, fetchLocalServices 
 import { createApiUrl } from "@/lib/api-config"
 import { DiscountInput } from "@/components/ui/discount-input"
 
-export function PTYSSPrefactura() {
+export function AgencyPrefactura() {
   const dispatch = useAppDispatch()
   const { toast } = useToast()
   
-  const ptyssRecords = useAppSelector((state) =>
-    selectRecordsByModule(state, "ptyss")
+  const agencyRecords = useAppSelector((state) =>
+    selectRecordsByModule(state, "agency")
   )
   const isLoadingRecords = useAppSelector(selectRecordsLoading)
   const clients = useAppSelector(selectAllClients)
   const navieras = useAppSelector(selectActiveNavieras)
-  const additionalServices = useAppSelector((state) => selectServicesByModule(state, "ptyss"))
+  const additionalServices = useAppSelector((state) => selectServicesByModule(state, "agency"))
   const servicesLoading = useAppSelector(selectServicesLoading)
   const localServices = useAppSelector(selectAllLocalServices)
   const localServicesLoading = useAppSelector(selectLocalServicesLoading)
   
   // Debug: Log registros PTYSS
-  console.log('🔍 PTYSSPrefactura - ptyssRecords:', ptyssRecords)
-  console.log('🔍 PTYSSPrefactura - ptyssRecords.length:', ptyssRecords.length)
-  console.log('🔍 PTYSSPrefactura - isLoadingRecords:', isLoadingRecords)
+  console.log('🔍 AgencyPrefactura - agencyRecords:', agencyRecords)
+  console.log('🔍 AgencyPrefactura - agencyRecords.length:', agencyRecords.length)
+  console.log('🔍 AgencyPrefactura - isLoadingRecords:', isLoadingRecords)
   
 
   
   // Debug: Log services
-  console.log('🔍 PTYSSPrefactura - additionalServices:', additionalServices)
-  console.log('🔍 PTYSSPrefactura - servicesLoading:', servicesLoading)
-  console.log('🔍 PTYSSPrefactura - localServices:', localServices)
-  console.log('🔍 PTYSSPrefactura - localServicesLoading:', localServicesLoading)
+  console.log('🔍 AgencyPrefactura - additionalServices:', additionalServices)
+  console.log('🔍 AgencyPrefactura - servicesLoading:', servicesLoading)
+  console.log('🔍 AgencyPrefactura - localServices:', localServices)
+  console.log('🔍 AgencyPrefactura - localServicesLoading:', localServicesLoading)
   
   // Estado para los pasos
   const [currentStep, setCurrentStep] = useState(1)
@@ -112,8 +112,21 @@ export function PTYSSPrefactura() {
 
 
   // Cargar registros PTYSS al montar el componente
+  // Logo para PDF
+  const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined)
+
   useEffect(() => {
-    dispatch(fetchRecordsByModule("ptyss"))
+    dispatch(fetchRecordsByModule("agency"))
+
+    // Cargar logo PTYSS
+    fetch('/logos/logo_PTYSS.png')
+      .then(res => res.blob())
+      .then(blob => {
+        const reader = new FileReader()
+        reader.onloadend = () => setLogoBase64(reader.result as string)
+        reader.readAsDataURL(blob)
+      })
+      .catch(() => console.warn("No se pudo cargar el logo PTYSS"))
   }, [dispatch])
 
   // Cargar clientes al montar el componente
@@ -123,14 +136,14 @@ export function PTYSSPrefactura() {
 
   // Cargar servicios adicionales al montar el componente
   useEffect(() => {
-    console.log('🔍 PTYSSPrefactura - Loading services for module: ptyss')
-    dispatch(fetchServices("ptyss"))
+    console.log('🔍 AgencyPrefactura - Loading services for module: agency')
+    dispatch(fetchServices("agency"))
   }, [dispatch])
 
   // Cargar servicios locales al montar el componente
   useEffect(() => {
-    console.log('🔍 PTYSSPrefactura - Loading local services for module: ptyss')
-    dispatch(fetchLocalServices("ptyss"))
+    console.log('🔍 AgencyPrefactura - Loading local services for module: agency')
+    dispatch(fetchLocalServices("agency"))
   }, [dispatch])
 
   // Cargar servicios locales fijos al montar el componente
@@ -157,7 +170,7 @@ export function PTYSSPrefactura() {
           )
           
           setFixedLocalServices(fixedServices)
-          console.log('🔍 PTYSSPrefactura - Fixed local services loaded:', fixedServices.map((s: any) => ({ code: s.code, name: s.name, price: s.price })))
+          console.log('🔍 AgencyPrefactura - Fixed local services loaded:', fixedServices.map((s: any) => ({ code: s.code, name: s.name, price: s.price })))
         } else {
           console.error('🔍 Error loading fixed local services:', response.status, response.statusText)
         }
@@ -229,9 +242,9 @@ export function PTYSSPrefactura() {
   }
 
   // Debug: Log detallado de cada registro (después de definir getRecordType)
-  if (ptyssRecords.length > 0) {
-    console.log('🔍 PTYSSPrefactura - Análisis detallado de registros:')
-    ptyssRecords.forEach((record: IndividualExcelRecord, index: number) => {
+  if (agencyRecords.length > 0) {
+    console.log('🔍 AgencyPrefactura - Análisis detallado de registros:')
+    agencyRecords.forEach((record: IndividualExcelRecord, index: number) => {
       const data = record.data as Record<string, any>
       const recordType = getRecordType(record)
       console.log(`  Registro ${index + 1}:`)
@@ -252,7 +265,7 @@ export function PTYSSPrefactura() {
   }
 
   // Filtrar registros por búsqueda, tipo, estado y fecha
-  const filteredRecords = ptyssRecords.filter((record: IndividualExcelRecord) => {
+  const filteredRecords = agencyRecords.filter((record: IndividualExcelRecord) => {
     const data = record.data as Record<string, any>
     const recordType = getRecordType(record)
     
@@ -322,7 +335,7 @@ export function PTYSSPrefactura() {
   })
 
   // Obtener registros seleccionados
-    const selectedRecords = ptyssRecords.filter((record: IndividualExcelRecord) =>
+    const selectedRecords = agencyRecords.filter((record: IndividualExcelRecord) =>
     selectedRecordIds.includes(getRecordId(record))
   )
 
@@ -377,7 +390,7 @@ export function PTYSSPrefactura() {
     }
     
     // Obtener el primer registro seleccionado para comparar
-    const firstSelectedRecord = ptyssRecords.find((r: IndividualExcelRecord) => getRecordId(r) === selectedRecordIds[0])
+    const firstSelectedRecord = agencyRecords.find((r: IndividualExcelRecord) => getRecordId(r) === selectedRecordIds[0])
     if (!firstSelectedRecord) {
       return false
     }
@@ -394,7 +407,7 @@ export function PTYSSPrefactura() {
   }
 
   const handleRecordSelection = (recordId: string, checked: boolean) => {
-    const record = ptyssRecords.find((r: IndividualExcelRecord) => getRecordId(r) === recordId)
+    const record = agencyRecords.find((r: IndividualExcelRecord) => getRecordId(r) === recordId)
     if (!record) return
     
     if (checked) {
@@ -484,7 +497,7 @@ export function PTYSSPrefactura() {
           const nonLocalServices = prev.filter(s => !s.isLocalService)
           
           // Obtener todos los registros locales seleccionados usando selectedRecordIds
-          const selectedLocalRecords = ptyssRecords.filter((record: IndividualExcelRecord) => {
+          const selectedLocalRecords = agencyRecords.filter((record: IndividualExcelRecord) => {
             const recordId = getRecordId(record)
             const isSelected = selectedRecordIds.includes(recordId)
             const data = record.data as Record<string, any>
@@ -571,7 +584,7 @@ export function PTYSSPrefactura() {
         
         // Recalcular servicios locales fijos después de actualizar selectedRecordIds
         setTimeout(() => {
-          const selectedLocalRecords = ptyssRecords.filter((record: IndividualExcelRecord) => {
+          const selectedLocalRecords = agencyRecords.filter((record: IndividualExcelRecord) => {
             const recordId = getRecordId(record)
             const isSelected = newSelectedIds.includes(recordId)
             const data = record.data as Record<string, any>
@@ -789,7 +802,7 @@ export function PTYSSPrefactura() {
   useEffect(() => {
     
     // Obtener todos los registros locales seleccionados
-    const selectedLocalRecords = ptyssRecords.filter((record: IndividualExcelRecord) => {
+    const selectedLocalRecords = agencyRecords.filter((record: IndividualExcelRecord) => {
       const recordId = getRecordId(record)
       const isSelected = selectedRecordIds.includes(recordId)
       const data = record.data as Record<string, any>
@@ -876,7 +889,7 @@ export function PTYSSPrefactura() {
       const nonLocalServices = prev.filter(s => !s.isLocalService)
       return [...nonLocalServices, ...allLocalServices]
     })
-  }, [selectedRecordIds, ptyssRecords, fixedLocalServices])
+  }, [selectedRecordIds, agencyRecords, fixedLocalServices])
 
   // Navegación entre pasos
   const handleNextStep = () => {
@@ -945,7 +958,7 @@ export function PTYSSPrefactura() {
       })
       
       // Refrescar los registros pendientes
-      dispatch(fetchPendingRecordsByModule("ptyss"))
+      dispatch(fetchPendingRecordsByModule("agency"))
       
       // Cerrar el modal
       setIsRecordModalOpen(false)
@@ -991,7 +1004,7 @@ export function PTYSSPrefactura() {
       })
       
       // Refrescar todos los registros del módulo PTYSS
-      dispatch(fetchRecordsByModule("ptyss"))
+      dispatch(fetchRecordsByModule("agency"))
       
     } catch (error: any) {
       console.error("Error al actualizar estado:", error)
@@ -1023,7 +1036,7 @@ export function PTYSSPrefactura() {
       })
       
       // Refrescar todos los registros del módulo PTYSS
-      dispatch(fetchRecordsByModule("ptyss"))
+      dispatch(fetchRecordsByModule("agency"))
       
     } catch (error: any) {
       toast({
@@ -1134,11 +1147,11 @@ export function PTYSSPrefactura() {
   }
 
   // Función para generar PDF de la prefactura PTYSS
-  const generatePTYSSPrefacturaPDF = (prefacturaData: any, selectedRecords: IndividualExcelRecord[]) => {
-    console.log('🔍 generatePTYSSPrefacturaPDF - Starting PDF generation')
-    console.log('🔍 generatePTYSSPrefacturaPDF - prefacturaData:', prefacturaData)
-    console.log('🔍 generatePTYSSPrefacturaPDF - selectedRecords:', selectedRecords)
-    console.log('🔍 generatePTYSSPrefacturaPDF - selectedAdditionalServices:', selectedAdditionalServices)
+  const generateAgencyPrefacturaPDF = (prefacturaData: any, selectedRecords: IndividualExcelRecord[]) => {
+    console.log('🔍 generateAgencyPrefacturaPDF - Starting PDF generation')
+    console.log('🔍 generateAgencyPrefacturaPDF - prefacturaData:', prefacturaData)
+    console.log('🔍 generateAgencyPrefacturaPDF - selectedRecords:', selectedRecords)
+    console.log('🔍 generateAgencyPrefacturaPDF - selectedAdditionalServices:', selectedAdditionalServices)
     const doc = new jsPDF()
     
     // Configuración de colores
@@ -1146,13 +1159,17 @@ export function PTYSSPrefactura() {
     const lightBlue = [59, 130, 246] // blue-500
     const lightGray = [241, 245, 249] // slate-50
     
-    // Encabezado con logo
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(12)
-    doc.setFont(undefined, 'bold')
-    doc.text('PTYSS', 30, 25, { align: 'center' })
+    // Logo de la empresa
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(12)
+      doc.setFont(undefined, 'bold')
+      doc.text('PTYSS', 30, 25, { align: 'center' })
+    }
     
     // Número de prefactura y fecha
     doc.setTextColor(0, 0, 0)
@@ -1196,17 +1213,17 @@ export function PTYSSPrefactura() {
     // Extraer información del cliente del primer registro
     const firstRecord = selectedRecords[0]
     if (!firstRecord) {
-      console.log('🔍 generatePTYSSPrefacturaPDF - No hay registros seleccionados')
+      console.log('🔍 generateAgencyPrefacturaPDF - No hay registros seleccionados')
       return doc
     }
     
     // Buscar el cliente usando la función mejorada
     const client = getRecordClient(firstRecord)
     
-    console.log('🔍 generatePTYSSPrefacturaPDF - Primer registro:', firstRecord)
-    console.log('🔍 generatePTYSSPrefacturaPDF - Cliente encontrado:', client)
-    console.log('🔍 generatePTYSSPrefacturaPDF - Cliente address:', client?.address)
-    console.log('🔍 generatePTYSSPrefacturaPDF - Cliente phone:', client?.phone)
+    console.log('🔍 generateAgencyPrefacturaPDF - Primer registro:', firstRecord)
+    console.log('🔍 generateAgencyPrefacturaPDF - Cliente encontrado:', client)
+    console.log('🔍 generateAgencyPrefacturaPDF - Cliente address:', client?.address)
+    console.log('🔍 generateAgencyPrefacturaPDF - Cliente phone:', client?.phone)
     
     const clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : "Cliente PTYSS"
     const clientRuc = client ? (client.type === "natural" ? client.documentNumber : client.ruc) : "N/A"
@@ -1474,7 +1491,7 @@ export function PTYSSPrefactura() {
 
     try {
       // Generar PDF de previsualización
-      const pdfBlob = generatePTYSSPrefacturaPDF(prefacturaData, selectedRecords)
+      const pdfBlob = generateAgencyPrefacturaPDF(prefacturaData, selectedRecords)
       if (pdfBlob instanceof Blob) {
       setPreviewPdf(pdfBlob)
       }
@@ -1513,7 +1530,7 @@ export function PTYSSPrefactura() {
         URL.revokeObjectURL(pdfUrl)
       }
       
-      const pdfBlob = generatePTYSSPrefacturaPDF(prefacturaData, selectedRecords)
+      const pdfBlob = generateAgencyPrefacturaPDF(prefacturaData, selectedRecords)
       if (pdfBlob instanceof Blob) {
       const url = URL.createObjectURL(pdfBlob)
       setPdfUrl(url)
@@ -1628,10 +1645,11 @@ export function PTYSSPrefactura() {
       // Crear la prefactura con los registros seleccionados
       const newPrefactura: PersistedInvoiceRecord = {
         id: `PTY-PRE-${Date.now().toString().slice(-6)}`,
-        module: "ptyss",
+        module: "agency",
         invoiceNumber: prefacturaData.prefacturaNumber,
         clientName: clientName,
         clientRuc: clientRuc,
+        clientSapNumber: client.sapCode || 'N/A',
         issueDate: new Date().toISOString().split("T")[0],
         dueDate: new Date().toISOString().split("T")[0],
         currency: "USD",
@@ -1665,8 +1683,8 @@ export function PTYSSPrefactura() {
         console.log("✅ createInvoiceAsync fulfilled")
         console.log("ID de la factura creada:", response.payload.id)
         
-        console.log("🔍 PTYSSPrefactura - Marcando registros como prefacturados en backend...")
-        console.log("🔍 PTYSSPrefactura - Registros a marcar:", selectedRecords.map((r: IndividualExcelRecord) => getRecordId(r)))
+        console.log("🔍 AgencyPrefactura - Marcando registros como prefacturados en backend...")
+        console.log("🔍 AgencyPrefactura - Registros a marcar:", selectedRecords.map((r: IndividualExcelRecord) => getRecordId(r)))
         
         // Usar la nueva acción async que actualiza la base de datos
         await dispatch(updateMultipleRecordsStatusAsync({ 
@@ -1675,18 +1693,18 @@ export function PTYSSPrefactura() {
           invoiceId: response.payload.id 
         })).unwrap()
         
-        console.log("🔍 PTYSSPrefactura - Registros marcados como prefacturados en backend")
+        console.log("🔍 AgencyPrefactura - Registros marcados como prefacturados en backend")
         
         // Refrescar todos los registros PTYSS para actualizar el historial
-        console.log("🔍 PTYSSPrefactura - Refrescando todos los registros PTYSS...")
-        dispatch(fetchRecordsByModule("ptyss"))
-        dispatch(fetchPendingRecordsByModule("ptyss"))
+        console.log("🔍 AgencyPrefactura - Refrescando todos los registros PTYSS...")
+        dispatch(fetchRecordsByModule("agency"))
+        dispatch(fetchPendingRecordsByModule("agency"))
 
         // Usar el PDF de previsualización si existe, sino generar uno nuevo
         if (previewPdf) {
           setGeneratedPdf(previewPdf)
         } else {
-          const pdfBlob = generatePTYSSPrefacturaPDF(prefacturaData, selectedRecords)
+          const pdfBlob = generateAgencyPrefacturaPDF(prefacturaData, selectedRecords)
           if (pdfBlob instanceof Blob) {
           setGeneratedPdf(pdfBlob)
           }
@@ -1729,11 +1747,18 @@ export function PTYSSPrefactura() {
 
   // Función para formatear fecha y hora
   const formatDateTime = (dateString: string) => {
+    if (!dateString) return { date: 'N/A', time: 'N/A' }
     const date = new Date(dateString)
+    if (isNaN(date.getTime())) return { date: 'N/A', time: 'N/A' }
+
+    // Validate year is within reasonable range (1900-2100)
+    const year = date.getFullYear()
+    if (year < 1900 || year > 2100) return { date: 'N/A', time: 'N/A' }
+
     return {
       date: date.toLocaleDateString('es-ES'),
-      time: date.toLocaleTimeString('es-ES', { 
-        hour: '2-digit', 
+      time: date.toLocaleTimeString('es-ES', {
+        hour: '2-digit',
         minute: '2-digit',
         second: '2-digit'
       })
@@ -1886,9 +1911,9 @@ export function PTYSSPrefactura() {
                 </div>
                 <div>
                   <div className="text-xl font-bold">Paso 1: Selección de Registros</div>
-                  {ptyssRecords.length > 0 && (
+                  {agencyRecords.length > 0 && (
                     <Badge variant="secondary" className="mt-1 bg-white/20 text-white border-white/30">
-                      {ptyssRecords.length} disponibles
+                      {agencyRecords.length} disponibles
                     </Badge>
                   )}
                 </div>
@@ -1918,7 +1943,7 @@ export function PTYSSPrefactura() {
                 </div>
                 <div className="flex-1">
                   <span className="text-sm font-semibold text-slate-900">
-                    Total de registros en la base de datos: {ptyssRecords.length}
+                    Total de registros en la base de datos: {agencyRecords.length}
                   </span>
                   {(searchTerm || recordTypeFilter !== "all" || statusFilter !== "all" || startDate || endDate) && (
                     <div className="mt-1 text-sm text-slate-700">
@@ -1930,31 +1955,31 @@ export function PTYSSPrefactura() {
                   <div className="bg-white/60 px-3 py-1 rounded-md">
                     <span className="font-medium text-slate-600">Locales:</span>
                     <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "local").length}
+                      {agencyRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "local").length}
                     </span>
                   </div>
                   <div className="bg-white/60 px-3 py-1 rounded-md">
                     <span className="font-medium text-slate-600">Trasiego:</span>
                     <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "trasiego").length}
+                      {agencyRecords.filter((r: IndividualExcelRecord) => getRecordType(r) === "trasiego").length}
                     </span>
                   </div>
                   <div className="bg-white/60 px-3 py-1 rounded-md">
                     <span className="font-medium text-slate-600">Pendientes:</span>
                     <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.status === "pendiente").length}
+                      {agencyRecords.filter((r: IndividualExcelRecord) => r.status === "pendiente").length}
                     </span>
                   </div>
                   <div className="bg-white/60 px-3 py-1 rounded-md">
                     <span className="font-medium text-slate-600">Completados:</span>
                     <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.status === "completado").length}
+                      {agencyRecords.filter((r: IndividualExcelRecord) => r.status === "completado").length}
                     </span>
                   </div>
                   <div className="bg-white/60 px-3 py-1 rounded-md">
                     <span className="font-medium text-slate-600">Prefacturados:</span>
                     <span className="ml-1 font-bold text-slate-900">
-                      {ptyssRecords.filter((r: IndividualExcelRecord) => r.invoiceId).length}
+                      {agencyRecords.filter((r: IndividualExcelRecord) => r.invoiceId).length}
                     </span>
                   </div>
                 </div>
@@ -2366,7 +2391,14 @@ export function PTYSSPrefactura() {
                           </TableCell>
                           <TableCell className="py-2 px-3">
                             <div className="text-sm">
-                              {data.moveDate ? new Date(data.moveDate).toLocaleDateString('es-ES') : "N/A"}
+                              {(() => {
+                              if (!data.moveDate) return 'N/A';
+                              const d = new Date(data.moveDate);
+                              if (isNaN(d.getTime())) return 'N/A';
+                              const year = d.getFullYear();
+                              if (year < 1900 || year > 2100) return 'N/A';
+                              return d.toLocaleDateString('es-ES');
+                            })()}
                             </div>
                           </TableCell>
                           <TableCell className="py-2 px-3">
@@ -2496,7 +2528,7 @@ export function PTYSSPrefactura() {
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">
-                {ptyssRecords.length === 0 
+                {agencyRecords.length === 0 
                   ? "No hay registros PTYSS disponibles para prefacturar"
                   : "No se encontraron registros que coincidan con la búsqueda"
                 }
@@ -3280,9 +3312,15 @@ export function PTYSSPrefactura() {
                       />
                     ) : (
                       <p className="text-sm">
-                        {(selectedRecordForView.data as Record<string, any>).moveDate 
-                          ? new Date((selectedRecordForView.data as Record<string, any>).moveDate).toLocaleDateString('es-ES')
-                          : "N/A"
+                        {(() => {
+                          const moveDate = (selectedRecordForView.data as Record<string, any>).moveDate;
+                          if (!moveDate) return 'N/A';
+                          const d = new Date(moveDate);
+                          if (isNaN(d.getTime())) return 'N/A';
+                          const year = d.getFullYear();
+                          if (year < 1900 || year > 2100) return 'N/A';
+                          return d.toLocaleDateString('es-ES');
+                        })()
                         }
                       </p>
                     )}

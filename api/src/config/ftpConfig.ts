@@ -15,12 +15,12 @@ interface FtpConfig {
   };
 }
 
-// Configuración FTP para SAP
+// Configuración FTP para SAP - Producción
 export const sapFtpConfig: FtpConfig = {
   host: process.env.SAP_FTP_HOST || "ftp.msc.com",
-  user: process.env.SAP_FTP_USER || "SAP_PanamaTSG", 
+  user: process.env.SAP_FTP_USER || "SAP-PanamaTSG",
   password: process.env.SAP_FTP_PASSWORD || "6whLgP4RKRhnTFEfYPt0",
-  path: process.env.SAP_FTP_PATH || "/Test/Upload/SAP/001",
+  path: process.env.SAP_FTP_PATH || "/Upload/Prod/SAP/P01",
   secure: false, // Se puede cambiar desde .env si necesario
   secureOptions: {
     rejectUnauthorized: false

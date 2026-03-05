@@ -18,7 +18,7 @@ const excelRecordSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["pendiente", "completado", "prefacturado", "facturado", "anulado", "cancelado"],
+    enum: ["pendiente", "en_progreso", "completado", "prefacturado", "facturado", "anulado", "cancelado"],
     default: "pendiente"
   },
   totalValue: {
@@ -43,7 +43,17 @@ const excelRecordSchema = new mongoose.Schema({
     required: false,
     default: null
   },
-  
+
+  // Numero de orden consecutivo (formato: ORD-XXXXXX)
+  // Sirve como referencia tipo PO para el registro
+  // NOTA: NO usar default: null porque sparse solo ignora undefined, no null
+  orderNumber: {
+    type: String,
+    required: false,
+    unique: true,
+    sparse: true
+  },
+
   // Relaciones
   clientId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -76,6 +86,7 @@ excelRecordSchema.index({ createdBy: 1 });
 excelRecordSchema.index({ createdAt: -1 });
 excelRecordSchema.index({ sapCode: 1 });
 excelRecordSchema.index({ containerConsecutive: 1 });
+excelRecordSchema.index({ orderNumber: 1 });
 // Índice único compuesto para evitar duplicados de containerConsecutive en el mismo módulo
 excelRecordSchema.index({ module: 1, containerConsecutive: 1 }, { unique: true, sparse: true });
 

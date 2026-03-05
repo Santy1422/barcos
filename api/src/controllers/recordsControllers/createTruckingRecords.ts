@@ -1,4 +1,4 @@
-import { records } from "../../database";
+import { records, getNextOrderNumber } from "../../database";
 import { response } from "../../utils";
 import mongoose from "mongoose";
 
@@ -139,10 +139,15 @@ export default async (req, res) => {
         // Determinar el módulo basado en el sapCode o en los datos
         const module = data.sapCode === 'PTYSS001' ? 'ptyss' : 'trucking';
         const type = module === 'ptyss' ? 'maritime' : 'transport';
-        
-        // Determinar el estado para trucking: si hizo match, marcar como completado
-        const isMatched = Boolean((data && (data.isMatched === true)) || (data && Number(data.matchedPrice) > 0) || Number(totalValue) > 0)
-        const computedStatus = module === 'trucking' && isMatched ? 'completado' : 'pendiente'
+
+        // IMPORTANTE: Los registros de trucking SIEMPRE se guardan como 'pendiente'
+        // para que aparezcan en la prefactura. El estado 'completado' se asigna
+        // cuando se genera la prefactura/factura.
+        const computedStatus = 'pendiente'
+
+        // Generar numero de orden consecutivo automaticamente
+        const orderNumber = await getNextOrderNumber(module);
+        console.log(`  - orderNumber generado: ${orderNumber}`);
 
         const record = await records.create({
           excelId: validExcelId,
@@ -153,6 +158,7 @@ export default async (req, res) => {
           data, // Datos originales completos
           sapCode, // Campo específico para consultas
           containerConsecutive, // Campo específico para consultas
+          orderNumber, // Numero de orden consecutivo (tipo PO)
           clientId, // Campo específico para referencias del cliente
           createdBy: userId
         });

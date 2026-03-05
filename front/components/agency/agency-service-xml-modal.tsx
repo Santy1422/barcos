@@ -237,31 +237,42 @@ export function AgencyServiceXmlModal({ open, onOpenChange, service, services = 
   const formatDate = (dateString: string | Date, includeTime: boolean = false) => {
     if (!dateString) return 'N/A';
     try {
+      let year: number, month: number, day: number;
+
       // Si es string, verificar formato
       if (typeof dateString === 'string') {
         // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
         if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-          const [year, month, day] = dateString.split('-').map(Number);
+          [year, month, day] = dateString.split('-').map(Number);
+          // Validate year is within reasonable range (1900-2100)
+          if (year < 1900 || year > 2100) return 'N/A';
           const date = new Date(year, month - 1, day);
           return date.toLocaleDateString('es-ES');
         }
-        
+
         // Si la fecha está en formato ISO con zona horaria UTC
         if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-          const date = new Date(dateString);
+          const datePart = dateString.split('T')[0];
+          [year, month, day] = datePart.split('-').map(Number);
+          // Validate year is within reasonable range (1900-2100)
+          if (year < 1900 || year > 2100) return 'N/A';
           if (includeTime) {
+            const date = new Date(dateString);
             return date.toLocaleString('es-ES');
           }
-          const datePart = dateString.split('T')[0];
-          const [year, month, day] = datePart.split('-').map(Number);
           const localDate = new Date(year, month - 1, day);
           return localDate.toLocaleDateString('es-ES');
         }
       }
-      
+
       // Para otros formatos
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return 'N/A';
+
+      // Validate year is within reasonable range (1900-2100)
+      year = date.getFullYear();
+      if (year < 1900 || year > 2100) return 'N/A';
+
       return includeTime ? date.toLocaleString('es-ES') : date.toLocaleDateString('es-ES');
     } catch {
       return 'N/A';

@@ -31,6 +31,12 @@ export function AgencyServiceDetailModal({ open, onOpenChange, service }: Agency
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'N/A';
+
+    // Validate year is within reasonable range (1900-2100)
+    const year = date.getFullYear();
+    if (year < 1900 || year > 2100) return 'N/A';
+
     return date.toLocaleDateString('es-ES');
   };
 

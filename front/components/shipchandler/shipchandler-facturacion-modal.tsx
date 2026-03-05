@@ -30,7 +30,7 @@ interface ShipChandlerFacturacionModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   invoice: any
-  onFacturar: (invoiceNumber: string, xmlData?: { xml: string, isValid: boolean }, invoiceDate?: string) => Promise<void>
+  onFacturar: (invoiceNumber: string, xmlData?: { xml: string, isValid: boolean }, invoiceDate?: string, poNumber?: string) => Promise<void>
 }
 
 export function ShipChandlerFacturacionModal({ 
@@ -42,9 +42,10 @@ export function ShipChandlerFacturacionModal({
   const { toast } = useToast()
   const [isProcessing, setIsProcessing] = useState(false)
   const [newInvoiceNumber, setNewInvoiceNumber] = useState("")
+  const [poNumber, setPoNumber] = useState("")
   const [invoiceDate, setInvoiceDate] = useState(() => {
     const today = new Date()
-    return today.toISOString().split('T')[0] // Formato YYYY-MM-DD
+    return today.toLocaleDateString('en-CA') // Formato YYYY-MM-DD en zona horaria local
   })
   const [generatedXml, setGeneratedXml] = useState<string>("")
   const [xmlValidation, setXmlValidation] = useState<{ isValid: boolean; errors: string[] } | null>(null)
@@ -92,7 +93,24 @@ export function ShipChandlerFacturacionModal({
   // Función para formatear la fecha del registro para visualización
   const formatRecordDateForDisplay = (dateValue: any): string => {
     if (!dateValue) return 'N/A'
-    
+
+    // Helper function para convertir Excel serial date a displayable string
+    const convertExcelSerialToDisplay = (serial: number): string | null => {
+      const excelEpoch = new Date(1900, 0, 1)
+      const millisecondsPerDay = 24 * 60 * 60 * 1000
+      const adjustedSerialNumber = serial > 59 ? serial - 1 : serial
+      const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
+
+      if (isNaN(date.getTime())) return null
+
+      const year = date.getFullYear()
+      if (year < 1900 || year > 2100) return null
+
+      const day = date.getDate().toString().padStart(2, '0')
+      const month = (date.getMonth() + 1).toString().padStart(2, '0')
+      return `${day}/${month}/${year}`
+    }
+
     // Si es string en formato DD-MM-YYYY, convertir a formato legible
     if (typeof dateValue === 'string' && dateValue.match(/^\d{2}-\d{2}-\d{4}$/)) {
       const parts = dateValue.split('-')
@@ -101,7 +119,7 @@ export function ShipChandlerFacturacionModal({
         return `${day}/${month}/${year}`
       }
     }
-    
+
     // Si es string en formato YYYY-MM-DD, convertir
     if (typeof dateValue === 'string' && dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
       const parts = dateValue.split('-')
@@ -110,31 +128,31 @@ export function ShipChandlerFacturacionModal({
         return `${day}/${month}/${year}`
       }
     }
-    
-    // Si es número (serie de Excel), convertir
-    if (typeof dateValue === 'number') {
-      const excelEpoch = new Date(1900, 0, 1)
-      const millisecondsPerDay = 24 * 60 * 60 * 1000
-      const adjustedSerialNumber = dateValue > 59 ? dateValue - 1 : dateValue
-      const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
-      
-      if (!isNaN(date.getTime())) {
-        const day = date.getDate().toString().padStart(2, '0')
-        const month = (date.getMonth() + 1).toString().padStart(2, '0')
-        const year = date.getFullYear()
-        return `${day}/${month}/${year}`
+
+    // Si es string que representa un número de serie de Excel
+    if (typeof dateValue === 'string' && dateValue.match(/^\d+$/)) {
+      const serial = parseInt(dateValue, 10)
+      if (serial > 0 && serial < 100000) {
+        const result = convertExcelSerialToDisplay(serial)
+        if (result) return result
       }
     }
-    
-    // Intentar parsear como fecha
-    const date = new Date(dateValue)
-    if (!isNaN(date.getTime())) {
-      const day = date.getDate().toString().padStart(2, '0')
-      const month = (date.getMonth() + 1).toString().padStart(2, '0')
-      const year = date.getFullYear()
-      return `${day}/${month}/${year}`
+
+    // Si es número (serie de Excel), convertir
+    if (typeof dateValue === 'number') {
+      const result = convertExcelSerialToDisplay(dateValue)
+      if (result) return result
     }
-    
+
+    // Intentar parsear como fecha (solo para formatos ISO conocidos)
+    if (typeof dateValue === 'string' && dateValue.match(/^\d{4}-\d{1,2}-\d{1,2}(T|$)/)) {
+      const datePart = dateValue.split('T')[0]
+      const [year, month, day] = datePart.split('-').map(Number)
+      if (year >= 1900 && year <= 2100) {
+        return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
+      }
+    }
+
     return String(dateValue)
   }
 
@@ -144,34 +162,62 @@ export function ShipChandlerFacturacionModal({
       console.log('❌ convertDateToInputFormat: dateValue es null o undefined')
       return ''
     }
-    
+
     console.log('🔍 convertDateToInputFormat - Input:', dateValue, 'Type:', typeof dateValue)
-    
-    // Si es un número (serie de Excel), convertir
-    if (typeof dateValue === 'number') {
-      console.log('🔍 Es número, tratando como serie de Excel')
+
+    // Helper function para convertir Excel serial date a YYYY-MM-DD
+    const convertExcelSerialToDate = (serial: number): string => {
       // Excel serial date: 1 = 1900-01-01
       // Ajuste: Excel cuenta el 29/02/1900 como válido, pero JavaScript no
       const excelEpoch = new Date(1900, 0, 1) // 1 de enero de 1900
       const millisecondsPerDay = 24 * 60 * 60 * 1000
-      const adjustedSerialNumber = dateValue > 59 ? dateValue - 1 : dateValue
+      const adjustedSerialNumber = serial > 59 ? serial - 1 : serial
       const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
-      
+
       if (isNaN(date.getTime())) {
         console.log('❌ Fecha inválida después de convertir número de Excel')
         return ''
       }
-      
+
       const year = date.getFullYear()
+      // Validar que el año sea razonable
+      if (year < 1900 || year > 2100) {
+        console.log('❌ Año fuera de rango después de convertir Excel serial:', year)
+        return ''
+      }
+
       const month = (date.getMonth() + 1).toString().padStart(2, '0')
       const day = date.getDate().toString().padStart(2, '0')
-      const result = `${year}-${month}-${day}`
-      console.log('✅ Fecha convertida desde número:', result)
+      return `${year}-${month}-${day}`
+    }
+
+    // Si es un número (serie de Excel), convertir - solo valores razonables
+    if (typeof dateValue === 'number' && dateValue > 0 && dateValue < 100000) {
+      console.log('🔍 Es número, tratando como serie de Excel:', dateValue)
+      const result = convertExcelSerialToDate(dateValue)
+      if (result) {
+        console.log('✅ Fecha convertida desde número:', result)
+      }
       return result
     }
-    
+
     // Si es string, intentar parsear
     if (typeof dateValue === 'string') {
+      // IMPORTANTE: Verificar primero si es un string que representa un número de serie de Excel
+      // Esto ocurre cuando el Excel parser convierte la fecha a String()
+      if (dateValue.match(/^\d+$/)) {
+        const serial = parseInt(dateValue, 10)
+        // Verificar que el serial esté en un rango razonable para fechas de Excel
+        // Valores típicos de Excel para años 2020-2030 están entre ~43000 y ~48000
+        if (serial > 0 && serial < 100000) {
+          console.log('🔍 String parece ser serial de Excel:', serial)
+          const result = convertExcelSerialToDate(serial)
+          if (result) {
+            console.log('✅ Fecha convertida desde string serial de Excel:', result)
+            return result
+          }
+        }
+      }
       console.log('🔍 Es string, intentando parsear')
       
       // Si ya está en formato YYYY-MM-DD
@@ -234,20 +280,22 @@ export function ShipChandlerFacturacionModal({
         }
       }
       
-      // Intentar parsear como fecha ISO o estándar
-      const date = new Date(dateValue)
-      if (!isNaN(date.getTime())) {
-        const year = date.getFullYear()
-        const month = (date.getMonth() + 1).toString().padStart(2, '0')
-        const day = date.getDate().toString().padStart(2, '0')
-        const result = `${year}-${month}-${day}`
-        console.log('✅ Fecha parseada desde string:', result)
-        return result
+      // Intentar parsear como fecha ISO o estándar (solo si tiene formato esperado)
+      // IMPORTANTE: No usar new Date() genérico porque puede producir años inválidos como 40000
+      if (dateValue.match(/^\d{4}-\d{1,2}-\d{1,2}(T|$)/)) {
+        const datePart = dateValue.split('T')[0]
+        const [year, month, day] = datePart.split('-').map(Number)
+        // Validar año razonable
+        if (year >= 1900 && year <= 2100) {
+          const result = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          console.log('✅ Fecha parseada desde formato ISO:', result)
+          return result
+        }
       }
-      
+
       console.log('❌ No se pudo parsear el string como fecha')
     }
-    
+
     console.log('❌ convertDateToInputFormat: No se pudo convertir', dateValue)
     return ''
   }
@@ -258,6 +306,7 @@ export function ShipChandlerFacturacionModal({
     
     setGeneratedXml("")
     setXmlValidation(null)
+    setPoNumber("")
     setIsSendingToSap(false)
     setSapLogs([])
     setShowSapLogs(false)
@@ -304,27 +353,27 @@ export function ShipChandlerFacturacionModal({
               console.log('⚠️ No se pudo convertir la fecha, usando fecha actual')
               // Si no se puede convertir, usar fecha actual
               const today = new Date()
-              setInvoiceDate(today.toISOString().split('T')[0])
+              setInvoiceDate(today.toLocaleDateString('en-CA'))
             }
           } else {
             console.log('⚠️ No hay fecha en el registro (recordDate es:', recordDate, '), usando fecha actual')
             // Si no hay fecha, usar fecha actual
             const today = new Date()
-            setInvoiceDate(today.toISOString().split('T')[0])
+            setInvoiceDate(today.toLocaleDateString('en-CA'))
           }
         } else {
           console.log('⚠️ No se encontraron registros relacionados')
           // Si no hay registros, valores por defecto
           setNewInvoiceNumber("")
           const today = new Date()
-          setInvoiceDate(today.toISOString().split('T')[0])
+          setInvoiceDate(today.toLocaleDateString('en-CA'))
         }
       } else {
         console.log('⚠️ No hay registros cargados aún o no hay relatedRecordIds')
         // Si no hay registros cargados aún, valores por defecto
         setNewInvoiceNumber("")
         const today = new Date()
-        setInvoiceDate(today.toISOString().split('T')[0])
+        setInvoiceDate(today.toLocaleDateString('en-CA'))
       }
     }
     
@@ -615,7 +664,7 @@ export function ShipChandlerFacturacionModal({
       
       console.log("🔍 ShipChandlerFacturacionModal - xmlData final que se enviará:", xmlData)
       
-      await onFacturar(newInvoiceNumber, xmlData, invoiceDate)
+      await onFacturar(newInvoiceNumber, xmlData, invoiceDate, poNumber)
       
       const xmlMessage = xmlData?.isValid 
         ? " XML generado y validado correctamente."
@@ -730,6 +779,23 @@ export function ShipChandlerFacturacionModal({
               />
               <p className="text-xs text-muted-foreground">
                 Fecha obtenida automáticamente del registro (Date). Puede editarla si es necesario.
+              </p>
+            </div>
+
+            {/* Número de PO */}
+            <div className="space-y-2">
+              <Label htmlFor="po-number" className="text-sm font-semibold">
+                Numero de PO (opcional)
+              </Label>
+              <Input
+                id="po-number"
+                value={poNumber}
+                onChange={(e) => setPoNumber(e.target.value.toUpperCase())}
+                placeholder="Ej: PO-12345"
+                className="font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                Este campo aparecera solo en el PDF, no en el XML
               </p>
             </div>
 

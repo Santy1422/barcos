@@ -2,6 +2,66 @@ import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features
 import { js2xml } from "xml-js"
 import { TRUCKING_DEFAULTS } from "./constants/trucking-options"
 
+// Tipo para el mapa de container types (code -> sapCode)
+export interface ContainerTypeMapping {
+  code: string
+  sapCode: string
+  category: string
+}
+
+// Variable global para almacenar el mapa de container types
+let containerTypesMap: ContainerTypeMapping[] = []
+
+// Variable para trackear los containerTypes no encontrados durante la generación de XML
+let missingContainerTypes: Set<string> = new Set()
+
+// Función para establecer el mapa de container types (llamar al inicio de la app o cuando se carguen)
+export const setContainerTypesMap = (containerTypes: ContainerTypeMapping[]) => {
+  containerTypesMap = containerTypes
+  console.log('🗺️ Container Types Map actualizado:', containerTypesMap.length, 'tipos')
+}
+
+// Función para limpiar los tipos faltantes antes de generar un nuevo XML
+export const clearMissingContainerTypes = () => {
+  missingContainerTypes = new Set()
+}
+
+// Función para obtener los tipos de contenedor que no se encontraron
+export const getMissingContainerTypes = (): string[] => {
+  return Array.from(missingContainerTypes)
+}
+
+// Función para verificar si hay tipos de contenedor faltantes
+export const hasMissingContainerTypes = (): boolean => {
+  return missingContainerTypes.size > 0
+}
+
+// Función para obtener el sapCode de un containerType code
+export const getContainerTypeSapCode = (code: string): string => {
+  if (!code) return 'DV' // Valor por defecto
+
+  const normalizedCode = code.toUpperCase().trim()
+
+  // Ignorar valores por defecto o vacíos
+  if (normalizedCode === 'DV' || normalizedCode === '') {
+    return normalizedCode || 'DV'
+  }
+
+  const containerType = containerTypesMap.find(ct =>
+    ct.code.toUpperCase().trim() === normalizedCode
+  )
+
+  if (containerType && containerType.sapCode) {
+    console.log(`✅ Container Type homologado: ${code} -> ${containerType.sapCode}`)
+    return containerType.sapCode
+  }
+
+  // Registrar el tipo faltante
+  missingContainerTypes.add(code)
+  console.warn(`⚠️ Container Type no encontrado en el mapa: ${code}, usando valor original`)
+  return code // Retornar el código original si no se encuentra en el mapa
+}
+
 // Tipos para PTYSS XML
 export interface PTYSSInvoiceForXml {
   id: string
@@ -43,23 +103,95 @@ export interface PTYSSRecordForXml {
 function formatDateForXML(dateString: string): string {
   // Aplicar la misma lógica de corrección de zona horaria que en trucking-records.tsx
   let date: Date
-  
-  if (!dateString) {
-    date = new Date()
-  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
-    const [year, month, day] = dateString.split('-').map(Number)
-    date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
-  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-    // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
-    const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
-    const [year, month, day] = datePart.split('-').map(Number)
-    date = new Date(year, month - 1, day) // Crear en zona horaria local
-  } else {
-    // Para otros formatos, usar el método normal
-    date = new Date(dateString)
+
+  // Limpiar espacios si es string
+  const cleanDate = dateString ? dateString.trim() : ''
+
+  // Helper function para convertir Excel serial date a Date
+  const convertExcelSerialToDate = (serial: number): Date | null => {
+    // Excel serial date: 1 = 1900-01-01
+    // Ajuste: Excel cuenta el 29/02/1900 como válido, pero JavaScript no
+    const excelEpoch = new Date(1900, 0, 1) // 1 de enero de 1900
+    const millisecondsPerDay = 24 * 60 * 60 * 1000
+    const adjustedSerialNumber = serial > 59 ? serial - 1 : serial
+    const result = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
+
+    if (isNaN(result.getTime())) {
+      return null
+    }
+
+    const year = result.getFullYear()
+    // Validar que el año sea razonable
+    if (year < 1900 || year > 2100) {
+      return null
+    }
+
+    return result
   }
-  
+
+  if (!cleanDate) {
+    date = new Date()
+  } else if (cleanDate.match(/^\d+$/)) {
+    // Si es un string que contiene solo números, puede ser un serial de Excel
+    const serial = parseInt(cleanDate, 10)
+    // Verificar que el serial esté en un rango razonable para fechas de Excel
+    // Valores típicos de Excel para años 2020-2030 están entre ~43000 y ~48000
+    if (serial > 0 && serial < 100000) {
+      const excelDate = convertExcelSerialToDate(serial)
+      if (excelDate) {
+        date = excelDate
+        console.log('formatDateForXML: Fecha convertida desde serial de Excel:', serial, '->', date.toISOString().split('T')[0])
+      } else {
+        console.warn('formatDateForXML: Serial de Excel inválido:', serial, '- usando fecha actual')
+        date = new Date()
+      }
+    } else {
+      console.warn('formatDateForXML: Serial de Excel fuera de rango:', serial, '- usando fecha actual')
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
+    const [year, month, day] = cleanDate.split('-').map(Number)
+    // Validar año razonable
+    if (year >= 1900 && year <= 2100) {
+      date = new Date(year, month - 1, day)
+    } else {
+      console.warn('formatDateForXML: Año fuera de rango:', year, '- usando fecha actual')
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}T/)) {
+    // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
+    const datePart = cleanDate.split('T')[0]
+    const [year, month, day] = datePart.split('-').map(Number)
+    if (year >= 1900 && year <= 2100) {
+      date = new Date(year, month - 1, day)
+    } else {
+      console.warn('formatDateForXML: Año fuera de rango:', year, '- usando fecha actual')
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+    // Si la fecha está en formato DD-MM-YYYY
+    const parts = cleanDate.split('-')
+    const [part1, part2, yearStr] = parts
+    const year = Number(yearStr)
+    if (year >= 1900 && year <= 2100) {
+      // Si part1 > 12, es DD-MM-YYYY
+      if (Number(part1) > 12) {
+        date = new Date(year, Number(part2) - 1, Number(part1))
+      } else {
+        // Asumir DD-MM-YYYY
+        date = new Date(year, Number(part2) - 1, Number(part1))
+      }
+    } else {
+      console.warn('formatDateForXML: Año fuera de rango:', year, '- usando fecha actual')
+      date = new Date()
+    }
+  } else {
+    // NO usar new Date(dateString) genérico - puede producir años inválidos
+    console.warn('formatDateForXML: Formato de fecha no reconocido:', cleanDate, '- usando fecha actual')
+    date = new Date()
+  }
+
   const year = date.getFullYear()
   const month = (date.getMonth() + 1).toString().padStart(2, "0")
   const day = date.getDate().toString().padStart(2, "0")
@@ -77,27 +209,70 @@ function formatTimeForXML(dateString: string): string {
 function calculateDueDate(dateString: string): string {
   // Aplicar la misma lógica de corrección de zona horaria que en formatDateForXML
   let date: Date
-  
-  if (!dateString) {
-    date = new Date()
-  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
-    const [year, month, day] = dateString.split('-').map(Number)
-    date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
-  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-    // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
-    const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
-    const [year, month, day] = datePart.split('-').map(Number)
-    date = new Date(year, month - 1, day) // Crear en zona horaria local
-  } else {
-    // Para otros formatos, usar el método normal
-    date = new Date(dateString)
+
+  // Limpiar espacios si es string
+  const cleanDate = dateString ? dateString.trim() : ''
+
+  // Helper function para convertir Excel serial date a Date
+  const convertExcelSerialToDate = (serial: number): Date | null => {
+    const excelEpoch = new Date(1900, 0, 1)
+    const millisecondsPerDay = 24 * 60 * 60 * 1000
+    const adjustedSerialNumber = serial > 59 ? serial - 1 : serial
+    const result = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
+
+    if (isNaN(result.getTime())) return null
+    const year = result.getFullYear()
+    if (year < 1900 || year > 2100) return null
+    return result
   }
-  
+
+  if (!cleanDate) {
+    date = new Date()
+  } else if (cleanDate.match(/^\d+$/)) {
+    // Si es un string que contiene solo números, puede ser un serial de Excel
+    const serial = parseInt(cleanDate, 10)
+    if (serial > 0 && serial < 100000) {
+      const excelDate = convertExcelSerialToDate(serial)
+      date = excelDate || new Date()
+    } else {
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+    const [year, month, day] = cleanDate.split('-').map(Number)
+    if (year >= 1900 && year <= 2100) {
+      date = new Date(year, month - 1, day)
+    } else {
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}T/)) {
+    const datePart = cleanDate.split('T')[0]
+    const [year, month, day] = datePart.split('-').map(Number)
+    if (year >= 1900 && year <= 2100) {
+      date = new Date(year, month - 1, day)
+    } else {
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+    const parts = cleanDate.split('-')
+    const [part1, part2, yearStr] = parts
+    const year = Number(yearStr)
+    if (year >= 1900 && year <= 2100) {
+      if (Number(part1) > 12) {
+        date = new Date(year, Number(part2) - 1, Number(part1))
+      } else {
+        date = new Date(year, Number(part2) - 1, Number(part1))
+      }
+    } else {
+      date = new Date()
+    }
+  } else {
+    date = new Date()
+  }
+
   // Agregar 30 días
   const dueDate = new Date(date)
   dueDate.setDate(date.getDate() + 30)
-  
+
   // Formatear como YYYYMMDD
   const year = dueDate.getFullYear()
   const month = (dueDate.getMonth() + 1).toString().padStart(2, "0")
@@ -108,23 +283,66 @@ function calculateDueDate(dateString: string): string {
 function formatReferencePeriod(dateString: string): string {
   // Aplicar la misma lógica de corrección de zona horaria que en formatDateForXML
   let date: Date
-  
-  if (!dateString) {
-    date = new Date()
-  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-    // Si la fecha está en formato YYYY-MM-DD, crear la fecha en zona horaria local
-    const [year, month, day] = dateString.split('-').map(Number)
-    date = new Date(year, month - 1, day) // month - 1 porque Date usa 0-indexado
-  } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-    // Si la fecha está en formato ISO con zona horaria UTC, extraer solo la parte de la fecha
-    const datePart = dateString.split('T')[0] // Obtener solo YYYY-MM-DD
-    const [year, month, day] = datePart.split('-').map(Number)
-    date = new Date(year, month - 1, day) // Crear en zona horaria local
-  } else {
-    // Para otros formatos, usar el método normal
-    date = new Date(dateString)
+
+  // Limpiar espacios si es string
+  const cleanDate = dateString ? dateString.trim() : ''
+
+  // Helper function para convertir Excel serial date a Date
+  const convertExcelSerialToDate = (serial: number): Date | null => {
+    const excelEpoch = new Date(1900, 0, 1)
+    const millisecondsPerDay = 24 * 60 * 60 * 1000
+    const adjustedSerialNumber = serial > 59 ? serial - 1 : serial
+    const result = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
+
+    if (isNaN(result.getTime())) return null
+    const year = result.getFullYear()
+    if (year < 1900 || year > 2100) return null
+    return result
   }
-  
+
+  if (!cleanDate) {
+    date = new Date()
+  } else if (cleanDate.match(/^\d+$/)) {
+    // Si es un string que contiene solo números, puede ser un serial de Excel
+    const serial = parseInt(cleanDate, 10)
+    if (serial > 0 && serial < 100000) {
+      const excelDate = convertExcelSerialToDate(serial)
+      date = excelDate || new Date()
+    } else {
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+    const [year, month, day] = cleanDate.split('-').map(Number)
+    if (year >= 1900 && year <= 2100) {
+      date = new Date(year, month - 1, day)
+    } else {
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}T/)) {
+    const datePart = cleanDate.split('T')[0]
+    const [year, month, day] = datePart.split('-').map(Number)
+    if (year >= 1900 && year <= 2100) {
+      date = new Date(year, month - 1, day)
+    } else {
+      date = new Date()
+    }
+  } else if (cleanDate.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+    const parts = cleanDate.split('-')
+    const [part1, part2, yearStr] = parts
+    const year = Number(yearStr)
+    if (year >= 1900 && year <= 2100) {
+      if (Number(part1) > 12) {
+        date = new Date(year, Number(part2) - 1, Number(part1))
+      } else {
+        date = new Date(year, Number(part2) - 1, Number(part1))
+      }
+    } else {
+      date = new Date()
+    }
+  } else {
+    date = new Date()
+  }
+
   // Formatear como MM.YYYY
   const year = date.getFullYear()
   const month = (date.getMonth() + 1).toString().padStart(2, "0")
@@ -569,7 +787,9 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 const isAuthTaxService = ['TRK182', 'TRK175', 'TRK009'].includes(record.serviceCode || '')
                 
                 // Calcular valores de contenedor primero
-                const ctrType = record.containerType || "DV"
+                // Homologar el containerType al sapCode usando el mapa de container types
+                const originalCtrType = record.containerType || "DV"
+                const ctrType = getContainerTypeSapCode(originalCtrType)
                 const ctrSize = record.containerSize || "40"
                 const ctrISOcode = getCtrISOcode(ctrType, ctrSize)
                 
@@ -588,8 +808,9 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 } else {
                   finalCtrISOcode = ctrISOcode
                   // Solo incluir CtrType, CtrSize si tienen valores no vacíos
-                  if (record.containerType && record.containerType.trim()) {
-                    finalCtrType = record.containerType
+                  // Usar el ctrType ya homologado en lugar del valor original
+                  if (ctrType && ctrType.trim()) {
+                    finalCtrType = ctrType // Usar el sapCode homologado
                   }
                   if (record.containerSize && record.containerSize.trim()) {
                     finalCtrSize = record.containerSize
@@ -660,13 +881,15 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                 let ctrISOcode: string | undefined
                 let finalCtrType: string | undefined
                 let finalCtrSize: string | undefined
-                
+
                 if (taxItem.containerType && taxItem.containerSize) {
-                  const ctrType = taxItem.containerType
+                  // Homologar el containerType al sapCode
+                  const originalCtrType = taxItem.containerType
+                  const ctrType = getContainerTypeSapCode(originalCtrType)
                   const ctrSize = taxItem.containerSize
                   ctrISOcode = getCtrISOcode(ctrType, ctrSize)
-                  if (taxItem.containerType && taxItem.containerType.trim()) {
-                    finalCtrType = taxItem.containerType
+                  if (ctrType && ctrType.trim()) {
+                    finalCtrType = ctrType // Usar el sapCode homologado
                   }
                   if (taxItem.containerSize && taxItem.containerSize.trim()) {
                     finalCtrSize = taxItem.containerSize
@@ -816,121 +1039,116 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
             const recordItems = Array.from(groupedRecords.entries()).map(([groupKey, group]) => {
               const parts = groupKey.split('|')
               const totalPrice = group.price * group.count
-              
+
               // Usar el primer registro del grupo para obtener los datos
               const firstRecord = group.records[0]
               const data = firstRecord.data
-              
-              // Determinar el código de servicio basado en el tipo de registro
-              const recordType = data.recordType || ''
-              const sapCode = data.sapCode || ''
-              const isTrasiego = recordType === 'trasiego' || sapCode === 'TRK002' || invoice.clientName === 'PTG'
+
+              // Determinar si es trasiego o local basándose en la clave del grupo
+              const isTrasiego = parts[0] === 'TRASIEGO'
+
+              // Para trasiego siempre usar TRK002, para local usar TRK001
               const serviceCode = isTrasiego ? 'TRK002' : 'TRK001'
-              
+
               // Extraer información del contenedor
               let containerSize = "40"
-              let containerType = "DV"
+              let originalContainerType = "DV"
               // CtrCategory siempre es "A" para PTYSS (trasiegos y locales)
-              // Mantenemos la lógica dinámica comentada por si se necesita volver a valores dinámicos
               let ctrCategory = "A"
-              
-              if (parts[0] === 'TRASIEGO') {
-                containerSize = parts[4] || "40" // size
-                containerType = parts[5] || "DV" // type
-                // Lógica dinámica comentada - por ahora CtrCategory siempre es "A"
-                // if (containerType.includes('HR') || containerType.includes('HC')) {
-                //   ctrCategory = 'H'
-                // } else if (containerType.includes('RF')) {
-                //   ctrCategory = 'R'
-                // } else if (containerType.includes('CA')) {
-                //   ctrCategory = 'C'
-                // } else if (containerType.includes('DV')) {
-                //   ctrCategory = 'D'
-                // } else if (containerType.includes('FL')) {
-                //   ctrCategory = 'N'
-                // }
+
+              if (isTrasiego) {
+                // Para trasiego: usar valores fijos según requerimiento
+                containerSize = "40"
+                originalContainerType = "DV"
               } else {
                 containerSize = parts[2] || "40" // containerSize
-                containerType = parts[3] || "DV" // containerType
-                // Lógica dinámica comentada - por ahora CtrCategory siempre es "A"
-                // if (containerType.includes('HR') || containerType.includes('HC')) {
-                //   ctrCategory = 'H'
-                // } else if (containerType.includes('RF')) {
-                //   ctrCategory = 'R'
-                // } else if (containerType.includes('CA')) {
-                //   ctrCategory = 'C'
-                // } else if (containerType.includes('DV')) {
-                //   ctrCategory = 'D'
-                // } else if (containerType.includes('FL')) {
-                //   ctrCategory = 'N'
-                // }
+                originalContainerType = parts[3] || "DV" // containerType
               }
-              
-              // Calcular CtrISOcode basándose en CtrType y CtrSize
-              const ctrISOcode = getCtrISOcode(containerType, containerSize)
-              
+
+              // Homologar el containerType al sapCode usando el mapa de container types
+              const containerType = isTrasiego ? "DV" : getContainerTypeSapCode(originalContainerType)
+
+              // Calcular CtrISOcode: para trasiego usar 42G0, para locales calcular dinámicamente
+              const ctrISOcode = isTrasiego ? '42G0' : getCtrISOcode(containerType, containerSize)
+
               // Determinar FullEmpty
-              const fullEmpty = parts[0] === 'TRASIEGO' ? (parts[6] || 'FULL') : 'FULL'
-              
+              const fullEmpty = isTrasiego ? 'FULL' : 'FULL'
+
+              // ACTUALIZADO: Valores fijos para PTG según requerimiento SAP
+              // ProfitCenter: PAPANB110, Service: TRK002, BusinessType: I, Container: 42H0/RE/40/A
               return {
                 "IncomeRebateCode": "I",
                 "AmntTransacCur": (-totalPrice).toFixed(3),
                 "BaseUnitMeasure": "CTR",
                 "Qty": group.count.toString(),
-                "ProfitCenter": "PAPANC110",
+                "ProfitCenter": "PAPANB110",
                 "ReferencePeriod": formatReferencePeriod(invoice.date),
-                "Service": serviceCode,
+                "Service": "TRK002",
                 "Activity": "TRK",
                 "Pillar": "TRSP",
                 "BUCountry": "PA",
                 "ServiceCountry": "PA",
                 "ClientType": "MEDLOG",
-                "BusinessType": "I", // Siempre IMPORT para PTYSS
-                "FullEmpty": fullEmpty,
-                "CtrISOcode": ctrISOcode,
-                "CtrType": containerType,
-                "CtrSize": containerSize,
-                "CtrCategory": ctrCategory
+                "BusinessType": "I",
+                "FullEmpty": "FULL",
+                "CtrISOcode": "42H0",
+                "CtrType": "RE",
+                "CtrSize": "40",
+                "CtrCategory": "A"
               }
             })
             
             // Agregar servicios locales fijos como otheritem adicionales
             const localFixedServiceItems: any[] = []
-            const localFixedServiceCodes = ['CLG097', 'TRK163', 'TRK179', 'SLR168', 'TRK196', 'PESAJE']
-            
+            const localFixedServiceCodes = ['CLG097', 'CLG096', 'TRK163', 'TRK179', 'SLR168', 'TRK196', 'PESAJE']
+
             if (invoice.additionalServices && invoice.additionalServices.length > 0) {
               console.log("🔍 PTYSS XML - Processing additional services:", invoice.additionalServices)
-              
+
               invoice.additionalServices.forEach((service) => {
                 // Solo procesar servicios locales fijos
                 if (localFixedServiceCodes.includes(service.serviceId)) {
                   // Mapear PESAJE a TRK196
                   const serviceCode = service.serviceId === 'PESAJE' ? 'TRK196' : service.serviceId
-                  
+
                   console.log(`🔍 PTYSS XML - Adding local fixed service: ${serviceCode} - Amount: ${service.amount}`)
-                  
-                  // Determinar el valor de Pillar según el código de servicio para registros locales
+
+                  // Determinar valores según el código de servicio
                   let pillarValue = "TRSP" // Valor por defecto
+                  let profitCenter = "PAPANC110" // Valor por defecto
+                  let clientType = "MEDLOG" // Valor por defecto
+
+                  // CLG097 - Spare Parts: PAPANC321, CLG, LOGS, PA, MSCGVA
                   if (serviceCode === 'CLG097') {
                     pillarValue = "LOGS"
-                  } else if (serviceCode === 'SLR168') {
+                    profitCenter = "PAPANC321"
+                    clientType = "MSCGVA"
+                  }
+                  // CLG096 - Ship Chandler: PAPANC441, CLG, LOGS, PA, MSCGVA
+                  else if (serviceCode === 'CLG096') {
+                    pillarValue = "LOGS"
+                    profitCenter = "PAPANC441"
+                    clientType = "MSCGVA"
+                  }
+                  else if (serviceCode === 'SLR168') {
                     pillarValue = "NOPS"
                   }
-                  
+
+                  // ACTUALIZADO: Servicios adicionales de PTG también usan valores fijos
                   localFixedServiceItems.push({
                     "IncomeRebateCode": "I",
                     "AmntTransacCur": (-service.amount).toFixed(3),
-                    "BaseUnitMeasure": "EA", // Each (unidad) para servicios fijos
+                    "BaseUnitMeasure": "EA",
                     "Qty": "1.00",
-                    "ProfitCenter": "PAPANC110",
+                    "ProfitCenter": "PAPANB110",
                     "ReferencePeriod": formatReferencePeriod(invoice.date),
-                    "Service": serviceCode,
-                    "Activity": serviceCode.startsWith('CLG') ? "CLG" : serviceCode.startsWith('SLR') ? "SLR" : "TRK",
-                    "Pillar": pillarValue,
+                    "Service": "TRK002",
+                    "Activity": "TRK",
+                    "Pillar": "TRSP",
                     "BUCountry": "PA",
                     "ServiceCountry": "PA",
                     "ClientType": "MEDLOG",
-                    "BusinessType": "I", // Siempre IMPORT para PTYSS
+                    "BusinessType": "I",
                     "FullEmpty": "FULL"
                   })
                 }
@@ -1103,14 +1321,15 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
             let lineNbr = 1
             
             // Mapeo de campos a service codes con sus configuraciones
+            // ACTUALIZADO: Todos los servicios de ShipChandler usan CLG096, CLG, LOGS, MSCGVA
             const serviceCodeConfig: Record<string, { code: string; activity: string; pillar: string }> = {
-              deliveryExpenses: { code: 'TRK237', activity: 'TRK', pillar: 'TRSP' },
+              deliveryExpenses: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' },
               portEntryFee: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' },
-              customsFee: { code: 'CHB123', activity: 'CHB', pillar: 'LOGS' },
-              authorities: { code: 'TRK130', activity: 'TRK', pillar: 'TRSP' },
-              otherExpenses: { code: 'CHB122', activity: 'CHB', pillar: 'LOGS' },
-              overTime: { code: 'WRH156', activity: 'WRH', pillar: 'INFR' },
-              total: { code: 'SHP243', activity: 'SHP', pillar: 'NOPS' }
+              customsFee: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' },
+              authorities: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' },
+              otherExpenses: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' },
+              overTime: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' },
+              total: { code: 'CLG096', activity: 'CLG', pillar: 'LOGS' }
             }
             
             // Procesar cada registro
@@ -1147,7 +1366,7 @@ export function generateShipChandlerInvoiceXML(invoice: ShipChandlerInvoiceForXm
                     "Pillar": config.pillar,
                     "BUCountry": "PA",
                     "ServiceCountry": "PA",
-                    "ClientType": "MEDLOG",
+                    "ClientType": "MSCGVA",
                     "BusinessType": "I" // Siempre IMPORT para ShipChandler
                     // SubContracting eliminado según requerimientos
                   }
@@ -1414,19 +1633,19 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
     throw new Error("Datos requeridos faltantes para generar XML de Agency")
   }
 
-  // Calcular el total de los servicios (SHP242)
-  const ship242Total = invoice.services.reduce((sum, service) => sum + (service.price || 0), 0)
+  // Calcular el total de los servicios (CLG098 - antes SHP242)
+  const clg098Total = invoice.services.reduce((sum, service) => sum + (service.price || 0), 0)
   
   // Obtener el monto del servicio adicional (TRK137) - Waiting Time
   // Sumar todos los waitingTimePrice de los servicios
   const trk137Total = invoice.services.reduce((sum, service) => sum + (service.waitingTimePrice || 0), 0) || invoice.additionalService?.amount || 0
   
   // El total de la factura debe ser la suma de ambos
-  const totalAmount = ship242Total + trk137Total
-  
+  const totalAmount = clg098Total + trk137Total
+
   console.log('=== DEBUG: generateAgencyInvoiceXML ===')
   console.log('Number of services:', invoice.services.length)
-  console.log('SHP242 Total:', ship242Total)
+  console.log('CLG098 Total:', clg098Total)
   console.log('TRK137 Total (Waiting Time):', trk137Total)
   console.log('Total Amount:', totalAmount)
   console.log('Services with waiting time:', invoice.services.filter(s => (s.waitingTime || 0) > 0).length)
@@ -1434,7 +1653,7 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
   // Crear array de OtherItems dinámicamente
   const otherItems: any[] = [];
   
-  // Agregar un SHP242 por cada servicio
+  // Agregar un CLG098 por cada servicio (antes era SHP242)
   invoice.services.forEach((service, index) => {
     otherItems.push({
       "IncomeRebateCode": "I",
@@ -1443,30 +1662,29 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
       "Qty": "1.00",
       "ProfitCenter": "PAPANC440",
       "ReferencePeriod": formatReferencePeriod(invoice.invoiceDate),
-      "Service": "SHP242",
-      "Activity": "SHP",
-      "Pillar": "NOPS",
+      "Service": "CLG098",
+      "Activity": "CLG",
+      "Pillar": "LOGS",
       "BUCountry": "PA",
       "ServiceCountry": "PA",
       "ClientType": "MSCGVA"
     });
     
-    // Si el servicio tiene waiting time, agregar un TRK137
+    // ACTUALIZADO: Waiting time también usa CLG098 con mismos valores fijos de Agency
     if (service.waitingTimePrice && service.waitingTimePrice > 0) {
       otherItems.push({
         "IncomeRebateCode": "I",
         "AmntTransacCur": (-(service.waitingTimePrice || 0)).toFixed(2),
         "BaseUnitMeasure": "EA",
         "Qty": "1.00",
-        "ProfitCenter": "PAPANC430",
+        "ProfitCenter": "PAPANC440",
         "ReferencePeriod": formatReferencePeriod(invoice.invoiceDate),
-        "Service": "TRK137",
-        "Activity": "TRK",
-        "Pillar": "TRSP",
+        "Service": "CLG098",
+        "Activity": "CLG",
+        "Pillar": "LOGS",
         "BUCountry": "PA",
         "ServiceCountry": "PA",
-        "ClientType": "MSCGVA",
-        "FullEmpty": "FULL"
+        "ClientType": "MSCGVA"
       });
     }
   });

@@ -9,7 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Plus, Edit, Trash2, Users, MapPin, DollarSign, Link, UserCheck, Building2, User, FolderPlus, X } from "lucide-react"
+import { Plus, Edit, Trash2, Users, MapPin, DollarSign, Link, UserCheck, Building2, User, FolderPlus, X, Download } from "lucide-react"
+import * as XLSX from 'xlsx'
+import { saveAs } from 'file-saver'
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { 
@@ -452,6 +454,68 @@ export function PTYSSLocalRoutes() {
     }
   }
 
+  // Handler para exportación de rutas locales
+  const handleExportRoutes = () => {
+    try {
+      if (routes.length === 0) {
+        toast({
+          title: "Sin datos",
+          description: "No hay rutas para exportar",
+          variant: "destructive"
+        })
+        return
+      }
+
+      toast({
+        title: "Exportando rutas",
+        description: "Generando archivo Excel..."
+      })
+
+      // Transformar las rutas al formato de exportación
+      const exportData = routes.map((route: PTYSSLocalRoute) => ({
+        'Esquema/Cliente': route.clientName || '',
+        'Origen': route.from || '',
+        'Destino': route.to || '',
+        'Precio Regular': route.priceRegular || 0,
+        'Precio Reefer': route.priceReefer || 0
+      }))
+
+      // Crear workbook y hoja
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.json_to_sheet(exportData)
+
+      // Ajustar anchos de columnas
+      ws['!cols'] = [
+        { wch: 25 }, // Esquema/Cliente
+        { wch: 15 }, // Origen
+        { wch: 15 }, // Destino
+        { wch: 15 }, // Precio Regular
+        { wch: 15 }  // Precio Reefer
+      ]
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Rutas Locales PTYSS')
+
+      // Generar y descargar archivo
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const fileName = `rutas-locales-ptyss-export-${new Date().toISOString().split('T')[0]}.xlsx`
+      saveAs(blob, fileName)
+
+      toast({
+        title: "Exportación completada",
+        description: `Se exportaron ${routes.length} rutas exitosamente`
+      })
+
+    } catch (error) {
+      console.error('Error en exportación de rutas:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error al exportar las rutas",
+        variant: "destructive"
+      })
+    }
+  }
+
   const getRealClientDisplayName = (client: Client): string => {
     return client.type === 'natural' ? (client.fullName || '') : (client.companyName || '')
   }
@@ -753,6 +817,10 @@ export function PTYSSLocalRoutes() {
                 </DialogContent>
               </Dialog>
 
+              <Button variant="outline" onClick={handleExportRoutes}>
+                <Download className="h-4 w-4 mr-2" />
+                Exportar Rutas
+              </Button>
               <Button onClick={() => setShowAddRouteForm(!showAddRouteForm)}>
                 <Plus className="h-4 w-4 mr-2" />
                 Agregar Ruta

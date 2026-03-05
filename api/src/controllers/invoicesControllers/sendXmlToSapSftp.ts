@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import { Readable } from 'stream';
 import { invoices } from '../../database';
 import { getSftpConfigWithDebug } from '../../config/sftpConfig';
+import { ErrorLog } from '../../database/schemas/errorLogSchema';
 
 interface LogEntry {
   level: 'info' | 'success' | 'error' | 'warning';
@@ -11,15 +12,56 @@ interface LogEntry {
   timestamp: string;
 }
 
+// Función auxiliar para guardar logs en MongoDB
+const saveLogToMongo = async (
+  level: 'error' | 'warning' | 'info',
+  action: string,
+  message: string,
+  metadata?: any,
+  req?: Request
+) => {
+  try {
+    await ErrorLog.create({
+      level,
+      module: 'sftp-sap',
+      action,
+      message,
+      userId: (req as any)?.user?._id?.toString(),
+      userEmail: (req as any)?.user?.email,
+      requestData: req ? {
+        method: req.method,
+        url: req.originalUrl,
+        params: req.params,
+        query: req.query
+      } : undefined,
+      metadata
+    });
+  } catch (err) {
+    console.error('Error guardando log en MongoDB:', err);
+  }
+};
+
 export const sendXmlToSapSftp = async (req: Request, res: Response) => {
   try {
     console.log('\n🚀 === INICIANDO ENVÍO XML A SAP VIA SFTP ===');
-    
+
     const { invoiceId } = req.params;
     const { xmlContent, fileName } = req.body;
 
+    // Log inicio en MongoDB
+    await saveLogToMongo('info', 'sftp-upload-start', `Iniciando envío SFTP para factura ${invoiceId}`, {
+      invoiceId,
+      fileName,
+      xmlLength: xmlContent?.length
+    }, req);
+
     // Validar parámetros
     if (!invoiceId || !xmlContent || !fileName) {
+      await saveLogToMongo('error', 'sftp-validation-error', 'Faltan parámetros requeridos', {
+        invoiceId: !!invoiceId,
+        xmlContent: !!xmlContent,
+        fileName: !!fileName
+      }, req);
       return res.status(400).json({
         success: false,
         message: "Faltan parámetros requeridos (invoiceId, xmlContent, fileName)"
@@ -27,8 +69,8 @@ export const sendXmlToSapSftp = async (req: Request, res: Response) => {
     }
 
     const logs: LogEntry[] = [];
-    
-    const addLog = (level: LogEntry['level'], message: string, data?: any) => {
+
+    const addLog = async (level: LogEntry['level'], message: string, data?: any) => {
       const logEntry: LogEntry = {
         level,
         message,
@@ -37,6 +79,11 @@ export const sendXmlToSapSftp = async (req: Request, res: Response) => {
       };
       logs.push(logEntry);
       console.log(`[SFTP ${level.toUpperCase()}] ${message}`, data || '');
+
+      // Guardar en MongoDB si es error o warning
+      if (level === 'error' || level === 'warning') {
+        await saveLogToMongo(level, `sftp-${level}`, message, { ...data, invoiceId }, req);
+      }
     };
 
     addLog('info', 'Iniciando proceso de envío SFTP', { 

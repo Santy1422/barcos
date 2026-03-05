@@ -28,7 +28,7 @@ const handleValidationErrors = (req: Request, res: Response, next: NextFunction)
 // Middleware para validar transición de status
 const validateStatusTransition = (req: Request, res: Response, next: NextFunction) => {
   const { status } = req.body;
-  const validStatuses = ['pending', 'in_progress', 'completed', 'cancelled', 'prefacturado', 'facturado', 'nota_de_credito'];
+  const validStatuses = ['tentative', 'pending', 'in_progress', 'completed', 'cancelled', 'prefacturado', 'facturado', 'nota_de_credito'];
   
   if (status && !validStatuses.includes(status)) {
     return res.status(400).json({ 

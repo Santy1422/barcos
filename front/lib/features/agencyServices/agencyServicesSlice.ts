@@ -24,7 +24,7 @@ export interface ServiceAttachment {
 export interface AgencyService {
   _id: string;
   module: 'AGENCY';
-  status: 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'prefacturado' | 'facturado' | 'nota_de_credito';
+  status: 'tentative' | 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'prefacturado' | 'facturado' | 'nota_de_credito';
   
   // Fechas
   serviceDate: string;
@@ -62,6 +62,7 @@ export interface AgencyService {
   
   // Información del transporte
   transportCompany?: string;
+  driver?: string;
   driverName?: string;
   flightInfo?: string;
   
@@ -183,7 +184,7 @@ export interface ServicesResponse {
 // Interface para actualizar estado
 export interface UpdateStatusParams {
   id: string;
-  status: 'pending' | 'in_progress' | 'completed';
+  status: 'tentative' | 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'prefacturado' | 'facturado' | 'nota_de_credito';
 }
 
 // Interface para actualizar servicio

@@ -122,6 +122,11 @@ export function AgencyXmlViewerModal({ open, onOpenChange, invoice, onXmlSentToS
     try {
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return 'N/A';
+
+      // Validate year is within reasonable range (1900-2100)
+      const year = date.getFullYear();
+      if (year < 1900 || year > 2100) return 'N/A';
+
       return date.toLocaleString('es-ES');
     } catch {
       return 'N/A';

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -16,16 +16,20 @@ import {
   FileText,
   Truck,
   Clock,
-  Container
+  Container,
+  Loader2,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { useAppSelector, useAppDispatch } from "@/lib/hooks";
-import { 
-  selectAllIndividualRecords, 
-  fetchAllRecordsByModule, 
+import {
   selectAutoridadesRecords,
-  fetchAutoridadesRecords 
+  fetchAutoridadesRecords
 } from "@/lib/features/records/recordsSlice";
 import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSlice";
+import { createApiUrl } from "@/lib/api-config";
+
+const RECORDS_PER_PAGE = 10;
 
 interface TruckingRecordsViewModalProps {
   open: boolean;
@@ -35,66 +39,170 @@ interface TruckingRecordsViewModalProps {
 
 export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: TruckingRecordsViewModalProps) {
   const dispatch = useAppDispatch();
-  const allRecords = useAppSelector(selectAllIndividualRecords);
   const autoridadesRecords = useAppSelector(selectAutoridadesRecords);
   const clients = useAppSelector(selectAllClients);
 
-  // Determinar si es una factura AUTH
-  const isAuthInvoice = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-');
+  // State para registros cargados directamente del backend
+  const [fetchedRecords, setFetchedRecords] = useState<any[]>([]);
+  const [isLoadingRecords, setIsLoadingRecords] = useState(false);
 
-              useEffect(() => {
-              if (open) {
-                console.log("=== DEBUG: Modal abierto ===");
-                console.log("Invoice Number:", invoice?.invoiceNumber);
-                console.log("Is AUTH Invoice:", isAuthInvoice);
-                
-                if (isAuthInvoice) {
-                  console.log("Cargando registros de autoridades...");
-                  dispatch(fetchAutoridadesRecords());
-                } else {
-                  console.log("Cargando registros de trasiego...");
-                  dispatch(fetchAllRecordsByModule("trucking"));
-                }
-                dispatch(fetchClients());
+  // State para paginación
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Determinar si es una factura AUTH (por prefijo AUTH-, sufijo AUT, o documentType)
+  const isAuthInvoice = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-')
+    || invoice?.invoiceNumber?.toString().toUpperCase().endsWith(' AUT')
+    || invoice?.details?.documentType === 'gastos-autoridades';
+
+  useEffect(() => {
+    if (open) {
+      // Reset pagination cuando se abre el modal
+      setCurrentPage(1);
+
+      console.log("=== DEBUG: Modal abierto ===");
+      console.log("Invoice Number:", invoice?.invoiceNumber);
+      console.log("Is AUTH Invoice:", isAuthInvoice);
+
+      dispatch(fetchClients());
+
+      if (isAuthInvoice) {
+        console.log("Cargando registros de autoridades para AUTH invoice...");
+        // Fetch ALL autoridades records (including prefacturado/facturado)
+        // because we need to find records by relatedRecordIds or invoiceId
+        const loadAuthRecords = async () => {
+          setIsLoadingRecords(true);
+          try {
+            const token = localStorage.getItem('token');
+            // Add status=all to get prefacturado/facturado records too
+            const response = await fetch(createApiUrl('/api/records/autoridades?status=all'), {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
               }
-            }, [open, dispatch, isAuthInvoice, invoice?.invoiceNumber]);
+            });
+            const data = await response.json();
+            const records = Array.isArray(data) ? data : (data.data || []);
+            console.log(`Cargados ${records.length} registros de autoridades (todos los estados)`);
+            setFetchedRecords(records);
+          } catch (error) {
+            console.error("Error loading autoridades records:", error);
+            setFetchedRecords([]);
+          } finally {
+            setIsLoadingRecords(false);
+          }
+        };
+        loadAuthRecords();
+      } else if (invoice?.relatedRecordIds?.length > 0) {
+        // Cargar registros directamente del backend por IDs
+        console.log("Cargando registros por IDs del backend...");
+        const loadRecords = async () => {
+          setIsLoadingRecords(true);
+          try {
+            const token = document.cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1]
+              || localStorage.getItem('token');
+            const response = await fetch(createApiUrl('/api/records/by-ids'), {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+              },
+              body: JSON.stringify({ ids: invoice.relatedRecordIds })
+            });
+            const result = await response.json();
+            if (result.success) {
+              console.log(`Cargados ${result.data.length} records de ${invoice.relatedRecordIds.length} IDs`);
+              setFetchedRecords(result.data);
+            } else {
+              console.error("Error cargando records por IDs:", result.message);
+              setFetchedRecords([]);
+            }
+          } catch (error) {
+            console.error("Error fetching records by IDs:", error);
+            setFetchedRecords([]);
+          } finally {
+            setIsLoadingRecords(false);
+          }
+        };
+        loadRecords();
+      }
+    } else {
+      // Reset al cerrar
+      setFetchedRecords([]);
+      setCurrentPage(1);
+    }
+  }, [open, dispatch, isAuthInvoice, invoice?.invoiceNumber, invoice?.relatedRecordIds]);
 
   const getRelatedRecords = () => {
-    if (!invoice?.relatedRecordIds) return [];
-    
-    const sourceRecords = isAuthInvoice ? autoridadesRecords : allRecords;
-    if (sourceRecords.length === 0) return [];
-    
-    console.log("=== DEBUG: getRelatedRecords ===");
-    console.log("Invoice:", invoice);
-    console.log("Invoice Number:", invoice.invoiceNumber);
-    console.log("Invoice Number Type:", typeof invoice.invoiceNumber);
-    console.log("Invoice Number startsWith AUTH-:", invoice.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-'));
-    console.log("Is AUTH Invoice:", isAuthInvoice);
-    console.log("Source records disponibles:", sourceRecords.length);
-    console.log("Related record IDs:", invoice.relatedRecordIds);
-    
-    // Debug: verificar si los IDs existen en los registros
-    const availableIds = sourceRecords.map(r => r._id || r.id);
-    console.log("IDs disponibles en registros:", availableIds.slice(0, 10)); // Solo mostrar los primeros 10
-    
-    const filtered = sourceRecords.filter((record: any) => invoice.relatedRecordIds.includes(record._id || record.id));
-    console.log("Registros filtrados encontrados:", filtered.length);
-    console.log("Registros filtrados:", filtered);
-    
-    // Debug: verificar qué IDs no se encontraron
-    const notFoundIds = invoice.relatedRecordIds.filter(id => !availableIds.includes(id));
-    if (notFoundIds.length > 0) {
-      console.log("IDs NO encontrados en registros:", notFoundIds);
+    if (isAuthInvoice) {
+      // Para AUTH, usar los registros cargados directamente (incluye prefacturado/facturado)
+      const authRecords = fetchedRecords.length > 0 ? fetchedRecords : autoridadesRecords;
+      console.log("🔍 getRelatedRecords AUTH - usando:", fetchedRecords.length > 0 ? "fetchedRecords" : "autoridadesRecords", authRecords.length);
+      console.log("🔍 getRelatedRecords AUTH - invoice.relatedRecordIds:", invoice?.relatedRecordIds?.length, invoice?.relatedRecordIds?.slice(0, 3));
+
+      if (authRecords.length === 0) {
+        console.log("⚠️ No hay registros de autoridades disponibles");
+        return [];
+      }
+
+      // Primero intentar por relatedRecordIds
+      if (invoice?.relatedRecordIds?.length > 0) {
+        // Log sample data for debugging
+        console.log("🔍 Sample relatedRecordId:", invoice.relatedRecordIds[0], typeof invoice.relatedRecordIds[0]);
+        console.log("🔍 Sample authRecord:", authRecords[0]?._id, authRecords[0]?.id);
+
+        // Normalize IDs for comparison (convert to strings)
+        const relatedIdSet = new Set(invoice.relatedRecordIds.map((id: any) => String(id)));
+        const byIds = authRecords.filter((record: any) => {
+          const recordId = String(record._id || record.id);
+          return relatedIdSet.has(recordId);
+        });
+        console.log("🔍 Found by relatedRecordIds:", byIds.length);
+        if (byIds.length > 0) return byIds;
+      }
+
+      // Fallback: buscar por invoiceId en los registros
+      const invoiceId = String(invoice?._id || invoice?.id);
+      console.log("🔍 Fallback: buscando por invoiceId:", invoiceId);
+      if (invoiceId) {
+        const byInvoiceId = authRecords.filter((record: any) =>
+          String(record.invoiceId) === invoiceId
+        );
+        console.log("🔍 Found by invoiceId:", byInvoiceId.length);
+        if (byInvoiceId.length > 0) return byInvoiceId;
+      }
+
+      console.log("⚠️ No se encontraron registros");
+      return [];
+    } else {
+      // Para trasiego, usar los records cargados directamente
+      if (!invoice?.relatedRecordIds) return [];
+      return fetchedRecords;
     }
-    
-    return filtered;
   };
 
   const relatedRecords = getRelatedRecords();
 
+  // Paginación
+  const totalPages = Math.ceil(relatedRecords.length / RECORDS_PER_PAGE);
+  const paginatedRecords = useMemo(() => {
+    const start = (currentPage - 1) * RECORDS_PER_PAGE;
+    const end = start + RECORDS_PER_PAGE;
+    return relatedRecords.slice(start, end);
+  }, [relatedRecords, currentPage]);
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
   const formatDateTime = (dateString: string) => {
+    if (!dateString) return { date: 'N/A', time: 'N/A' };
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return { date: 'N/A', time: 'N/A' };
+    // Validar año razonable (1900-2100) para prevenir fechas incorrectas
+    const year = date.getFullYear();
+    if (year < 1900 || year > 2100) return { date: 'N/A', time: 'N/A' };
     return {
       date: date.toLocaleDateString('es-ES'),
       time: date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -108,7 +216,7 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5" /> 
+            <Database className="h-5 w-5" />
             Registros Asociados - {invoice.invoiceNumber}
             <Badge variant={isAuthInvoice ? "default" : "secondary"} className={isAuthInvoice ? "bg-orange-600 text-white" : ""}>
               {isAuthInvoice ? "Gastos Auth" : "Trasiego"}
@@ -129,7 +237,7 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
               </div>
               <div>
                 <span className="font-medium text-blue-700">Total:</span>
-                <div className="text-blue-900 font-bold">${invoice.totalAmount.toFixed(2)}</div>
+                <div className="text-blue-900 font-bold">${invoice.totalAmount?.toFixed(2) || '0.00'}</div>
               </div>
               <div>
                 <span className="font-medium text-blue-700">Registros:</span>
@@ -147,135 +255,206 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              <Container className="h-5 w-5" /> Registros Asociados ({relatedRecords.length})
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Container className="h-5 w-5" /> Registros Asociados ({relatedRecords.length})
+              </h3>
+              {totalPages > 1 && (
+                <span className="text-sm text-muted-foreground">
+                  Página {currentPage} de {totalPages}
+                </span>
+              )}
+            </div>
 
-            {relatedRecords.length === 0 ? (
+            {isLoadingRecords ? (
+              <div className="text-center py-8 text-muted-foreground flex items-center justify-center gap-2">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Cargando registros...
+              </div>
+            ) : relatedRecords.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">No se encontraron registros asociados</div>
             ) : (
-              relatedRecords.map((record: any, index: number) => {
-                // Para registros de autoridades, los datos están directamente en el record, no en record.data
-                const data = isAuthInvoice ? record : (record.data as Record<string, any>);
-                const { date, time } = formatDateTime(record.createdAt);
-                const client = clients.find((c: any) => (c._id || c.id) === data?.clientId);
-                const displayClientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : (data?.associate || data?.line || invoice.clientName || "Cliente");
-                const displayOrder = data?.order || data?.containerConsecutive || "N/A";
-                const displayContainerSize = data?.containerSize || data?.size || "N/A";
-                const displayContainerType = data?.containerType || data?.type || "N/A";
-                const displayLine = data?.line || data?.route || data?.ruta || "N/A";
+              <>
+                {paginatedRecords.map((record: any, index: number) => {
+                  // Para registros de autoridades, los datos están directamente en el record, no en record.data
+                  const data = isAuthInvoice ? record : (record.data as Record<string, any>);
+                  const { date, time } = formatDateTime(record.createdAt);
+                  const client = clients.find((c: any) => (c._id || c.id) === data?.clientId);
+                  const displayClientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : (data?.associate || data?.line || invoice.clientName || "Cliente");
+                  const displayOrder = data?.order || data?.containerConsecutive || "N/A";
+                  const displayContainerSize = data?.containerSize || data?.size || "N/A";
+                  const displayContainerType = data?.containerType || data?.type || "N/A";
+                  const displayLine = data?.line || data?.route || data?.ruta || "N/A";
+                  const globalIndex = (currentPage - 1) * RECORDS_PER_PAGE + index;
 
-                return (
-                  <div key={record._id || record.id} className="border border-gray-200 rounded-lg p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-semibold text-lg flex items-center gap-2">
-                        <Container className="h-4 w-4" />
-                        Registro #{index + 1}
-                      </h4>
-                      <Badge variant="outline" className="font-mono">{record._id || record.id}</Badge>
-                    </div>
+                  return (
+                    <div key={record._id || record.id} className="border border-gray-200 rounded-lg p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold text-lg flex items-center gap-2">
+                          <Container className="h-4 w-4" />
+                          Registro #{globalIndex + 1}
+                        </h4>
+                        <Badge variant="outline" className="font-mono text-xs">{(record._id || record.id).slice(-8)}</Badge>
+                      </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {isAuthInvoice ? (
-                        // Vista para registros de autoridades
-                        <>
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> BL Number</Label>
-                            <p className="text-sm font-medium">{data.blNumber || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">Orden: {data.order || "N/A"}</p>
-                          </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {isAuthInvoice ? (
+                          // Vista para registros de autoridades
+                          <>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> BL Number</Label>
+                              <p className="text-sm font-medium">{data.blNumber || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">Orden: {data.order || "N/A"}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Container className="h-3 w-3" /> Contenedor</Label>
-                            <p className="text-sm font-medium">{data.container || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">{data.size || "N/A"} {data.type || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">F/E: {data.fe || "N/A"}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Container className="h-3 w-3" /> Contenedor</Label>
+                              <p className="text-sm font-medium">{data.container || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">{data.size || "N/A"} {data.type || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">F/E: {data.fe || "N/A"}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><MapPin className="h-3 w-3" /> Autoridad</Label>
-                            <p className="text-sm">{data.auth || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">Ruta: {data.ruta || "N/A"}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><MapPin className="h-3 w-3" /> Autoridad</Label>
+                              <p className="text-sm">{data.auth || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">Ruta: {data.ruta || "N/A"}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> Invoice</Label>
-                            <p className="text-sm">{data.noInvoice || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">Fecha: {data.dateOfInvoice ? new Date(data.dateOfInvoice).toLocaleDateString('es-ES') : "N/A"}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> Invoice</Label>
+                              <p className="text-sm">{data.noInvoice || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">Fecha: {data.dateOfInvoice ? new Date(data.dateOfInvoice).toLocaleDateString('es-ES') : "N/A"}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><DollarSign className="h-3 w-3" /> Costos</Label>
-                            <p className="text-xs text-muted-foreground">NOTF: ${(parseFloat(data.notf) || 0).toFixed(2)}</p>
-                            <p className="text-xs text-muted-foreground">Seal: ${(parseFloat(data.seal) || 0).toFixed(2)}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><DollarSign className="h-3 w-3" /> Costos</Label>
+                              <p className="text-xs text-muted-foreground">NOTF: ${(parseFloat(data.notf) || 0).toFixed(2)}</p>
+                              <p className="text-xs text-muted-foreground">Seal: ${(parseFloat(data.seal) || 0).toFixed(2)}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Truck className="h-3 w-3" /> Transporte</Label>
-                            <p className="text-xs text-muted-foreground">Transporte: {data.transport || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">Peso: {data.totalWeight ? `${data.totalWeight} kg` : "N/A"}</p>
-                          </div>
-                        </>
-                      ) : (
-                        // Vista para registros de trasiego (normal)
-                        <>
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><User className="h-3 w-3" /> Cliente</Label>
-                            <p className="text-sm">{displayClientName}</p>
-                            <p className="text-xs text-muted-foreground">Orden: {displayOrder}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Truck className="h-3 w-3" /> Transporte</Label>
+                              <p className="text-xs text-muted-foreground">Transporte: {data.transport || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">Peso: {data.totalWeight ? `${data.totalWeight} kg` : "N/A"}</p>
+                            </div>
+                          </>
+                        ) : (
+                          // Vista para registros de trasiego (normal)
+                          <>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><User className="h-3 w-3" /> Cliente</Label>
+                              <p className="text-sm">{displayClientName}</p>
+                              <p className="text-xs text-muted-foreground">Orden: {displayOrder}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> Contenedor</Label>
-                            <p className="text-sm font-medium">{data.container || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">{displayContainerSize} {displayContainerType}</p>
-                            <p className="text-xs text-muted-foreground">F/E: {data.fe || "N/A"}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><FileText className="h-3 w-3" /> Contenedor</Label>
+                              <p className="text-sm font-medium">{data?.container || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">{displayContainerSize} {displayContainerType}</p>
+                              <p className="text-xs text-muted-foreground">F/E: {data?.fe || "N/A"}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><MapPin className="h-3 w-3" /> Ruta</Label>
-                            <p className="text-sm">{data.from || "N/A"} → {data.to || "N/A"}</p>
-                            <p className="text-xs text-muted-foreground">Línea: {displayLine}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><MapPin className="h-3 w-3" /> Ruta</Label>
+                              <p className="text-sm">{data?.from || "N/A"} → {data?.to || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">Línea: {displayLine}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Calendar className="h-3 w-3" /> Fecha Movimiento</Label>
-                            <p className="text-sm">{data.moveDate ? new Date(data.moveDate).toLocaleDateString('es-ES') : "N/A"}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Calendar className="h-3 w-3" /> Fecha Movimiento</Label>
+                              <p className="text-sm">{data?.moveDate ? new Date(data.moveDate).toLocaleDateString('es-ES') : "N/A"}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><DollarSign className="h-3 w-3" /> Valor Total</Label>
-                            <p className="text-sm font-bold text-green-600">${(record.totalValue || 0).toFixed(2)}</p>
-                          </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><DollarSign className="h-3 w-3" /> Valor Total</Label>
+                              <p className="text-sm font-bold text-green-600">${(record.totalValue || 0).toFixed(2)}</p>
+                            </div>
 
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Truck className="h-3 w-3" /> Transporte</Label>
-                            <p className="text-xs text-muted-foreground">Conductor: {data.conductor || data.driverName || 'N/A'}</p>
-                            <p className="text-xs text-muted-foreground">Matrícula: {data.matriculaCamion || data.plate || 'N/A'}</p>
-                          </div>
-                        </>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Truck className="h-3 w-3" /> Transporte</Label>
+                              <p className="text-xs text-muted-foreground">Conductor: {data?.conductor || data?.driverName || 'N/A'}</p>
+                              <p className="text-xs text-muted-foreground">Matrícula: {data?.matriculaCamion || data?.plate || 'N/A'}</p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      <Separator />
+
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Clock className="h-3 w-3" /> Información del Sistema</Label>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <div className="flex items-center gap-1"><span className="font-medium">Creado:</span> <span>{date} {time}</span></div>
+                          <div className="flex items-center gap-1"><span className="font-medium">Estado:</span> <Badge variant="outline" className="text-xs">{record.status || "pendiente"}</Badge></div>
+                        </div>
+                      </div>
+
+                      {data?.notes && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-600">Notas</Label>
+                          <p className="text-sm bg-gray-50 p-2 rounded-md">{data.notes}</p>
+                        </div>
                       )}
                     </div>
+                  );
+                })}
 
-                    <Separator />
+                {/* Paginación */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between pt-4 border-t">
+                    <span className="text-sm text-muted-foreground">
+                      Mostrando {(currentPage - 1) * RECORDS_PER_PAGE + 1} - {Math.min(currentPage * RECORDS_PER_PAGE, relatedRecords.length)} de {relatedRecords.length}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage <= 1}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        Anterior
+                      </Button>
 
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-600 flex items-center gap-1"><Clock className="h-3 w-3" /> Información del Sistema</Label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        <div className="flex items-center gap-1"><span className="font-medium">Creado:</span> <span>{date} {time}</span></div>
-                        <div className="flex items-center gap-1"><span className="font-medium">Estado:</span> <Badge variant="outline" className="text-xs">{record.status || "pendiente"}</Badge></div>
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                          let pageNum;
+                          if (totalPages <= 5) {
+                            pageNum = i + 1;
+                          } else if (currentPage <= 3) {
+                            pageNum = i + 1;
+                          } else if (currentPage >= totalPages - 2) {
+                            pageNum = totalPages - 4 + i;
+                          } else {
+                            pageNum = currentPage - 2 + i;
+                          }
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={pageNum === currentPage ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => goToPage(pageNum)}
+                              className="w-8 h-8 p-0"
+                            >
+                              {pageNum}
+                            </Button>
+                          );
+                        })}
                       </div>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage >= totalPages}
+                      >
+                        Siguiente
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
                     </div>
-
-                    {data.notes && (
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-600">Notas</Label>
-                        <p className="text-sm bg-gray-50 p-2 rounded-md">{data.notes}</p>
-                      </div>
-                    )}
                   </div>
-                );
-              })
+                )}
+              </>
             )}
           </div>
         </div>
@@ -287,5 +466,3 @@ export function TruckingRecordsViewModal({ open, onOpenChange, invoice }: Trucki
     </Dialog>
   );
 }
-
-

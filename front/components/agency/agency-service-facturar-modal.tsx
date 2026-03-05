@@ -42,7 +42,7 @@ export function AgencyServiceFacturarModal({
   const { groupedCatalogs, fetchGroupedCatalogs } = useAgencyCatalogs();
   const [isProcessing, setIsProcessing] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [invoiceDate, setInvoiceDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [waitingTimePrice, setWaitingTimePrice] = useState(0);
   const [hourlyRate, setHourlyRate] = useState(0);
   const [generatedXml, setGeneratedXml] = useState<string>("");
@@ -86,11 +86,11 @@ export function AgencyServiceFacturarModal({
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const day = String(now.getDate()).padStart(2, '0');
       const time = String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
-      const suggestedNumber = `AGY-${year}${month}${day}-${time}`;
+      const suggestedNumber = `AG-${year}${month}${day}-${time}`;
       setInvoiceNumber(suggestedNumber);
       
       const today = new Date();
-      setInvoiceDate(today.toISOString().split('T')[0]);
+      setInvoiceDate(today.toLocaleDateString('en-CA'));
       setGeneratedXml("");
       setXmlValidation(null);
     }
@@ -512,7 +512,7 @@ export function AgencyServiceFacturarModal({
                   id="invoice-number" 
                   value={invoiceNumber} 
                   onChange={(e) => setInvoiceNumber(e.target.value.toUpperCase())} 
-                  placeholder="AGY-20241210-1430" 
+                  placeholder="AG-20241210-1430"
                   className="font-mono"
                 />
                 <p className="text-xs text-muted-foreground">

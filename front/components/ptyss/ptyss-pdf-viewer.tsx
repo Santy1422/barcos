@@ -43,25 +43,25 @@ export function PTYSSPdfViewer({ open, onOpenChange, invoice, clients, allRecord
   }
 
   // Función para generar el PDF (idéntica a la del paso 2 de prefactura)
-  const generatePTYSSPrefacturaPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string) => {
-    console.log('🔍 PDF Viewer - Generating PDF')
-    console.log('🔍 PDF Viewer - selectedRecords:', selectedRecords)
-    console.log('🔍 PDF Viewer - invoiceData:', invoiceData)
-    
+  const generatePTYSSPrefacturaPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string, logoBase64?: string) => {
     const doc = new jsPDF();
-    
+
     // Configuración de colores
     const primaryBlue = [15, 23, 42] // slate-900
     const lightBlue = [59, 130, 246] // blue-500
     const lightGray = [241, 245, 249] // slate-50
-    
-    // Encabezado con logo
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(12)
-    doc.setFont(undefined, 'bold')
-    doc.text('PTYSS', 30, 25, { align: 'center' })
+
+    // Logo de la empresa
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(12)
+      doc.setFont(undefined, 'bold')
+      doc.text('PTYSS', 30, 25, { align: 'center' })
+    }
     
     // Número de prefactura y fecha
     doc.setTextColor(0, 0, 0)
@@ -70,35 +70,50 @@ export function PTYSSPdfViewer({ open, onOpenChange, invoice, clients, allRecord
     doc.text(`${pdfTitle} No. ${invoiceData.invoiceNumber}`, 195, 20, { align: 'right' })
     
     // Fecha
-    const formatInvoiceDate = (dateString: string) => {
-      if (!dateString) return new Date()
+    const formatInvoiceDate = (dateString: string): Date | null => {
+      if (!dateString) return null
+
+      let year: number, month: number, day: number
 
       if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        const [year, month, day] = dateString.split('-').map(Number)
-        return new Date(year, month - 1, day)
-      }
-
-      if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+        [year, month, day] = dateString.split('-').map(Number)
+      } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
         const datePart = dateString.split('T')[0]
-        const [year, month, day] = datePart.split('-').map(Number)
-        return new Date(year, month - 1, day)
+        ;[year, month, day] = datePart.split('-').map(Number)
+      } else {
+        const parsed = new Date(dateString)
+        if (isNaN(parsed.getTime())) return null
+        year = parsed.getFullYear()
+        month = parsed.getMonth() + 1
+        day = parsed.getDate()
       }
 
-      return new Date(dateString)
+      // Year validation to prevent year 40000 issue
+      if (year < 1900 || year > 2100) return null
+
+      return new Date(year, month - 1, day)
     }
 
     const invoiceDate = formatInvoiceDate(invoiceData.issueDate)
-    const day = invoiceDate.getDate().toString().padStart(2, '0')
-    const month = (invoiceDate.getMonth() + 1).toString().padStart(2, '0')
-    const year = invoiceDate.getFullYear()
-    
+    const day = invoiceDate ? invoiceDate.getDate().toString().padStart(2, '0') : 'N/A'
+    const month = invoiceDate ? (invoiceDate.getMonth() + 1).toString().padStart(2, '0') : 'N/A'
+    const year = invoiceDate ? invoiceDate.getFullYear() : 'N/A'
+
     doc.setFontSize(10)
     doc.text('DATE:', 195, 30, { align: 'right' })
     doc.setFontSize(12)
     doc.text(`${day} ${month} ${year}`, 195, 35, { align: 'right' })
     doc.setFontSize(8)
     doc.text('DAY MO YR', 195, 40, { align: 'right' })
-    
+
+    // PO Number (solo si existe)
+    if (invoiceData.poNumber) {
+      doc.setFontSize(10)
+      doc.setFont(undefined, 'bold')
+      doc.text(`PO: ${invoiceData.poNumber}`, 195, 46, { align: 'right' })
+      doc.setFont(undefined, 'normal')
+    }
+
     // Información de la empresa (PTY SHIP SUPPLIERS, S.A.)
     doc.setFontSize(9)
     doc.setFont(undefined, 'bold')
@@ -411,24 +426,42 @@ export function PTYSSPdfViewer({ open, onOpenChange, invoice, clients, allRecord
   useEffect(() => {
     if (open && invoice) {
       setIsGenerating(true);
-      try {
-        // Obtener los registros relacionados con esta factura
-        const relatedRecords = allRecords.filter((record: any) =>
-          invoice.relatedRecordIds.includes(record._id || record.id)
-        );
-        const pdfTitle = invoice.status === "facturada" ? "FACTURA" : "PREFACTURA";
-        const pdf = generatePTYSSPrefacturaPDF(invoice, relatedRecords, pdfTitle);
-        setPdfBlob(pdf);
-      } catch (error) {
-        console.error("Error generando PDF:", error);
-        toast({
-          title: "Error",
-          description: "Error al generar el PDF",
-          variant: "destructive"
-        });
-      } finally {
-        setIsGenerating(false);
-      }
+
+      const loadLogoAndGenerate = async () => {
+        try {
+          // Cargar logo PTYSS
+          let logoBase64: string | undefined;
+          try {
+            const response = await fetch('/logos/logo_PTYSS.png');
+            const blob = await response.blob();
+            logoBase64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+          } catch (e) {
+            console.warn("No se pudo cargar el logo PTYSS, usando texto fallback");
+          }
+
+          const relatedRecords = (allRecords || []).filter((record: any) =>
+            invoice.relatedRecordIds.includes(record._id || record.id)
+          );
+          const pdfTitle = invoice.status === "facturada" ? "FACTURA" : "PREFACTURA";
+          const pdf = generatePTYSSPrefacturaPDF(invoice, relatedRecords, pdfTitle, logoBase64);
+          setPdfBlob(pdf);
+        } catch (error) {
+          console.error("Error generando PDF:", error);
+          toast({
+            title: "Error",
+            description: "Error al generar el PDF",
+            variant: "destructive"
+          });
+        } finally {
+          setIsGenerating(false);
+        }
+      };
+
+      loadLogoAndGenerate();
     }
   }, [open, invoice, clients, allRecords, toast]);
 

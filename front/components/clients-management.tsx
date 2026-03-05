@@ -14,30 +14,34 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
-import { 
-  Users, 
-  Search, 
-  Plus,  
-  Edit, 
-  Trash2, 
-  Building, 
-  User, 
-  Mail, 
-  Phone, 
+import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Users,
+  Search,
+  Plus,
+  Edit,
+  Trash2,
+  Building,
+  User,
+  Mail,
+  Phone,
   MapPin,
   Filter,
   Download,
   Upload,
   CheckCircle,
-  Loader2
+  Loader2,
+  UserX,
+  SearchX
 } from "lucide-react"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { selectCurrentUser } from "@/lib/features/auth/authSlice"
-import { 
-  selectAllClients, 
+import {
+  selectAllClients,
   selectActiveClients,
   selectNaturalClients,
   selectJuridicalClients,
+  selectClientsLoading,
   addClient,
   updateClient,
   deleteClient,
@@ -53,6 +57,14 @@ import {
 } from "@/lib/features/clients/clientsSlice"
 import { useToast } from "@/hooks/use-toast"
 import { createApiUrl } from "@/lib/api-config"
+
+// Mapeo de módulos - definido fuera del componente para evitar re-renders
+const MODULE_MAPPING: Record<string, string> = {
+  'trucking': 'trucking',
+  'shipchandler': 'shipchandler',
+  'agency': 'agency',
+  'ptyss': 'ptyss'
+}
 
 interface ClientFormData {
   type: ClientType
@@ -105,6 +117,7 @@ export function ClientModal({
 }) {
   const dispatch = useAppDispatch()
   const allClients = useAppSelector(selectAllClients)
+  const isLoading = useAppSelector(selectClientsLoading)
   const currentUser = useAppSelector(selectCurrentUser)
   const { toast } = useToast()
   
@@ -746,48 +759,45 @@ export function ClientsManagement() {
   const dispatch = useAppDispatch()
   const currentUser = useAppSelector(selectCurrentUser)
   const { toast } = useToast()
-  
-  const allClients = useAppSelector(selectAllClients)
-  
-  // Mapeo entre módulos del usuario y módulos de clientes
-  // Los módulos del usuario son: trucking, shipchandler, agency
-  // Los módulos de clientes son: trucking, shipchandler, agency, ptyss
-  const moduleMapping: Record<string, string> = {
-    'trucking': 'trucking',
-    'shipchandler': 'shipchandler',
-    'agency': 'agency',
-    'ptyss': 'ptyss' // Mantener compatibilidad con ptyss
-  }
 
+  const allClients = useAppSelector(selectAllClients)
+  const isLoading = useAppSelector(selectClientsLoading)
+  
   // Filtrar clientes por módulos del usuario
   const filteredClientsByModule = useMemo(() => {
-    if (!currentUser || !currentUser.modules || currentUser.modules.length === 0) {
+    if (!currentUser) {
       return allClients
     }
-    
-    // Obtener roles del usuario para verificar si es admin
+
+    // Obtener roles del usuario para verificar permisos
     const userRoles = currentUser.roles || (currentUser.role ? [currentUser.role] : [])
     const isAdmin = userRoles.includes('administrador')
-    
-    // Si es admin, ver todos los clientes
-    if (isAdmin) {
+    const isClientesRole = userRoles.includes('clientes')
+
+    // Si es admin o tiene rol "clientes", ver todos los clientes
+    if (isAdmin || isClientesRole) {
       return allClients
     }
-    
+
+    // Si no tiene módulos asignados, mostrar todos los clientes
+    if (!currentUser.modules || currentUser.modules.length === 0) {
+      return allClients
+    }
+
     // Mapear los módulos del usuario a los módulos de los clientes
-    const userClientModules = currentUser.modules?.map(m => moduleMapping[m] || m) || []
-    
-    // Si no es admin, filtrar por módulos del usuario
+    const userClientModules = currentUser.modules?.map(m => MODULE_MAPPING[m] || m) || []
+
+    // Filtrar por módulos del usuario
     return allClients.filter((client: any) => {
       if (!client.module || !Array.isArray(client.module)) {
         return false // Clientes sin módulo asignado no se muestran
       }
-      
+
       // Verificar si el cliente tiene al menos uno de los módulos del usuario (mapeados)
-      const hasOverlap = client.module.some((clientModule: string) => 
+      const hasOverlap = client.module.some((clientModule: string) =>
         userClientModules.includes(clientModule)
       )
-      
+
       return hasOverlap
     })
   }, [allClients, currentUser])
@@ -825,7 +835,7 @@ export function ClientsManagement() {
     }
     
     // Mapear los módulos del usuario a los módulos de los clientes
-    const userClientModules = currentUser.modules?.map(m => moduleMapping[m] || m) || []
+    const userClientModules = currentUser.modules?.map(m => MODULE_MAPPING[m] || m) || []
     
     // Si el usuario tiene múltiples módulos, cargar clientes de todos ellos
     if (userClientModules.length > 1) {
@@ -835,7 +845,7 @@ export function ClientsManagement() {
     } else {
       dispatch(fetchClients())
     }
-  }, [dispatch, currentUser, moduleMapping])
+  }, [dispatch, currentUser])
 
   // Cargar clientes al montar el componente - Filtrar por módulos del usuario
   useEffect(() => {
@@ -961,8 +971,8 @@ export function ClientsManagement() {
           module={
             currentUser?.modules && currentUser.modules.length > 0
               ? (currentUser.modules.length > 1 
-                  ? currentUser.modules.map(m => moduleMapping[m] || m)
-                  : moduleMapping[currentUser.modules[0]] || currentUser.modules[0])
+                  ? currentUser.modules.map(m => MODULE_MAPPING[m] || m)
+                  : MODULE_MAPPING[currentUser.modules[0]] || currentUser.modules[0])
               : "ptyss"
           }
           onClientCreated={(client) => {
@@ -1178,31 +1188,80 @@ export function ClientsManagement() {
           <CardTitle>Lista de Clientes</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Nombre/Empresa</TableHead>
-                  <TableHead>Documento/RUC</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Teléfono</TableHead>
-                  <TableHead>Ubicación</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead className="min-w-[100px]">Tipo</TableHead>
+                  <TableHead className="min-w-[200px]">Nombre/Empresa</TableHead>
+                  <TableHead className="min-w-[150px]">Documento/RUC</TableHead>
+                  <TableHead className="min-w-[120px]">Código SAP</TableHead>
+                  <TableHead className="min-w-[180px]">Email</TableHead>
+                  <TableHead className="min-w-[120px]">Teléfono</TableHead>
+                  <TableHead className="min-w-[150px]">Ubicación</TableHead>
+                  <TableHead className="min-w-[100px]">Estado</TableHead>
+                  <TableHead className="text-right min-w-[120px]">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredClients.length === 0 ? (
+                {isLoading ? (
+                  // Loading Skeleton
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={`skeleton-${index}`}>
+                      <TableCell><Skeleton className="h-6 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-40" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-36" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-8 w-20 ml-auto" /></TableCell>
+                    </TableRow>
+                  ))
+                ) : filteredClients.length === 0 ? (
+                  // Empty State mejorado
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
-                      <div className="flex flex-col items-center space-y-2">
-                        <Users className="h-8 w-8 text-muted-foreground" />
-                        <p className="text-muted-foreground">
-                          {searchTerm || filterType !== "all" || filterStatus !== "all" 
-                            ? "No se encontraron clientes con los filtros aplicados"
-                            : "No hay clientes registrados"}
-                        </p>
+                    <TableCell colSpan={9} className="text-center py-16">
+                      <div className="flex flex-col items-center space-y-4">
+                        {searchTerm || filterType !== "all" || filterStatus !== "all" ? (
+                          <>
+                            <div className="rounded-full bg-orange-100 p-4">
+                              <SearchX className="h-10 w-10 text-orange-600" />
+                            </div>
+                            <div className="space-y-2">
+                              <h3 className="text-lg font-semibold text-gray-900">Sin resultados</h3>
+                              <p className="text-muted-foreground max-w-sm">
+                                No se encontraron clientes con los filtros aplicados.
+                                Intenta ajustar los criterios de búsqueda.
+                              </p>
+                            </div>
+                            <Button variant="outline" size="sm" onClick={() => {
+                              setSearchTerm("")
+                              setFilterType("all")
+                              setFilterStatus("all")
+                            }}>
+                              Limpiar filtros
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rounded-full bg-blue-100 p-4">
+                              <UserX className="h-10 w-10 text-blue-600" />
+                            </div>
+                            <div className="space-y-2">
+                              <h3 className="text-lg font-semibold text-gray-900">No hay clientes</h3>
+                              <p className="text-muted-foreground max-w-sm">
+                                Aún no hay clientes registrados en el sistema.
+                                Comienza agregando tu primer cliente.
+                              </p>
+                            </div>
+                            <Button onClick={() => setIsDialogOpen(true)}>
+                              <Plus className="mr-2 h-4 w-4" />
+                              Agregar Cliente
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1234,12 +1293,18 @@ export function ClientsManagement() {
                       </TableCell>
                       
                       <TableCell>
-                        {client.type === "natural" 
+                        {client.type === "natural"
                           ? `${client.documentType.toUpperCase()}: ${client.documentNumber}`
                           : `${client.ruc}`
                         }
                       </TableCell>
-                      
+
+                      <TableCell>
+                        <span className="text-sm font-mono">
+                          {client.sapCode || "-"}
+                        </span>
+                      </TableCell>
+
                       <TableCell>
                         {client.email && (
                           <div className="flex items-center space-x-1">

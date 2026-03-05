@@ -13,12 +13,12 @@ export interface SftpConfig {
   strictVendor?: boolean;
 }
 
-// Configuración SFTP para SAP
+// Configuración SFTP para SAP - Producción
 export const sapSftpConfig: SftpConfig = {
   host: process.env.SAP_SFTP_HOST || process.env.SAP_FTP_HOST || "ftp.msc.com",
-  username: process.env.SAP_SFTP_USER || process.env.SAP_FTP_USER || "SAP_PanamaTSG", 
+  username: process.env.SAP_SFTP_USER || process.env.SAP_FTP_USER || "SAP-PanamaTSG",
   password: process.env.SAP_SFTP_PASSWORD || process.env.SAP_FTP_PASSWORD || "6whLgP4RKRhnTFEfYPt0",
-  path: process.env.SAP_SFTP_PATH || process.env.SAP_FTP_PATH || "/Test/Upload/SAP/001",
+  path: process.env.SAP_SFTP_PATH || process.env.SAP_FTP_PATH || "/Upload/Prod/SAP/P01",
   port: process.env.SAP_SFTP_PORT ? parseInt(process.env.SAP_SFTP_PORT) : 22,
   readyTimeout: process.env.SAP_SFTP_TIMEOUT ? parseInt(process.env.SAP_SFTP_TIMEOUT) : 20000,
   strictVendor: process.env.SAP_SFTP_STRICT_VENDOR === 'true'
@@ -85,12 +85,12 @@ export const getFtpConfigWithDebug = () => {
   const usingSftpSpecific = process.env.SAP_SFTP_HOST && process.env.SAP_SFTP_USER && process.env.SAP_SFTP_PASSWORD;
   const usingFtpFallback = process.env.SAP_FTP_HOST && process.env.SAP_FTP_USER && process.env.SAP_FTP_PASSWORD;
 
-  // Crear configuración FTP específica
+  // Crear configuración FTP específica - Producción
   const ftpConfig = {
     host: process.env.SAP_FTP_HOST || process.env.SAP_SFTP_HOST || "ftp.msc.com",
-    username: process.env.SAP_FTP_USER || process.env.SAP_SFTP_USER || "SAP_PanamaTSG",
+    username: process.env.SAP_FTP_USER || process.env.SAP_SFTP_USER || "SAP-PanamaTSG",
     password: process.env.SAP_FTP_PASSWORD || process.env.SAP_SFTP_PASSWORD || "6whLgP4RKRhnTFEfYPt0",
-    path: process.env.SAP_FTP_PATH || process.env.SAP_SFTP_PATH || "/Test/Upload/SAP/001",
+    path: process.env.SAP_FTP_PATH || process.env.SAP_SFTP_PATH || "/Upload/Prod/SAP/P01",
     port: 21, // FTP tradicional usa puerto 21
   };
 

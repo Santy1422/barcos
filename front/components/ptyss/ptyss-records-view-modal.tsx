@@ -35,7 +35,7 @@ export function PTYSSRecordsViewModal({
   invoice
 }: PTYSSRecordsViewModalProps) {
   const dispatch = useAppDispatch();
-  const allRecords = useAppSelector(selectAllIndividualRecords);
+  const allRecords = useAppSelector(selectAllIndividualRecords) || [];
   const clients = useAppSelector(selectAllClients);
 
   useEffect(() => {
@@ -57,7 +57,12 @@ export function PTYSSRecordsViewModal({
 
   // Función para formatear fecha y hora
   const formatDateTime = (dateString: string) => {
+    if (!dateString) return { date: 'N/A', time: 'N/A' };
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return { date: 'N/A', time: 'N/A' };
+    const year = date.getFullYear();
+    // Year validation to prevent year 40000 issue
+    if (year < 1900 || year > 2100) return { date: 'N/A', time: 'N/A' };
     return {
       date: date.toLocaleDateString('es-ES'),
       time: date.toLocaleTimeString('es-ES', {
@@ -202,15 +207,27 @@ export function PTYSSRecordsViewModal({
                         </Badge>
                       </div>
 
-                      {/* Fecha de Movimiento */}
+                      {/* Fecha Inicial */}
                       <div className="space-y-2">
                         <Label className="text-sm font-medium text-gray-600 flex items-center gap-1">
-                          <Calendar className="h-3 w-3" /> Fecha Movimiento
+                          <Calendar className="h-3 w-3" /> Fecha Inicial
                         </Label>
                         <p className="text-sm">
                           {data.moveDate ? new Date(data.moveDate).toLocaleDateString('es-ES') : "N/A"}
                         </p>
                       </div>
+
+                      {/* Fecha Fin */}
+                      {data.endDate && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-600 flex items-center gap-1">
+                            <Calendar className="h-3 w-3" /> Fecha Fin
+                          </Label>
+                          <p className="text-sm">
+                            {new Date(data.endDate).toLocaleDateString('es-ES')}
+                          </p>
+                        </div>
+                      )}
 
                       {/* Valor */}
                       <div className="space-y-2">

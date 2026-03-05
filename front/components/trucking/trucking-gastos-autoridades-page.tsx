@@ -64,7 +64,8 @@ export function TruckingGastosAutoridadesPage() {
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null)
   const [showPdfPreview, setShowPdfPreview] = useState(false)
   const [modalPdfUrl, setModalPdfUrl] = useState<string | null>(null)
-  
+  const [selectedClientId, setSelectedClientId] = useState<string>("")
+
   // Estado para crear prefactura
   const [isCreatingPrefactura, setIsCreatingPrefactura] = useState(false)
   
@@ -83,9 +84,22 @@ export function TruckingGastosAutoridadesPage() {
   const userRoles = currentUser?.roles || (currentUser?.role ? [currentUser.role] : [])
   const isAdmin = userRoles.includes('administrador')
 
+  // Logo para PDF
+  const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined)
+
   useEffect(() => {
     dispatch(fetchAutoridadesRecords());
     dispatch(fetchClients());
+
+    // Cargar logo PTG
+    fetch('/logos/logo_PTG.png')
+      .then(res => res.blob())
+      .then(blob => {
+        const reader = new FileReader()
+        reader.onloadend = () => setLogoBase64(reader.result as string)
+        reader.readAsDataURL(blob)
+      })
+      .catch(() => console.warn("No se pudo cargar el logo PTG"))
   }, [dispatch]);
 
   // Recargar cuando la ventana recupera el foco (útil al volver de trucking-records)
@@ -272,13 +286,55 @@ export function TruckingGastosAutoridadesPage() {
 
   // Funciones para manejo de clientes (similar a trucking-prefactura)
   const normalizeName = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '').trim()
-  
+
   const getClient = (name: string) => {
     const target = normalizeName(name)
-    return clients.find((c: any) => {
-      const n = c.type === 'juridico' ? (c.companyName || '') : (c.fullName || '')
-      return normalizeName(n) === target
+    console.log('getClient - Buscando cliente:', name, '-> normalized:', target)
+    console.log('getClient - Total clients disponibles:', clients.length)
+    if (!target) return null
+
+    // 1. Buscar coincidencia exacta en campo 'name' (alias corto) - PRIORIDAD
+    let found = clients.find((c: any) => {
+      const clientName = normalizeName(c.name || '')
+      if (clientName === target) {
+        console.log('getClient - ENCONTRADO por name exacto:', c.name, c.companyName || c.fullName)
+      }
+      return clientName === target
     })
+
+    // 2. Buscar coincidencia exacta en nombre completo
+    if (!found) {
+      found = clients.find((c: any) => {
+        const n = c.type === 'juridico' ? (c.companyName || '') : (c.fullName || '')
+        return normalizeName(n) === target
+      })
+    }
+
+    // 3. Buscar coincidencia parcial en campo 'name'
+    if (!found) {
+      found = clients.find((c: any) => {
+        const clientName = normalizeName(c.name || '')
+        return clientName && (clientName.includes(target) || target.includes(clientName))
+      })
+    }
+
+    // 4. Buscar coincidencia parcial en nombre completo
+    if (!found) {
+      found = clients.find((c: any) => {
+        const n = c.type === 'juridico' ? (c.companyName || '') : (c.fullName || '')
+        const normalized = normalizeName(n)
+        return normalized.includes(target) || target.includes(normalized)
+      })
+    }
+
+    if (!found) {
+      console.log('getClient - NO ENCONTRADO. Mostrando names disponibles:')
+      clients.slice(0, 20).forEach((c: any) => {
+        console.log('  -', c.name, '|', c.companyName || c.fullName)
+      })
+    }
+
+    return found
   }
 
   // Funciones de filtros de fecha (replicadas de trucking-prefactura)
@@ -358,6 +414,7 @@ export function TruckingGastosAutoridadesPage() {
 
   const handlePrevStep = () => {
     setStep('select')
+    setSelectedClientId("")
   }
 
   const handleDelete = async (id: string) => {
@@ -457,16 +514,18 @@ export function TruckingGastosAutoridadesPage() {
 
     const doc = new jsPDF()
 
-    // Colores / encabezado
+    // Logo de la empresa
     const lightBlue = [59, 130, 246]
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    
-    // Texto 'PTG' grande, centrado
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14)
-    doc.setFont(undefined, 'bold')
-    doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    }
 
     // Número de documento y fecha
     doc.setTextColor(0, 0, 0)
@@ -494,39 +553,27 @@ export function TruckingGastosAutoridadesPage() {
     doc.text('Howard, Panama Pacifico', 15, 58)
     doc.text('TEL: (507) 838-7470', 15, 62)
 
-    // Cliente
+    // Cliente - usar el cliente seleccionado del dropdown
     doc.setFontSize(9)
     doc.setFont(undefined, 'bold')
     doc.text('CUSTOMER:', 15, 82)
     doc.setFontSize(8)
     doc.setFont(undefined, 'normal')
-    
-    // Obtener el primer cliente de los registros seleccionados
-    const firstRecord = selectedRecords[0]
-    const customerName = firstRecord?.customer || 'Cliente'
-    
-    // Intentar obtener cliente por clientId primero, luego por nombre como fallback
-    let customer = null
-    if (firstRecord?.clientId) {
-      // Buscar cliente por ID en la lista de clientes
-      customer = clients.find((c: any) => (c._id || c.id) === firstRecord.clientId)
-    }
-    
-    // Si no se encontró por ID, buscar por nombre
-    if (!customer) {
-      customer = getClient(customerName)
-    }
-    
+
+    const customer = selectedClientId
+      ? clients.find((c: any) => (c._id || c.id) === selectedClientId)
+      : null
+
     const clientDisplay = customer
       ? (customer.type === 'natural' ? customer.fullName : customer.companyName)
-      : customerName
+      : (selectedRecords[0]?.customer || 'Cliente')
     const ruc = customer?.ruc || customer?.documentNumber || 'N/A'
     const sap = customer?.sapCode || ''
     const address = customer?.address
       ? (typeof customer.address === 'string' ? customer.address : `${customer.address?.district || ''}, ${customer.address?.province || ''}`)
       : 'N/A'
     const phone = customer?.phone || 'N/A'
-    
+
     doc.text(clientDisplay, 15, 86)
     doc.text(`RUC: ${ruc}`, 15, 90)
     if (sap) doc.text(`SAP: ${sap}`, 60, 90)
@@ -758,13 +805,38 @@ export function TruckingGastosAutoridadesPage() {
     }
   }, [pdfPreviewUrl, modalPdfUrl])
 
-  // Regenerar PDF cuando cambien los datos
+  // Regenerar PDF cuando cambien los datos o el cliente seleccionado
   useEffect(() => {
     if (step === 'pdf' && selectedRecords.length > 0 && documentData.number) {
       const timeoutId = setTimeout(() => generateRealtimePDF(), 150)
       return () => clearTimeout(timeoutId)
     }
-  }, [documentData, step, selectedRecords.length])
+  }, [documentData, step, selectedRecords.length, selectedClientId])
+
+  // Auto-detectar cliente cuando se pasa al paso de PDF
+  useEffect(() => {
+    if (step === 'pdf' && selectedRecords.length > 0 && clients.length > 0 && !selectedClientId) {
+      const firstRecord = selectedRecords[0]
+      const customerName = firstRecord?.customer || ''
+
+      // Intentar buscar por clientId primero
+      if (firstRecord?.clientId) {
+        const clientById = clients.find((c: any) => (c._id || c.id) === firstRecord.clientId)
+        if (clientById) {
+          setSelectedClientId(clientById._id || clientById.id)
+          console.log('Auto-detectado cliente por clientId:', clientById.companyName || clientById.fullName)
+          return
+        }
+      }
+
+      // Intentar buscar por nombre
+      const found = getClient(customerName)
+      if (found) {
+        setSelectedClientId(found._id || found.id)
+        console.log('Auto-detectado cliente por nombre:', found.companyName || found.fullName)
+      }
+    }
+  }, [step, selectedRecords, clients, selectedClientId])
 
   // Crear prefactura auth (similar a trucking-prefactura)
   const handleCreatePrefactura = async () => {
@@ -776,31 +848,22 @@ export function TruckingGastosAutoridadesPage() {
       toast({ title: "Error", description: "Completa el número de prefactura", variant: "destructive" })
       return
     }
-    
+    if (!selectedClientId) {
+      toast({ title: "Error", description: "Selecciona un cliente", variant: "destructive" })
+      return
+    }
+
     setIsCreatingPrefactura(true)
-    
+
     try {
-      // Obtener el cliente del primer registro seleccionado
-      const firstRecord = selectedRecords[0]
-      const customerName = firstRecord?.customer || 'Cliente'
-      
-      // Intentar obtener cliente por clientId primero, luego por nombre como fallback
-      let customer = null
-      if (firstRecord?.clientId) {
-        // Buscar cliente por ID en la lista de clientes
-        customer = clients.find((c: any) => (c._id || c.id) === firstRecord.clientId)
-      }
-      
-      // Si no se encontró por ID, buscar por nombre
+      // Usar el cliente seleccionado del dropdown
+      const customer = clients.find((c: any) => (c._id || c.id) === selectedClientId)
+
       if (!customer) {
-        customer = getClient(customerName)
-      }
-      
-      if (!customer) {
-        toast({ title: "Error", description: `No se encontró el cliente "${customerName}" asociado a los registros seleccionados`, variant: "destructive" })
+        toast({ title: "Error", description: "No se encontró el cliente seleccionado", variant: "destructive" })
         return
       }
-      
+
       const displayName = customer.type === 'natural' ? customer.fullName : customer.companyName
       const displayRuc = customer.type === 'natural' ? customer.documentNumber : customer.ruc
       const address = customer.type === 'natural'
@@ -814,8 +877,8 @@ export function TruckingGastosAutoridadesPage() {
         clientName: displayName || customerName,
         clientRuc: displayRuc || '',
         clientSapNumber: customer.sapCode || '',
-        issueDate: new Date().toISOString().split('T')[0],
-        dueDate: new Date().toISOString().split('T')[0],
+        issueDate: new Date().toLocaleDateString('en-CA'),
+        dueDate: new Date().toLocaleDateString('en-CA'),
         currency: 'USD',
         subtotal: totalSelected,
         taxAmount: 0,
@@ -846,6 +909,7 @@ export function TruckingGastosAutoridadesPage() {
         dispatch(fetchAutoridadesRecords())
         setSelectedBLNumbers([])
         setDocumentData({ number: `AUTH-${Date.now().toString().slice(-5)}`, notes: '' })
+        setSelectedClientId("")
         setStep('select')
 
         toast({ title: 'Prefactura Auth creada', description: `Prefactura ${newPrefactura.invoiceNumber} creada con ${selectedBLNumbers.length} BL Numbers.` })
@@ -870,25 +934,41 @@ export function TruckingGastosAutoridadesPage() {
               <div className="h-9 w-9 rounded-md bg-slate-700 flex items-center justify-center">📋</div>
               <div>
                 <div className="text-lg font-semibold">Paso 1: Selección por BL Number</div>
-                <div>
+                <div className="flex gap-2">
                   <Badge variant="secondary" className="text-slate-900 bg-white/90">{Array.from(groupedByBL.keys()).length} BL Numbers</Badge>
+                  <Badge variant="outline" className="text-slate-200 bg-slate-600/50 border-slate-500">{filteredRecords.length} contenedores</Badge>
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <div className="text-sm opacity-90">{selectedBLNumbers.length} BL seleccionados, {selectedRecords.length} registros</div>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => {
                   dispatch(fetchAutoridadesRecords())
                   toast({ title: "Refrescando datos", description: "Actualizando registros de autoridades..." })
-                }} 
+                }}
                 className="bg-white/10 hover:bg-white/20 border-white/30 text-white"
                 disabled={loading}
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Refrescar
               </Button>
+              {totalBLNumbers.length > 0 && selectedBLNumbers.length < totalBLNumbers.length && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSelectedBLNumbers([...totalBLNumbers])
+                    toast({
+                      title: "Todos seleccionados",
+                      description: `${totalBLNumbers.length} BL Numbers seleccionados`
+                    })
+                  }}
+                  className="bg-green-600/90 hover:bg-green-700/90 border-green-500/50 text-white"
+                >
+                  ✓ Seleccionar Todos ({totalBLNumbers.length})
+                </Button>
+              )}
               <Button variant="outline" disabled={selectedBLNumbers.length === 0} onClick={clearSelection} className="bg-white/10 hover:bg-white/20 border-white/30 text-white">
                 Limpiar Selección
               </Button>
@@ -959,8 +1039,14 @@ export function TruckingGastosAutoridadesPage() {
                   </div>
                   <div className="flex gap-4 text-xs">
                     <div className="bg-white/60 px-3 py-1 rounded-md">
-                      <span className="font-medium text-slate-600">Registros:</span>
+                      <span className="font-medium text-slate-600">BL Numbers:</span>
+                      <span className="ml-1 font-bold text-slate-900">{Array.from(groupedByBL.keys()).length}</span>
+                      <span className="ml-1 text-slate-500">(grupos únicos)</span>
+                    </div>
+                    <div className="bg-white/60 px-3 py-1 rounded-md">
+                      <span className="font-medium text-slate-600">Contenedores:</span>
                       <span className="ml-1 font-bold text-slate-900">{filteredRecords.length}</span>
+                      <span className="ml-1 text-slate-500">(registros totales)</span>
                     </div>
                     {authFilter !== 'all' && (
                       <div className="bg-white/60 px-3 py-1 rounded-md">
@@ -1204,6 +1290,38 @@ export function TruckingGastosAutoridadesPage() {
                   
                   <div className="space-y-4">
                     <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-slate-700">Cliente *</Label>
+                      <Select value={selectedClientId} onValueChange={setSelectedClientId}>
+                        <SelectTrigger className="bg-white border-slate-300">
+                          <SelectValue placeholder="Selecciona un cliente" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[300px]">
+                          {clients
+                            .filter((c: any) => c.isActive !== false)
+                            .sort((a: any, b: any) => {
+                              const nameA = a.name || a.companyName || a.fullName || ''
+                              const nameB = b.name || b.companyName || b.fullName || ''
+                              return nameA.localeCompare(nameB)
+                            })
+                            .map((c: any) => (
+                              <SelectItem key={c._id || c.id} value={c._id || c.id}>
+                                {c.name || c.companyName || c.fullName} {c.ruc ? `(${c.ruc})` : ''}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                      {selectedClientId && (() => {
+                        const sc = clients.find((c: any) => (c._id || c.id) === selectedClientId)
+                        return sc ? (
+                          <div className="text-xs text-slate-500 mt-1">
+                            <div><strong>Nombre:</strong> {sc.companyName || sc.fullName}</div>
+                            <div><strong>RUC:</strong> {sc.ruc || sc.documentNumber || 'N/A'}</div>
+                            <div><strong>Dirección:</strong> {sc.address || 'N/A'}</div>
+                          </div>
+                        ) : null
+                      })()}
+                    </div>
+                    <div className="space-y-2">
                       <Label htmlFor="doc-number" className="text-sm font-semibold text-slate-700">Número de Prefactura Auth *</Label>
                       <Input
                         id="doc-number"
@@ -1215,7 +1333,7 @@ export function TruckingGastosAutoridadesPage() {
                         className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
                       />
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label htmlFor="doc-notes" className="text-sm font-semibold text-slate-700">Notas (Opcional)</Label>
                       <Textarea

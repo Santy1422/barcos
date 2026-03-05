@@ -36,63 +36,83 @@ import autoTable from "jspdf-autotable"
 // Función para convertir números de serie de Excel a fechas legibles
 const convertExcelDateToReadable = (excelDate: string | number): string => {
   if (!excelDate) return ''
-  
-  
-  let date: Date
-  
-  // Si es una fecha ISO (formato de base de datos), convertirla directamente
-  if (typeof excelDate === 'string' && excelDate.includes('T')) {
-    date = new Date(excelDate)
-  } else if (typeof excelDate === 'string' && excelDate.includes('-') && !excelDate.includes('/')) {
-    // Si es una fecha en formato YYYY-MM-DD
-    date = new Date(excelDate)
-  } else if (typeof excelDate === 'string' && excelDate.includes('/')) {
-    // Si es una fecha en formato MM/DD/YYYY o DD/MM/YYYY, parsearla correctamente
-    const dateStr = excelDate.split(' ')[0] // Quitar la hora si existe
-    const parts = dateStr.split('/')
-    
-    if (parts.length === 3) {
-      const [part1, part2, part3] = parts
-      // Asumir que viene en formato MM/DD/YYYY y convertir a DD/MM/YYYY
-      if (part1.length <= 2 && part2.length <= 2 && part3.length === 4) {
-        // Es MM/DD/YYYY, convertir a DD/MM/YYYY
-        const day = part2.padStart(2, '0')
-        const month = part1.padStart(2, '0')
-        const year = part3
-        const result = `${day}/${month}/${year}`
-        return result
+
+  // Limpiar espacios si es string
+  const cleanDate = typeof excelDate === 'string' ? excelDate.trim() : excelDate
+
+  // Si es string en formato ISO con T
+  if (typeof cleanDate === 'string' && cleanDate.includes('T')) {
+    const datePart = cleanDate.split('T')[0]
+    if (datePart.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+      const [year, month, day] = datePart.split('-').map(Number)
+      if (year >= 1900 && year <= 2100) {
+        return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
       }
     }
-    
-    // Si no se puede parsear, intentar con Date normal
-    date = new Date(excelDate)
-  } else {
-    // Convertir número de serie de Excel a fecha
-    const excelSerialNumber = Number(excelDate)
-    if (isNaN(excelSerialNumber)) return String(excelDate)
-    
-    // Excel cuenta los días desde 1900-01-01, pero hay un bug de año bisiesto
-    // que hace que 1900 sea considerado bisiesto cuando no lo es
-    const excelEpoch = new Date(1900, 0, 1) // 1 de enero de 1900
+  }
+
+  // Si es string en formato YYYY-MM-DD
+  if (typeof cleanDate === 'string' && cleanDate.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+    const [year, month, day] = cleanDate.split('-').map(Number)
+    if (year >= 1900 && year <= 2100) {
+      return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
+    }
+  }
+
+  // Si es string en formato DD-MM-YYYY
+  if (typeof cleanDate === 'string' && cleanDate.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+    const parts = cleanDate.split('-')
+    if (parts.length === 3) {
+      const [part1, part2, yearStr] = parts
+      const year = Number(yearStr)
+      if (year >= 1900 && year <= 2100) {
+        if (Number(part1) > 12) {
+          return `${part1.padStart(2, '0')}/${part2.padStart(2, '0')}/${year}`
+        }
+        return `${part1.padStart(2, '0')}/${part2.padStart(2, '0')}/${year}`
+      }
+    }
+  }
+
+  // Si es string con formato MM/DD/YYYY o DD/MM/YYYY
+  if (typeof cleanDate === 'string' && cleanDate.includes('/')) {
+    const dateStr = cleanDate.split(' ')[0]
+    const parts = dateStr.split('/')
+
+    if (parts.length === 3) {
+      const [part1, part2, part3] = parts
+      if (part1.length <= 2 && part2.length <= 2 && part3.length === 4) {
+        const year = Number(part3)
+        if (year >= 1900 && year <= 2100) {
+          if (Number(part1) > 12) {
+            return `${part1.padStart(2, '0')}/${part2.padStart(2, '0')}/${year}`
+          }
+          return `${part2.padStart(2, '0')}/${part1.padStart(2, '0')}/${year}`
+        }
+      }
+    }
+  }
+
+  // Si es número (serie de Excel) - solo valores razonables
+  const excelSerialNumber = Number(cleanDate)
+  if (!isNaN(excelSerialNumber) && excelSerialNumber > 0 && excelSerialNumber < 100000) {
+    const excelEpoch = new Date(1900, 0, 1)
     const millisecondsPerDay = 24 * 60 * 60 * 1000
-    
-    // Ajustar por el bug del año bisiesto de Excel
     const adjustedSerialNumber = excelSerialNumber > 59 ? excelSerialNumber - 1 : excelSerialNumber
-    
-    date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
+
+    const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
+
+    if (!isNaN(date.getTime())) {
+      const year = date.getFullYear()
+      if (year >= 1900 && year <= 2100) {
+        const day = date.getDate().toString().padStart(2, '0')
+        const month = (date.getMonth() + 1).toString().padStart(2, '0')
+        return `${day}/${month}/${year}`
+      }
+    }
   }
-  
-  // Verificar que la fecha es válida
-  if (isNaN(date.getTime())) {
-    return String(excelDate)
-  }
-  
-  // Formatear la fecha como DD/MM/YYYY (forzando el formato)
-  const day = date.getDate().toString().padStart(2, '0')
-  const month = (date.getMonth() + 1).toString().padStart(2, '0')
-  const year = date.getFullYear()
-  
-  return `${day}/${month}/${year}`
+
+  return String(excelDate)
 }
 
 
@@ -111,12 +131,24 @@ export function TruckingPrefactura() {
   const userRoles = currentUser?.roles || (currentUser?.role ? [currentUser.role] : [])
   const isAdmin = userRoles.includes('administrador')
 
+  // Logo para PDF
+  const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined)
+
   useEffect(() => {
     dispatch(fetchPendingRecordsByModule("trucking"))
     dispatch(fetchClients())
     dispatch(fetchServices("trucking"))
-    // Cargar también todos los registros del módulo para métricas (prefacturados)
     dispatch(fetchRecordsByModule("trucking"))
+
+    // Cargar logo PTG
+    fetch('/logos/logo_PTG.png')
+      .then(res => res.blob())
+      .then(blob => {
+        const reader = new FileReader()
+        reader.onloadend = () => setLogoBase64(reader.result as string)
+        reader.readAsDataURL(blob)
+      })
+      .catch(() => console.warn("No se pudo cargar el logo PTG"))
   }, [dispatch])
 
   // Selección de registros
@@ -664,17 +696,18 @@ export function TruckingPrefactura() {
 
     const doc = new jsPDF()
 
-    // Colores / encabezado
+    // Logo de la empresa
     const lightBlue = [59, 130, 246]
-    doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
-    doc.rect(15, 15, 30, 15, 'F')
-    // Texto 'PTG' grande, centrado y con padding visual
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14)
-    doc.setFont(undefined, 'bold')
-    // Centramos vertical y horizontalmente dentro del rectángulo (15,15,30,15)
-    // Centro X = 15 + 30/2 = 30, Centro Y = 15 + 15/2 = 22.5
-    doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 15, 12, 35, 18)
+    } else {
+      doc.setFillColor(lightBlue[0], lightBlue[1], lightBlue[2])
+      doc.rect(15, 15, 30, 15, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('PTG', 30, 23, { align: 'center', baseline: 'middle' })
+    }
 
     // Número de prefactura y fecha
     doc.setTextColor(0, 0, 0)
@@ -996,8 +1029,8 @@ export function TruckingPrefactura() {
         clientName: displayName || clientName,
         clientRuc: displayRuc || '',
         clientSapNumber: client.sapCode || '',
-        issueDate: new Date().toISOString().split('T')[0],
-        dueDate: new Date().toISOString().split('T')[0],
+        issueDate: new Date().toLocaleDateString('en-CA'),
+        dueDate: new Date().toLocaleDateString('en-CA'),
         currency: 'USD',
         subtotal: totalSelected,
         taxAmount: 0,

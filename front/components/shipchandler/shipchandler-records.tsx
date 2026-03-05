@@ -9,7 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Code, X, Edit } from "lucide-react"
+import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Code, X, Edit, SearchX, FileX } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { selectInvoicesByModule, fetchInvoicesAsync, deleteInvoiceAsync, selectRecordsLoading, selectRecordsError, updateInvoiceAsync, selectAllIndividualRecords, fetchAllRecordsByModule, updateMultipleRecordsStatusAsync } from "@/lib/features/records/recordsSlice"
@@ -116,50 +117,78 @@ export function ShipChandlerRecords() {
   // Función para formatear la fecha del registro
   const formatRecordDate = (dateValue: any): string => {
     if (!dateValue) return 'N/A'
-    
+
+    // Si es string, limpiar espacios
+    let cleanValue = dateValue
+    if (typeof dateValue === 'string') {
+      cleanValue = dateValue.trim()
+    }
+
     // Si es string en formato DD-MM-YYYY, convertir a formato legible
-    if (typeof dateValue === 'string' && dateValue.match(/^\d{2}-\d{2}-\d{4}$/)) {
-      const parts = dateValue.split('-')
+    if (typeof cleanValue === 'string' && cleanValue.match(/^\d{1,2}-\d{1,2}-\d{4}$/)) {
+      const parts = cleanValue.split('-')
       if (parts.length === 3) {
-        const [day, month, year] = parts
-        return `${day}/${month}/${year}`
+        const [part1, part2, yearStr] = parts
+        const year = Number(yearStr)
+        // Validar año razonable
+        if (year >= 1900 && year <= 2100) {
+          // Si part1 > 12, es DD-MM-YYYY
+          if (Number(part1) > 12) {
+            return `${part1.padStart(2, '0')}/${part2.padStart(2, '0')}/${year}`
+          }
+          // Asumir DD-MM-YYYY
+          return `${part1.padStart(2, '0')}/${part2.padStart(2, '0')}/${year}`
+        }
       }
     }
-    
+
     // Si es string en formato YYYY-MM-DD, convertir
-    if (typeof dateValue === 'string' && dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const parts = dateValue.split('-')
+    if (typeof cleanValue === 'string' && cleanValue.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+      const parts = cleanValue.split('-')
       if (parts.length === 3) {
-        const [year, month, day] = parts
-        return `${day}/${month}/${year}`
+        const [yearStr, month, day] = parts
+        const year = Number(yearStr)
+        // Validar año razonable
+        if (year >= 1900 && year <= 2100) {
+          return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`
+        }
       }
     }
-    
-    // Si es número (serie de Excel), convertir
-    if (typeof dateValue === 'number') {
+
+    // Si es string en formato ISO con T
+    if (typeof cleanValue === 'string' && cleanValue.includes('T')) {
+      const datePart = cleanValue.split('T')[0]
+      if (datePart.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+        const [yearStr, month, day] = datePart.split('-')
+        const year = Number(yearStr)
+        if (year >= 1900 && year <= 2100) {
+          return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`
+        }
+      }
+    }
+
+    // Si es número (serie de Excel), convertir - solo valores razonables
+    if (typeof cleanValue === 'number' && cleanValue > 0 && cleanValue < 100000) {
       const excelEpoch = new Date(1900, 0, 1)
       const millisecondsPerDay = 24 * 60 * 60 * 1000
-      const adjustedSerialNumber = dateValue > 59 ? dateValue - 1 : dateValue
+      const adjustedSerialNumber = cleanValue > 59 ? cleanValue - 1 : cleanValue
       const date = new Date(excelEpoch.getTime() + (adjustedSerialNumber - 1) * millisecondsPerDay)
-      
+
       if (!isNaN(date.getTime())) {
-        const day = date.getDate().toString().padStart(2, '0')
-        const month = (date.getMonth() + 1).toString().padStart(2, '0')
         const year = date.getFullYear()
-        return `${day}/${month}/${year}`
+        // Validar año razonable
+        if (year >= 1900 && year <= 2100) {
+          const day = date.getDate().toString().padStart(2, '0')
+          const month = (date.getMonth() + 1).toString().padStart(2, '0')
+          return `${day}/${month}/${year}`
+        }
       }
     }
-    
-    // Intentar parsear como fecha
-    const date = new Date(dateValue)
-    if (!isNaN(date.getTime())) {
-      const day = date.getDate().toString().padStart(2, '0')
-      const month = (date.getMonth() + 1).toString().padStart(2, '0')
-      const year = date.getFullYear()
-      return `${day}/${month}/${year}`
-    }
-    
-    return String(dateValue)
+
+    // NO usar new Date(dateValue) genérico - puede producir años inválidos
+    // Retornar el valor original si no se pudo parsear
+    console.warn('formatRecordDate: No se pudo parsear la fecha:', dateValue)
+    return 'N/A'
   }
 
   // Función para convertir fecha del registro a Date para filtros
@@ -489,21 +518,26 @@ export function ShipChandlerRecords() {
           if (!open) setFacturarInvoice(null)
         }}
         invoice={facturarInvoice}
-        onFacturar={async (newInvoiceNumber: string, xmlData?: { xml: string; isValid: boolean; sentToSap?: boolean; sentToSapAt?: string }, invoiceDate?: string) => {
+        onFacturar={async (newInvoiceNumber: string, xmlData?: { xml: string; isValid: boolean; sentToSap?: boolean; sentToSapAt?: string }, invoiceDate?: string, poNumber?: string) => {
           if (!facturarInvoice) return
-          
+
           const currentInvoice = facturarInvoice
-          
+
           try {
-            const updates: any = { 
-              status: "facturada", 
-              invoiceNumber: newInvoiceNumber 
+            const updates: any = {
+              status: "facturada",
+              invoiceNumber: newInvoiceNumber
             }
-            
+
             if (invoiceDate) {
               updates.issueDate = invoiceDate
             }
-            
+
+            // Agregar PO Number si se proporcionó
+            if (poNumber) {
+              updates.poNumber = poNumber
+            }
+
             if (xmlData) {
               updates.xmlData = {
                 xml: xmlData.xml,
@@ -763,30 +797,40 @@ export function ShipChandlerRecords() {
             )}
           </div>
 
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Número</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Vessel</TableHead>
-                  <TableHead>Invoice Date</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="hidden md:table-cell">Notas</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead className="min-w-[120px]">Número</TableHead>
+                  <TableHead className="min-w-[150px]">Cliente</TableHead>
+                  <TableHead className="min-w-[120px]">Vessel</TableHead>
+                  <TableHead className="min-w-[130px]">Invoice Date</TableHead>
+                  <TableHead className="min-w-[100px]">Total</TableHead>
+                  <TableHead className="min-w-[100px]">Estado</TableHead>
+                  <TableHead className="min-w-[120px] hidden md:table-cell">Notas</TableHead>
+                  <TableHead className="min-w-[200px] text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
-                      <div className="flex items-center justify-center space-x-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Cargando prefacturas...</span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={`skeleton-${index}`}>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-24 rounded-full" /></TableCell>
+                      <TableCell className="hidden md:table-cell"><Skeleton className="h-5 w-full" /></TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end space-x-2">
+                          <Skeleton className="h-8 w-8" />
+                          <Skeleton className="h-8 w-8" />
+                          <Skeleton className="h-8 w-8" />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
                 ) : error ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8">
@@ -904,10 +948,45 @@ export function ShipChandlerRecords() {
                   })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                      {shipchandlerInvoices.length === 0
-                        ? "No hay prefacturas ShipChandler creadas"
-                        : "No se encontraron prefacturas que coincidan con los filtros"}
+                    <TableCell colSpan={8} className="py-12">
+                      <div className="flex flex-col items-center justify-center space-y-4">
+                        {searchTerm || statusFilter !== "all" || clientFilter !== "all" || vesselFilter || isUsingPeriodFilter ? (
+                          <>
+                            <div className="rounded-full bg-orange-100 p-4">
+                              <SearchX className="h-10 w-10 text-orange-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Sin resultados</h3>
+                            <p className="text-sm text-muted-foreground text-center max-w-sm">
+                              No se encontraron prefacturas que coincidan con los filtros aplicados
+                            </p>
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setSearchTerm("")
+                                setStatusFilter("all")
+                                setClientFilter("all")
+                                setVesselFilter("")
+                                setIsUsingPeriodFilter(false)
+                                setStartDate("")
+                                setEndDate("")
+                              }}
+                            >
+                              <X className="mr-2 h-4 w-4" />
+                              Limpiar filtros
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rounded-full bg-blue-100 p-4">
+                              <FileX className="h-10 w-10 text-blue-600" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Sin prefacturas</h3>
+                            <p className="text-sm text-muted-foreground text-center max-w-sm">
+                              Aún no hay prefacturas ShipChandler creadas. Las prefacturas se generan desde los registros.
+                            </p>
+                          </>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}

@@ -1,0 +1,668 @@
+"use client"
+
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit"
+import type { RootState } from "@/lib/store"
+
+// Asegurar que la URL base tenga /api al final
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+const API_URL = BASE_URL.endsWith('/api') ? BASE_URL : `${BASE_URL}/api`
+
+// Types
+interface ModuleData {
+  totalRecords: number
+  totalRevenue: number
+  totalInvoices: number
+  recentRecords: any[]
+  byStatus: { [key: string]: number }
+  topClients?: any[]
+}
+
+interface MetricsSummary {
+  totalRevenue: number
+  totalTransactions: number
+  activeClients: number
+  totalClients: number
+  invoicesCreated: number
+  pendingInvoices: number
+  completedInvoices: number
+  totalRecords: number
+}
+
+interface RevenueData {
+  timeline: { date: string; amount: number; count?: number }[]
+  byModule: {
+    trucking: number
+    agency: number
+    ptyss: number
+    shipchandler: number
+  }
+  total: number
+  monthlyBreakdown?: { year: number; month: number; amount: number; count: number }[]
+}
+
+interface OperationalMetrics {
+  overallCompletionRate: number
+  truckingEfficiency: number
+  ptyssEfficiency: number
+  shipchandlerEfficiency: number
+  agencyEfficiency: number
+  averageProcessingTime: number
+  moduleStats: any
+  totals: any
+}
+
+interface ClientsData {
+  total: number
+  totalActive: number
+  inactive: number
+  newThisMonth: number
+  byType: { [key: string]: number }
+  topByRevenue: any[]
+  clientsByMonth: any[]
+}
+
+interface InvoicesData {
+  total: number
+  totalAmount: number
+  pending: number
+  completed: number
+  byModule: { [key: string]: { count: number; amount: number } }
+  byStatus: { [key: string]: number }
+  invoicesByDay: { date: string; count: number; amount: number }[]
+}
+
+interface AdvancedData {
+  comparisons: {
+    thisMonth: { revenue: number; count: number }
+    lastMonth: { revenue: number; count: number }
+    monthOverMonthGrowth: number
+    thisWeek: { revenue: number; count: number }
+    lastWeek: { revenue: number; count: number }
+    weekOverWeekGrowth: number
+    thisYear: { revenue: number; count: number }
+    lastYear: { revenue: number; count: number }
+    yearOverYearGrowth: number
+  }
+  ticketStats: {
+    average: number
+    max: number
+    min: number
+    total: number
+    count: number
+  }
+  activityByHour: { hour: number; count: number; amount: number }[]
+  activityByDayOfWeek: { day: number; dayName: string; count: number; amount: number }[]
+  topClientsThisMonth: { name: string; revenue: number; count: number }[]
+  recentTransactions: { id: string; invoiceNumber: string; client: string; module: string; amount: number; status: string; date: string }[]
+  activeUsers: { userId: string; invoiceCount: number; totalRevenue: number }[]
+  recordsByModuleStatus: { module: string; status: string; count: number }[]
+  clientGrowth: { year: number; month: number; count: number }[]
+}
+
+interface ForecastingData {
+  historical: { year: number; month: number; revenue: number; count: number; trendLine: number }[]
+  forecast: { year: number; month: number; predictedRevenue: number; predictedCount: number }[]
+  trend: { slope: number; intercept: number; direction: string; monthlyChange: number }
+  confidence: number
+  averageGrowth: number
+  nextMonthPrediction: number
+  nextQuarterPrediction: number
+  seasonality: { bestMonth: any; worstMonth: any }
+}
+
+interface ModuleComparisonData {
+  modules: {
+    module: string
+    thisMonth: { revenue: number; count: number; avgTicket: number; maxTicket: number; minTicket: number; completed: number; pending: number; completionRate: number }
+    lastMonth: { revenue: number; count: number }
+    growth: number
+    uniqueClients: number
+    topClients: { name: string; revenue: number; count: number }[]
+  }[]
+  rankings: {
+    byRevenue: any[]
+    byVolume: any[]
+    byGrowth: any[]
+    byAvgTicket: any[]
+  }
+  dailyTrend: { [key: string]: { date: string; revenue: number; count: number }[] }
+  totals: { revenue: number; count: number; avgGrowth: number }
+}
+
+interface AlertData {
+  type: string
+  category: string
+  title: string
+  message: string
+  value: number
+  threshold?: number
+  severity: string
+  module?: string
+  clients?: string[]
+}
+
+interface AlertsData {
+  alerts: AlertData[]
+  summary: {
+    total: number
+    byType: { success: number; warning: number; info: number }
+    bySeverity: { high: number; medium: number; low: number }
+    healthScore: number
+  }
+  metrics: {
+    todayRevenue: number
+    todayTransactions: number
+    avgDailyRevenue: number
+    avgDailyTransactions: number
+    projectedMonthly: number
+    lastMonthRevenue: number
+  }
+}
+
+interface EfficiencyRankingsData {
+  clients: { rank: number; name: string; revenue: number; invoices: number; avgTicket: number; modules: string[]; growth: number; score: number }[]
+  modules: { module: string; revenue: number; invoices: number; avgTicket: number; completionRate: number; uniqueClients: number; revenuePerClient: number; efficiencyScore: number }[]
+  days: { rank: number; day: string; dayNumber: number; revenue: number; transactions: number; avgTicket: number }[]
+  hours: { rank: number; hour: number; label: string; revenue: number; transactions: number; avgTicket: number }[]
+  growth: { name: string; current: number; previous: number; growth: number }[]
+  atRisk: { name: string; current: number; previous: number; growth: number }[]
+  summary: { topClient: string; topModule: string; bestDay: string; bestHour: string; clientsAtRisk: number }
+}
+
+interface AnalyticsState {
+  // Data
+  trucking: ModuleData | null
+  agency: ModuleData | null
+  ptyss: ModuleData | null
+  shipchandler: ModuleData | null
+  clients: ClientsData | null
+  invoices: InvoicesData | null
+  metrics: MetricsSummary | null
+  revenue: RevenueData | null
+  operational: OperationalMetrics | null
+  advanced: AdvancedData | null
+  forecasting: ForecastingData | null
+  moduleComparison: ModuleComparisonData | null
+  alerts: AlertsData | null
+  efficiencyRankings: EfficiencyRankingsData | null
+
+  // State
+  loading: boolean
+  error: string | null
+  lastFetched: string | null
+}
+
+const initialState: AnalyticsState = {
+  trucking: null,
+  agency: null,
+  ptyss: null,
+  shipchandler: null,
+  clients: null,
+  invoices: null,
+  metrics: null,
+  revenue: null,
+  operational: null,
+  advanced: null,
+  forecasting: null,
+  moduleComparison: null,
+  alerts: null,
+  efficiencyRankings: null,
+  loading: false,
+  error: null,
+  lastFetched: null,
+}
+
+// Helper to get auth header
+const getAuthHeader = () => {
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+// Async Thunks
+export const fetchMetrics = createAsyncThunk(
+  "analytics/fetchMetrics",
+  async (params: { month?: string; year?: string } = {}, { rejectWithValue }) => {
+    try {
+      let url = `${API_URL}/analytics/metrics`
+      const queryParams = new URLSearchParams()
+      if (params.month) queryParams.append("month", params.month)
+      if (params.year) queryParams.append("year", params.year)
+      if (queryParams.toString()) url += `?${queryParams}`
+
+      const response = await fetch(url, {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Error fetching metrics")
+      }
+      return await response.json()
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Error fetching metrics")
+    }
+  }
+)
+
+export const fetchRevenue = createAsyncThunk(
+  "analytics/fetchRevenue",
+  async (params: { startDate?: string; endDate?: string; month?: string; year?: string } = {}, { rejectWithValue }) => {
+    try {
+      const queryParams = new URLSearchParams()
+      if (params.startDate) queryParams.append("startDate", params.startDate)
+      if (params.endDate) queryParams.append("endDate", params.endDate)
+      if (params.month) queryParams.append("month", params.month)
+      if (params.year) queryParams.append("year", params.year)
+
+      const url = `${API_URL}/analytics/revenue${queryParams.toString() ? `?${queryParams}` : ""}`
+      const response = await fetch(url, {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Error fetching revenue")
+      }
+      return await response.json()
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Error fetching revenue")
+    }
+  }
+)
+
+export const fetchOperational = createAsyncThunk(
+  "analytics/fetchOperational",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/analytics/operational`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Error fetching operational metrics")
+      }
+      return await response.json()
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Error fetching operational metrics")
+    }
+  }
+)
+
+export const fetchModuleAnalytics = createAsyncThunk(
+  "analytics/fetchModuleAnalytics",
+  async (module: "trucking" | "agency" | "ptyss" | "shipchandler", { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/analytics/${module}`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || `Error fetching ${module} analytics`)
+      }
+      const data = await response.json()
+      return { module, data }
+    } catch (error: any) {
+      return rejectWithValue(error.message || `Error fetching ${module} analytics`)
+    }
+  }
+)
+
+export const fetchClientsAnalytics = createAsyncThunk(
+  "analytics/fetchClientsAnalytics",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/analytics/clients`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Error fetching clients analytics")
+      }
+      return await response.json()
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Error fetching clients analytics")
+    }
+  }
+)
+
+export const fetchInvoicesAnalytics = createAsyncThunk(
+  "analytics/fetchInvoicesAnalytics",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/analytics/invoices`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Error fetching invoices analytics")
+      }
+      return await response.json()
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Error fetching invoices analytics")
+    }
+  }
+)
+
+export const fetchAdvancedAnalytics = createAsyncThunk(
+  "analytics/fetchAdvancedAnalytics",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/analytics/advanced`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Error fetching advanced analytics")
+      }
+      return await response.json()
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Error fetching advanced analytics")
+    }
+  }
+)
+
+export const fetchForecastingAnalytics = createAsyncThunk(
+  "analytics/fetchForecastingAnalytics",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/analytics/forecasting`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Error fetching forecasting analytics")
+      }
+      return await response.json()
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Error fetching forecasting analytics")
+    }
+  }
+)
+
+export const fetchModuleComparisonAnalytics = createAsyncThunk(
+  "analytics/fetchModuleComparisonAnalytics",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/analytics/module-comparison`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Error fetching module comparison")
+      }
+      return await response.json()
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Error fetching module comparison")
+    }
+  }
+)
+
+export const fetchAlertsAnalytics = createAsyncThunk(
+  "analytics/fetchAlertsAnalytics",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/analytics/alerts`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Error fetching alerts")
+      }
+      return await response.json()
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Error fetching alerts")
+    }
+  }
+)
+
+export const fetchEfficiencyRankings = createAsyncThunk(
+  "analytics/fetchEfficiencyRankings",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_URL}/analytics/efficiency-rankings`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+        },
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Error fetching efficiency rankings")
+      }
+      return await response.json()
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Error fetching efficiency rankings")
+    }
+  }
+)
+
+export const fetchAllAnalytics = createAsyncThunk(
+  "analytics/fetchAll",
+  async (_, { dispatch }) => {
+    await Promise.all([
+      dispatch(fetchMetrics({})),
+      dispatch(fetchRevenue({})),
+      dispatch(fetchOperational()),
+      dispatch(fetchAdvancedAnalytics()),
+      dispatch(fetchModuleAnalytics("trucking")),
+      dispatch(fetchModuleAnalytics("agency")),
+      dispatch(fetchModuleAnalytics("ptyss")),
+      dispatch(fetchModuleAnalytics("shipchandler")),
+      dispatch(fetchClientsAnalytics()),
+      dispatch(fetchInvoicesAnalytics()),
+      dispatch(fetchForecastingAnalytics()),
+      dispatch(fetchModuleComparisonAnalytics()),
+      dispatch(fetchAlertsAnalytics()),
+      dispatch(fetchEfficiencyRankings()),
+    ])
+  }
+)
+
+// Slice
+const analyticsSlice = createSlice({
+  name: "analytics",
+  initialState,
+  reducers: {
+    clearError: (state) => {
+      state.error = null
+    },
+    resetAnalytics: () => initialState,
+  },
+  extraReducers: (builder) => {
+    // Metrics
+    builder
+      .addCase(fetchMetrics.pending, (state) => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(fetchMetrics.fulfilled, (state, action) => {
+        state.metrics = action.payload.data || action.payload
+        state.loading = false
+        state.lastFetched = new Date().toISOString()
+      })
+      .addCase(fetchMetrics.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
+
+    // Revenue
+    builder
+      .addCase(fetchRevenue.pending, (state) => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(fetchRevenue.fulfilled, (state, action) => {
+        state.revenue = action.payload.data || action.payload
+        state.loading = false
+      })
+      .addCase(fetchRevenue.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
+
+    // Operational
+    builder
+      .addCase(fetchOperational.pending, (state) => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(fetchOperational.fulfilled, (state, action) => {
+        state.operational = action.payload.data || action.payload
+        state.loading = false
+      })
+      .addCase(fetchOperational.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
+
+    // Module Analytics
+    builder
+      .addCase(fetchModuleAnalytics.fulfilled, (state, action) => {
+        const { module, data } = action.payload
+        state[module] = data.data || data
+        state.loading = false
+      })
+      .addCase(fetchModuleAnalytics.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
+
+    // Clients Analytics
+    builder
+      .addCase(fetchClientsAnalytics.fulfilled, (state, action) => {
+        state.clients = action.payload.data || action.payload
+        state.loading = false
+      })
+      .addCase(fetchClientsAnalytics.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
+
+    // Invoices Analytics
+    builder
+      .addCase(fetchInvoicesAnalytics.fulfilled, (state, action) => {
+        state.invoices = action.payload.data || action.payload
+        state.loading = false
+      })
+      .addCase(fetchInvoicesAnalytics.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
+
+    // Advanced Analytics
+    builder
+      .addCase(fetchAdvancedAnalytics.fulfilled, (state, action) => {
+        state.advanced = action.payload.data || action.payload
+        state.loading = false
+      })
+      .addCase(fetchAdvancedAnalytics.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
+
+    // Forecasting Analytics
+    builder
+      .addCase(fetchForecastingAnalytics.fulfilled, (state, action) => {
+        state.forecasting = action.payload.data || action.payload
+        state.loading = false
+      })
+      .addCase(fetchForecastingAnalytics.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
+
+    // Module Comparison Analytics
+    builder
+      .addCase(fetchModuleComparisonAnalytics.fulfilled, (state, action) => {
+        state.moduleComparison = action.payload.data || action.payload
+        state.loading = false
+      })
+      .addCase(fetchModuleComparisonAnalytics.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
+
+    // Alerts Analytics
+    builder
+      .addCase(fetchAlertsAnalytics.fulfilled, (state, action) => {
+        state.alerts = action.payload.data || action.payload
+        state.loading = false
+      })
+      .addCase(fetchAlertsAnalytics.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
+
+    // Efficiency Rankings
+    builder
+      .addCase(fetchEfficiencyRankings.fulfilled, (state, action) => {
+        state.efficiencyRankings = action.payload.data || action.payload
+        state.loading = false
+      })
+      .addCase(fetchEfficiencyRankings.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload as string
+      })
+
+    // Fetch All
+    builder
+      .addCase(fetchAllAnalytics.pending, (state) => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(fetchAllAnalytics.fulfilled, (state) => {
+        state.loading = false
+        state.lastFetched = new Date().toISOString()
+      })
+  },
+})
+
+// Selectors
+export const selectAnalyticsLoading = (state: RootState) => state.analytics.loading
+export const selectAnalyticsError = (state: RootState) => state.analytics.error
+export const selectMetrics = (state: RootState) => state.analytics.metrics
+export const selectRevenue = (state: RootState) => state.analytics.revenue
+export const selectOperational = (state: RootState) => state.analytics.operational
+export const selectTruckingAnalytics = (state: RootState) => state.analytics.trucking
+export const selectAgencyAnalytics = (state: RootState) => state.analytics.agency
+export const selectPtyssAnalytics = (state: RootState) => state.analytics.ptyss
+export const selectShipchandlerAnalytics = (state: RootState) => state.analytics.shipchandler
+export const selectClientsAnalytics = (state: RootState) => state.analytics.clients
+export const selectInvoicesAnalytics = (state: RootState) => state.analytics.invoices
+export const selectAdvancedAnalytics = (state: RootState) => state.analytics.advanced
+export const selectForecastingAnalytics = (state: RootState) => state.analytics.forecasting
+export const selectModuleComparisonAnalytics = (state: RootState) => state.analytics.moduleComparison
+export const selectAlertsAnalytics = (state: RootState) => state.analytics.alerts
+export const selectEfficiencyRankings = (state: RootState) => state.analytics.efficiencyRankings
+export const selectLastFetched = (state: RootState) => state.analytics.lastFetched
+
+export const { clearError, resetAnalytics } = analyticsSlice.actions
+export default analyticsSlice.reducer

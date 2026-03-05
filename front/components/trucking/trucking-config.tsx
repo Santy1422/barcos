@@ -914,8 +914,8 @@ export function TruckingConfig() {
                   {/* Filtro por estado */}
                   <div className="space-y-2">
                     <Label>Estado</Label>
-                    <Select 
-                      value={filters.status} 
+                    <Select
+                      value={filters.status}
                       onValueChange={(value) => handleFilterChange({ status: value })}
                     >
                       <SelectTrigger>
@@ -929,7 +929,42 @@ export function TruckingConfig() {
                     </Select>
                   </div>
                 </div>
-                
+
+                {/* Segunda fila de filtros */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Filtro por cliente */}
+                  <div className="space-y-2">
+                    <Label>Cliente</Label>
+                    <Select
+                      value={filters.cliente}
+                      onValueChange={(value) => handleFilterChange({ cliente: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todos los clientes" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los clientes</SelectItem>
+                        {clients
+                          .filter((client: any) => client.isActive)
+                          .sort((a: any, b: any) => {
+                            const nameA = a.type === 'juridico' ? a.companyName : a.fullName
+                            const nameB = b.type === 'juridico' ? b.companyName : b.fullName
+                            return nameA.localeCompare(nameB)
+                          })
+                          .map((client: any) => {
+                            const displayName = client.type === 'juridico' ? client.companyName : client.fullName
+                            const code = client.type === 'juridico' ? client.name : client.documentNumber
+                            return (
+                              <SelectItem key={client._id || client.id} value={code || displayName}>
+                                {displayName}
+                              </SelectItem>
+                            )
+                          })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                 {/* Botón para limpiar filtros */}
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
@@ -937,6 +972,21 @@ export function TruckingConfig() {
                       {pagination ? `${pagination.totalItems} rutas totales` : `${routes.length} rutas mostradas`}
                     </span>
                   </div>
+                  {(filters.search || filters.containerType !== 'all' || filters.routeType !== 'all' || filters.status !== 'all' || filters.cliente !== 'all') && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleFilterChange({
+                        search: "",
+                        containerType: "all",
+                        routeType: "all",
+                        status: "all",
+                        cliente: "all"
+                      })}
+                    >
+                      Limpiar Filtros
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1075,15 +1125,15 @@ export function TruckingConfig() {
 
             <div className="rounded-md border">
               {/* Indicador de filtros activos */}
-              {(filters.search || filters.containerType !== "all" || filters.routeType !== "all" || filters.status !== "all") && (
+              {(filters.search || filters.containerType !== "all" || filters.routeType !== "all" || filters.status !== "all" || filters.cliente !== "all") && (
                 <div className="bg-blue-50 border-b border-blue-200 p-3">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm text-blue-700">
+                    <div className="flex items-center gap-2 text-sm text-blue-700 flex-wrap">
                       <Search className="h-4 w-4" />
                       <span>Filtros activos:</span>
                       {filters.search && (
                         <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                          Búsqueda: "{filters.search}"
+                          Busqueda: "{filters.search}"
                         </Badge>
                       )}
                       {filters.containerType !== "all" && (
@@ -1096,20 +1146,26 @@ export function TruckingConfig() {
                           Ruta: {filters.routeType === "RT" ? "Round Trip" : "Single"}
                         </Badge>
                       )}
+                      {filters.cliente !== "all" && (
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                          Cliente: {filters.cliente}
+                        </Badge>
+                      )}
                       {filters.status !== "all" && (
                         <Badge variant="secondary" className="bg-blue-100 text-blue-800">
                           Estado: {filters.status}
                         </Badge>
                       )}
                     </div>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
                       onClick={() => handleFilterChange({
                         search: "",
                         containerType: "all",
                         routeType: "all",
-                        status: "all"
+                        status: "all",
+                        cliente: "all"
                       })}
                       className="text-blue-700 border-blue-300 hover:bg-blue-100"
                     >
@@ -1118,7 +1174,7 @@ export function TruckingConfig() {
                   </div>
                 </div>
               )}
-              
+
               <Table>
                 <TableHeader>
                   <TableRow>
