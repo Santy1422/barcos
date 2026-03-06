@@ -515,52 +515,71 @@ export function PTYSSPrefactura() {
           isLocalService: boolean
         }> = []
         
-        // CLG097 - Customs/TI
-        if (data.ti && data.ti !== 'no') {
-          const amount = parseFloat(data.ti)
-          if (!isNaN(amount) && amount > 0) {
+        // CLG097 - TI: Sí/No (si "si" usa precio configurado; compat: si viene monto numérico se usa)
+        if (data.ti === 'si') {
+          newLocalServices.push({
+            serviceId: 'CLG097',
+            name: 'Customs/TI',
+            description: 'Customs/TI',
+            amount: getFixedLocalServicePrice('CLG097'),
+            isLocalService: true
+          })
+        } else if (data.ti && data.ti !== 'no') {
+          const tiAmount = parseFloat(data.ti)
+          if (!isNaN(tiAmount) && tiAmount > 0) {
             newLocalServices.push({
               serviceId: 'CLG097',
               name: 'Customs/TI',
               description: 'Customs/TI',
-              amount: amount,
+              amount: tiAmount,
               isLocalService: true
             })
           }
         }
 
-        // TRK179 - Storage/Estadía
-        if (data.estadia && data.estadia !== 'no') {
-          const amount = parseFloat(data.estadia)
-          if (!isNaN(amount) && amount > 0) {
+        // TRK179 - Estadia: Sí/No (igual que TI)
+        if (data.estadia === 'si') {
+          newLocalServices.push({
+            serviceId: 'TRK179',
+            name: 'Storage/Estadía',
+            description: 'Storage/Estadía',
+            amount: getFixedLocalServicePrice('TRK179'),
+            isLocalService: true
+          })
+        } else if (data.estadia && data.estadia !== 'no') {
+          const estAmount = parseFloat(data.estadia)
+          if (!isNaN(estAmount) && estAmount > 0) {
             newLocalServices.push({
               serviceId: 'TRK179',
               name: 'Storage/Estadía',
               description: 'Storage/Estadía',
-              amount: amount,
+              amount: estAmount,
               isLocalService: true
             })
           }
         }
 
-        // TRK163 - Demurrage/Retención
-        if (data.retencion && parseFloat(data.retencion) > 0) {
+        // TRK163 - Retención: días totales; se cobra solo a partir del 3er día → (días - 3) * precio
+        const retencionDaysTotal = parseFloat(data.retencion || '0')
+        if (!isNaN(retencionDaysTotal) && retencionDaysTotal > 3) {
+          const diasACobrar = retencionDaysTotal - 3
           newLocalServices.push({
             serviceId: 'TRK163',
             name: 'Demurrage/Retención',
             description: 'Demurrage/Retención (se cobra después del 3er día)',
-            amount: parseFloat(data.retencion),
+            amount: diasACobrar * getFixedLocalServicePrice('TRK163'),
             isLocalService: true
           })
         }
 
-        // SLR168 - Genset Rental
-        if (data.genset && parseFloat(data.genset) > 0) {
+        // SLR168 - Genset: cantidad de días → días * precio por día
+        const gensetDays = parseFloat(data.genset || '0')
+        if (!isNaN(gensetDays) && gensetDays > 0) {
           newLocalServices.push({
             serviceId: 'SLR168',
             name: 'Genset Rental',
             description: 'Genset Rental',
-            amount: parseFloat(data.genset),
+            amount: gensetDays * getFixedLocalServicePrice('SLR168'),
             isLocalService: true
           })
         }
@@ -604,52 +623,46 @@ export function PTYSSPrefactura() {
           selectedLocalRecords.forEach((record: IndividualExcelRecord) => {
             const data = record.data as Record<string, any>
             
-            // CLG097 - Customs/TI
-            if (data.ti && data.ti !== 'no') {
-              const amount = parseFloat(data.ti)
-              if (!isNaN(amount) && amount > 0) {
-                allLocalServices.push({
-                  serviceId: 'CLG097',
-                  name: 'Customs/TI',
-                  description: 'Customs/TI',
-                  amount: amount,
-                  isLocalService: true
-                })
-              }
+            // CLG097 - TI: Sí/No
+            if (data.ti === 'si') {
+              allLocalServices.push({
+                serviceId: 'CLG097',
+                name: 'Customs/TI',
+                description: 'Customs/TI',
+                amount: getFixedLocalServicePrice('CLG097'),
+                isLocalService: true
+              })
             }
-
-            // TRK179 - Storage/Estadía
-            if (data.estadia && data.estadia !== 'no') {
-              const amount = parseFloat(data.estadia)
-              if (!isNaN(amount) && amount > 0) {
-                allLocalServices.push({
-                  serviceId: 'TRK179',
-                  name: 'Storage/Estadía',
-                  description: 'Storage/Estadía',
-                  amount: amount,
-                  isLocalService: true
-                })
-              }
+            // TRK179 - Estadia: Sí/No
+            if (data.estadia === 'si') {
+              allLocalServices.push({
+                serviceId: 'TRK179',
+                name: 'Storage/Estadía',
+                description: 'Storage/Estadía',
+                amount: getFixedLocalServicePrice('TRK179'),
+                isLocalService: true
+              })
             }
-
-            // TRK163 - Demurrage/Retención
-            if (data.retencion && parseFloat(data.retencion) > 0) {
+            // TRK163 - Retención: días totales; se cobra (días - 3) * precio
+            const retencionDaysR = parseFloat(data.retencion || '0')
+            if (!isNaN(retencionDaysR) && retencionDaysR > 3) {
+              const diasACobrarR = retencionDaysR - 3
               allLocalServices.push({
                 serviceId: 'TRK163',
                 name: 'Demurrage/Retención',
                 description: 'Demurrage/Retención (se cobra después del 3er día)',
-                amount: parseFloat(data.retencion),
+                amount: diasACobrarR * getFixedLocalServicePrice('TRK163'),
                 isLocalService: true
               })
             }
-
-            // SLR168 - Genset Rental
-            if (data.genset && parseFloat(data.genset) > 0) {
+            // SLR168 - Genset: días * precio
+            const gensetDaysR = parseFloat(data.genset || '0')
+            if (!isNaN(gensetDaysR) && gensetDaysR > 0) {
               allLocalServices.push({
                 serviceId: 'SLR168',
                 name: 'Genset Rental',
                 description: 'Genset Rental',
-                amount: parseFloat(data.genset),
+                amount: gensetDaysR * getFixedLocalServicePrice('SLR168'),
                 isLocalService: true
               })
             }
@@ -693,52 +706,46 @@ export function PTYSSPrefactura() {
           selectedLocalRecords.forEach((record: IndividualExcelRecord) => {
             const data = record.data as Record<string, any>
             
-            // CLG097 - Customs/TI
-            if (data.ti && data.ti !== 'no') {
-              const amount = parseFloat(data.ti)
-              if (!isNaN(amount) && amount > 0) {
-                allLocalServices.push({
-                  serviceId: 'CLG097',
-                  name: 'Customs/TI',
-                  description: 'Customs/TI',
-                  amount: amount,
-                  isLocalService: true
-                })
-              }
+            // CLG097 - TI: Sí/No
+            if (data.ti === 'si') {
+              allLocalServices.push({
+                serviceId: 'CLG097',
+                name: 'Customs/TI',
+                description: 'Customs/TI',
+                amount: getFixedLocalServicePrice('CLG097'),
+                isLocalService: true
+              })
             }
-
-            // TRK179 - Storage/Estadía
-            if (data.estadia && data.estadia !== 'no') {
-              const amount = parseFloat(data.estadia)
-              if (!isNaN(amount) && amount > 0) {
-                allLocalServices.push({
-                  serviceId: 'TRK179',
-                  name: 'Storage/Estadía',
-                  description: 'Storage/Estadía',
-                  amount: amount,
-                  isLocalService: true
-                })
-              }
+            // TRK179 - Estadia: Sí/No
+            if (data.estadia === 'si') {
+              allLocalServices.push({
+                serviceId: 'TRK179',
+                name: 'Storage/Estadía',
+                description: 'Storage/Estadía',
+                amount: getFixedLocalServicePrice('TRK179'),
+                isLocalService: true
+              })
             }
-
-            // TRK163 - Demurrage/Retención
-            if (data.retencion && parseFloat(data.retencion) > 0) {
+            // TRK163 - Retención: días totales; se cobra (días - 3) * precio
+            const retencionDaysR = parseFloat(data.retencion || '0')
+            if (!isNaN(retencionDaysR) && retencionDaysR > 3) {
+              const diasACobrarR = retencionDaysR - 3
               allLocalServices.push({
                 serviceId: 'TRK163',
                 name: 'Demurrage/Retención',
                 description: 'Demurrage/Retención (se cobra después del 3er día)',
-                amount: parseFloat(data.retencion),
+                amount: diasACobrarR * getFixedLocalServicePrice('TRK163'),
                 isLocalService: true
               })
             }
-
-            // SLR168 - Genset Rental
-            if (data.genset && parseFloat(data.genset) > 0) {
+            // SLR168 - Genset: días * precio
+            const gensetDaysR = parseFloat(data.genset || '0')
+            if (!isNaN(gensetDaysR) && gensetDaysR > 0) {
               allLocalServices.push({
                 serviceId: 'SLR168',
                 name: 'Genset Rental',
                 description: 'Genset Rental',
-                amount: parseFloat(data.genset),
+                amount: gensetDaysR * getFixedLocalServicePrice('SLR168'),
                 isLocalService: true
               })
             }
@@ -795,56 +802,45 @@ export function PTYSSPrefactura() {
       selectableRecords.forEach((record: IndividualExcelRecord) => {
         const data = record.data as Record<string, any>
         if (data.recordType === 'local') {
-            // CLG097 - Customs/TI
-            if (data.ti && data.ti !== 'no') {
-              const amount = parseFloat(data.ti)
-              if (!isNaN(amount) && amount > 0) {
-                newLocalServices.push({
-                  serviceId: 'CLG097',
-                  name: 'Customs/TI',
-                  description: 'Customs/TI',
-                amount: amount,
+            if (data.ti === 'si') {
+              newLocalServices.push({
+                serviceId: 'CLG097',
+                name: 'Customs/TI',
+                description: 'Customs/TI',
+                amount: getFixedLocalServicePrice('CLG097'),
                 isLocalService: true
               })
             }
-          }
-
-            // TRK179 - Storage/Estadía
-            if (data.estadia && data.estadia !== 'no') {
-              const amount = parseFloat(data.estadia)
-              if (!isNaN(amount) && amount > 0) {
-                newLocalServices.push({
-                  serviceId: 'TRK179',
-                  name: 'Storage/Estadía',
-                  description: 'Storage/Estadía',
-                amount: amount,
+            if (data.estadia === 'si') {
+              newLocalServices.push({
+                serviceId: 'TRK179',
+                name: 'Storage/Estadía',
+                description: 'Storage/Estadía',
+                amount: getFixedLocalServicePrice('TRK179'),
                 isLocalService: true
               })
             }
-          }
-
-            // TRK163 - Demurrage/Retención
-            if (data.retencion && parseFloat(data.retencion) > 0) {
+            const retencionDaysSel = parseFloat(data.retencion || '0')
+            if (!isNaN(retencionDaysSel) && retencionDaysSel > 3) {
+              const diasACobrarSel = retencionDaysSel - 3
               newLocalServices.push({
                 serviceId: 'TRK163',
                 name: 'Demurrage/Retención',
                 description: 'Demurrage/Retención (se cobra después del 3er día)',
-              amount: parseFloat(data.retencion),
-              isLocalService: true
-            })
-          }
-
-            // SLR168 - Genset Rental
-            if (data.genset && parseFloat(data.genset) > 0) {
+                amount: diasACobrarSel * getFixedLocalServicePrice('TRK163'),
+                isLocalService: true
+              })
+            }
+            const gensetDaysSel = parseFloat(data.genset || '0')
+            if (!isNaN(gensetDaysSel) && gensetDaysSel > 0) {
               newLocalServices.push({
                 serviceId: 'SLR168',
                 name: 'Genset Rental',
                 description: 'Genset Rental',
-              amount: parseFloat(data.genset),
-              isLocalService: true
-            })
-          }
-
+                amount: gensetDaysSel * getFixedLocalServicePrice('SLR168'),
+                isLocalService: true
+              })
+            }
           // Pesaje - precio directo
           if (data.pesaje && parseFloat(data.pesaje) > 0) {
             newLocalServices.push({
@@ -932,57 +928,45 @@ export function PTYSSPrefactura() {
       console.log('🔍 useEffect recalcular servicios - data.estadia:', data.estadia)
       console.log('🔍 useEffect recalcular servicios - data.retencion:', data.retencion)
 
-      // CLG097 - Customs/TI
-      if (data.ti && data.ti !== 'no') {
-        const amount = parseFloat(data.ti)
-        if (!isNaN(amount) && amount > 0) {
-          allLocalServices.push({
-            serviceId: 'CLG097',
-            name: 'Customs/TI',
-            description: 'Customs/TI',
-            amount: amount,
-            isLocalService: true
-          })
-        }
+      if (data.ti === 'si') {
+        allLocalServices.push({
+          serviceId: 'CLG097',
+          name: 'Customs/TI',
+          description: 'Customs/TI',
+          amount: getFixedLocalServicePrice('CLG097'),
+          isLocalService: true
+        })
       }
-
-      // TRK179 - Storage/Estadía
-      if (data.estadia && data.estadia !== 'no') {
-        const amount = parseFloat(data.estadia)
-        if (!isNaN(amount) && amount > 0) {
-          allLocalServices.push({
-            serviceId: 'TRK179',
-            name: 'Storage/Estadía',
-            description: 'Storage/Estadía',
-            amount: amount,
-            isLocalService: true
-          })
-        }
+      if (data.estadia === 'si') {
+        allLocalServices.push({
+          serviceId: 'TRK179',
+          name: 'Storage/Estadía',
+          description: 'Storage/Estadía',
+          amount: getFixedLocalServicePrice('TRK179'),
+          isLocalService: true
+        })
       }
-
-      // TRK163 - Demurrage/Retención
-      if (data.retencion && parseFloat(data.retencion) > 0) {
+      const retencionDaysU = parseFloat(data.retencion || '0')
+      if (!isNaN(retencionDaysU) && retencionDaysU > 3) {
+        const diasACobrarU = retencionDaysU - 3
         allLocalServices.push({
           serviceId: 'TRK163',
           name: 'Demurrage/Retención',
           description: 'Demurrage/Retención (se cobra después del 3er día)',
-          amount: parseFloat(data.retencion),
+          amount: diasACobrarU * getFixedLocalServicePrice('TRK163'),
           isLocalService: true
         })
       }
-
-      // SLR168 - Genset Rental
-      if (data.genset && parseFloat(data.genset) > 0) {
+      const gensetDaysU = parseFloat(data.genset || '0')
+      if (!isNaN(gensetDaysU) && gensetDaysU > 0) {
         allLocalServices.push({
           serviceId: 'SLR168',
           name: 'Genset Rental',
           description: 'Genset Rental',
-          amount: parseFloat(data.genset),
+          amount: gensetDaysU * getFixedLocalServicePrice('SLR168'),
           isLocalService: true
         })
       }
-
-      // Pesaje - precio directo
       if (data.pesaje && parseFloat(data.pesaje) > 0) {
         allLocalServices.push({
           serviceId: 'PESAJE',

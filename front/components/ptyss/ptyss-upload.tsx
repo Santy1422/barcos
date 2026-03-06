@@ -640,7 +640,7 @@ export function PTYSSUpload() {
   // Estado para servicios locales fijos
   const [localServices, setLocalServices] = useState<any[]>([])
   const [localServicesLoading, setLocalServicesLoading] = useState(false)
-  
+
   // Estado para filtro de matching
   const [matchFilter, setMatchFilter] = useState<'all' | 'matched' | 'unmatched'>('all')
 
@@ -1284,47 +1284,34 @@ export function PTYSSUpload() {
 
   const calculateTotalValue = (record: PTYSSRecordData): number => {
     let total = 0
-    
-    // Agregar precio de ruta local si existe
+
     if (record.localRoutePrice) total += record.localRoutePrice
-    
-    // Obtener precios de servicios locales desde la configuración
+
     const getServicePrice = (serviceCode: string): number => {
-      // Buscar en los servicios locales fijos
       const localService = localServices.find((service: any) => service.code === serviceCode)
-      return localService?.price || 10 // Fallback a $10 si no se encuentra
-    }
-    
-    // Calcular servicios locales fijos (montos manuales): CLG097 TI, TRK179 Estadia, TRK163 Retención, SLR168 Genset
-    // CLG097 - Customs/TI
-    if (record.ti && record.ti !== 'no') {
-      const amount = parseFloat(record.ti)
-      if (!isNaN(amount) && amount > 0) {
-        total += amount
-      }
+      return localService?.price ?? 0
     }
 
-    // TRK179 - Storage/Estadía
-    if (record.estadia && record.estadia !== 'no') {
-      const amount = parseFloat(record.estadia)
-      if (!isNaN(amount) && amount > 0) {
-        total += amount
-      }
+    // TI: Sí/No → si "si" se usa el precio configurado (CLG097)
+    if (record.ti === 'si') total += getServicePrice('CLG097')
+
+    // Estadia: Sí/No → si "si" se usa el precio configurado (TRK179)
+    if (record.estadia === 'si') total += getServicePrice('TRK179')
+
+    // Genset: número = cantidad de días → días * precio por día (SLR168)
+    const gensetDays = parseFloat(record.genset || '0')
+    if (!isNaN(gensetDays) && gensetDays > 0) total += gensetDays * getServicePrice('SLR168')
+
+    // Retención: número = días totales; se cobra solo a partir del 3er día → (días - 3) * precio (TRK163)
+    const retencionDaysTotal = parseFloat(record.retencion || '0')
+    if (!isNaN(retencionDaysTotal) && retencionDaysTotal > 3) {
+      const diasACobrar = retencionDaysTotal - 3
+      total += diasACobrar * getServicePrice('TRK163')
     }
 
-    // TRK163 - Demurrage/Retención
-    if (record.retencion && parseFloat(record.retencion) > 0) {
-      total += parseFloat(record.retencion)
-    }
-
-    // SLR168 - Genset Rental
-    if (record.genset && parseFloat(record.genset) > 0) {
-      total += parseFloat(record.genset)
-    }
-
-    // Agregar pesaje directamente (monto fijo)
+    // Pesaje: único campo que es monto directo
     if (record.pesaje) total += parseFloat(record.pesaje) || 0
-    
+
     return total
   }
 
@@ -1836,6 +1823,7 @@ export function PTYSSUpload() {
                     dispatch(fetchContainerTypes())
                   ])
                   
+                  // Nuevo registro: TI y Estadia vacíos (Sí/No), Genset/Retención en días, Pesaje monto
                   setCurrentRecord({
                     ...initialRecordData,
                     localRouteId: "",
@@ -2729,16 +2717,29 @@ export function PTYSSUpload() {
               <h3 className="text-lg font-medium">Servicios Adicionales</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="estadia">Estadia ($)</Label>
-                  <Input
-                    id="estadia"
-                    type="number"
-                    value={currentRecord.estadia}
-                    onChange={(e) => setCurrentRecord({...currentRecord, estadia: e.target.value})}
-                    placeholder="Ingrese monto (0 si no aplica)"
-                    min="0"
-                    step="0.01"
-                  />
+                  <Label htmlFor="estadia">Estadia</Label>
+                  <Select value={currentRecord.estadia || ""} onValueChange={(value) => setCurrentRecord({...currentRecord, estadia: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="si">Sí</SelectItem>
+                      <SelectItem value="no">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="ti">TI</Label>
+                  <Select value={currentRecord.ti || ""} onValueChange={(value) => setCurrentRecord({...currentRecord, ti: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="si">Sí</SelectItem>
+                      <SelectItem value="no">No</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 
                 <div className="space-y-2">
@@ -2748,9 +2749,9 @@ export function PTYSSUpload() {
                     type="number"
                     value={currentRecord.genset}
                     onChange={(e) => setCurrentRecord({...currentRecord, genset: e.target.value})}
-                    placeholder="Ingrese número"
+                    placeholder="Días"
                     min="0"
-                    step="0.01"
+                    step="1"
                   />
                 </div>
                 
@@ -2761,33 +2762,20 @@ export function PTYSSUpload() {
                     type="number"
                     value={currentRecord.retencion}
                     onChange={(e) => setCurrentRecord({...currentRecord, retencion: e.target.value})}
-                    placeholder="Ingrese número"
+                    placeholder="Días"
                     min="0"
-                    step="0.01"
+                    step="1"
                   />
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="pesaje">Pesaje</Label>
+                  <Label htmlFor="pesaje">Pesaje ($)</Label>
                   <Input
                     id="pesaje"
                     type="number"
                     value={currentRecord.pesaje}
                     onChange={(e) => setCurrentRecord({...currentRecord, pesaje: e.target.value})}
-                    placeholder="Ingrese monto en moneda"
-                    min="0"
-                    step="0.01"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="ti">TI ($)</Label>
-                  <Input
-                    id="ti"
-                    type="number"
-                    value={currentRecord.ti}
-                    onChange={(e) => setCurrentRecord({...currentRecord, ti: e.target.value})}
-                    placeholder="Ingrese monto (0 si no aplica)"
+                    placeholder="Ingrese monto"
                     min="0"
                     step="0.01"
                   />
