@@ -575,9 +575,9 @@ export function PTYSSUpload() {
           const data = await response.json()
           const services = data.data?.services || []
           
-          // Filtrar solo los servicios locales fijos (FDA codes)
+          // Filtrar solo los servicios locales fijos (CLG097, TRK163, TRK179, SLR168)
           const fixedServices = services.filter((service: any) =>
-            ['FDA263', 'FDA047', 'FDA059'].includes(service.code)
+            ['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)
           )
           
           setLocalServices(fixedServices)
@@ -1295,8 +1295,8 @@ export function PTYSSUpload() {
       return localService?.price || 10 // Fallback a $10 si no se encuentra
     }
     
-    // Calcular servicios locales FDA (montos manuales)
-    // FDA263 - monto manual (ti)
+    // Calcular servicios locales fijos (montos manuales): CLG097 TI, TRK179 Estadia, TRK163 Retención, SLR168 Genset
+    // CLG097 - Customs/TI
     if (record.ti && record.ti !== 'no') {
       const amount = parseFloat(record.ti)
       if (!isNaN(amount) && amount > 0) {
@@ -1304,7 +1304,7 @@ export function PTYSSUpload() {
       }
     }
 
-    // FDA047 - monto manual (estadia)
+    // TRK179 - Storage/Estadía
     if (record.estadia && record.estadia !== 'no') {
       const amount = parseFloat(record.estadia)
       if (!isNaN(amount) && amount > 0) {
@@ -1312,12 +1312,12 @@ export function PTYSSUpload() {
       }
     }
 
-    // FDA059 - monto manual (retencion)
+    // TRK163 - Demurrage/Retención
     if (record.retencion && parseFloat(record.retencion) > 0) {
       total += parseFloat(record.retencion)
     }
 
-    // Genset - monto manual
+    // SLR168 - Genset Rental
     if (record.genset && parseFloat(record.genset) > 0) {
       total += parseFloat(record.genset)
     }

@@ -144,9 +144,10 @@ export function PTYSSConfig() {
   // Estado para servicios locales fijos
   const [editingLocalService, setEditingLocalService] = useState<string | null>(null)
   const [localServicePrices, setLocalServicePrices] = useState({
-    FDA263: 0,
-    FDA047: 0,
-    FDA059: 0
+    CLG097: 0,
+    TRK163: 0,
+    TRK179: 0,
+    SLR168: 0
   })
 
   // Importador de precios
@@ -224,9 +225,9 @@ export function PTYSSConfig() {
           const services = data.data?.services || []
           console.log('🔍 All services:', services)
           
-          // Filtrar solo los servicios locales fijos (FDA codes)
+          // Filtrar solo los servicios locales fijos (CLG097, TRK163, TRK179, SLR168)
           const fixedServices = services.filter((service: any) =>
-            ['FDA263', 'FDA047', 'FDA059'].includes(service.code)
+            ['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)
           )
           console.log('🔍 Fixed services found:', fixedServices)
           
@@ -252,9 +253,9 @@ export function PTYSSConfig() {
     if (localServices.length > 0) {
       const newPrices = { ...localServicePrices }
       
-      // Buscar y actualizar precios de servicios locales fijos (FDA codes)
+      // Buscar y actualizar precios de servicios locales fijos (CLG097, TRK163, TRK179, SLR168)
       localServices.forEach((service: any) => {
-        if (service.code === 'FDA263' || service.code === 'FDA047' || service.code === 'FDA059') {
+        if (['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)) {
           newPrices[service.code as keyof typeof localServicePrices] = service.price || 0
         }
       })
@@ -686,6 +687,27 @@ export function PTYSSConfig() {
 
   const handleCancelEditLocalService = () => {
     setEditingLocalService(null)
+  }
+
+  // Exportar Servicios Locales Fijos a Excel
+  const exportLocalFixedServicesToExcel = () => {
+    const exportData = [
+      { 'Código SAP': 'CLG097', Nombre: 'Customs/TI', Descripción: 'Customs/TI', Precio: localServicePrices.CLG097, Tipo: 'Fijo', Estado: 'Activo' },
+      { 'Código SAP': 'TRK163', Nombre: 'Demurrage/Retención', Descripción: 'Demurrage/Retención (se cobra después del 3er día)', Precio: localServicePrices.TRK163, Tipo: 'Por día (después del 3er día)', Estado: 'Activo' },
+      { 'Código SAP': 'TRK179', Nombre: 'Storage/Estadía', Descripción: 'Storage/Estadía', Precio: localServicePrices.TRK179, Tipo: 'Fijo', Estado: 'Activo' },
+      { 'Código SAP': 'SLR168', Nombre: 'Genset Rental', Descripción: 'Genset Rental', Precio: localServicePrices.SLR168, Tipo: 'Por día', Estado: 'Activo' },
+    ]
+    const ws = XLSX.utils.json_to_sheet(exportData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Servicios Locales Fijos')
+    const colWidths = [{ wch: 10 }, { wch: 24 }, { wch: 50 }, { wch: 10 }, { wch: 28 }, { wch: 8 }]
+    ws['!cols'] = colWidths
+    const fileName = `servicios_locales_fijos_ptyss_${new Date().toISOString().split('T')[0]}.xlsx`
+    XLSX.writeFile(wb, fileName)
+    toast({
+      title: 'Exportación exitosa',
+      description: `Se exportaron los 4 servicios locales fijos a ${fileName}`,
+    })
   }
 
   // Container Types handlers
@@ -1672,6 +1694,10 @@ export function PTYSSConfig() {
                   <Settings2 className="mr-2 h-5 w-5" />
                   Servicios Locales Fijos
                 </div>
+                <Button variant="outline" size="sm" onClick={exportLocalFixedServicesToExcel}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Exportar a Excel
+                </Button>
               </CardTitle>
               <CardDescription>
                 Servicios para cálculo automático en registros locales (TI, Estadia, Retención, Genset)
@@ -1687,7 +1713,7 @@ export function PTYSSConfig() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Código</TableHead>
+                      <TableHead>Código SAP</TableHead>
                       <TableHead>Nombre</TableHead>
                       <TableHead>Descripción</TableHead>
                       <TableHead>Precio</TableHead>
@@ -1698,27 +1724,27 @@ export function PTYSSConfig() {
                   </TableHeader>
                   <TableBody>
                     <TableRow>
-                      <TableCell><Badge variant="outline">FDA263</Badge></TableCell>
-                      <TableCell>FDA263</TableCell>
-                      <TableCell>Servicio Local FDA263</TableCell>
+                      <TableCell><Badge variant="outline">CLG097</Badge></TableCell>
+                      <TableCell>Customs/TI</TableCell>
+                      <TableCell>Customs/TI</TableCell>
                       <TableCell>
-                        {editingLocalService === 'FDA263' ? (
+                        {editingLocalService === 'CLG097' ? (
                           <div className="flex items-center gap-2">
                             <Input
                               type="number"
                               min="0"
                               step="0.01"
-                              value={localServicePrices.FDA263}
+                              value={localServicePrices.CLG097}
                               onChange={(e) => setLocalServicePrices({
                                 ...localServicePrices,
-                                FDA263: parseFloat(e.target.value) || 0
+                                CLG097: parseFloat(e.target.value) || 0
                               })}
                               className="w-20"
                             />
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleSaveLocalService('FDA263')}
+                              onClick={() => handleSaveLocalService('CLG097')}
                               disabled={additionalServicesLoading}
                             >
                               ✓
@@ -1732,44 +1758,44 @@ export function PTYSSConfig() {
                             </Button>
                           </div>
                         ) : (
-                          <span>${localServicePrices.FDA263.toFixed(2)}</span>
+                          <span>${localServicePrices.CLG097.toFixed(2)}</span>
                         )}
                       </TableCell>
-                      <TableCell><Badge variant="secondary">Manual</Badge></TableCell>
+                      <TableCell><Badge variant="secondary">Fijo</Badge></TableCell>
                       <TableCell><Badge variant="default">Activo</Badge></TableCell>
                       <TableCell>
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => handleEditLocalService('FDA263')}
-                          disabled={editingLocalService !== null && editingLocalService !== 'FDA263'}
+                          onClick={() => handleEditLocalService('CLG097')}
+                          disabled={editingLocalService !== null && editingLocalService !== 'CLG097'}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell><Badge variant="outline">FDA047</Badge></TableCell>
-                      <TableCell>FDA047</TableCell>
-                      <TableCell>Servicio Local FDA047</TableCell>
+                      <TableCell><Badge variant="outline">TRK163</Badge></TableCell>
+                      <TableCell>Demurrage/Retención</TableCell>
+                      <TableCell>Demurrage/Retención (se cobra después del 3er día)</TableCell>
                       <TableCell>
-                        {editingLocalService === 'FDA047' ? (
+                        {editingLocalService === 'TRK163' ? (
                           <div className="flex items-center gap-2">
                             <Input
                               type="number"
                               min="0"
                               step="0.01"
-                              value={localServicePrices.FDA047}
+                              value={localServicePrices.TRK163}
                               onChange={(e) => setLocalServicePrices({
                                 ...localServicePrices,
-                                FDA047: parseFloat(e.target.value) || 0
+                                TRK163: parseFloat(e.target.value) || 0
                               })}
                               className="w-20"
                             />
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleSaveLocalService('FDA047')}
+                              onClick={() => handleSaveLocalService('TRK163')}
                               disabled={additionalServicesLoading}
                             >
                               ✓
@@ -1783,44 +1809,44 @@ export function PTYSSConfig() {
                             </Button>
                           </div>
                         ) : (
-                          <span>${localServicePrices.FDA047.toFixed(2)}</span>
+                          <span>${localServicePrices.TRK163.toFixed(2)}</span>
                         )}
                       </TableCell>
-                      <TableCell><Badge variant="secondary">Manual</Badge></TableCell>
+                      <TableCell><Badge variant="secondary">Por día (después del 3er día)</Badge></TableCell>
                       <TableCell><Badge variant="default">Activo</Badge></TableCell>
                       <TableCell>
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => handleEditLocalService('FDA047')}
-                          disabled={editingLocalService !== null && editingLocalService !== 'FDA047'}
+                          onClick={() => handleEditLocalService('TRK163')}
+                          disabled={editingLocalService !== null && editingLocalService !== 'TRK163'}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell><Badge variant="outline">FDA059</Badge></TableCell>
-                      <TableCell>FDA059</TableCell>
-                      <TableCell>Servicio Local FDA059</TableCell>
+                      <TableCell><Badge variant="outline">TRK179</Badge></TableCell>
+                      <TableCell>Storage/Estadía</TableCell>
+                      <TableCell>Storage/Estadía</TableCell>
                       <TableCell>
-                        {editingLocalService === 'FDA059' ? (
+                        {editingLocalService === 'TRK179' ? (
                           <div className="flex items-center gap-2">
                             <Input
                               type="number"
                               min="0"
                               step="0.01"
-                              value={localServicePrices.FDA059}
+                              value={localServicePrices.TRK179}
                               onChange={(e) => setLocalServicePrices({
                                 ...localServicePrices,
-                                FDA059: parseFloat(e.target.value) || 0
+                                TRK179: parseFloat(e.target.value) || 0
                               })}
                               className="w-20"
                             />
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleSaveLocalService('FDA059')}
+                              onClick={() => handleSaveLocalService('TRK179')}
                               disabled={additionalServicesLoading}
                             >
                               ✓
@@ -1834,17 +1860,68 @@ export function PTYSSConfig() {
                             </Button>
                           </div>
                         ) : (
-                          <span>${localServicePrices.FDA059.toFixed(2)}</span>
+                          <span>${localServicePrices.TRK179.toFixed(2)}</span>
                         )}
                       </TableCell>
-                      <TableCell><Badge variant="secondary">Manual</Badge></TableCell>
+                      <TableCell><Badge variant="secondary">Fijo</Badge></TableCell>
                       <TableCell><Badge variant="default">Activo</Badge></TableCell>
                       <TableCell>
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => handleEditLocalService('FDA059')}
-                          disabled={editingLocalService !== null && editingLocalService !== 'FDA059'}
+                          onClick={() => handleEditLocalService('TRK179')}
+                          disabled={editingLocalService !== null && editingLocalService !== 'TRK179'}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell><Badge variant="outline">SLR168</Badge></TableCell>
+                      <TableCell>Genset Rental</TableCell>
+                      <TableCell>Genset Rental</TableCell>
+                      <TableCell>
+                        {editingLocalService === 'SLR168' ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={localServicePrices.SLR168}
+                              onChange={(e) => setLocalServicePrices({
+                                ...localServicePrices,
+                                SLR168: parseFloat(e.target.value) || 0
+                              })}
+                              className="w-20"
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleSaveLocalService('SLR168')}
+                              disabled={additionalServicesLoading}
+                            >
+                              ✓
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleCancelEditLocalService}
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ) : (
+                          <span>${localServicePrices.SLR168.toFixed(2)}</span>
+                        )}
+                      </TableCell>
+                      <TableCell><Badge variant="secondary">Por día</Badge></TableCell>
+                      <TableCell><Badge variant="default">Activo</Badge></TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleEditLocalService('SLR168')}
+                          disabled={editingLocalService !== null && editingLocalService !== 'SLR168'}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
