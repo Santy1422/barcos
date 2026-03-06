@@ -72,26 +72,17 @@ export function PTYSSPdfViewer({ open, onOpenChange, invoice, clients, allRecord
     // Fecha
     const formatInvoiceDate = (dateString: string): Date | null => {
       if (!dateString) return null
-
-      let year: number, month: number, day: number
-
-      if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        [year, month, day] = dateString.split('-').map(Number)
-      } else if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-        const datePart = dateString.split('T')[0]
-        ;[year, month, day] = datePart.split('-').map(Number)
-      } else {
-        const parsed = new Date(dateString)
-        if (isNaN(parsed.getTime())) return null
-        year = parsed.getFullYear()
-        month = parsed.getMonth() + 1
-        day = parsed.getDate()
+      const s = String(dateString).trim()
+      const datePart = s.slice(0, 10)
+      if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+        const [y, m, d] = datePart.split('-').map(Number)
+        if (y >= 1900 && y <= 2100) return new Date(y, m - 1, d)
       }
-
-      // Year validation to prevent year 40000 issue
-      if (year < 1900 || year > 2100) return null
-
-      return new Date(year, month - 1, day)
+      const parsed = new Date(dateString)
+      if (isNaN(parsed.getTime())) return null
+      const y = parsed.getFullYear()
+      if (y < 1900 || y > 2100) return null
+      return new Date(y, parsed.getMonth(), parsed.getDate())
     }
 
     const invoiceDate = formatInvoiceDate(invoiceData.issueDate)

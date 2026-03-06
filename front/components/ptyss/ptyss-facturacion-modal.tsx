@@ -79,6 +79,16 @@ export function PTYSSFacturacionModal({
      console.log('  - containerTypes length:', containerTypes?.length ?? 'undefined')
    }, [open, invoice, allRecords, clients, clientsLoading, recordsLoading, containerTypes])
 
+  // Formatear fecha de emisión como día civil local (evita desfase por UTC)
+  const formatIssueDate = (dateString: string) => {
+    if (!dateString) return 'N/A'
+    const s = String(dateString).slice(0, 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(dateString).toLocaleDateString('es-ES')
+    const [y, m, d] = s.split('-').map(Number)
+    if (y < 1900 || y > 2100) return 'N/A'
+    return new Date(y, m - 1, d).toLocaleDateString('es-ES')
+  }
+
   // Generar número de factura por defecto
   const defaultInvoiceNumber = invoice?.invoiceNumber?.replace(/^PTY-PRE-/, "PTY-FAC-") || "PTY-FAC-000001"
   
@@ -495,7 +505,7 @@ export function PTYSSFacturacionModal({
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-blue-600" />
                   <span className="font-medium">Fecha Emisión:</span>
-                  <span>{new Date(invoice.issueDate).toLocaleDateString('es-ES')}</span>
+                  <span>{formatIssueDate(invoice.issueDate)}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Ship className="h-4 w-4 text-blue-600" />

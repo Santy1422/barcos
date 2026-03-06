@@ -61,7 +61,6 @@ export function PTYSSRecordsViewModal({
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return { date: 'N/A', time: 'N/A' };
     const year = date.getFullYear();
-    // Year validation to prevent year 40000 issue
     if (year < 1900 || year > 2100) return { date: 'N/A', time: 'N/A' };
     return {
       date: date.toLocaleDateString('es-ES'),
@@ -71,6 +70,16 @@ export function PTYSSRecordsViewModal({
         second: '2-digit'
       })
     };
+  };
+
+  // Fecha solo: interpretar YYYY-MM-DD como día civil local (evita desfase de un día por UTC)
+  const formatDateOnly = (dateString: string) => {
+    if (!dateString) return 'N/A';
+    const s = String(dateString).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(dateString).toLocaleDateString('es-ES');
+    const [y, m, d] = s.split('-').map(Number);
+    if (y < 1900 || y > 2100) return 'N/A';
+    return new Date(y, m - 1, d).toLocaleDateString('es-ES');
   };
 
   if (!invoice) return null;
@@ -213,7 +222,7 @@ export function PTYSSRecordsViewModal({
                           <Calendar className="h-3 w-3" /> Fecha Inicial
                         </Label>
                         <p className="text-sm">
-                          {data.moveDate ? new Date(data.moveDate).toLocaleDateString('es-ES') : "N/A"}
+                          {data.moveDate ? formatDateOnly(data.moveDate) : "N/A"}
                         </p>
                       </div>
 
@@ -224,7 +233,7 @@ export function PTYSSRecordsViewModal({
                             <Calendar className="h-3 w-3" /> Fecha Fin
                           </Label>
                           <p className="text-sm">
-                            {new Date(data.endDate).toLocaleDateString('es-ES')}
+                            {formatDateOnly(data.endDate)}
                           </p>
                         </div>
                       )}
