@@ -696,6 +696,7 @@ export function PTYSSConfig() {
       { 'Código SAP': 'TRK163', Nombre: 'Demurrage/Retención', Descripción: 'Demurrage/Retención (se cobra después del 3er día)', Precio: localServicePrices.TRK163, Tipo: 'Por día (después del 3er día)', Estado: 'Activo' },
       { 'Código SAP': 'TRK179', Nombre: 'Storage/Estadía', Descripción: 'Storage/Estadía', Precio: localServicePrices.TRK179, Tipo: 'Fijo', Estado: 'Activo' },
       { 'Código SAP': 'SLR168', Nombre: 'Genset Rental', Descripción: 'Genset Rental', Precio: localServicePrices.SLR168, Tipo: 'Por día', Estado: 'Activo' },
+      { 'Código SAP': 'TRK196', Nombre: 'Pesaje', Descripción: 'Se ingresa manualmente al crear el registro', Precio: 'Manual al crear registro', Tipo: 'Manual', Estado: 'Activo' },
     ]
     const ws = XLSX.utils.json_to_sheet(exportData)
     const wb = XLSX.utils.book_new()
@@ -706,7 +707,7 @@ export function PTYSSConfig() {
     XLSX.writeFile(wb, fileName)
     toast({
       title: 'Exportación exitosa',
-      description: `Se exportaron los 4 servicios locales fijos a ${fileName}`,
+      description: `Se exportaron los 5 servicios locales fijos a ${fileName}`,
     })
   }
 
@@ -1925,6 +1926,19 @@ export function PTYSSConfig() {
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell><Badge variant="outline">TRK196</Badge></TableCell>
+                      <TableCell>Pesaje</TableCell>
+                      <TableCell>Se ingresa manualmente al crear el registro</TableCell>
+                      <TableCell>
+                        <span className="text-muted-foreground text-sm">Manual al crear registro</span>
+                      </TableCell>
+                      <TableCell><Badge variant="secondary">Manual</Badge></TableCell>
+                      <TableCell><Badge variant="default">Activo</Badge></TableCell>
+                      <TableCell>
+                        <span className="text-muted-foreground text-xs">—</span>
                       </TableCell>
                     </TableRow>
                   </TableBody>
