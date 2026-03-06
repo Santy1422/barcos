@@ -1075,7 +1075,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
               const fullEmpty = isTrasiego ? 'FULL' : 'FULL'
 
               // ACTUALIZADO: Valores fijos para PTG según requerimiento SAP
-              // ProfitCenter: PAPANB110, Service: TRK002, BusinessType: I, Container: 42H0/RE/40/A
+              // Primer OtherItem = ruta: Service TRK002 (trasiego) o TRK001 (local)
               return {
                 "IncomeRebateCode": "I",
                 "AmntTransacCur": (-totalPrice).toFixed(3),
@@ -1083,7 +1083,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                 "Qty": group.count.toString(),
                 "ProfitCenter": "PAPANB110",
                 "ReferencePeriod": formatReferencePeriod(invoice.date),
-                "Service": "TRK002",
+                "Service": serviceCode,
                 "Activity": "TRK",
                 "Pillar": "TRSP",
                 "BUCountry": "PA",
@@ -1134,7 +1134,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                     pillarValue = "NOPS"
                   }
 
-                  // ACTUALIZADO: Servicios adicionales de PTG también usan valores fijos
+                  // Cada servicio local usa su propio service code (CLG097, TRK163, TRK179, SLR168, TRK196, etc.)
                   localFixedServiceItems.push({
                     "IncomeRebateCode": "I",
                     "AmntTransacCur": (-service.amount).toFixed(3),
@@ -1142,7 +1142,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                     "Qty": "1.00",
                     "ProfitCenter": "PAPANB110",
                     "ReferencePeriod": formatReferencePeriod(invoice.date),
-                    "Service": "TRK002",
+                    "Service": serviceCode,
                     "Activity": "TRK",
                     "Pillar": "TRSP",
                     "BUCountry": "PA",
