@@ -968,8 +968,14 @@ export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceCli
 
       {/* Services Table */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
           <CardTitle>Services ({filteredServices.length})</CardTitle>
+          {onCreateServiceClick && (
+            <Button onClick={onCreateServiceClick} size="sm" className="shrink-0 mr-24">
+              <Plus className="mr-2 h-4 w-4" />
+              Crear nuevo servicio
+            </Button>
+          )}
         </CardHeader>
         {clientFilter !== 'all' && (
           <div className="flex items-center gap-2 px-6 pb-2">
