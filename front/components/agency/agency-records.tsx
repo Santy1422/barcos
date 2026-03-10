@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,9 +18,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
-  Car, Search, Eye, FileText, Calendar,
+  Car, Eye, FileText, Calendar,
   User, Loader2, Trash2, Edit, RefreshCw, MapPin, ArrowRight, Paperclip,
-  Clock, Save, X, Ship, Users, Plane, Building, Plus, CheckCircle, AlertTriangle, ChevronDown, SearchX, FileX
+  Clock, Save, X, Ship, Users, Plane, Building, Plus, CheckCircle, AlertTriangle, ChevronDown, SearchX, FileX, Filter
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { TimeInput } from "@/components/ui/time-input"
@@ -31,7 +31,8 @@ import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import Link from "next/link"
 
-export function AgencyRecords() {
+export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceClick?: () => void }) {
+  const { hideHeader, onCreateServiceClick } = props || {}
   const { toast } = useToast()
   const {
     services,
@@ -39,6 +40,7 @@ export function AgencyRecords() {
     error,
     filters,
     totalServices,
+    statusSummary,
     currentPage,
     totalPages,
     fetchServices,
@@ -83,16 +85,17 @@ export function AgencyRecords() {
   ]
 
   // Local state
-  const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [clientFilter, setClientFilter] = useState("all")
+  const [clientFilterSearch, setClientFilterSearch] = useState("")
+  const [openFilterColumn, setOpenFilterColumn] = useState<string | null>(null)
   const [vesselFilter, setVesselFilter] = useState("")
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
+  const [dateFilterBy, setDateFilterBy] = useState<'pickup' | 'created'>('pickup')
   const [selectedService, setSelectedService] = useState<any>(null)
 
   // Column filters
-  const [dateFilter, setDateFilter] = useState("")
   const [crewFilter, setCrewFilter] = useState("")
   const [routeFilter, setRouteFilter] = useState("")
   const [moveTypeFilter, setMoveTypeFilter] = useState("all")
@@ -237,15 +240,12 @@ export function AgencyRecords() {
   }, [modals?.showEditModal, selectedService])
 
   // Check if any column filter is active (requires all data loaded)
-  const hasColumnFilters = !!(dateFilter || crewFilter || routeFilter || moveTypeFilter !== "all" || flightFilter || commentsFilter || transportFilter)
+  const hasColumnFilters = !!(crewFilter || routeFilter || moveTypeFilter !== "all" || flightFilter || commentsFilter || transportFilter)
 
   // Apply filters
   useEffect(() => {
     const filterObj: any = {}
 
-    if (searchTerm) {
-      filterObj.search = searchTerm
-    }
     if (statusFilter.length > 0) {
       // Use statusIn for multiple status filter
       filterObj.statusIn = statusFilter
@@ -263,21 +263,55 @@ export function AgencyRecords() {
       // Set end of day for the endDate so it includes the full day
       filterObj.endDate = endDate + 'T23:59:59.999Z'
     }
+    filterObj.dateField = dateFilterBy === 'created' ? 'createdAt' : 'pickupDate'
 
     setFilters(filterObj)
     // When column filters are active, load all records to filter client-side
     const limit = hasColumnFilters ? 500 : 20
     fetchServices({ page: 1, limit, filters: filterObj })
-  }, [searchTerm, statusFilter, clientFilter, vesselFilter, startDate, endDate, hasColumnFilters, setFilters, fetchServices])
+  }, [statusFilter, clientFilter, vesselFilter, startDate, endDate, dateFilterBy, hasColumnFilters, setFilters, fetchServices])
+
+  // Unique clients from services (id + display name) for the client filter dropdown
+  const uniqueClientOptions = useMemo(() => {
+    const list = services && Array.isArray(services) ? services : []
+    const seen = new Set<string>()
+    const options: { id: string; name: string }[] = []
+    list.forEach((s: any) => {
+      const id = typeof s.clientId === 'string' ? s.clientId : (s.clientId?._id || s.clientId?.id || '')
+      const name = s.clientName || (typeof s.clientId === 'object' && s.clientId
+        ? (s.clientId.type === 'natural' ? s.clientId.fullName : s.clientId.companyName) || ''
+        : id)
+      if (id && !seen.has(id)) {
+        seen.add(id)
+        options.push({ id, name: name || id })
+      }
+    })
+    return options.sort((a, b) => a.name.localeCompare(b.name))
+  }, [services])
+
+  // Close column filter dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openFilterColumn) {
+        const target = event.target as Element
+        if (!target.closest('[data-column-filter]') && !target.closest('[data-client-filter]')) {
+          setOpenFilterColumn(null)
+        }
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [openFilterColumn])
 
   const handleClearFilters = () => {
-    setSearchTerm("")
     setStatusFilter([])
     setClientFilter("all")
+    setOpenFilterColumn(null)
+    setClientFilterSearch("")
     setVesselFilter("")
     setStartDate("")
     setEndDate("")
-    setDateFilter("")
+    setDateFilterBy("pickup")
     setCrewFilter("")
     setRouteFilter("")
     setMoveTypeFilter("all")
@@ -300,30 +334,11 @@ export function AgencyRecords() {
     if (!service) return false
 
     try {
-      // Global search
-      if (searchTerm) {
-        const term = searchTerm.toLowerCase()
-        const matchesSearch =
-          (service.crewMembers?.some((m: any) => toStr(m?.name).toLowerCase().includes(term))) ||
-          toStr(service.crewName).toLowerCase().includes(term) ||
-          toStr(service.vessel).toLowerCase().includes(term) ||
-          toStr(service.pickupLocation).toLowerCase().includes(term) ||
-          toStr(service.dropoffLocation).toLowerCase().includes(term)
-        if (!matchesSearch) return false
-      }
-
       // Status filter (multi-select)
       if (statusFilter.length > 0 && !statusFilter.includes(service.status)) return false
 
       // Vessel filter
       if (vesselFilter && !toStr(service.vessel).toLowerCase().includes(vesselFilter.toLowerCase())) return false
-
-      // Date filter
-      if (dateFilter) {
-        const dateStr = (formatSafeDate(service.pickupDate) || '').toLowerCase()
-        const timeStr = toStr(service.pickupTime).toLowerCase()
-        if (!dateStr.includes(dateFilter.toLowerCase()) && !timeStr.includes(dateFilter.toLowerCase())) return false
-      }
 
       // Crew filter
       if (crewFilter) {
@@ -833,7 +848,9 @@ export function AgencyRecords() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="px-4 pt-4 pb-5 space-y-5">
+      {!hideHeader && (
+      <>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -848,121 +865,103 @@ export function AgencyRecords() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Link href="/agency/services">
-            <Button>
+          {onCreateServiceClick ? (
+            <Button onClick={onCreateServiceClick}>
               <User className="mr-2 h-4 w-4" />
               New Service
             </Button>
-          </Link>
+          ) : (
+            <Link href="/agency/services">
+              <Button>
+                <User className="mr-2 h-4 w-4" />
+                New Service
+              </Button>
+            </Link>
+          )}
           <Button variant="outline" onClick={() => fetchServices({ page: currentPage, limit: 20 })}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
         </div>
       </div>
+      </>
+      )}
 
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-6">
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold">{totalServices || 0}</div>
-            <p className="text-xs text-muted-foreground">Total Services</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold text-purple-600">
-              {services && Array.isArray(services) ? services.filter(s => s?.status === 'tentative').length : 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Tentative</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold">
-              {services && Array.isArray(services) ? services.filter(s => s?.status === 'pending').length : 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Pending</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold">
-              {services && Array.isArray(services) ? services.filter(s => s?.status === 'in_progress').length : 0}
-            </div>
-            <p className="text-xs text-muted-foreground">In Progress</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold">
-              {services && Array.isArray(services) ? services.filter(s => ['completed', 'prefacturado', 'facturado', 'nota_de_credito'].includes(s?.status)).length : 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Completed</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-2xl font-bold">
-              {services && Array.isArray(services) ? services.filter(s => s?.status === 'cancelled').length : 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Cancelled</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Global Search & Filters */}
+      {/* Resumen de servicios - totales de todas las páginas con los filtros aplicados (statusSummary desde API) */}
       <Card>
-        <CardContent className="p-4 space-y-3">
-          <div className="flex gap-4 items-center">
-            <div className="relative flex-1">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search crew, vessel, location..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-8"
-              />
-            </div>
-
-            <Button variant="outline" onClick={handleClearFilters}>
-              Clear Filters
-            </Button>
+        <CardContent className="p-3">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            <span className="font-medium text-muted-foreground">Resumen (todas las páginas):</span>
+            {statusSummary ? (
+              <>
+                <span><strong>{statusSummary.total}</strong> total</span>
+                <span className="text-purple-600"><strong>{statusSummary.tentative}</strong> tentative</span>
+                <span><strong>{statusSummary.pending}</strong> pending</span>
+                <span><strong>{statusSummary.in_progress}</strong> in progress</span>
+                <span><strong>{statusSummary.completed}</strong> completed</span>
+                <span><strong>{statusSummary.cancelled}</strong> cancelled</span>
+              </>
+            ) : (
+              <>
+                <span><strong>{totalServices || 0}</strong> total</span>
+                <span className="text-purple-600"><strong>{services?.filter(s => s?.status === 'tentative').length ?? 0}</strong> tentative</span>
+                <span><strong>{services?.filter(s => s?.status === 'pending').length ?? 0}</strong> pending</span>
+                <span><strong>{services?.filter(s => s?.status === 'in_progress').length ?? 0}</strong> in progress</span>
+                <span><strong>{services?.filter(s => ['completed', 'prefacturado', 'facturado', 'nota_de_credito'].includes(s?.status ?? '')).length ?? 0}</strong> completed</span>
+                <span><strong>{services?.filter(s => s?.status === 'cancelled').length ?? 0}</strong> cancelled</span>
+              </>
+            )}
           </div>
+        </CardContent>
+      </Card>
 
-          {/* Date Range Filter */}
-          <div className="flex gap-4 items-center">
+      {/* Filtro por fecha */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-wrap gap-4 items-center">
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-muted-foreground" />
-              <Label className="text-sm font-medium whitespace-nowrap">Date Range:</Label>
+              <Label className="text-sm font-medium whitespace-nowrap">Rango de fechas:</Label>
             </div>
-            <div className="flex items-center gap-2">
+            <Select value={dateFilterBy} onValueChange={(v: 'pickup' | 'created') => setDateFilterBy(v)}>
+              <SelectTrigger className="w-[180px] h-9 text-sm border-blue-500 bg-blue-50 text-blue-800 font-medium hover:bg-blue-100 focus:ring-2 focus:ring-blue-500">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pickup">Por movimiento</SelectItem>
+                <SelectItem value="created">Por creación</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex gap-2 items-center">
               <Input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 className="w-40"
-                placeholder="From"
+                placeholder="Desde"
               />
-              <span className="text-sm text-muted-foreground">to</span>
+              <span className="text-sm text-muted-foreground">a</span>
               <Input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 className="w-40"
                 min={startDate || undefined}
-                placeholder="To"
+                placeholder="Hasta"
               />
+              {(startDate || endDate) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setStartDate(""); setEndDate("") }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
             </div>
-            {(startDate || endDate) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { setStartDate(""); setEndDate("") }}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
+            <Button variant="outline" size="sm" onClick={handleClearFilters}>
+              Limpiar filtros
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -972,148 +971,205 @@ export function AgencyRecords() {
         <CardHeader>
           <CardTitle>Services ({filteredServices.length})</CardTitle>
         </CardHeader>
+        {clientFilter !== 'all' && (
+          <div className="flex items-center gap-2 px-6 pb-2">
+            <div className="flex items-center gap-2 py-2 px-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-md">
+              <Badge variant="default" className="bg-orange-600 text-white text-xs">Filtro Cliente</Badge>
+              <span className="text-sm text-orange-700 dark:text-orange-300">
+                Mostrando servicios de: {uniqueClientOptions.find(o => o.id === clientFilter)?.name || clientFilter}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setClientFilter('all'); setOpenFilterColumn(null) }}
+                className="h-6 w-6 p-0 ml-auto hover:bg-orange-100 dark:hover:bg-orange-900/50"
+                title="Quitar filtro de cliente"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+        )}
         <CardContent>
           <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Date</TableHead>
-                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Crew</TableHead>
-                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Vessel</TableHead>
-                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Route</TableHead>
-                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Move Type</TableHead>
-                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Flight</TableHead>
-                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Comments</TableHead>
-                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Transport</TableHead>
-                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Status</TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider px-2 relative" data-column-filter>
+                    <div className="flex items-center gap-1">
+                      <span>Crew</span>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {crewFilter && (
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" title="Borrar filtro" onClick={(e) => { e.stopPropagation(); setCrewFilter(''); setOpenFilterColumn(null); }}><X className="h-3 w-3" /></Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setOpenFilterColumn(openFilterColumn === 'crew' ? null : 'crew')} className={`h-6 w-6 p-0 ${crewFilter ? 'text-blue-600' : 'text-muted-foreground'}`} title="Filtrar"><Filter className="h-3.5 w-3.5" /></Button>
+                      </div>
+                    </div>
+                    {openFilterColumn === 'crew' && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-52">
+                        <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Filtrar por crew:</div>
+                        <Input placeholder="Buscar..." value={crewFilter} onChange={(e) => setCrewFilter(e.target.value)} className="h-8 text-xs" />
+                      </div>
+                    )}
+                  </TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider px-2 relative" data-column-filter>
+                    <div className="flex items-center gap-1">
+                      <span>Vessel</span>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {vesselFilter && (
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" title="Borrar filtro" onClick={(e) => { e.stopPropagation(); setVesselFilter(''); setOpenFilterColumn(null); }}><X className="h-3 w-3" /></Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setOpenFilterColumn(openFilterColumn === 'vessel' ? null : 'vessel')} className={`h-6 w-6 p-0 ${vesselFilter ? 'text-blue-600' : 'text-muted-foreground'}`} title="Filtrar"><Filter className="h-3.5 w-3.5" /></Button>
+                      </div>
+                    </div>
+                    {openFilterColumn === 'vessel' && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-52">
+                        <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Filtrar por vessel:</div>
+                        <Input placeholder="Buscar..." value={vesselFilter} onChange={(e) => setVesselFilter(e.target.value)} className="h-8 text-xs" />
+                      </div>
+                    )}
+                  </TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider px-2 relative" data-column-filter>
+                    <div className="flex items-center gap-1">
+                      <span>Route</span>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {routeFilter && (
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" title="Borrar filtro" onClick={(e) => { e.stopPropagation(); setRouteFilter(''); setOpenFilterColumn(null); }}><X className="h-3 w-3" /></Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setOpenFilterColumn(openFilterColumn === 'route' ? null : 'route')} className={`h-6 w-6 p-0 ${routeFilter ? 'text-blue-600' : 'text-muted-foreground'}`} title="Filtrar"><Filter className="h-3.5 w-3.5" /></Button>
+                      </div>
+                    </div>
+                    {openFilterColumn === 'route' && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-52">
+                        <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Filtrar por ruta:</div>
+                        <Input placeholder="Buscar..." value={routeFilter} onChange={(e) => setRouteFilter(e.target.value)} className="h-8 text-xs" />
+                      </div>
+                    )}
+                  </TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider px-2 relative" data-column-filter>
+                    <div className="flex items-center gap-1">
+                      <span>Move Type</span>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {moveTypeFilter !== 'all' && (
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" title="Borrar filtro" onClick={(e) => { e.stopPropagation(); setMoveTypeFilter('all'); setOpenFilterColumn(null); }}><X className="h-3 w-3" /></Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setOpenFilterColumn(openFilterColumn === 'moveType' ? null : 'moveType')} className={`h-6 w-6 p-0 ${moveTypeFilter !== 'all' ? 'text-blue-600' : 'text-muted-foreground'}`} title="Filtrar"><Filter className="h-3.5 w-3.5" /></Button>
+                      </div>
+                    </div>
+                    {openFilterColumn === 'moveType' && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-48">
+                        <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Tipo de movimiento:</div>
+                        <div className="max-h-56 overflow-y-auto space-y-0.5">
+                          {[{ value: 'all', label: 'All' }, { value: 'SINGLE', label: 'Single' }, { value: 'RT', label: 'Round Trip' }, { value: 'INTERNAL', label: 'Internal' }, { value: 'BAGS_CLAIM', label: 'Bags Claim' }, { value: 'DOCUMENTATION', label: 'Documentation' }, { value: 'NO_SHOW', label: 'No Show' }].map((opt) => (
+                            <div key={opt.value} className={`px-2 py-1.5 text-xs cursor-pointer rounded hover:bg-gray-100 dark:hover:bg-slate-800 ${moveTypeFilter === opt.value ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 font-medium' : ''}`} onClick={() => { setMoveTypeFilter(opt.value as any); setOpenFilterColumn(null) }}>{opt.label}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider px-2 relative" data-column-filter>
+                    <div className="flex items-center gap-1">
+                      <span>Flight</span>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {flightFilter && (
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" title="Borrar filtro" onClick={(e) => { e.stopPropagation(); setFlightFilter(''); setOpenFilterColumn(null); }}><X className="h-3 w-3" /></Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setOpenFilterColumn(openFilterColumn === 'flight' ? null : 'flight')} className={`h-6 w-6 p-0 ${flightFilter ? 'text-blue-600' : 'text-muted-foreground'}`} title="Filtrar"><Filter className="h-3.5 w-3.5" /></Button>
+                      </div>
+                    </div>
+                    {openFilterColumn === 'flight' && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-52">
+                        <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Filtrar por flight:</div>
+                        <Input placeholder="Buscar..." value={flightFilter} onChange={(e) => setFlightFilter(e.target.value)} className="h-8 text-xs" />
+                      </div>
+                    )}
+                  </TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider px-2 relative" data-column-filter>
+                    <div className="flex items-center gap-1">
+                      <span>Comments</span>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {commentsFilter && (
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" title="Borrar filtro" onClick={(e) => { e.stopPropagation(); setCommentsFilter(''); setOpenFilterColumn(null); }}><X className="h-3 w-3" /></Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setOpenFilterColumn(openFilterColumn === 'comments' ? null : 'comments')} className={`h-6 w-6 p-0 ${commentsFilter ? 'text-blue-600' : 'text-muted-foreground'}`} title="Filtrar"><Filter className="h-3.5 w-3.5" /></Button>
+                      </div>
+                    </div>
+                    {openFilterColumn === 'comments' && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-52">
+                        <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Filtrar por comentarios:</div>
+                        <Input placeholder="Buscar..." value={commentsFilter} onChange={(e) => setCommentsFilter(e.target.value)} className="h-8 text-xs" />
+                      </div>
+                    )}
+                  </TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider px-2 relative" data-column-filter>
+                    <div className="flex items-center gap-1">
+                      <span>Transport</span>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {transportFilter && (
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" title="Borrar filtro" onClick={(e) => { e.stopPropagation(); setTransportFilter(''); setOpenFilterColumn(null); }}><X className="h-3 w-3" /></Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setOpenFilterColumn(openFilterColumn === 'transport' ? null : 'transport')} className={`h-6 w-6 p-0 ${transportFilter ? 'text-blue-600' : 'text-muted-foreground'}`} title="Filtrar"><Filter className="h-3.5 w-3.5" /></Button>
+                      </div>
+                    </div>
+                    {openFilterColumn === 'transport' && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-52">
+                        <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Filtrar por transporte:</div>
+                        <Input placeholder="Buscar..." value={transportFilter} onChange={(e) => setTransportFilter(e.target.value)} className="h-8 text-xs" />
+                      </div>
+                    )}
+                  </TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider px-2 relative" data-client-filter data-column-filter>
+                    <div className="flex items-center gap-1">
+                      <span>Cliente</span>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {clientFilter !== 'all' && (
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" title="Borrar filtro" onClick={(e) => { e.stopPropagation(); setClientFilter('all'); setOpenFilterColumn(null); setClientFilterSearch(''); }}><X className="h-3 w-3" /></Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => { setOpenFilterColumn(openFilterColumn === 'client' ? null : 'client'); setClientFilterSearch('') }} className={`h-6 w-6 p-0 ${clientFilter !== 'all' ? 'text-blue-600' : 'text-muted-foreground'}`} title="Filtrar por cliente"><Filter className="h-3.5 w-3.5" /></Button>
+                      </div>
+                    </div>
+                    {openFilterColumn === 'client' && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-64">
+                        <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Filtrar por cliente:</div>
+                        <Input placeholder="Buscar cliente..." value={clientFilterSearch} onChange={(e) => setClientFilterSearch(e.target.value)} className="h-8 text-xs mb-2" />
+                        <div className="max-h-48 overflow-y-auto space-y-0.5">
+                          <div className={`px-2 py-1.5 text-xs cursor-pointer rounded hover:bg-gray-100 dark:hover:bg-slate-800 ${clientFilter === 'all' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 font-medium' : ''}`} onClick={() => { setClientFilter('all'); setOpenFilterColumn(null); setClientFilterSearch('') }}>Todos los clientes</div>
+                          {uniqueClientOptions.filter(opt => !clientFilterSearch || opt.name.toLowerCase().includes(clientFilterSearch.toLowerCase())).map((opt) => (
+                            <div key={opt.id} className={`px-2 py-1.5 text-xs cursor-pointer rounded hover:bg-gray-100 dark:hover:bg-slate-800 ${clientFilter === opt.id ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 font-medium' : ''}`} onClick={() => { setClientFilter(opt.id); setOpenFilterColumn(null); setClientFilterSearch('') }}>{opt.name}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </TableHead>
+                  <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider px-2 relative" data-column-filter>
+                    <div className="flex items-center gap-1">
+                      <span>Status</span>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {statusFilter.length > 0 && (
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" title="Borrar filtro" onClick={(e) => { e.stopPropagation(); setStatusFilter([]); setOpenFilterColumn(null); }}><X className="h-3 w-3" /></Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setOpenFilterColumn(openFilterColumn === 'status' ? null : 'status')} className={`h-6 w-6 p-0 ${statusFilter.length > 0 ? 'text-blue-600' : 'text-muted-foreground'}`} title="Filtrar"><Filter className="h-3.5 w-3.5" /></Button>
+                      </div>
+                    </div>
+                    {openFilterColumn === 'status' && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-48">
+                        <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center justify-between">
+                          <span>Estado</span>
+                          {statusFilter.length > 0 && <Button variant="ghost" size="sm" className="h-5 px-1 text-xs" onClick={() => setStatusFilter([])}>Limpiar</Button>}
+                        </div>
+                        <div className="max-h-56 overflow-y-auto space-y-0.5">
+                          {statusOptions.map((option) => (
+                            <div key={option.value} className="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer rounded hover:bg-gray-100 dark:hover:bg-slate-800" onClick={(e) => e.stopPropagation()}>
+                              <input type="checkbox" checked={statusFilter.includes(option.value)} onChange={() => statusFilter.includes(option.value) ? setStatusFilter(statusFilter.filter(s => s !== option.value)) : setStatusFilter([...statusFilter, option.value])} className="rounded" />
+                              <span>{option.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </TableHead>
                   <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Actions</TableHead>
-                </TableRow>
-                <TableRow className="border-b bg-background">
-                  <TableHead className="py-1.5 px-2">
-                    <Input
-                      placeholder="Filter date..."
-                      value={dateFilter}
-                      onChange={(e) => setDateFilter(e.target.value)}
-                      className="h-7 text-xs bg-muted/30 border-dashed"
-                    />
-                  </TableHead>
-                  <TableHead className="py-1.5 px-2">
-                    <Input
-                      placeholder="Filter crew..."
-                      value={crewFilter}
-                      onChange={(e) => setCrewFilter(e.target.value)}
-                      className="h-7 text-xs bg-muted/30 border-dashed"
-                    />
-                  </TableHead>
-                  <TableHead className="py-1.5 px-2">
-                    <Input
-                      placeholder="Filter vessel..."
-                      value={vesselFilter}
-                      onChange={(e) => setVesselFilter(e.target.value)}
-                      className="h-7 text-xs bg-muted/30 border-dashed"
-                    />
-                  </TableHead>
-                  <TableHead className="py-1.5 px-2">
-                    <Input
-                      placeholder="Filter route..."
-                      value={routeFilter}
-                      onChange={(e) => setRouteFilter(e.target.value)}
-                      className="h-7 text-xs bg-muted/30 border-dashed"
-                    />
-                  </TableHead>
-                  <TableHead className="py-1.5 px-2">
-                    <Select value={moveTypeFilter} onValueChange={setMoveTypeFilter}>
-                      <SelectTrigger className="h-7 text-xs bg-muted/30 border-dashed">
-                        <SelectValue placeholder="All" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All</SelectItem>
-                        <SelectItem value="SINGLE">Single</SelectItem>
-                        <SelectItem value="RT">Round Trip</SelectItem>
-                        <SelectItem value="INTERNAL">Internal</SelectItem>
-                        <SelectItem value="BAGS_CLAIM">Bags Claim</SelectItem>
-                        <SelectItem value="DOCUMENTATION">Documentation</SelectItem>
-                        <SelectItem value="NO_SHOW">No Show</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </TableHead>
-                  <TableHead className="py-1.5 px-2">
-                    <Input
-                      placeholder="Filter flight..."
-                      value={flightFilter}
-                      onChange={(e) => setFlightFilter(e.target.value)}
-                      className="h-7 text-xs bg-muted/30 border-dashed"
-                    />
-                  </TableHead>
-                  <TableHead className="py-1.5 px-2">
-                    <Input
-                      placeholder="Filter..."
-                      value={commentsFilter}
-                      onChange={(e) => setCommentsFilter(e.target.value)}
-                      className="h-7 text-xs bg-muted/30 border-dashed"
-                    />
-                  </TableHead>
-                  <TableHead className="py-1.5 px-2">
-                    <Input
-                      placeholder="Filter..."
-                      value={transportFilter}
-                      onChange={(e) => setTransportFilter(e.target.value)}
-                      className="h-7 text-xs bg-muted/30 border-dashed"
-                    />
-                  </TableHead>
-                  <TableHead className="py-1.5 px-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className="h-7 text-xs bg-muted/30 border-dashed w-full justify-between font-normal"
-                        >
-                          {statusFilter.length === 0
-                            ? "All"
-                            : statusFilter.length === 1
-                            ? statusOptions.find(s => s.value === statusFilter[0])?.label
-                            : `${statusFilter.length} selected`}
-                          <ChevronDown className="ml-1 h-3 w-3 opacity-50" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="w-48" align="start">
-                        <DropdownMenuLabel className="text-xs flex items-center justify-between">
-                          Filter by Status
-                          {statusFilter.length > 0 && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-5 px-1 text-xs"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                setStatusFilter([])
-                              }}
-                            >
-                              Clear
-                            </Button>
-                          )}
-                        </DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {statusOptions.map((option) => (
-                          <DropdownMenuCheckboxItem
-                            key={option.value}
-                            checked={statusFilter.includes(option.value)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setStatusFilter([...statusFilter, option.value])
-                              } else {
-                                setStatusFilter(statusFilter.filter(s => s !== option.value))
-                              }
-                            }}
-                            onSelect={(e) => e.preventDefault()}
-                          >
-                            {option.label}
-                          </DropdownMenuCheckboxItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableHead>
-                  <TableHead className="py-1.5 px-2" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1128,6 +1184,7 @@ export function AgencyRecords() {
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-full" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-6 w-24 rounded-full" /></TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
@@ -1140,9 +1197,9 @@ export function AgencyRecords() {
                   ))
                 ) : filteredServices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="py-12">
+                    <TableCell colSpan={11} className="py-12">
                       <div className="flex flex-col items-center justify-center space-y-4">
-                        {dateFilter || crewFilter || vesselFilter || routeFilter || moveTypeFilter !== "all" || flightFilter || commentsFilter || transportFilter || statusFilter.length > 0 ? (
+                        {crewFilter || vesselFilter || routeFilter || moveTypeFilter !== "all" || flightFilter || commentsFilter || transportFilter || clientFilter !== 'all' || statusFilter.length > 0 ? (
                           <>
                             <div className="rounded-full bg-orange-100 p-4">
                               <SearchX className="h-10 w-10 text-orange-600" />
@@ -1154,7 +1211,6 @@ export function AgencyRecords() {
                             <Button
                               variant="outline"
                               onClick={() => {
-                                setDateFilter("")
                                 setCrewFilter("")
                                 setVesselFilter("")
                                 setRouteFilter("")
@@ -1162,6 +1218,7 @@ export function AgencyRecords() {
                                 setFlightFilter("")
                                 setCommentsFilter("")
                                 setTransportFilter("")
+                                setClientFilter("all")
                                 setStatusFilter([])
                               }}
                             >
@@ -1308,6 +1365,15 @@ export function AgencyRecords() {
                             </div>
                           )}
                         </div>
+                      </TableCell>
+
+                      {/* Cliente column */}
+                      <TableCell>
+                        <span className="text-sm">
+                          {service.clientName || (typeof service.clientId === 'object' && service.clientId
+                            ? ((service.clientId as any).type === 'natural' ? (service.clientId as any).fullName : (service.clientId as any).companyName) || '-'
+                            : '-')}
+                        </span>
                       </TableCell>
 
                       <TableCell>

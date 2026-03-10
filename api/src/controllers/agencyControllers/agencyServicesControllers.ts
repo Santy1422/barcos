@@ -21,6 +21,7 @@ export const getAllAgencyServices = async (req: Request, res: Response) => {
       crewName,
       startDate,
       endDate,
+      dateField = 'pickupDate',
       search
     } = req.query;
 
@@ -47,9 +48,10 @@ export const getAllAgencyServices = async (req: Request, res: Response) => {
     if (crewName) query.crewName = { $regex: crewName, $options: 'i' };
     
     if (startDate || endDate) {
-      query.pickupDate = {};
-      if (startDate) query.pickupDate.$gte = new Date(startDate as string);
-      if (endDate) query.pickupDate.$lte = new Date(endDate as string);
+      const field = (dateField === 'createdAt') ? 'createdAt' : 'pickupDate';
+      query[field] = {};
+      if (startDate) query[field].$gte = new Date(startDate as string);
+      if (endDate) query[field].$lte = new Date(endDate as string);
     }
     
     if (search) {
@@ -75,12 +77,30 @@ export const getAllAgencyServices = async (req: Request, res: Response) => {
     const totalServices = await AgencyService.countDocuments(query);
     const totalPages = Math.ceil(totalServices / limitNum);
 
+    // Resumen por estado (misma query = todas las páginas con los filtros aplicados)
+    const statusCounts = await AgencyService.aggregate([
+      { $match: query },
+      { $group: { _id: '$status', count: { $sum: 1 } } }
+    ]);
+    const byStatus: Record<string, number> = {};
+    statusCounts.forEach((row: { _id: string; count: number }) => { byStatus[row._id || ''] = row.count; });
+    const completedStatuses = ['completed', 'prefacturado', 'facturado', 'nota_de_credito'];
+    const statusSummary = {
+      total: totalServices,
+      tentative: byStatus['tentative'] ?? 0,
+      pending: byStatus['pending'] ?? 0,
+      in_progress: byStatus['in_progress'] ?? 0,
+      completed: completedStatuses.reduce((sum, s) => sum + (byStatus[s] ?? 0), 0),
+      cancelled: byStatus['cancelled'] ?? 0
+    };
+
     return response(res, 200, {
       data: {
         services,
         totalPages,
         currentPage: pageNum,
         totalServices,
+        statusSummary,
         filters: {
           status,
           clientId,

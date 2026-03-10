@@ -75,6 +75,7 @@ interface AgencyServicesState {
     totalPages: number;
     currentPage: number;
     totalServices: number;
+    statusSummary: import('./agencyServicesSlice').StatusSummary | null;
     filters: AgencyServiceFilters;
     loading: boolean;
     error: string | null;
@@ -109,6 +110,7 @@ export const useAgencyServices = () => {
   const totalPages = useSelector((state: AgencyServicesState) => state.agencyServices?.totalPages || 0);
   const currentPage = useSelector((state: AgencyServicesState) => state.agencyServices?.currentPage || 1);
   const totalServices = useSelector((state: AgencyServicesState) => state.agencyServices?.totalServices || 0);
+  const statusSummary = useSelector((state: AgencyServicesState) => state.agencyServices?.statusSummary ?? null);
   const filters = useSelector((state: AgencyServicesState) => state.agencyServices?.filters || {});
   const loading = useSelector((state: AgencyServicesState) => state.agencyServices?.loading || false);
   const error = useSelector((state: AgencyServicesState) => state.agencyServices?.error);
@@ -411,6 +413,7 @@ export const useAgencyServices = () => {
     totalPages,
     currentPage,
     totalServices,
+    statusSummary,
     filters,
     loading,
     error,

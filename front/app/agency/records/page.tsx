@@ -1,12 +1,18 @@
 'use client';
 
-import { AgencyRecords } from '@/components/agency/agency-records';
-import { SectionGuard } from '@/components/section-guard';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function AgencyRecordsPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace('/agency/services');
+  }, [router]);
+
   return (
-    <SectionGuard module="agency" section="records">
-      <AgencyRecords />
-    </SectionGuard>
+    <div className="flex items-center justify-center min-h-[200px]">
+      <p className="text-muted-foreground">Redirigiendo a Crear servicio...</p>
+    </div>
   );
 }

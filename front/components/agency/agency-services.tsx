@@ -85,7 +85,8 @@ const initialCrewMember: CrewMember = {
   flight: ''
 }
 
-export function AgencyServices() {
+export function AgencyServices(props?: { embeddedInModal?: boolean; onSuccess?: () => void }) {
+  const { embeddedInModal, onSuccess } = props || {}
   const { toast } = useToast()
   const dispatch = useAppDispatch()
   const clients = useAppSelector(selectAllClients)
@@ -767,6 +768,8 @@ export function AgencyServices() {
       // Refresh services list
       fetchServices({ page: 1, limit: 10 })
 
+      onSuccess?.()
+
     } catch (error) {
       toast({
         title: "Error",
@@ -799,7 +802,9 @@ export function AgencyServices() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className={embeddedInModal ? "space-y-6" : "p-6 space-y-6"}>
+      {!embeddedInModal && (
+      <>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -829,6 +834,21 @@ export function AgencyServices() {
           </Button> */}
         </div>
       </div>
+      </>
+      )}
+{embeddedInModal && (
+        <div className="sticky top-0 z-20 flex items-center justify-between -mx-6 pt-4 pb-3 px-6 mb-4 bg-white dark:bg-slate-800 border-b-2 border-slate-200 dark:border-slate-600 shadow-md">
+          <h2 className="text-lg font-semibold">Service Request Form</h2>
+          <Button
+            onClick={(e) => handleSubmit(e, 'create')}
+            disabled={isCreating || loading || !isFormComplete()}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            <Save className="mr-2 h-4 w-4" />
+            Crear servicio
+          </Button>
+        </div>
+      )}
 
       {/* Service Request Form */}
       <Card>

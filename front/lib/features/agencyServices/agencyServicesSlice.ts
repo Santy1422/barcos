@@ -162,6 +162,7 @@ export interface AgencyServiceFilters {
   crewName?: string;
   startDate?: string;
   endDate?: string;
+  dateField?: 'pickupDate' | 'createdAt';
   search?: string;
 }
 
@@ -172,12 +173,23 @@ export interface FetchServicesParams {
   filters?: AgencyServiceFilters;
 }
 
+// Resumen por estado (todas las páginas con los filtros aplicados)
+export interface StatusSummary {
+  total: number;
+  tentative: number;
+  pending: number;
+  in_progress: number;
+  completed: number;
+  cancelled: number;
+}
+
 // Interface para respuesta paginada
 export interface ServicesResponse {
   services: AgencyService[];
   totalPages: number;
   currentPage: number;
   totalServices: number;
+  statusSummary?: StatusSummary;
   filters: AgencyServiceFilters;
 }
 
@@ -401,6 +413,7 @@ interface AgencyServicesState {
   totalPages: number;
   currentPage: number;
   totalServices: number;
+  statusSummary: StatusSummary | null;
   filters: AgencyServiceFilters;
   
   // Estados UI
@@ -445,6 +458,7 @@ const initialState: AgencyServicesState = {
   totalPages: 0,
   currentPage: 1,
   totalServices: 0,
+  statusSummary: null,
   filters: {},
   loading: false,
   error: null,
@@ -1343,11 +1357,15 @@ const agencyServicesSlice = createSlice({
       })
       .addCase(fetchAgencyServices.fulfilled, (state, action) => {
         state.loading = false;
-        state.services = action.payload.payload.data.services;
-        state.totalPages = action.payload.payload.data.totalPages;
-        state.currentPage = action.payload.payload.data.currentPage;
-        state.totalServices = action.payload.payload.data.totalServices;
-        state.filters = action.payload.payload.data.filters;
+        const data = action.payload?.payload?.data;
+        if (data) {
+          state.services = data.services;
+          state.totalPages = data.totalPages;
+          state.currentPage = data.currentPage;
+          state.totalServices = data.totalServices;
+          state.statusSummary = data.statusSummary ?? null;
+          state.filters = data.filters ?? state.filters;
+        }
       })
       .addCase(fetchAgencyServices.rejected, (state, action) => {
         state.loading = false;

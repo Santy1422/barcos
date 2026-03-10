@@ -38,7 +38,7 @@ export default function ClientLayout({ children, isLoginPage, defaultOpen }: Cli
             <SidebarProvider defaultOpen={defaultOpen}>
               <AppSidebar />
               <SidebarInset>
-                <main className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+                <main className="flex-1 space-y-4 p-4 pt-4 md:px-5 md:pt-5 md:pb-6">
                   {children}
                 </main>
               </SidebarInset>

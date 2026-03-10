@@ -170,13 +170,7 @@ export function AppSidebar() {
       icon: Car,
       children: [
         ...(hasSectionAccess(currentUser, "agency", "services") ? [
-          { title: "Crear Servicios", href: "/agency/services", icon: Plus }
-        ] : []),
-        ...(hasSectionAccess(currentUser, "agency", "invoice") ? [
-          { title: "Crear Prefactura", href: "/agency/invoice", icon: FilePlus2 }
-        ] : []),
-        ...(hasSectionAccess(currentUser, "agency", "records") ? [
-          { title: "Registros", href: "/agency/records", icon: ListOrdered }
+          { title: "Crear servicio", href: "/agency/services", icon: Plus }
         ] : []),
         ...(hasSectionAccess(currentUser, "agency", "sap-invoice") ? [
           { title: "SAP Invoice", href: "/agency/sap-invoice", icon: FileText }

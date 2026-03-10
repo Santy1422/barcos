@@ -85,16 +85,9 @@ export default function AgencyDashboard() {
     { 
       title: 'View All Services', 
       description: 'Service history and records',
-      href: '/agency/records', 
+      href: '/agency/services', 
       icon: Ship,
       color: 'bg-purple-500 hover:bg-purple-600'
-    },
-    { 
-      title: 'Ready for Invoice', 
-      description: 'Generate pre-invoices',
-      href: '/agency/invoice', 
-      icon: CheckCircle,
-      color: 'bg-orange-500 hover:bg-orange-600'
     }
   ];
 
@@ -135,7 +128,7 @@ export default function AgencyDashboard() {
               New Service
             </Button>
           </Link>
-          <Link href="/agency/records">
+          <Link href="/agency/services">
             <Button variant="outline">
               <Ship className="mr-2 h-4 w-4" />
               View All
@@ -192,7 +185,7 @@ export default function AgencyDashboard() {
         <CardHeader>
           <div className="flex justify-between items-center">
             <CardTitle>Recent Services</CardTitle>
-            <Link href="/agency/records">
+            <Link href="/agency/services">
               <Button variant="outline">View All Services</Button>
             </Link>
           </div>
