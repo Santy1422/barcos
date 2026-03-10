@@ -64,9 +64,8 @@ export function AgencyFacturacionModal({ open, onOpenChange, invoice, onFacturar
 
   const getRelatedServices = () => {
     if (!invoice?.relatedServiceIds) return [];
-    return services.filter((service: any) => 
-      invoice.relatedServiceIds.includes(service._id || service.id)
-    );
+    const ids = invoice.relatedServiceIds.map((s: any) => typeof s === 'object' ? (s._id || s.id) : s);
+    return services.filter((service: any) => ids.includes(service._id || service.id));
   };
 
   const generateXMLForInvoice = () => {

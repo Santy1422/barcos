@@ -14,17 +14,22 @@ import { selectAllClients } from "@/lib/features/clients/clientsSlice";
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs";
 
 interface AgencyPdfViewerProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   service: any;
   services?: any[]; // Para facturación múltiple
   isMultipleServices?: boolean;
+  /** Si true, muestra el PDF inline (sin modal). Se genera al tener service/services. */
+  inline?: boolean;
+  /** Llamado al hacer clic en "Ver en pantalla completa" (solo cuando inline=true). */
+  onOpenFullScreen?: () => void;
 }
 
-export function AgencyPdfViewer({ open, onOpenChange, service, services = [], isMultipleServices = false }: AgencyPdfViewerProps) {
+export function AgencyPdfViewer({ open = false, onOpenChange, service, services = [], isMultipleServices = false, inline = false, onOpenFullScreen }: AgencyPdfViewerProps) {
   const { toast } = useToast();
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const clients = useAppSelector(selectAllClients);
   const { ranks, fetchGroupedCatalogs } = useAgencyCatalogs();
 
@@ -385,13 +390,15 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
     return doc
   }
 
+  const shouldGenerate = (open || inline) && (service || (isMultipleServices && services.length > 0));
+
   useEffect(() => {
-    if (open && (service || (isMultipleServices && services.length > 0))) {
+    if (shouldGenerate) {
       setIsGenerating(true)
+      setPdfBlob(null)
 
       const loadLogoAndGenerate = async () => {
         try {
-          // Cargar logo PTYSS
           let logoBase64: string | undefined;
           try {
             const response = await fetch('/logos/logo_PTYSS.png');
@@ -406,7 +413,7 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
           }
 
           const baseService = isMultipleServices && services.length > 0 ? services[0] : service;
-          const pdfTitle = baseService.status === 'facturado' ? 'INVOICE' : 'PRE-INVOICE'
+          const pdfTitle = baseService?.status === 'facturado' ? 'INVOICE' : 'PRE-INVOICE'
           const doc = generateAgencyInvoicePDF(baseService, pdfTitle, isMultipleServices ? services : undefined, logoBase64)
           const blob = doc.output('blob')
           setPdfBlob(blob)
@@ -420,7 +427,21 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
 
       loadLogoAndGenerate();
     }
-  }, [open, service, services, isMultipleServices, toast, ranks])
+  }, [shouldGenerate, service, services, isMultipleServices, toast, ranks])
+
+  // Mantener URL del blob para iframe y revocar al desmontar o cambiar blob
+  useEffect(() => {
+    if (!pdfBlob) {
+      if (pdfUrl) {
+        URL.revokeObjectURL(pdfUrl);
+        setPdfUrl(null);
+      }
+      return;
+    }
+    const url = URL.createObjectURL(pdfBlob);
+    setPdfUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [pdfBlob])
 
   const handleDownload = () => {
     if (!pdfBlob) return
@@ -432,9 +453,75 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
   }
 
   const handleView = () => {
-    if (!pdfBlob) return
-    const url = URL.createObjectURL(pdfBlob)
-    window.open(url, '_blank')
+    if (pdfUrl) window.open(pdfUrl, '_blank')
+  }
+
+  const content = (
+    <div className="space-y-4">
+      {isGenerating ? (
+        <div className="flex justify-center items-center py-12">
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            <span className="text-lg font-medium text-gray-800">Generando PDF...</span>
+          </div>
+        </div>
+      ) : pdfBlob && pdfUrl ? (
+        <>
+          {!inline && (
+            <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-green-900">PDF Generado</h3>
+                  <p className="text-sm text-green-700">El PDF está listo para descargar o visualizar</p>
+                </div>
+                <Badge variant="secondary" className="bg-green-100 text-green-800">
+                  {(isMultipleServices && services.length > 0 ? services[0].status : service?.status) === 'facturado' ? 'Factura' : 'Pre-factura'}
+                </Badge>
+              </div>
+            </div>
+          )}
+          {!inline && (
+            <div className="flex gap-3 justify-center flex-wrap">
+              <Button onClick={handleView} className="flex items-center gap-2">
+                <Eye className="h-4 w-4" />
+                Ver PDF
+              </Button>
+              <Button onClick={handleDownload} variant="outline" className="flex items-center gap-2">
+                <Download className="h-4 w-4" />
+                Descargar PDF
+              </Button>
+            </div>
+          )}
+          <div className="border rounded-lg overflow-hidden">
+            <iframe src={pdfUrl} className="w-full h-[600px]" title="PDF Preview" />
+          </div>
+        </>
+      ) : (
+        <div className="text-center py-12 text-gray-500">
+          {shouldGenerate ? 'No se pudo generar el PDF' : 'Ingresa el número de prefactura y selecciona servicios para ver la vista previa'}
+        </div>
+      )}
+    </div>
+  )
+
+  if (inline) {
+    if (!service && !(isMultipleServices && services.length > 0)) return null
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold text-slate-900">Vista Previa del PDF</h3>
+          {pdfBlob && onOpenFullScreen && (
+            <Button onClick={onOpenFullScreen} variant="outline" size="sm" className="border-slate-300 text-slate-700 hover:bg-slate-50 gap-1">
+              <Eye className="h-4 w-4" />
+              Ver en pantalla completa
+            </Button>
+          )}
+        </div>
+        <div className={isGenerating || !pdfUrl ? '' : 'border border-slate-300 rounded-lg overflow-hidden'}>
+          {content}
+        </div>
+      </div>
+    )
   }
 
   if (!service && !isMultipleServices) return null
@@ -447,55 +534,7 @@ export function AgencyPdfViewer({ open, onOpenChange, service, services = [], is
             <Eye className="h-5 w-5" /> Vista Previa PDF - {isMultipleServices ? `${services.length} Servicios` : (service?.invoiceNumber || 'Servicio')}
           </DialogTitle>
         </DialogHeader>
-
-        <div className="space-y-4">
-          {isGenerating ? (
-            <div className="flex justify-center items-center py-12">
-              <div className="flex items-center gap-3">
-                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-                <span className="text-lg font-medium text-gray-800">Generando PDF...</span>
-              </div>
-            </div>
-          ) : pdfBlob ? (
-            <>
-              <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold text-green-900">PDF Generado</h3>
-                    <p className="text-sm text-green-700">El PDF está listo para descargar o visualizar</p>
-                  </div>
-                  <Badge variant="secondary" className="bg-green-100 text-green-800">
-                    {(isMultipleServices && services.length > 0 ? services[0].status : service?.status) === 'facturado' ? 'Factura' : 'Pre-factura'}
-                  </Badge>
-                </div>
-              </div>
-
-              <div className="flex gap-3 justify-center">
-                <Button onClick={handleView} className="flex items-center gap-2">
-                  <Eye className="h-4 w-4" />
-                  Ver PDF
-                </Button>
-                <Button onClick={handleDownload} variant="outline" className="flex items-center gap-2">
-                  <Download className="h-4 w-4" />
-                  Descargar PDF
-                </Button>
-              </div>
-
-              {/* Preview del PDF */}
-              <div className="border rounded-lg overflow-hidden">
-              <iframe 
-                src={URL.createObjectURL(pdfBlob)} 
-                  className="w-full h-[600px]"
-                  title="PDF Preview"
-              />
-            </div>
-            </>
-          ) : (
-            <div className="text-center py-12 text-gray-500">
-              No se pudo generar el PDF
-            </div>
-          )}
-        </div>
+        {content}
       </DialogContent>
     </Dialog>
   )

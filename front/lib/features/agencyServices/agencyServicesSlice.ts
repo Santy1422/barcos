@@ -1007,6 +1007,28 @@ export const fetchAgencyInvoices = createAsyncThunk<InvoicesResponse, FetchInvoi
   }
 );
 
+// Fetch single invoice by ID (con relatedServiceIds poblados para PDF)
+export const fetchAgencyInvoiceById = createAsyncThunk<AgencyInvoice, string>(
+  'agencyServices/fetchInvoiceById',
+  async (id, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(createApiUrl(`/api/agency/invoices/${id}`), {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || 'Failed to fetch invoice');
+      }
+      const data = await response.json();
+      const payload = data?.payload ?? data;
+      return payload.invoice ?? data.invoice;
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+);
+
 // Create invoice
 export const createAgencyInvoice = createAsyncThunk<AgencyInvoice, CreateInvoiceParams>(
   'agencyServices/createInvoice',
@@ -1032,7 +1054,8 @@ export const createAgencyInvoice = createAsyncThunk<AgencyInvoice, CreateInvoice
       }
       
       const data = await response.json();
-      return data.invoice;
+      const payload = data?.payload ?? data;
+      return payload.invoice ?? data.invoice;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }
@@ -1582,8 +1605,9 @@ const agencyServicesSlice = createSlice({
       })
       .addCase(fetchAgencyInvoices.fulfilled, (state, action) => {
         state.invoicesLoading = false;
-        state.invoices = action.payload.invoices || [];
-        state.invoicesPagination = action.payload.pagination;
+        const data = action.payload?.payload || action.payload;
+        state.invoices = data.invoices || [];
+        state.invoicesPagination = data.pagination;
         state.invoicesError = null;
       })
       .addCase(fetchAgencyInvoices.rejected, (state, action) => {
@@ -1600,6 +1624,18 @@ const agencyServicesSlice = createSlice({
         state.invoicesLoading = false;
         state.invoices.unshift(action.payload);
         state.invoicesError = null;
+        // Marcar servicios como prefacturados para que dejen de mostrarse en Crear Prefactura
+        const relatedIds = action.payload?.relatedServiceIds || [];
+        const invoiceId = action.payload?._id || action.payload?.id;
+        if (relatedIds.length && invoiceId && state.services?.length) {
+          state.services.forEach((s) => {
+            const id = s._id || s.id;
+            if (id && relatedIds.some((rid: string) => rid === id || rid?.toString() === id?.toString())) {
+              s.status = 'prefacturado';
+              s.prefacturaId = invoiceId;
+            }
+          });
+        }
       })
       .addCase(createAgencyInvoice.rejected, (state, action) => {
         state.invoicesLoading = false;

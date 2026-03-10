@@ -173,7 +173,10 @@ export function AppSidebar() {
           { title: "Crear servicio", href: "/agency/services", icon: Plus }
         ] : []),
         ...(hasSectionAccess(currentUser, "agency", "sap-invoice") ? [
-          { title: "SAP Invoice", href: "/agency/sap-invoice", icon: FileText }
+          { title: "Crear Prefactura", href: "/agency/prefactura", icon: FilePlus2 }
+        ] : []),
+        ...(hasSectionAccess(currentUser, "agency", "sap-invoice") ? [
+          { title: "Facturas", href: "/agency/invoice", icon: ListOrdered }
         ] : []),
         ...(hasSectionAccess(currentUser, "agency", "historial") ? [
           { title: "Historial", href: "/agency/historial", icon: History }

@@ -46,6 +46,7 @@ import {
   
   // Invoice Actions
   fetchAgencyInvoices,
+  fetchAgencyInvoiceById,
   createAgencyInvoice,
   updateAgencyInvoice,
   deleteAgencyInvoice,
@@ -216,6 +217,7 @@ export const useAgencyServices = () => {
     
     // Invoices async actions with .unwrap()
     fetchInvoices: (params?: any) => dispatch(fetchAgencyInvoices(params)).unwrap(),
+    fetchInvoiceById: (id: string) => dispatch(fetchAgencyInvoiceById(id)).unwrap(),
     createInvoice: (params: any) => dispatch(createAgencyInvoice(params)).unwrap(),
     updateInvoice: (params: any) => dispatch(updateAgencyInvoice(params)).unwrap(),
     deleteInvoice: (id: string) => dispatch(deleteAgencyInvoice(id)).unwrap(),

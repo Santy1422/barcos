@@ -46,11 +46,11 @@ export const getAllAgencyInvoices = async (req: Request, res: Response) => {
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
-    // Get invoices
+    // Get invoices (relatedServiceIds completos para PDF: ubicaciones, crew, precios, etc.)
     const invoices = await agencyInvoices
       .find(filter)
       .populate('clientId', 'fullName companyName type ruc sapCode')
-      .populate('relatedServiceIds', 'pickupDate vessel crewMembers moveType price currency')
+      .populate('relatedServiceIds') // documento completo para generar PDF
       .populate('createdBy', 'name email')
       .populate('updatedBy', 'name email')
       .sort({ issueDate: -1, createdAt: -1 })
@@ -233,12 +233,12 @@ export const createAgencyInvoice = async (req: Request, res: Response) => {
 
     await newInvoice.save();
 
-    // Update services to mark them as invoiced
+    // Update services to prefacturado and link to this invoice
     await agencyServices.updateMany(
       { _id: { $in: relatedServiceIds } },
       { 
         $set: { 
-          status: 'ready_for_invoice',
+          status: 'prefacturado',
           prefacturaId: newInvoice._id
         } 
       }
