@@ -1367,19 +1367,22 @@ const recordsSlice = createSlice({
       })
       // En extraReducers, agregar:
       .addCase(updateRecordAsync.fulfilled, (state, action) => {
-        console.log("🔍 updateRecordAsync.fulfilled - action.payload:", action.payload)
-        console.log("🔍 updateRecordAsync.fulfilled - action.payload._id:", action.payload._id)
-        
-        // Buscar el registro por _id (que es el ID de MongoDB)
-        const recordIndex = state.individualRecords.findIndex(r => r._id === action.payload._id)
-        
+        const payloadId = action.payload._id ?? action.payload.id
+        if (!payloadId) return
+        const recordIndex = state.individualRecords.findIndex(
+          r => (r._id || r.id) === payloadId || (r._id || r.id)?.toString() === String(payloadId)
+        )
         if (recordIndex >= 0) {
-          console.log("🔍 updateRecordAsync.fulfilled - Registro encontrado en índice:", recordIndex)
-          // Reemplazar el registro completo con los datos actualizados del backend
-          state.individualRecords[recordIndex] = action.payload
+          // Fusionar con el registro existente para no perder module/data si el backend no los envía
+          const existing = state.individualRecords[recordIndex] as any
+          state.individualRecords[recordIndex] = {
+            ...existing,
+            ...action.payload,
+            module: action.payload.module ?? existing?.module,
+            data: action.payload.data ?? existing?.data
+          }
         } else {
-          console.log("🔍 updateRecordAsync.fulfilled - Registro NO encontrado")
-          console.log("🔍 updateRecordAsync.fulfilled - Registros disponibles:", state.individualRecords.map(r => ({ _id: r._id, id: r.id })))
+          state.individualRecords.push(action.payload)
         }
       })
       .addCase(updateRecordAsync.rejected, (state, action) => {

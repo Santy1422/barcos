@@ -26,7 +26,8 @@ import {
   Check,
   Send,
   X,
-  Search
+  Search,
+  Play
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
@@ -1217,10 +1218,7 @@ export function PTYSSUpload() {
         })
       }
       
-      // Refrescar los registros para actualizar la lista
-      dispatch(fetchRecordsByModule("ptyss"))
-      
-      // Cerrar el modal y resetear
+      // Cerrar el modal y resetear (los nuevos registros ya se añaden en Redux con createPTYSSRecords.fulfilled)
       setCurrentRecord({
         ...initialRecordData,
         localRouteId: "",
@@ -1339,10 +1337,7 @@ export function PTYSSUpload() {
         description: "El registro ha sido marcado como completado y ahora aparecerá en la lista de prefactura",
       })
       
-      // Refrescar los registros
-      dispatch(fetchRecordsByModule("ptyss"))
-      
-      // Cerrar el diálogo
+      // Cerrar el diálogo (el estado se actualiza en Redux con updateRecordAsync.fulfilled)
       setConfirmSendDialogOpen(false)
       setRecordToSend(null)
       
@@ -1350,6 +1345,35 @@ export function PTYSSUpload() {
       console.error("Error al actualizar estado:", error)
       toast({
         title: "Error al enviar",
+        description: error.message || "Error al actualizar el estado del registro",
+        variant: "destructive"
+      })
+    }
+  }
+
+  // Función para pasar un registro a en progreso
+  const handleMarkAsInProgress = async () => {
+    if (!recordToSend) return
+
+    try {
+      await dispatch(updateRecordAsync({
+        id: recordToSend,
+        updates: {
+          status: "en_progreso"
+        }
+      })).unwrap()
+
+      toast({
+        title: "Registro en progreso",
+        description: "El registro ha sido marcado como en progreso",
+      })
+
+      setConfirmSendDialogOpen(false)
+      setRecordToSend(null)
+    } catch (error: any) {
+      console.error("Error al actualizar estado:", error)
+      toast({
+        title: "Error",
         description: error.message || "Error al actualizar el estado del registro",
         variant: "destructive"
       })
@@ -1373,10 +1397,7 @@ export function PTYSSUpload() {
         description: "El registro ha sido marcado como cancelado",
       })
       
-      // Refrescar los registros
-      dispatch(fetchRecordsByModule("ptyss"))
-      
-      // Cerrar el diálogo
+      // Cerrar el diálogo (el estado se actualiza en Redux con updateRecordAsync.fulfilled)
       setConfirmSendDialogOpen(false)
       setRecordToSend(null)
       
@@ -1928,8 +1949,8 @@ export function PTYSSUpload() {
         </CardContent>
       </Card>
 
-      {/* Lista de registros locales solo para tab local */}
-      {activeTab === "local" && pendingLocalRecords.length > 0 && (
+      {/* Lista de registros locales solo para tab local - siempre mostrar el recuadro para que no desaparezca al cambiar estado/filtros */}
+      {activeTab === "local" && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
@@ -2161,7 +2182,16 @@ export function PTYSSUpload() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {pendingLocalRecords.map((record: ExcelRecord) => {
+                  {pendingLocalRecords.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                        {ptyssRecords.some((r: ExcelRecord) => {
+                          const d = r.data as Record<string, any>
+                          return d?.recordType === "local" && !r.invoiceId
+                        }) ? "Ningún registro coincide con los filtros actuales." : "No hay registros locales. Crea uno con el formulario de arriba."}
+                      </TableCell>
+                    </TableRow>
+                  ) : pendingLocalRecords.map((record: ExcelRecord) => {
                     const data = record.data as Record<string, any>
                     const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
                     const clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
@@ -2207,6 +2237,11 @@ export function PTYSSUpload() {
                               Pendiente
                             </Badge>
                           )}
+                          {record.status === "en_progreso" && (
+                            <Badge variant="outline" className="text-blue-600 border-blue-600">
+                              En progreso
+                            </Badge>
+                          )}
                           {record.status === "completado" && (
                             <Badge variant="outline" className="text-green-600 border-green-600">
                               Completado
@@ -2234,14 +2269,14 @@ export function PTYSSUpload() {
                               </Button>
                             )}
                             
-                            {/* Botón Enviar/Cancelar - Solo para pendientes */}
-                            {record.status === "pendiente" && (
+                            {/* Botón Acciones - Para pendientes y en progreso (Completar, En progreso, Cancelar) */}
+                            {(record.status === "pendiente" || record.status === "en_progreso") && (
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleOpenSendConfirmation(record._id || record.id || "")}
                                 className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                                title="Completar o Cancelar registro"
+                                title="Cambiar estado: completado, en progreso o cancelado"
                               >
                                 <Send className="h-4 w-4 mr-1" />
                                 Acciones
@@ -3510,7 +3545,7 @@ export function PTYSSUpload() {
 
       {/* Diálogo de confirmación para acciones del registro */}
       <Dialog open={confirmSendDialogOpen} onOpenChange={setConfirmSendDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Send className="h-5 w-5 text-blue-600" />
@@ -3520,6 +3555,23 @@ export function PTYSSUpload() {
           
           <div className="space-y-4 py-4">
             <div className="space-y-3">
+              {recordToSend && (() => {
+                const recordForAction = ptyssRecords.find((r: any) => (r._id || r.id) === recordToSend)
+                const isPending = recordForAction?.status === "pendiente"
+                return isPending ? (
+                  <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <Play className="h-5 w-5 text-blue-600 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-blue-900">
+                        Pasar a En progreso
+                      </p>
+                      <p className="text-xs text-blue-700">
+                        El registro pasará a estado <span className="font-semibold">en progreso</span>. Podrás completarlo o cancelarlo después.
+                      </p>
+                    </div>
+                  </div>
+                ) : null
+              })()}
               <div className="flex items-start gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
                 <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5" />
                 <div className="space-y-1">
@@ -3557,6 +3609,20 @@ export function PTYSSUpload() {
               Cerrar
             </Button>
             <div className="flex gap-2">
+              {recordToSend && (() => {
+                const recordForAction = ptyssRecords.find((r: any) => (r._id || r.id) === recordToSend)
+                const isPending = recordForAction?.status === "pendiente"
+                return isPending ? (
+                  <Button
+                    variant="outline"
+                    onClick={handleMarkAsInProgress}
+                    className="text-blue-700 border-blue-600 hover:bg-blue-50"
+                  >
+                    <Play className="h-4 w-4 mr-2" />
+                    En progreso
+                  </Button>
+                ) : null
+              })()}
               <Button 
                 variant="outline"
                 onClick={handleMarkAsCancelled}
