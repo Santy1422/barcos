@@ -259,7 +259,20 @@ export function PTYSSFacturacionModal({
       let clientSapNumber = client.sapCode
       console.log("🔍 generateXMLForInvoice - clientSapNumber final:", clientSapNumber)
 
-      // Preparar datos para XML - pasar los registros originales para que el generador haga la agrupación
+      // Preparar datos para XML - pasar los registros originales para que el generador haga la agrupación.
+      // Locales → un solo OtherItem. Trasiego → varios OtherItems (por grupo + servicios adicionales).
+      // localRecordsOnly = true solo cuando hay al menos un registro local y ninguno trasiego.
+      const anyRecordIsTrasiego = relatedRecords.some((r: any) => {
+        const d = r.data || {}
+        return d.recordType === 'trasiego' || (Boolean(d.line) && Boolean(d.matchedPrice) && !d.localRouteId)
+      })
+      const anyRecordIsLocal = relatedRecords.some((r: any) => {
+        const d = r.data || {}
+        return d.recordType === 'local' || !!d.localRouteId || r.recordType === 'local' || !!r.localRouteId
+      })
+      const localRecordsOnly = anyRecordIsLocal && !anyRecordIsTrasiego
+      console.log('🔍 generateXMLForInvoice - localRecordsOnly:', localRecordsOnly, 'anyRecordIsLocal:', anyRecordIsLocal, 'anyRecordIsTrasiego:', anyRecordIsTrasiego)
+
       const invoiceForXml: PTYSSInvoiceForXml = {
         id: invoice.id,
         invoiceNumber: newInvoiceNumber,
@@ -268,14 +281,21 @@ export function PTYSSFacturacionModal({
         date: invoiceDate, // Usar fecha de factura seleccionada
         currency: "USD",
         total: invoice.totalAmount,
-        records: relatedRecords.map((record: any) => ({
-          id: record._id || record.id,
-          data: {
-            ...record.data
-          },
-          totalValue: record.totalValue || 0
-        })),
-        // Incluir servicios adicionales locales fijos
+        localRecordsOnly,
+        records: relatedRecords.map((record: any) => {
+          const d = record.data || {}
+          return {
+            id: record._id || record.id,
+            data: {
+              ...d,
+              recordType: d.recordType ?? record.recordType,
+              localRouteId: d.localRouteId ?? record.localRouteId,
+              localRoutePrice: d.localRoutePrice ?? record.localRoutePrice
+            },
+            totalValue: record.totalValue || 0
+          }
+        }),
+        // Incluir servicios adicionales locales fijos (solo se usan cuando localRecordsOnly es false, i.e. trasiego)
         additionalServices: invoice.details?.additionalServices || []
       }
 
@@ -456,11 +476,11 @@ export function PTYSSFacturacionModal({
   }
 
 
-  // Función para descargar XML
+  // Función para descargar XML (PTYSS siempre usa companyCode 9326 en el nombre)
   const handleDownloadXml = () => {
     if (generatedXml) {
       const blob = new Blob([generatedXml], { type: "application/xml;charset=utf-8" })
-      const filename = generateXmlFileName()
+      const filename = generateXmlFileName('9326')
       
       saveAs(blob, filename)
       toast({ 

@@ -74,6 +74,8 @@ export interface PTYSSInvoiceForXml {
   total: number
   records: PTYSSRecordForXml[]
   sapDocumentNumber?: string
+  /** Si true, la factura es solo de registros locales: se genera un único OtherItem (servicio principal TRK001) sin líneas por servicio adicional. */
+  localRecordsOnly?: boolean
   additionalServices?: Array<{
     serviceId: string
     name: string
@@ -963,16 +965,23 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                 totalValue: record.totalValue
               })
               
-              // Identificar registros de trasiego: tienen line, matchedPrice, y no tienen localRouteId
-              const isTrasiego = data.line && data.matchedPrice && !data.localRouteId
-              
-              console.log(`🔍 PTYSS XML - Is trasiego:`, isTrasiego, {
+              // Identificar registros de trasiego: recordType === 'trasiego' O (tienen line, matchedPrice y no tienen localRouteId)
+              // Priorizar recordType para que registros locales se detecten bien aunque tengan otros campos
+              const isTrasiego =
+                data.recordType === 'trasiego' ||
+                (Boolean(data.line) && Boolean(data.matchedPrice) && !data.localRouteId)
+              const isLocal =
+                data.recordType === 'local' || (Boolean(data.localRouteId) && data.recordType !== 'trasiego')
+              const treatAsTrasiego = isTrasiego && !isLocal
+
+              console.log(`🔍 PTYSS XML - Is trasiego:`, treatAsTrasiego, {
+                recordType: data.recordType,
                 line: data.line,
                 matchedPrice: data.matchedPrice,
                 localRouteId: data.localRouteId
               })
               
-              if (isTrasiego) {
+              if (treatAsTrasiego) {
                 // Los registros de trasiego en PTYSS tienen estos campos:
                 const line = data.line || ''
                 const from = data.from || ''
@@ -1034,8 +1043,50 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
             Array.from(groupedRecords.entries()).forEach(([key, group], index) => {
               console.log(`🔍 PTYSS XML - Group ${index + 1}: ${key} - Count: ${group.count} - Price: $${group.price}`)
             })
-            
-            // Convertir grupos a OtherItems (cada grupo = una línea del PDF)
+
+            // ¿Solo registros locales (sin trasiegos)? Para locales solo enviamos un único OtherItem con el servicio principal.
+            // Se usa flag explícito invoice.localRecordsOnly o la detección por grupos (ninguno TRASIEGO).
+            const hasTrasiego = Array.from(groupedRecords.keys()).some((key) => key.startsWith('TRASIEGO|'))
+            const isLocalOnlyByGroups = !hasTrasiego && groupedRecords.size > 0
+            const isLocalOnly = Boolean(invoice.localRecordsOnly) || isLocalOnlyByGroups
+
+            if (isLocalOnly) {
+              // Registros locales: un solo OtherItem con servicio principal TRK001 y valores fijos según ejemplo SAP
+              const totalLocalAmount = Array.from(groupedRecords.values()).reduce(
+                (sum, group) => sum + group.price * group.count,
+                0
+              )
+              const additionalAmount =
+                invoice.additionalServices?.reduce((sum, s) => sum + (s.amount || 0), 0) ?? 0
+              const invoiceTotal = totalLocalAmount + additionalAmount
+              const totalLocalRecords = Array.from(groupedRecords.values()).reduce((sum, group) => sum + group.count, 0)
+
+              console.log("🔍 PTYSS XML - Local only: single OtherItem. Total:", invoiceTotal, "Qty:", totalLocalRecords)
+
+              const singleOtherItem = {
+                "IncomeRebateCode": "I",
+                "AmntTransacCur": (-invoiceTotal).toFixed(3),
+                "BaseUnitMeasure": "CTR",
+                "Qty": totalLocalRecords.toString(),
+                "ProfitCenter": "PAPANB110",
+                "ReferencePeriod": formatReferencePeriod(invoice.date),
+                "Service": "TRK001",
+                "Activity": "TRK",
+                "Pillar": "TRSP",
+                "BUCountry": "PA",
+                "ServiceCountry": "PA",
+                "ClientType": "MEDLOG",
+                "BusinessType": "I",
+                "FullEmpty": "FULL",
+                "CtrISOcode": "42H0",
+                "CtrType": "RE",
+                "CtrSize": "40",
+                "CtrCategory": "A"
+              }
+              return [singleOtherItem]
+            }
+
+            // Trasiegos (o mixto): convertir grupos a OtherItems (cada grupo = una línea)
             const recordItems = Array.from(groupedRecords.entries()).map(([groupKey, group]) => {
               const parts = groupKey.split('|')
               const totalPrice = group.price * group.count
@@ -1098,7 +1149,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
               }
             })
             
-            // Agregar servicios locales fijos como otheritem adicionales
+            // Agregar servicios locales fijos como otheritem adicionales (solo para trasiegos/mixto)
             const localFixedServiceItems: any[] = []
             const localFixedServiceCodes = ['CLG097', 'CLG096', 'TRK163', 'TRK179', 'SLR168', 'TRK196', 'PESAJE']
 
@@ -1158,7 +1209,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
             console.log(`🔍 PTYSS XML - Total record items: ${recordItems.length}`)
             console.log(`🔍 PTYSS XML - Total local fixed service items: ${localFixedServiceItems.length}`)
             
-    // Combinar registros y servicios locales fijos
+    // Combinar registros y servicios locales fijos (solo para trasiegos/mixto)
     return [...recordItems, ...localFixedServiceItems]
   }
   
