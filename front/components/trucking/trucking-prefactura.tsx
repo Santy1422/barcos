@@ -532,6 +532,24 @@ export function TruckingPrefactura() {
     return base + extras + taxes
   }, [selectedRecords, selectedAdditionalServices, services])
 
+  // Subtotal de registros: rutas + ítems derivados (Aduana, Administration Fee por contenedores llenos), sin servicios adicionales
+  const subtotalRegistros = useMemo(() => {
+    const base = selectedRecords.reduce((sum: number, r: any) => sum + (r.data?.matchedPrice || r.totalValue || 0), 0)
+    const fullContainers = selectedRecords.filter((r: any) => {
+      const fe = r?.data?.fe || ''
+      return fe.toString().toUpperCase().trim() === 'F'
+    })
+    const totalFullContainers = fullContainers.length
+    let taxes = 0
+    if (totalFullContainers > 0) {
+      const customsTax = services.find(s => s.module === 'trucking' && s.name === 'Aduana' && s.isActive)
+      const adminFeeTax = services.find(s => s.module === 'trucking' && s.name === 'Administration Fee' && s.isActive)
+      if (customsTax?.price) taxes += customsTax.price * totalFullContainers
+      if (adminFeeTax?.price) taxes += adminFeeTax.price * totalFullContainers
+    }
+    return base + taxes
+  }, [selectedRecords, services])
+
   const getSelectedClientName = (): string | null => {
     if (selectedRecords.length === 0) return null
     const first: any = selectedRecords[0]
@@ -1034,7 +1052,7 @@ export function TruckingPrefactura() {
         currency: 'USD',
         subtotal: totalSelected,
         taxAmount: 0,
-        totalAmount: totalSelected, // MANTENER para SAP - sin descuento aplicado
+        totalAmount: Math.max(0, totalSelected - discountAmount), // Total con descuento aplicado (monto a pagar)
         status: 'prefactura',
         xmlData: '',
         relatedRecordIds: selectedRecords.map((r: any) => r._id || r.id),
@@ -1459,12 +1477,14 @@ export function TruckingPrefactura() {
                   <div className="space-y-3 text-sm">
                     <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
                       <span className="font-semibold text-slate-800">Subtotal Registros:</span>
-                      <span className="font-bold text-lg text-slate-900">${selectedRecords.reduce((sum: number, r: any) => sum + (r.data?.matchedPrice || r.totalValue || 0), 0).toFixed(2)}</span>
+                      <span className="font-bold text-lg text-slate-900">${subtotalRegistros.toFixed(2)}</span>
                     </div>
+                    {selectedAdditionalServices.length > 0 && (
                     <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
                       <span className="font-semibold text-slate-800">Servicios Adicionales:</span>
                       <span className="font-bold text-lg text-slate-900">${selectedAdditionalServices.reduce((sum, s) => sum + s.amount, 0).toFixed(2)}</span>
                     </div>
+                    )}
                     
                     {/* Componente de descuento - NUEVO (agregado 2026-01-08) */}
                     <div className="bg-white/80 p-4 rounded-lg">

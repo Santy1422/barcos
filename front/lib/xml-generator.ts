@@ -699,20 +699,21 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
     throw new Error("El número SAP del cliente (clientSapNumber) es obligatorio para generar el XML.")
   }
 
-  // Calcular el monto total de las rutas (AmntTransactCur)
+  // Calcular el monto total de las rutas (para fallback)
   const routeAmountTotal = invoice.records.reduce((sum, record) => {
-    // Usar routeAmount si está disponible, sino usar totalPrice como fallback
     const routeAmount = (record as any).routeAmount || record.totalPrice || 0
     return sum + routeAmount
   }, 0)
 
-  // Calcular el monto total de los impuestos PTG
+  // Calcular el monto total de los impuestos PTG (para fallback)
   const taxesAmountTotal = (invoice.otherItems || []).reduce((sum: number, taxItem: any) => {
     return sum + (taxItem.totalPrice || 0)
   }, 0)
 
-  // Total general incluyendo rutas e impuestos
-  const totalAmount = routeAmountTotal + taxesAmountTotal
+  // Usar el total de la factura (con descuento aplicado si lo hay); si no viene, calcular desde registros e ítems
+  const totalAmount = typeof invoice.total === 'number' && invoice.total >= 0
+    ? Number(invoice.total)
+    : routeAmountTotal + taxesAmountTotal
 
   const xmlObject = {
     "ns1:LogisticARInvoices": {

@@ -259,6 +259,21 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
     // Asegurar color de texto negro para secciones posteriores a la tabla
     doc.setTextColor(0, 0, 0)
 
+    const discountAmount = Math.max(0, invoiceData.discountAmount ?? 0)
+    if (discountAmount > 0) {
+      const subtotalBeforeDiscount = (Number(invoiceData.totalAmount) || 0) + discountAmount
+      doc.setFont(undefined, 'normal')
+      doc.setFontSize(10)
+      doc.text('Subtotal:', 120, y)
+      doc.text(`$${subtotalBeforeDiscount.toFixed(2)}`, 195, y, { align: 'right' })
+      y += 6
+      doc.text('Descuento:', 120, y)
+      doc.setTextColor(180, 0, 0)
+      doc.text(`-$${discountAmount.toFixed(2)}`, 195, y, { align: 'right' })
+      doc.setTextColor(0, 0, 0)
+      y += 8
+    }
+
     // TOTAL alineado a la derecha
     doc.setFont(undefined, 'bold')
     doc.setFontSize(12)
