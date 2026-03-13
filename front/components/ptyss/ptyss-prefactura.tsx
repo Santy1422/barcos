@@ -94,6 +94,8 @@ export function PTYSSPrefactura() {
     description: string
     amount: number
     isLocalService?: boolean
+    /** true = viene del registro (ya está en totalValue), no sumar en adicionales */
+    fromRecord?: boolean
   }>>([])
   const [currentServiceToAdd, setCurrentServiceToAdd] = useState<any>(null)
   const [currentServiceAmount, setCurrentServiceAmount] = useState<number>(0)
@@ -870,9 +872,9 @@ export function PTYSSPrefactura() {
     return sum + (record.totalValue || 0)
   }, 0)
   
-  // Solo sumar servicios adicionales que NO son locales fijos (ya que esos ya están incluidos en totalValue)
+  // Sumar solo servicios que NO vienen del registro (fromRecord): los auto-populados ya están en totalValue
   const additionalServicesTotal = selectedAdditionalServices
-    .filter(service => !service.isLocalService)
+    .filter(service => !service.fromRecord)
     .reduce((sum, service) => sum + service.amount, 0)
   const grandTotal = totalAmount + additionalServicesTotal
   
@@ -917,6 +919,7 @@ export function PTYSSPrefactura() {
       description: string
       amount: number
       isLocalService: boolean
+      fromRecord: boolean
     }> = []
 
     selectedLocalRecords.forEach((record: IndividualExcelRecord) => {
@@ -933,7 +936,8 @@ export function PTYSSPrefactura() {
           name: 'Customs/TI',
           description: 'Customs/TI',
           amount: getFixedLocalServicePrice('CLG097'),
-          isLocalService: true
+          isLocalService: true,
+          fromRecord: true
         })
       }
       if (data.estadia === 'si') {
@@ -942,7 +946,8 @@ export function PTYSSPrefactura() {
           name: 'Storage/Estadía',
           description: 'Storage/Estadía',
           amount: getFixedLocalServicePrice('TRK179'),
-          isLocalService: true
+          isLocalService: true,
+          fromRecord: true
         })
       }
       const retencionDaysU = parseFloat(data.retencion || '0')
@@ -953,7 +958,8 @@ export function PTYSSPrefactura() {
           name: 'Demurrage/Retención',
           description: 'Demurrage/Retención (se cobra después del 3er día)',
           amount: diasACobrarU * getFixedLocalServicePrice('TRK163'),
-          isLocalService: true
+          isLocalService: true,
+          fromRecord: true
         })
       }
       const gensetDaysU = parseFloat(data.genset || '0')
@@ -963,7 +969,8 @@ export function PTYSSPrefactura() {
           name: 'Genset Rental',
           description: 'Genset Rental',
           amount: gensetDaysU * getFixedLocalServicePrice('SLR168'),
-          isLocalService: true
+          isLocalService: true,
+          fromRecord: true
         })
       }
       if (data.pesaje && parseFloat(data.pesaje) > 0) {
@@ -972,7 +979,8 @@ export function PTYSSPrefactura() {
           name: 'Pesaje',
           description: 'Pesaje',
           amount: parseFloat(data.pesaje),
-          isLocalService: true
+          isLocalService: true,
+          fromRecord: true
         })
       }
     })
@@ -1298,7 +1306,8 @@ export function PTYSSPrefactura() {
         name: service.name,
         description: service.description,
         amount: service.price, // Usar el precio predefinido del servicio
-        isLocalService: true // IMPORTANTE: Marcar como servicio local para evitar doble conteo
+        isLocalService: true,
+        fromRecord: false // Agregado manualmente: sí debe sumar en Servicios Adicionales y total
       }
 
       console.log('🔍 handleAddLocalService - New local service to add:', newLocalService)
@@ -3068,10 +3077,10 @@ export function PTYSSPrefactura() {
                   </div>
 
                   {/* Lista de servicios locales seleccionados */}
-                  {selectedAdditionalServices.filter(s => localServices.some((ls: any) => ls._id === s.serviceId)).length > 0 && (
+                  {selectedAdditionalServices.filter(s => s.isLocalService && !s.fromRecord).length > 0 && (
                     <div className="space-y-4 mt-6">
                       <Label className="text-sm font-semibold text-slate-700">Servicios Locales Seleccionados</Label>
-                      {selectedAdditionalServices.filter(s => localServices.some((ls: any) => ls._id === s.serviceId)).map((service) => (
+                      {selectedAdditionalServices.filter(s => s.isLocalService && !s.fromRecord).map((service) => (
                         <div key={service.serviceId} className="flex items-center gap-4 p-4 bg-white/70 border border-slate-200 rounded-lg shadow-sm">
                           <div className="flex-1">
                             <div className="font-semibold text-sm text-slate-900">{service.name}</div>
