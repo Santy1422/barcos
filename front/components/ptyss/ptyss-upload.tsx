@@ -70,6 +70,7 @@ import {
 import { parseTruckingExcel, matchTruckingDataWithRoutes, type TruckingExcelData } from "@/lib/excel-parser"
 import { ClientModal } from "@/components/clients-management"
 import { createApiUrl } from "@/lib/api-config"
+import { isFixedLocalService, findFixedServiceByLegacyKey } from "@/lib/constants/fixedLocalServices"
 
 interface PTYSSRecordData {
   clientId: string
@@ -576,10 +577,8 @@ export function PTYSSUpload() {
           const data = await response.json()
           const services = data.data?.services || []
           
-          // Filtrar solo los servicios locales fijos (CLG097, TRK163, TRK179, SLR168)
-          const fixedServices = services.filter((service: any) =>
-            ['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)
-          )
+          // Filtrar solo los servicios locales fijos (por code legacy o sapCode)
+          const fixedServices = services.filter((service: any) => isFixedLocalService(service))
           
           setLocalServices(fixedServices)
           console.log('🔍 PTYSSUpload - Local services loaded:', fixedServices)
@@ -1286,7 +1285,7 @@ export function PTYSSUpload() {
     if (record.localRoutePrice) total += record.localRoutePrice
 
     const getServicePrice = (serviceCode: string): number => {
-      const localService = localServices.find((service: any) => service.code === serviceCode)
+      const localService = findFixedServiceByLegacyKey(localServices, serviceCode)
       return localService?.price ?? 0
     }
 

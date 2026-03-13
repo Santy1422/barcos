@@ -8,6 +8,7 @@ interface UpdateLocalServiceRequest extends Request {
     price?: number
     module?: string
     isActive?: boolean
+    sapCode?: string
   }
   params: {
     id: string
@@ -20,7 +21,7 @@ interface UpdateLocalServiceRequest extends Request {
 const updateLocalService = async (req: UpdateLocalServiceRequest, res: Response) => {
   try {
     const { id } = req.params
-    const { name, description, price, module, isActive } = req.body
+    const { name, description, price, module, isActive, sapCode } = req.body
     const userId = req.user?._id
 
     if (!userId) {
@@ -73,6 +74,7 @@ const updateLocalService = async (req: UpdateLocalServiceRequest, res: Response)
         ...(price !== undefined && price !== null && { price: Number(price) }),
         ...(module && { module }),
         ...(typeof isActive === 'boolean' && { isActive }),
+        ...(sapCode !== undefined && { sapCode: typeof sapCode === 'string' ? sapCode.trim() : sapCode }),
         updatedBy: userId,
         updatedAt: new Date()
       },

@@ -6,6 +6,12 @@ export interface ILocalService extends Document {
   price: number
   module: "ptyss" | "trucking" | "agency" | "shipchandler" | "all"
   isActive: boolean
+  /** Código legacy en BD (ej: CLG097). No cambiar en producción. */
+  code?: string
+  /** Código SAP actual para facturación/XML. Si existe, se usa en lugar de code para salida SAP. */
+  sapCode?: string
+  /** Tipo de servicio: fixed, daily, etc. */
+  type?: string
   createdBy?: string
   createdAt: Date
   updatedAt: Date
@@ -41,6 +47,21 @@ const localServiceSchema = new Schema<ILocalService>({
   isActive: {
     type: Boolean,
     default: true
+  },
+  code: {
+    type: String,
+    required: false,
+    trim: true
+  },
+  sapCode: {
+    type: String,
+    required: false,
+    trim: true
+  },
+  type: {
+    type: String,
+    required: false,
+    trim: true
   },
   createdBy: {
     type: String,

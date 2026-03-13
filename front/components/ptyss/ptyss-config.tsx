@@ -77,6 +77,12 @@ import { saveAs } from 'file-saver'
 import { PTYSSPriceImporter } from "./ptyss-price-importer"
 import { Pagination } from "@/components/ui/pagination"
 import { createApiUrl } from "@/lib/api-config"
+import {
+  isFixedLocalService,
+  getLegacyKeyForService,
+  findFixedServiceByLegacyKey,
+  getSapCodeForService,
+} from "@/lib/constants/fixedLocalServices"
 
 export function PTYSSConfig() {
   const dispatch = useAppDispatch()
@@ -225,10 +231,8 @@ export function PTYSSConfig() {
           const services = data.data?.services || []
           console.log('🔍 All services:', services)
           
-          // Filtrar solo los servicios locales fijos (CLG097, TRK163, TRK179, SLR168)
-          const fixedServices = services.filter((service: any) =>
-            ['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)
-          )
+          // Filtrar solo los servicios locales fijos (por code legacy o sapCode)
+          const fixedServices = services.filter((service: any) => isFixedLocalService(service))
           console.log('🔍 Fixed services found:', fixedServices)
           
           setLocalServices(fixedServices)
@@ -253,10 +257,11 @@ export function PTYSSConfig() {
     if (localServices.length > 0) {
       const newPrices = { ...localServicePrices }
       
-      // Buscar y actualizar precios de servicios locales fijos (CLG097, TRK163, TRK179, SLR168)
+      // Buscar y actualizar precios de servicios locales fijos (por code o sapCode)
       localServices.forEach((service: any) => {
-        if (['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)) {
-          newPrices[service.code as keyof typeof localServicePrices] = service.price || 0
+        const legacyKey = getLegacyKeyForService(service)
+        if (legacyKey && legacyKey in newPrices) {
+          newPrices[legacyKey as keyof typeof localServicePrices] = service.price || 0
         }
       })
       
@@ -609,21 +614,12 @@ export function PTYSSConfig() {
     }
 
     try {
-      // Buscar el servicio en la base de datos por código
-      let serviceToUpdate = localServices.find((service: any) => service.code === serviceCode)
+      // Buscar el servicio fijo por clave legacy (code o sapCode)
+      let serviceToUpdate = findFixedServiceByLegacyKey(localServices, serviceCode)
       
-      console.log('🔍 Buscando servicio por código:', serviceCode)
-      console.log('🔍 Servicios locales disponibles:', localServices.map((s: any) => ({ code: s.code, name: s.name, price: s.price })))
-      console.log('🔍 Servicio encontrado en localServices:', serviceToUpdate)
-      
-      // Si no se encuentra en localServices, buscar en additionalServices como fallback
       if (!serviceToUpdate) {
         serviceToUpdate = additionalServices.find((service: AdditionalService) => service.name === serviceCode)
-        console.log('🔍 Servicios adicionales disponibles:', additionalServices.map((s: AdditionalService) => ({ name: s.name, price: s.price })))
-        console.log('🔍 Servicio encontrado en additionalServices:', serviceToUpdate)
       }
-      
-      // Si aún no se encuentra, buscar por cualquier campo que contenga el código
       if (!serviceToUpdate) {
         serviceToUpdate = localServices.find((service: any) => 
           service.code === serviceCode || 
@@ -631,16 +627,13 @@ export function PTYSSConfig() {
           service.description?.includes(serviceCode) ||
           service._id === serviceCode
         )
-        console.log('🔍 Búsqueda ampliada en localServices:', serviceToUpdate)
       }
-      
       if (!serviceToUpdate) {
         serviceToUpdate = additionalServices.find((service: AdditionalService) => 
           service.name === serviceCode || 
           service.description?.includes(serviceCode) ||
           service._id === serviceCode
         )
-        console.log('🔍 Búsqueda ampliada en additionalServices:', serviceToUpdate)
       }
       
       if (serviceToUpdate) {
@@ -665,12 +658,12 @@ export function PTYSSConfig() {
         
         toast({
           title: "Precio actualizado",
-          description: `El precio del servicio ${serviceCode} ha sido actualizado exitosamente`,
+          description: `El precio del servicio ${getSapCodeForService(serviceCode)} ha sido actualizado exitosamente`,
         })
       } else {
         toast({
           title: "Error",
-          description: `No se encontró el servicio ${serviceCode} en la base de datos. Verifica que el servicio esté configurado correctamente.`,
+          description: `No se encontró el servicio ${getSapCodeForService(serviceCode)} en la base de datos. Verifica que el servicio esté configurado correctamente.`,
           variant: "destructive"
         })
       }
@@ -692,11 +685,11 @@ export function PTYSSConfig() {
   // Exportar Servicios Locales Fijos a Excel
   const exportLocalFixedServicesToExcel = () => {
     const exportData = [
-      { 'Código SAP': 'CLG097', Nombre: 'Customs/TI', Descripción: 'Customs/TI', Precio: localServicePrices.CLG097, Tipo: 'Fijo', Estado: 'Activo' },
-      { 'Código SAP': 'TRK163', Nombre: 'Demurrage/Retención', Descripción: 'Demurrage/Retención (se cobra después del 3er día)', Precio: localServicePrices.TRK163, Tipo: 'Por día (después del 3er día)', Estado: 'Activo' },
-      { 'Código SAP': 'TRK179', Nombre: 'Storage/Estadía', Descripción: 'Storage/Estadía', Precio: localServicePrices.TRK179, Tipo: 'Fijo', Estado: 'Activo' },
-      { 'Código SAP': 'SLR168', Nombre: 'Genset Rental', Descripción: 'Genset Rental', Precio: localServicePrices.SLR168, Tipo: 'Por día', Estado: 'Activo' },
-      { 'Código SAP': 'TRK196', Nombre: 'Pesaje', Descripción: 'Se ingresa manualmente al crear el registro', Precio: 'Manual al crear registro', Tipo: 'Manual', Estado: 'Activo' },
+      { 'Código SAP': getSapCodeForService('CLG097'), Nombre: 'Customs/TI', Descripción: 'Customs/TI', Precio: localServicePrices.CLG097, Tipo: 'Fijo', Estado: 'Activo' },
+      { 'Código SAP': getSapCodeForService('TRK163'), Nombre: 'Demurrage/Retención', Descripción: 'Demurrage/Retención (se cobra después del 3er día)', Precio: localServicePrices.TRK163, Tipo: 'Por día (después del 3er día)', Estado: 'Activo' },
+      { 'Código SAP': getSapCodeForService('TRK179'), Nombre: 'Storage/Estadía', Descripción: 'Storage/Estadía', Precio: localServicePrices.TRK179, Tipo: 'Fijo', Estado: 'Activo' },
+      { 'Código SAP': getSapCodeForService('SLR168'), Nombre: 'Genset Rental', Descripción: 'Genset Rental', Precio: localServicePrices.SLR168, Tipo: 'Por día', Estado: 'Activo' },
+      { 'Código SAP': getSapCodeForService('TRK196'), Nombre: 'Pesaje', Descripción: 'Se ingresa manualmente al crear el registro', Precio: 'Manual al crear registro', Tipo: 'Manual', Estado: 'Activo' },
     ]
     const ws = XLSX.utils.json_to_sheet(exportData)
     const wb = XLSX.utils.book_new()
@@ -1725,7 +1718,7 @@ export function PTYSSConfig() {
                   </TableHeader>
                   <TableBody>
                     <TableRow>
-                      <TableCell><Badge variant="outline">CLG097</Badge></TableCell>
+                      <TableCell><Badge variant="outline">{getSapCodeForService('CLG097')}</Badge></TableCell>
                       <TableCell>Customs/TI</TableCell>
                       <TableCell>Customs/TI</TableCell>
                       <TableCell>
@@ -1776,7 +1769,7 @@ export function PTYSSConfig() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell><Badge variant="outline">TRK163</Badge></TableCell>
+                      <TableCell><Badge variant="outline">{getSapCodeForService('TRK163')}</Badge></TableCell>
                       <TableCell>Demurrage/Retención</TableCell>
                       <TableCell>Demurrage/Retención (se cobra después del 3er día)</TableCell>
                       <TableCell>
@@ -1827,7 +1820,7 @@ export function PTYSSConfig() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell><Badge variant="outline">TRK179</Badge></TableCell>
+                      <TableCell><Badge variant="outline">{getSapCodeForService('TRK179')}</Badge></TableCell>
                       <TableCell>Storage/Estadía</TableCell>
                       <TableCell>Storage/Estadía</TableCell>
                       <TableCell>
@@ -1878,7 +1871,7 @@ export function PTYSSConfig() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell><Badge variant="outline">SLR168</Badge></TableCell>
+                      <TableCell><Badge variant="outline">{getSapCodeForService('SLR168')}</Badge></TableCell>
                       <TableCell>Genset Rental</TableCell>
                       <TableCell>Genset Rental</TableCell>
                       <TableCell>
@@ -1929,7 +1922,7 @@ export function PTYSSConfig() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell><Badge variant="outline">TRK196</Badge></TableCell>
+                      <TableCell><Badge variant="outline">{getSapCodeForService('TRK196')}</Badge></TableCell>
                       <TableCell>Pesaje</TableCell>
                       <TableCell>Se ingresa manualmente al crear el registro</TableCell>
                       <TableCell>

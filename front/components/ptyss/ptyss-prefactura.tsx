@@ -39,6 +39,7 @@ import { selectServicesByModule, fetchServices, selectServicesLoading } from "@/
 import { selectAllLocalServices, selectLocalServicesLoading, fetchLocalServices } from "@/lib/features/localServices/localServicesSlice"
 import { selectCurrentUser } from "@/lib/features/auth/authSlice"
 import { createApiUrl } from "@/lib/api-config"
+import { isFixedLocalService, findFixedServiceByLegacyKey, isFixedLocalServiceId, isFixedLocalServiceWithConfigurablePrice } from "@/lib/constants/fixedLocalServices"
 
 export function PTYSSPrefactura() {
   const dispatch = useAppDispatch()
@@ -180,10 +181,8 @@ export function PTYSSPrefactura() {
           const data = await response.json()
           const services = data.data?.services || []
           
-          // Filtrar solo los servicios locales fijos (CLG097, TRK163, TRK179, SLR168)
-          const fixedServices = services.filter((service: any) =>
-            ['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)
-          )
+          // Filtrar solo los servicios locales fijos (por code legacy o sapCode)
+          const fixedServices = services.filter((service: any) => isFixedLocalService(service))
           
           setFixedLocalServices(fixedServices)
           console.log('🔍 PTYSSPrefactura - Fixed local services loaded:', fixedServices.map((s: any) => ({ code: s.code, name: s.name, price: s.price })))
@@ -205,10 +204,10 @@ export function PTYSSPrefactura() {
     dispatch(fetchNavieras('active'))
   }, [dispatch])
 
-  // Función helper para obtener el precio de un servicio local fijo
+  // Función helper para obtener el precio de un servicio local fijo (por code o sapCode)
   const getFixedLocalServicePrice = (serviceCode: string): number => {
-    const service = fixedLocalServices.find((s: any) => s.code === serviceCode)
-    return service?.price || 10 // Fallback a $10 si no se encuentra
+    const service = findFixedServiceByLegacyKey(fixedLocalServices, serviceCode)
+    return service?.price ?? 10 // Fallback a $10 si no se encuentra
   }
 
   // Función helper para obtener el ID correcto del registro
@@ -1560,7 +1559,7 @@ export function PTYSSPrefactura() {
       // Para servicios locales fijos, acumular por tipo
       if (service.isLocalService) {
         // FDA codes y otros servicios locales son montos manuales
-        if (service.serviceId === 'CLG097' || service.serviceId === 'TRK163' || service.serviceId === 'TRK179' || service.serviceId === 'SLR168') {
+        if (isFixedLocalServiceWithConfigurablePrice(service.serviceId)) {
           // Servicios locales fijos (TI, Estadia, Retención, Genset) son montos manuales directos
           groupedServices[serviceKey].count += 1
           groupedServices[serviceKey].total += service.amount

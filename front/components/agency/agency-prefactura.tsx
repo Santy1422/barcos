@@ -38,6 +38,7 @@ import { selectActiveNavieras, fetchNavieras } from "@/lib/features/naviera/navi
 import { selectServicesByModule, fetchServices, selectServicesLoading } from "@/lib/features/services/servicesSlice"
 import { selectAllLocalServices, selectLocalServicesLoading, fetchLocalServices } from "@/lib/features/localServices/localServicesSlice"
 import { createApiUrl } from "@/lib/api-config"
+import { isFixedLocalService, findFixedServiceByLegacyKey } from "@/lib/constants/fixedLocalServices"
 import { DiscountInput } from "@/components/ui/discount-input"
 
 export function AgencyPrefactura() {
@@ -164,10 +165,8 @@ export function AgencyPrefactura() {
           const data = await response.json()
           const services = data.data?.services || []
           
-          // Filtrar solo los servicios locales fijos
-          const fixedServices = services.filter((service: any) => 
-            ['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)
-          )
+          // Filtrar solo los servicios locales fijos (por code legacy o sapCode)
+          const fixedServices = services.filter((service: any) => isFixedLocalService(service))
           
           setFixedLocalServices(fixedServices)
           console.log('🔍 AgencyPrefactura - Fixed local services loaded:', fixedServices.map((s: any) => ({ code: s.code, name: s.name, price: s.price })))
@@ -189,10 +188,10 @@ export function AgencyPrefactura() {
     dispatch(fetchNavieras('active'))
   }, [dispatch])
 
-  // Función helper para obtener el precio de un servicio local fijo
+  // Función helper para obtener el precio de un servicio local fijo (por code o sapCode)
   const getFixedLocalServicePrice = (serviceCode: string): number => {
-    const service = fixedLocalServices.find((s: any) => s.code === serviceCode)
-    return service?.price || 10 // Fallback a $10 si no se encuentra
+    const service = findFixedServiceByLegacyKey(fixedLocalServices, serviceCode)
+    return service?.price ?? 10 // Fallback a $10 si no se encuentra
   }
 
   // Función helper para obtener el ID correcto del registro

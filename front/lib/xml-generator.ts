@@ -1,6 +1,7 @@
 import type { InvoiceForXmlPayload, InvoiceLineItemForXml } from "@/lib/features/invoice/invoiceSlice"
 import { js2xml } from "xml-js"
 import { TRUCKING_DEFAULTS } from "./constants/trucking-options"
+import { getSapCodeForService, getLegacyCodeFromServiceId, FIXED_LOCAL_ALL_CODES } from "./constants/fixedLocalServices"
 
 // Tipo para el mapa de container types (code -> sapCode)
 export interface ContainerTypeMapping {
@@ -1152,41 +1153,41 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
             
             // Agregar servicios locales fijos como otheritem adicionales (solo para trasiegos/mixto)
             const localFixedServiceItems: any[] = []
-            const localFixedServiceCodes = ['CLG097', 'CLG096', 'TRK163', 'TRK179', 'SLR168', 'TRK196', 'PESAJE']
+            const localFixedServiceCodes = [...FIXED_LOCAL_ALL_CODES, 'CLG096', 'PESAJE']
 
             if (invoice.additionalServices && invoice.additionalServices.length > 0) {
               console.log("🔍 PTYSS XML - Processing additional services:", invoice.additionalServices)
 
               invoice.additionalServices.forEach((service) => {
-                // Solo procesar servicios locales fijos
+                // Solo procesar servicios locales fijos (acepta code legacy o sapCode)
                 if (localFixedServiceCodes.includes(service.serviceId)) {
-                  // Mapear PESAJE a TRK196
-                  const serviceCode = service.serviceId === 'PESAJE' ? 'TRK196' : service.serviceId
+                  const serviceCodeLegacy = getLegacyCodeFromServiceId(service.serviceId === 'PESAJE' ? 'TRK196' : service.serviceId)
+                  const serviceCodeSap = getSapCodeForService(serviceCodeLegacy)
 
-                  console.log(`🔍 PTYSS XML - Adding local fixed service: ${serviceCode} - Amount: ${service.amount}`)
+                  console.log(`🔍 PTYSS XML - Adding local fixed service: ${serviceCodeSap} - Amount: ${service.amount}`)
 
-                  // Determinar valores según el código de servicio
+                  // Determinar valores según el código de servicio (por legacy para pillar/profitCenter)
                   let pillarValue = "TRSP" // Valor por defecto
                   let profitCenter = "PAPANC110" // Valor por defecto
                   let clientType = "MEDLOG" // Valor por defecto
 
-                  // CLG097 - Spare Parts: PAPANC321, CLG, LOGS, PA, MSCGVA
-                  if (serviceCode === 'CLG097') {
+                  // Customs/TI (CLG097 / CHB123)
+                  if (serviceCodeLegacy === 'CLG097') {
                     pillarValue = "LOGS"
                     profitCenter = "PAPANC321"
                     clientType = "MSCGVA"
                   }
                   // CLG096 - Ship Chandler: PAPANC441, CLG, LOGS, PA, MSCGVA
-                  else if (serviceCode === 'CLG096') {
+                  else if (serviceCodeLegacy === 'CLG096') {
                     pillarValue = "LOGS"
                     profitCenter = "PAPANC441"
                     clientType = "MSCGVA"
                   }
-                  else if (serviceCode === 'SLR168') {
+                  else if (serviceCodeLegacy === 'SLR168') {
                     pillarValue = "NOPS"
                   }
 
-                  // Cada servicio local usa su propio service code (CLG097, TRK163, TRK179, SLR168, TRK196, etc.)
+                  // Enviar a SAP el código SAP actual (sapCode)
                   localFixedServiceItems.push({
                     "IncomeRebateCode": "I",
                     "AmntTransacCur": (-service.amount).toFixed(3),
@@ -1194,7 +1195,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                     "Qty": "1.00",
                     "ProfitCenter": "PAPANB110",
                     "ReferencePeriod": formatReferencePeriod(invoice.date),
-                    "Service": serviceCode,
+                    "Service": serviceCodeSap,
                     "Activity": "TRK",
                     "Pillar": "TRSP",
                     "BUCountry": "PA",

@@ -53,6 +53,7 @@ import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { Loader2 } from "lucide-react"
 import { createApiUrl } from "@/lib/api-config"
+import { isFixedLocalService, getLegacyKeyForService, findFixedServiceByLegacyKey } from "@/lib/constants/fixedLocalServices"
 
 export function AgencyConfig() {
   const dispatch = useAppDispatch()
@@ -183,10 +184,8 @@ export function AgencyConfig() {
           const services = data.data?.services || []
           console.log('🔍 All services:', services)
           
-          // Filtrar solo los servicios locales fijos
-          const fixedServices = services.filter((service: any) => 
-            ['CLG097', 'TRK163', 'TRK179', 'SLR168'].includes(service.code)
-          )
+          // Filtrar solo los servicios locales fijos (por code legacy o sapCode)
+          const fixedServices = services.filter((service: any) => isFixedLocalService(service))
           console.log('🔍 Fixed services found:', fixedServices)
           
           setLocalServices(fixedServices)
@@ -211,10 +210,11 @@ export function AgencyConfig() {
     if (localServices.length > 0) {
       const newPrices = { ...localServicePrices }
       
-      // Buscar y actualizar precios de servicios locales fijos
+      // Buscar y actualizar precios de servicios locales fijos (por code o sapCode)
       localServices.forEach((service: any) => {
-        if (service.code === 'CLG097' || service.code === 'TRK163' || service.code === 'TRK179' || service.code === 'SLR168') {
-          newPrices[service.code as keyof typeof localServicePrices] = service.price || 10
+        const legacyKey = getLegacyKeyForService(service)
+        if (legacyKey && legacyKey in newPrices) {
+          newPrices[legacyKey as keyof typeof localServicePrices] = service.price || 10
         }
       })
       
@@ -742,21 +742,10 @@ export function AgencyConfig() {
     }
 
     try {
-      // Buscar el servicio en la base de datos por código
-      let serviceToUpdate = localServices.find((service: any) => service.code === serviceCode)
-      
-      console.log('🔍 Buscando servicio por código:', serviceCode)
-      console.log('🔍 Servicios locales disponibles:', localServices.map((s: any) => ({ code: s.code, name: s.name, price: s.price })))
-      console.log('🔍 Servicio encontrado en localServices:', serviceToUpdate)
-      
-      // Si no se encuentra en localServices, buscar en additionalServices como fallback
+      let serviceToUpdate = findFixedServiceByLegacyKey(localServices, serviceCode)
       if (!serviceToUpdate) {
         serviceToUpdate = additionalServices.find((service: AdditionalService) => service.name === serviceCode)
-        console.log('🔍 Servicios adicionales disponibles:', additionalServices.map((s: AdditionalService) => ({ name: s.name, price: s.price })))
-        console.log('🔍 Servicio encontrado en additionalServices:', serviceToUpdate)
       }
-      
-      // Si aún no se encuentra, buscar por cualquier campo que contenga el código
       if (!serviceToUpdate) {
         serviceToUpdate = localServices.find((service: any) => 
           service.code === serviceCode || 
@@ -764,16 +753,13 @@ export function AgencyConfig() {
           service.description?.includes(serviceCode) ||
           service._id === serviceCode
         )
-        console.log('🔍 Búsqueda ampliada en localServices:', serviceToUpdate)
       }
-      
       if (!serviceToUpdate) {
         serviceToUpdate = additionalServices.find((service: AdditionalService) => 
           service.name === serviceCode || 
           service.description?.includes(serviceCode) ||
           service._id === serviceCode
         )
-        console.log('🔍 Búsqueda ampliada en additionalServices:', serviceToUpdate)
       }
       
       if (serviceToUpdate) {
