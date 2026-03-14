@@ -1070,7 +1070,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                 "AmntTransacCur": (-invoiceTotal).toFixed(3),
                 "BaseUnitMeasure": "CTR",
                 "Qty": totalLocalRecords.toString(),
-                "ProfitCenter": "PAPANB110",
+                "ProfitCenter": "PAPANC110",
                 "ReferencePeriod": formatReferencePeriod(invoice.date),
                 "Service": "TRK001",
                 "Activity": "TRK",
@@ -1127,14 +1127,14 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
               // Determinar FullEmpty
               const fullEmpty = isTrasiego ? 'FULL' : 'FULL'
 
-              // ACTUALIZADO: Valores fijos para PTG según requerimiento SAP
+              // ACTUALIZADO: Valores fijos para PTYSS según requerimiento SAP
               // Primer OtherItem = ruta: Service TRK002 (trasiego) o TRK001 (local)
               return {
                 "IncomeRebateCode": "I",
                 "AmntTransacCur": (-totalPrice).toFixed(3),
                 "BaseUnitMeasure": "CTR",
                 "Qty": group.count.toString(),
-                "ProfitCenter": "PAPANB110",
+                "ProfitCenter": "PAPANC110",
                 "ReferencePeriod": formatReferencePeriod(invoice.date),
                 "Service": serviceCode,
                 "Activity": "TRK",
@@ -1187,13 +1187,13 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
                     pillarValue = "NOPS"
                   }
 
-                  // Enviar a SAP el código SAP actual (sapCode)
+                  // Enviar a SAP el código SAP actual (sapCode). ProfitCenter por defecto PAPANC110 (CLG097/CLG096 usan el suyo)
                   localFixedServiceItems.push({
                     "IncomeRebateCode": "I",
                     "AmntTransacCur": (-service.amount).toFixed(3),
                     "BaseUnitMeasure": "EA",
                     "Qty": "1.00",
-                    "ProfitCenter": "PAPANB110",
+                    "ProfitCenter": profitCenter,
                     "ReferencePeriod": formatReferencePeriod(invoice.date),
                     "Service": serviceCodeSap,
                     "Activity": "TRK",
