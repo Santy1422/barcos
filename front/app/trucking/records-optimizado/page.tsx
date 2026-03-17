@@ -640,6 +640,7 @@ export default function TruckingRecordsOptimizadoPage() {
       records: recordsForXml,
       otherItems,
       status: 'finalized' as const,
+      ...(invoice.details && { details: invoice.details }),
     }
   }
 

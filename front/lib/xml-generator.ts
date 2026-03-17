@@ -748,187 +748,196 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
           "BaselineDate": formatDateForXML(invoice.date),
           "DueDate": calculateDueDate(invoice.date)
         },
-        // OtherItems Section
+        // OtherItems Section - Trasiego: 3 OtherItem fijos; Gastos de autoridades: lógica agrupada anterior
         "OtherItems": {
-          "OtherItem": [
-            // Primero los registros principales (contenedores) - AGRUPADOS
-            ...(function() {
-              // Agrupar registros por características similares
-              const groupedRecords = new Map<string, {
-                record: InvoiceLineItemForXml,
-                count: number,
-                totalPrice: number
-              }>()
-              
-              invoice.records.forEach((record: InvoiceLineItemForXml) => {
-                // Crear una clave única basada en las características del registro
-                // IMPORTANTE: No incluir description ni containerNumber porque son únicos por contenedor
-                // Solo agrupar por: serviceCode, precio unitario, tipo/tamaño de contenedor, categoría, estado full/empty, tipo de negocio
-                const key = `${record.serviceCode || "TRK002"}-${record.unitPrice}-${record.containerType || "DV"}-${record.containerSize || "40"}-${record.ctrCategory || "D"}-${record.fullEmptyStatus || "FULL"}-${record.businessType || "IMPORT"}`
-                
-                // Para registros AUTH ya agrupados, usar la cantidad que ya viene en el registro
-                const recordQuantity = record.quantity || 1
-                
-                if (groupedRecords.has(key)) {
-                  const existing = groupedRecords.get(key)!
-                  existing.count += recordQuantity
-                  existing.totalPrice += record.totalPrice || 0
-                } else {
-                  groupedRecords.set(key, {
-                    record,
-                    count: recordQuantity,
-                    totalPrice: record.totalPrice || 0
-                  })
-                }
-              })
-              
-              // Convertir grupos a OtherItems con Qty y BaseUnitMeasure
-              return Array.from(groupedRecords.values()).map((group) => {
-                const record = group.record
-                const businessTypeXmlValue = record.businessType === "IMPORT" ? "I" : "E"
-                
-                // Determinar si es un servicio de impuestos AUTH
-                const isAuthTaxService = ['TRK182', 'TRK175', 'TRK009'].includes(record.serviceCode || '')
-                
-                // Calcular valores de contenedor primero
-                // Homologar el containerType al sapCode usando el mapa de container types
-                const originalCtrType = record.containerType || "DV"
-                const ctrType = getContainerTypeSapCode(originalCtrType)
-                const ctrSize = record.containerSize || "40"
-                const ctrISOcode = getCtrISOcode(ctrType, ctrSize)
-                
-                // Determinar valores finales de contenedor
-                let finalCtrISOcode: string
-                let finalCtrType: string | undefined
-                let finalCtrSize: string | undefined
-                let finalCtrCategory: string
-                
-                // Si no hay campos de contenedor especificados, usar valores por defecto para trasiego
-                if (!record.containerType && !record.containerSize && !record.ctrCategory) {
-                  finalCtrISOcode = "42G1" // Valor por defecto para 40' DV
-                  finalCtrType = "DV"
-                  finalCtrSize = "40"
-                  finalCtrCategory = "A" // Cambiado de "D" a "A"
-                } else {
-                  finalCtrISOcode = ctrISOcode
-                  // Solo incluir CtrType, CtrSize si tienen valores no vacíos
-                  // Usar el ctrType ya homologado en lugar del valor original
-                  if (ctrType && ctrType.trim()) {
-                    finalCtrType = ctrType // Usar el sapCode homologado
-                  }
-                  if (record.containerSize && record.containerSize.trim()) {
-                    finalCtrSize = record.containerSize
-                  }
-                  // CtrCategory siempre es "A" para PTG facturas
-                  finalCtrCategory = "A"
-                }
-                
-                // Construir objeto otherItem con todas las propiedades en el orden correcto
-                // Las propiedades de contenedor deben ir en este orden: CtrISOcode, CtrType, CtrSize, CtrCategory
-                const otherItem: any = {
-                  "IncomeRebateCode": TRUCKING_DEFAULTS.incomeRebateCode,
-                  "AmntTransacCur": (-group.totalPrice).toFixed(3),
-                  "BaseUnitMeasure": isAuthTaxService ? "EA" : "CTR", // EA para impuestos AUTH, CTR para contenedores
-                  "Qty": group.count.toString(),
-                  "ProfitCenter": "PAPANB110",
-                  "ReferencePeriod": formatReferencePeriod(invoice.date),
-                  "Service": record.serviceCode || "TRK002",
-                  "Activity": "TRK",
-                  "Pillar": TRUCKING_DEFAULTS.pillar,
-                  "BUCountry": "PA",
-                  "ServiceCountry": "PA",
-                  "ClientType": TRUCKING_DEFAULTS.clientType,
-                  "BusinessType": businessTypeXmlValue,
-                  "FullEmpty": record.fullEmptyStatus || "FULL",
-                  "CtrISOcode": finalCtrISOcode,
-                  ...(finalCtrType ? { "CtrType": finalCtrType } : {}),
-                  ...(finalCtrSize ? { "CtrSize": finalCtrSize } : {}),
-                  "CtrCategory": finalCtrCategory
-                }
-                
-                return otherItem
-              })
-            })(),
-            // Luego los impuestos PTG (otherItems) - AGRUPADOS
-            ...(function() {
-              if (!invoice.otherItems || invoice.otherItems.length === 0) return []
-              
-              // Agrupar impuestos por serviceCode
-              const groupedTaxes = new Map<string, {
-                taxItem: any,
-                count: number,
-                totalPrice: number
-              }>()
-              
-              invoice.otherItems.forEach((taxItem: any) => {
-                const key = `${taxItem.serviceCode || "TRK135"}-${taxItem.description || ""}`
-                
-                if (groupedTaxes.has(key)) {
-                  const existing = groupedTaxes.get(key)!
-                  existing.count += taxItem.quantity || 1
-                  existing.totalPrice += taxItem.totalPrice || 0
-                } else {
-                  groupedTaxes.set(key, {
-                    taxItem,
-                    count: taxItem.quantity || 1,
-                    totalPrice: taxItem.totalPrice || 0
-                  })
-                }
-              })
-              
-              // Convertir grupos a OtherItems con Qty y BaseUnitMeasure
-              return Array.from(groupedTaxes.values()).map((group) => {
-                const taxItem = group.taxItem
-                console.log("Processing grouped tax item:", taxItem)
-                
-                // Calcular valores de contenedor primero si están disponibles
-                let ctrISOcode: string | undefined
-                let finalCtrType: string | undefined
-                let finalCtrSize: string | undefined
+          "OtherItem": (function(): any[] {
+            const invNum = (invoice.invoiceNumber || '').toString().toUpperCase()
+            const isAuthInvoice = invNum.startsWith('AUTH-') || invNum.endsWith(' AUT') || (invoice as any).details?.documentType === 'gastos-autoridades'
 
-                if (taxItem.containerType && taxItem.containerSize) {
-                  // Homologar el containerType al sapCode
-                  const originalCtrType = taxItem.containerType
+            if (isAuthInvoice) {
+              // Gastos de autoridades: agrupar registros y otherItems como antes
+              const recordItems = (function() {
+                const groupedRecords = new Map<string, { record: InvoiceLineItemForXml; count: number; totalPrice: number }>()
+                invoice.records.forEach((record: InvoiceLineItemForXml) => {
+                  const key = `${record.serviceCode || "TRK002"}-${record.unitPrice}-${record.containerType || "DV"}-${record.containerSize || "40"}-${record.ctrCategory || "D"}-${record.fullEmptyStatus || "FULL"}-${record.businessType || "IMPORT"}`
+                  const recordQuantity = record.quantity || 1
+                  if (groupedRecords.has(key)) {
+                    const existing = groupedRecords.get(key)!
+                    existing.count += recordQuantity
+                    existing.totalPrice += record.totalPrice || 0
+                  } else {
+                    groupedRecords.set(key, { record, count: recordQuantity, totalPrice: record.totalPrice || 0 })
+                  }
+                })
+                return Array.from(groupedRecords.values()).map((group) => {
+                  const record = group.record
+                  const businessTypeXmlValue = record.businessType === "IMPORT" ? "I" : "E"
+                  const isAuthTaxService = ['TRK182', 'TRK175', 'TRK009'].includes(record.serviceCode || '')
+                  const originalCtrType = record.containerType || "DV"
                   const ctrType = getContainerTypeSapCode(originalCtrType)
-                  const ctrSize = taxItem.containerSize
-                  ctrISOcode = getCtrISOcode(ctrType, ctrSize)
-                  if (ctrType && ctrType.trim()) {
-                    finalCtrType = ctrType // Usar el sapCode homologado
+                  const ctrSize = record.containerSize || "40"
+                  const ctrISOcode = getCtrISOcode(ctrType, ctrSize)
+                  let finalCtrISOcode: string
+                  let finalCtrType: string | undefined
+                  let finalCtrSize: string | undefined
+                  let finalCtrCategory: string
+                  if (!record.containerType && !record.containerSize && !record.ctrCategory) {
+                    finalCtrISOcode = "42G1"
+                    finalCtrType = "DV"
+                    finalCtrSize = "40"
+                    finalCtrCategory = "A"
+                  } else {
+                    finalCtrISOcode = ctrISOcode
+                    if (ctrType && ctrType.trim()) finalCtrType = ctrType
+                    if (record.containerSize && record.containerSize.trim()) finalCtrSize = record.containerSize
+                    finalCtrCategory = "A"
                   }
-                  if (taxItem.containerSize && taxItem.containerSize.trim()) {
-                    finalCtrSize = taxItem.containerSize
+                  return {
+                    "IncomeRebateCode": TRUCKING_DEFAULTS.incomeRebateCode,
+                    "AmntTransacCur": (-group.totalPrice).toFixed(3),
+                    "BaseUnitMeasure": isAuthTaxService ? "EA" : "CTR",
+                    "Qty": group.count.toString(),
+                    "ProfitCenter": "PAPANB110",
+                    "ReferencePeriod": formatReferencePeriod(invoice.date),
+                    "Service": record.serviceCode || "TRK002",
+                    "Activity": "TRK",
+                    "Pillar": TRUCKING_DEFAULTS.pillar,
+                    "BUCountry": "PA",
+                    "ServiceCountry": "PA",
+                    "ClientType": TRUCKING_DEFAULTS.clientType,
+                    "BusinessType": businessTypeXmlValue,
+                    "FullEmpty": record.fullEmptyStatus || "FULL",
+                    "CtrISOcode": finalCtrISOcode,
+                    ...(finalCtrType ? { "CtrType": finalCtrType } : {}),
+                    ...(finalCtrSize ? { "CtrSize": finalCtrSize } : {}),
+                    "CtrCategory": finalCtrCategory
                   }
-                }
-                
-                // Construir objeto otherItem con todas las propiedades en el orden correcto
-                // Las propiedades de contenedor deben ir en este orden: CtrISOcode, CtrType, CtrSize, CtrCategory
-                // Solo si tienen información de contenedor
-                const otherItem: any = {
-                  "IncomeRebateCode": "I", // Siempre "I" para PTG facturas
-                  "AmntTransacCur": (-group.totalPrice).toFixed(3),
-                  "BaseUnitMeasure": "EA", // Unidad de medida para impuestos y servicios
-                  "Qty": group.count.toString(),
-                  "ProfitCenter": "PAPANB110",
-                  "ReferencePeriod": formatReferencePeriod(invoice.date),
-                  "Service": taxItem.serviceCode || "TRK135",
-                  "Activity": "TRK",
-                  "Pillar": "TRSP",
-                  "BUCountry": "PA",
-                  "ServiceCountry": "PA",
-                  "ClientType": "MEDLOG",
-                  "BusinessType": "E", // Los impuestos siempre son EXPORT
-                  "FullEmpty": taxItem.FullEmpty || "FULL",
-                  ...(ctrISOcode ? { "CtrISOcode": ctrISOcode } : {}),
-                  ...(finalCtrType ? { "CtrType": finalCtrType } : {}),
-                  ...(finalCtrSize ? { "CtrSize": finalCtrSize } : {}),
-                  ...(ctrISOcode ? { "CtrCategory": "A" } : {})
-                }
-                
-                console.log("Generated grouped tax XML item:", otherItem)
-                return otherItem
-              })
-            })()
-          ]
+                })
+              })()
+              const taxItems = (function() {
+                if (!invoice.otherItems || invoice.otherItems.length === 0) return []
+                const groupedTaxes = new Map<string, { taxItem: any; count: number; totalPrice: number }>()
+                invoice.otherItems.forEach((taxItem: any) => {
+                  const key = `${taxItem.serviceCode || "TRK135"}-${taxItem.description || ""}`
+                  if (groupedTaxes.has(key)) {
+                    const existing = groupedTaxes.get(key)!
+                    existing.count += taxItem.quantity || 1
+                    existing.totalPrice += taxItem.totalPrice || 0
+                  } else {
+                    groupedTaxes.set(key, { taxItem, count: taxItem.quantity || 1, totalPrice: taxItem.totalPrice || 0 })
+                  }
+                })
+                return Array.from(groupedTaxes.values()).map((group) => {
+                  const taxItem = group.taxItem
+                  let ctrISOcode: string | undefined
+                  let finalCtrType: string | undefined
+                  let finalCtrSize: string | undefined
+                  if (taxItem.containerType && taxItem.containerSize) {
+                    const ctrType = getContainerTypeSapCode(taxItem.containerType)
+                    ctrISOcode = getCtrISOcode(ctrType, taxItem.containerSize)
+                    if (ctrType?.trim()) finalCtrType = ctrType
+                    if (taxItem.containerSize?.trim()) finalCtrSize = taxItem.containerSize
+                  }
+                  return {
+                    "IncomeRebateCode": "I",
+                    "AmntTransacCur": (-group.totalPrice).toFixed(3),
+                    "BaseUnitMeasure": "EA",
+                    "Qty": group.count.toString(),
+                    "ProfitCenter": "PAPANB110",
+                    "ReferencePeriod": formatReferencePeriod(invoice.date),
+                    "Service": taxItem.serviceCode || "TRK135",
+                    "Activity": "TRK",
+                    "Pillar": "TRSP",
+                    "BUCountry": "PA",
+                    "ServiceCountry": "PA",
+                    "ClientType": "MEDLOG",
+                    "BusinessType": "E",
+                    "FullEmpty": taxItem.FullEmpty || "FULL",
+                    ...(ctrISOcode ? { "CtrISOcode": ctrISOcode } : {}),
+                    ...(finalCtrType ? { "CtrType": finalCtrType } : {}),
+                    ...(finalCtrSize ? { "CtrSize": finalCtrSize } : {}),
+                    ...(ctrISOcode ? { "CtrCategory": "A" } : {})
+                  }
+                })
+              })()
+              return [...recordItems, ...taxItems]
+            }
+
+            // Trasiego: solo 3 OtherItem (TRK002, TRK130 como TRK002/BusinessType I, TRK135) - orden de etiquetas como antes
+            const refPeriod = formatReferencePeriod(invoice.date)
+            let trk002Amt = 0, trk002Qty = 0, trk130Amt = 0, trk130Qty = 0, trk135Amt = 0, trk135Qty = 0
+            invoice.records.forEach((r: InvoiceLineItemForXml) => {
+              if ((r.serviceCode || "TRK002").toUpperCase() === "TRK002") {
+                trk002Qty += r.quantity || 1
+                trk002Amt += r.totalPrice || 0
+              }
+            })
+            ;(invoice.otherItems || []).forEach((item: any) => {
+              const code = (item.serviceCode || "").toUpperCase()
+              const qty = item.quantity || 1
+              const amt = item.totalPrice || 0
+              if (code === "TRK130") { trk130Qty += qty; trk130Amt += amt }
+              else if (code === "TRK135") { trk135Qty += qty; trk135Amt += amt }
+            })
+            return [
+              {
+                "IncomeRebateCode": "I",
+                "AmntTransacCur": (-trk002Amt).toFixed(3),
+                "BaseUnitMeasure": "CTR",
+                "Qty": trk002Qty.toString(),
+                "ProfitCenter": "PAPANB110",
+                "ReferencePeriod": refPeriod,
+                "Service": "TRK002",
+                "Activity": "TRK",
+                "Pillar": "TRSP",
+                "BUCountry": "PA",
+                "ServiceCountry": "PA",
+                "ClientType": "MEDLOG",
+                "BusinessType": "E",
+                "FullEmpty": "FULL",
+                "CtrISOcode": "42H0",
+                "CtrType": "RE",
+                "CtrSize": "40",
+                "CtrCategory": "A"
+              },
+              {
+                "IncomeRebateCode": "I",
+                "AmntTransacCur": (-trk130Amt).toFixed(3),
+                "BaseUnitMeasure": "CTR",
+                "Qty": trk130Qty.toString(),
+                "ProfitCenter": "PAPANB110",
+                "ReferencePeriod": refPeriod,
+                "Service": "TRK002",
+                "Activity": "TRK",
+                "Pillar": "TRSP",
+                "BUCountry": "PA",
+                "ServiceCountry": "PA",
+                "ClientType": "MEDLOG",
+                "BusinessType": "I",
+                "FullEmpty": "FULL",
+                "CtrISOcode": "42H0",
+                "CtrType": "RE",
+                "CtrSize": "40",
+                "CtrCategory": "A"
+              },
+              {
+                "IncomeRebateCode": "I",
+                "AmntTransacCur": (-trk135Amt).toFixed(3),
+                "BaseUnitMeasure": "EA",
+                "Qty": trk135Qty.toString(),
+                "ProfitCenter": "PAPANB110",
+                "ReferencePeriod": refPeriod,
+                "Service": "TRK135",
+                "Activity": "TRK",
+                "Pillar": "TRSP",
+                "BUCountry": "PA",
+                "ServiceCountry": "PA",
+                "ClientType": "MEDLOG",
+                "BusinessType": "A",
+                "FullEmpty": "FULL"
+              }
+            ]
+          })()
         }
       }
     }
