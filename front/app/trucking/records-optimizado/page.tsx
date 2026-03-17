@@ -39,7 +39,7 @@ import {
   selectAutoridadesRecords,
 } from "@/lib/features/records/recordsSlice"
 import { fetchServices, selectAllServices } from "@/lib/features/services/servicesSlice"
-import { selectAllClients } from "@/lib/features/clients/clientsSlice"
+import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSlice"
 import { generateInvoiceXML } from "@/lib/xml-generator"
 
 interface Invoice {
@@ -110,8 +110,9 @@ export default function TruckingRecordsOptimizadoPage() {
   const [facturarInvoice, setFacturarInvoice] = useState<any | null>(null)
   const [isDateModalOpen, setIsDateModalOpen] = useState(false)
 
-  // Cargar datos de Redux necesarios
+  // Cargar datos de Redux necesarios (clientes para PDF emisor y filtros)
   useEffect(() => {
+    dispatch(fetchClients())
     dispatch(fetchAutoridadesRecords())
     dispatch(fetchServices("trucking"))
   }, [dispatch])

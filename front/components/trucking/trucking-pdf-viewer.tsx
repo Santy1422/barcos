@@ -33,19 +33,23 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
   // Determinar si es una factura AUTH
   const isAuthInvoice = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-');
 
-  // Copiar exactamente el regex de normalizeName de trucking-prefactura.tsx
-  const normalizeName = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '').trim();
+  // Misma lógica que trucking-prefactura: buscar por name, companyName y fullName
+  const normalizeName = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '').trim();
   const getClient = (name: string) => {
     const target = normalizeName(name);
     return clients.find((c: any) => {
-      const n = c.type === 'juridico' ? (c.companyName || '') : (c.fullName || '');
-      return normalizeName(n) === target;
+      const clientName = c.name || '';
+      const companyName = c.companyName || '';
+      const fullName = c.fullName || '';
+      return normalizeName(clientName) === target ||
+             normalizeName(companyName) === target ||
+             normalizeName(fullName) === target;
     });
   };
 
   const generateTruckingPrefacturaPDF = (invoiceData: any, selectedRecords: any[], pdfTitle: string, logoBase64?: string) => {
-    // Adaptar la función exacta de trucking-prefactura.tsx
-    const issuer = getClient('PTG')
+    // Emisor: buscar PTG por name/companyName/fullName (con fallbacks por si está guardado con otro nombre)
+    const issuer = getClient('PTG') || getClient('PTY TRADING GROUP') || getClient('PTY TRADING')
     const doc = new jsPDF()
 
     // Logo de la empresa
@@ -678,9 +682,28 @@ export function TruckingPdfViewer({ open, onOpenChange, invoice }: TruckingPdfVi
             const pdfTitle = invoice.status === "facturada" ? "GASTOS AUTORIDADES" : "GASTOS AUTORIDADES";
             pdf = generateAutoridadesPdf(invoice, relatedRecords, pdfTitle, logoBase64);
           } else {
+            // Facturas/prefacturas trasiego: obtener registros desde Redux o desde API si no están (p. ej. records-optimizado no carga todos en Redux)
+            const relatedIdSet = new Set((invoice.relatedRecordIds || []).map((id: any) => String(id)));
             relatedRecords = allRecords.filter((record: any) =>
-              invoice.relatedRecordIds.includes(record._id || record.id)
+              relatedIdSet.has(String(record._id || record.id))
             );
+            if (relatedRecords.length === 0 && (invoice.relatedRecordIds?.length ?? 0) > 0) {
+              const token = localStorage.getItem('token');
+              const response = await fetch(createApiUrl('/api/records/by-ids'), {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ ids: invoice.relatedRecordIds })
+              });
+              const data = await response.json();
+              const fetched = data?.data ?? [];
+              relatedRecords = fetched.filter((r: any) => relatedIdSet.has(String(r._id || r.id)));
+            }
+            if (relatedRecords.length === 0) {
+              throw new Error("No se encontraron registros para generar el PDF");
+            }
             const pdfTitle = invoice.status === "facturada" ? "FACTURA" : "PREFACTURA";
             pdf = generateTruckingPrefacturaPDF(invoice, relatedRecords, pdfTitle, logoBase64);
           }
