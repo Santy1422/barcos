@@ -1,5 +1,14 @@
 "use client"
 
+/**
+ * Página "Prefactura (Rápido)" / prefactura-optimizado.
+ * Se creó para optimizar el rendimiento con paginación en servidor (menos datos por request).
+ * Carecía de funciones que el componente original (Crear Prefactura) sí tiene: vista previa/ver PDF,
+ * modal de detalle de registro completo, filtro por tipo de fecha (Creación/Movimiento),
+ * eliminación masiva y búsqueda en tiempo real. Esas mejoras se incorporaron al flujo principal
+ * en trucking-prefactura.tsx; esta ruta queda oculta del menú pero se mantiene el código por si se necesita referencia.
+ */
+
 import { useEffect, useMemo, useState, useCallback } from "react"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 import {

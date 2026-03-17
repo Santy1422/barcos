@@ -19,10 +19,11 @@ export default async (req, res) => {
     console.log("Página:", page);
     console.log("Límite:", limit);
     
-    // Construir filtro
+    // Construir filtro (excluir soft-deleted)
     const filter: any = {
       sapCode: sapCode,
-      module: module
+      module: module,
+      deletedAt: null
     };
     
     console.log("Filtro aplicado:", filter);

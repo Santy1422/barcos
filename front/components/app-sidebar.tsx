@@ -109,9 +109,10 @@ export function AppSidebar() {
         ...(hasSectionAccess(currentUser, "trucking", "prefactura") ? [
           { title: "Crear Prefactura", href: "/trucking/prefactura", icon: FilePlus2 }
         ] : []),
-        ...(hasSectionAccess(currentUser, "trucking", "prefactura") ? [
-          { title: "Prefactura (Rápido)", href: "/trucking/prefactura-optimizado", icon: Zap }
-        ] : []),
+        // Prefactura (Rápido) oculto: se creó para paginación en servidor pero carecía de funciones del original (ver PDF, detalle registro, filtro fecha, eliminación masiva). Esas mejoras se incorporaron al flujo principal "Crear Prefactura".
+        // ...(hasSectionAccess(currentUser, "trucking", "prefactura") ? [
+        //   { title: "Prefactura (Rápido)", href: "/trucking/prefactura-optimizado", icon: Zap }
+        // ] : []),
         ...(hasSectionAccess(currentUser, "trucking", "gastos-autoridades") ? [
           { title: "Gastos Autoridades", href: "/trucking/gastos-autoridades-optimizado", icon: Briefcase }
         ] : []),

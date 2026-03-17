@@ -13,7 +13,7 @@ const getRecordsByIds = async (req: Request, res: Response) => {
     }
 
     const recordsList = await records
-      .find({ _id: { $in: ids } })
+      .find({ _id: { $in: ids }, deletedAt: null })
       .populate("clientId", "companyName fullName email")
       .populate("excelId", "filename originalName")
       .populate("createdBy", "name lastName email");

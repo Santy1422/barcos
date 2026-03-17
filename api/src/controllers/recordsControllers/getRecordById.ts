@@ -5,7 +5,7 @@ const getRecordById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     
-    const record = await records.findById(id)
+    const record = await records.findOne({ _id: id, deletedAt: null })
       .populate('client', 'name email phone')
       .populate('excelFile', 'filename originalName uploadedAt')
       .populate('createdBy', 'name lastName email')

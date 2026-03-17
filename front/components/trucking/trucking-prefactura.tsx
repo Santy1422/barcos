@@ -1,17 +1,13 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useCallback } from "react"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 import {
-  fetchPendingRecordsByModule,
-  selectPendingRecordsByModuleFromDB,
   type ExcelRecord as IndividualExcelRecord,
   updateMultipleRecordsStatusAsync,
   createInvoiceAsync,
   type PersistedInvoiceRecord,
-  fetchRecordsByModule,
-  selectRecordsByModule,
-    deleteRecordAsync,
+  deleteRecordAsync,
 } from "@/lib/features/records/recordsSlice"
 import { selectAllClients, fetchClients } from "@/lib/features/clients/clientsSlice"
 import { fetchServices, selectAllServices, selectServicesLoading } from "@/lib/features/services/servicesSlice"
@@ -27,9 +23,10 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { Database, Search, X, Edit, Eye as EyeIcon, Trash2 as TrashIcon, Calendar, Eye, Download, FileText, DollarSign, ArrowLeft, Plus, Trash2, Loader2, Filter, Check } from "lucide-react"
+import { Database, Search, X, Edit, Eye as EyeIcon, Trash2 as TrashIcon, Calendar, Eye, Download, FileText, DollarSign, ArrowLeft, Plus, Trash2, Loader2, Filter, Check, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DiscountInput } from "@/components/ui/discount-input"
+import { createApiUrl } from "@/lib/api-config"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 
@@ -115,32 +112,113 @@ const convertExcelDateToReadable = (excelDate: string | number): string => {
   return String(excelDate)
 }
 
+const ITEMS_PER_PAGE = 20
+interface PaginationInfo {
+  current: number
+  pages: number
+  total: number
+}
 
 export function TruckingPrefactura() {
   const dispatch = useAppDispatch()
   const { toast } = useToast()
 
-  // Cargar datos base
-  const pendingTruckingRecords = useAppSelector(state => selectPendingRecordsByModuleFromDB(state as any, "trucking"))
   const clients = useAppSelector(selectAllClients)
   const services = useAppSelector(selectAllServices)
   const servicesLoading = useAppSelector(selectServicesLoading)
   const currentUser = useAppSelector(selectCurrentUser)
-  
-  // Verificar si el usuario es administrador
+
   const userRoles = currentUser?.roles || (currentUser?.role ? [currentUser.role] : [])
   const isAdmin = userRoles.includes('administrador')
 
-  // Logo para PDF
   const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined)
 
+  // Paginación en servidor
+  const [records, setRecords] = useState<any[]>([])
+  const [pagination, setPagination] = useState<PaginationInfo>({ current: 1, pages: 1, total: 0 })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+
+  // Selección: IDs + cache para mantener selección al cambiar de página
+  const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([])
+  const [selectedRecordsCache, setSelectedRecordsCache] = useState<Map<string, any>>(new Map())
+
+  const getClientNameForRecord = useCallback((rec: any) => {
+    const d = rec?.data || {}
+    const byId = d.clientId || rec?.clientId
+    if (byId) {
+      const c = clients.find((x: any) => (x._id || x.id) === byId)
+      if (c) return c.type === 'natural' ? c.fullName : c.companyName
+    }
+    const bySap = d.clientSapCode || rec?.clientSapCode
+    if (bySap) {
+      const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
+      if (c) return c.type === 'natural' ? c.fullName : c.companyName
+    }
+    return 'PTY SHIP SUPPLIERS, S.A.'
+  }, [clients])
+
+  const fetchRecords = useCallback(async (page: number, filters?: {
+    status?: string
+    search?: string
+    clientId?: string
+    startDate?: string
+    endDate?: string
+    dateField?: 'createdAt' | 'moveDate'
+  }) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) throw new Error('No autenticado')
+      let url = createApiUrl(`/api/records/module/trucking?page=${page}&limit=${ITEMS_PER_PAGE}`)
+      if (filters?.status && filters.status !== 'all') url += `&status=${encodeURIComponent(filters.status)}`
+      if (filters?.search?.trim()) url += `&search=${encodeURIComponent(filters.search.trim())}`
+      if (filters?.clientId) url += `&clientId=${encodeURIComponent(filters.clientId)}`
+      // Para createdAt enviar inicio/fin del día en hora local (ISO) para evitar desfase por timezone
+      if (filters?.startDate) {
+        const startVal = filters.dateField === 'createdAt'
+          ? new Date(filters.startDate + 'T00:00:00.000').toISOString()
+          : filters.startDate
+        url += `&startDate=${encodeURIComponent(startVal)}`
+      }
+      if (filters?.endDate) {
+        const endVal = filters.dateField === 'createdAt'
+          ? new Date(filters.endDate + 'T23:59:59.999').toISOString()
+          : filters.endDate
+        url += `&endDate=${encodeURIComponent(endVal)}`
+      }
+      if (filters?.dateField) url += `&dateField=${encodeURIComponent(filters.dateField)}`
+
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+      })
+      if (!response.ok) throw new Error('Error al cargar registros')
+      const data = await response.json()
+      let recordsData: any[] = []
+      let paginationData: PaginationInfo = { current: page, pages: 1, total: 0 }
+      if (data.payload) {
+        recordsData = data.payload.data || data.payload.records || []
+        paginationData = data.payload.pagination || paginationData
+      } else {
+        recordsData = data.data || data.records || []
+        paginationData = data.pagination || paginationData
+      }
+      const isTrasiego = (r: any) => !!(r?.data?.leg || r?.data?.matchedPrice || r?.data?.line)
+      setRecords(recordsData.filter(isTrasiego))
+      setPagination(paginationData)
+    } catch (err) {
+      console.error('Error fetching records:', err)
+      setError(err instanceof Error ? err.message : 'Error desconocido')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
-    dispatch(fetchPendingRecordsByModule("trucking"))
     dispatch(fetchClients())
     dispatch(fetchServices("trucking"))
-    dispatch(fetchRecordsByModule("trucking"))
-
-    // Cargar logo PTG
     fetch('/logos/logo_PTG.png')
       .then(res => res.blob())
       .then(blob => {
@@ -151,17 +229,24 @@ export function TruckingPrefactura() {
       .catch(() => console.warn("No se pudo cargar el logo PTG"))
   }, [dispatch])
 
-  // Selección de registros
-  const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([])
-  const toggleRecord = (recordId: string, checked: boolean) =>
-    setSelectedRecordIds(prev => checked ? [...prev, recordId] : prev.filter(id => id !== recordId))
+  const toggleRecord = (recordId: string, checked: boolean, record?: any) => {
+    if (checked) {
+      setSelectedRecordIds(prev => [...prev, recordId])
+      if (record) setSelectedRecordsCache(prev => new Map(prev).set(recordId, record))
+    } else {
+      setSelectedRecordIds(prev => prev.filter(id => id !== recordId))
+    }
+  }
   const isSelected = (recordId: string) => selectedRecordIds.includes(recordId)
 
   // Paso actual (similar a PTYSS)
   type Step = 'select' | 'services'
   const [step, setStep] = useState<Step>('select')
   const [search, setSearch] = useState<string>("")
-  const clearSelection = () => setSelectedRecordIds([])
+  const clearSelection = () => {
+    setSelectedRecordIds([])
+    setSelectedRecordsCache(new Map())
+  }
 
   // Filtros estilo PTYSS
   const [statusFilter, setStatusFilter] = useState<'all'|'pendiente'|'completado'>('all')
@@ -177,9 +262,33 @@ export function TruckingPrefactura() {
   const [selectedRecordForView, setSelectedRecordForView] = useState<IndividualExcelRecord | null>(null)
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false)
   const [isDeletingBulk, setIsDeletingBulk] = useState(false)
-  
+
   // Estado para descuentos - NUEVO (agregado 2026-01-08)
   const [discountAmount, setDiscountAmount] = useState(0)
+
+  const clientIdFromFilter = useMemo(() => {
+    if (clientFilter === 'all') return undefined
+    const c = clients.find((x: any) => {
+      const name = x.type === 'natural' ? x.fullName : x.companyName
+      return name === clientFilter
+    })
+    return c?._id || c?.id
+  }, [clientFilter, clients])
+
+  useEffect(() => {
+    fetchRecords(currentPage, {
+      status: statusFilter,
+      search,
+      clientId: clientIdFromFilter,
+      startDate: isUsingPeriodFilter ? startDate : undefined,
+      endDate: isUsingPeriodFilter ? endDate : undefined,
+      dateField: dateFilter
+    })
+  }, [currentPage, statusFilter, search, isUsingPeriodFilter, startDate, endDate, dateFilter, clientIdFromFilter, fetchRecords])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [statusFilter, clientFilter, isUsingPeriodFilter, startDate, endDate, dateFilter])
 
   const getTodayDates = () => {
     const today = new Date()
@@ -246,165 +355,16 @@ export function TruckingPrefactura() {
     { prefacturaNumber: `TRK-PRE-${Date.now().toString().slice(-5)}`, notes: "" }
   )
 
-  // Filtrar SOLO trasiego, tomando todos los registros del módulo que no estén prefacturados/facturados
-  const allTruckingRecords = useAppSelector(state => selectRecordsByModule(state as any, 'trucking')) as any[]
-  const trasiegoRecords = useMemo(() => {
-    const isTrasiego = (rec: any) => !!(rec?.data?.leg || rec?.data?.matchedPrice || rec?.data?.line)
-    const isNotClosed = (rec: any) => !['prefacturado','facturado'].includes((rec?.status || '').toLowerCase())
-    const filtered = (allTruckingRecords as any[]).filter(isTrasiego).filter(isNotClosed)
-    
-    // Debug: verificar campo fe en registros filtrados
-    if (filtered.length > 0) {
-      console.log("=== DEBUG PREFACTURA: Registros trasiego filtrados ===")
-      console.log("Total registros trasiego:", filtered.length)
-      const withFe = filtered.filter(r => r?.data?.fe)
-      console.log("Registros con campo fe:", withFe.length)
-      if (withFe.length > 0) {
-        console.log("Ejemplo con fe:", {
-          id: withFe[0]._id,
-          fe: withFe[0].data.fe,
-          container: withFe[0].data.container,
-          data: withFe[0].data
-        })
-      }
-      const withoutFe = filtered.filter(r => !r?.data?.fe)
-      if (withoutFe.length > 0) {
-        console.log("Ejemplo sin fe:", {
-          id: withoutFe[0]._id,
-          container: withoutFe[0].data?.container,
-          keys: Object.keys(withoutFe[0].data || {}),
-          data: withoutFe[0].data
-        })
-      }
-    }
-    
-    return filtered
-  }, [allTruckingRecords])
+  // Registros de la página actual (ya filtrados por trasiego en fetchRecords)
+  const trasiegoRecords = records
+  const visibleRecords = trasiegoRecords
 
-  // Aplicar TODOS los filtros (búsqueda, estado, cliente y fecha) en una sola función
-  const visibleRecords = useMemo(() => {
-    let list: any[] = [...trasiegoRecords]
-    
-    // Filtro de búsqueda
-    if (search.trim()) {
-      const hay = (v?: string) => (v || "").toString().toLowerCase().includes(search.toLowerCase())
-      list = list.filter((rec: any) => {
-        const clientName = (() => {
-          const d = rec?.data || {}
-          const byId = d.clientId || rec?.clientId
-          if (byId) {
-            const c = clients.find((x: any) => (x._id || x.id) === byId)
-            if (c) return c.type === 'natural' ? c.fullName : c.companyName
-          }
-          const bySap = d.clientSapCode || rec?.clientSapCode
-          if (bySap) {
-            const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
-            if (c) return c.type === 'natural' ? c.fullName : c.companyName
-          }
-          return 'PTY SHIP SUPPLIERS, S.A.'
-        })()
-        return hay(rec?.data?.container) || hay(clientName) || hay(rec?.data?.containerConsecutive) || hay(rec?.data?.order)
-      })
-    }
-    
-    // Filtro de estado
-    if (statusFilter !== 'all') {
-      list = list.filter(r => (r.status || '').toLowerCase() === statusFilter)
-    }
-    
-    // Filtro de cliente
-    if (clientFilter !== 'all') {
-      list = list.filter((rec: any) => {
-        const clientName = (() => {
-          const d = rec?.data || {}
-          const byId = d.clientId || rec?.clientId
-          if (byId) {
-            const c = clients.find((x: any) => (x._id || x.id) === byId)
-            if (c) return c.type === 'natural' ? c.fullName : c.companyName
-          }
-          const bySap = d.clientSapCode || rec?.clientSapCode
-          if (bySap) {
-            const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
-            if (c) return c.type === 'natural' ? c.fullName : c.companyName
-          }
-          return 'PTY SHIP SUPPLIERS, S.A.'
-        })()
-        return clientName === clientFilter
-      })
-    }
-    
-    // Filtro de fecha
-    if (isUsingPeriodFilter && startDate && endDate) {
-      const s = new Date(startDate)
-      const e = new Date(endDate); e.setHours(23,59,59,999)
-      list = list.filter((r: any) => {
-        let val = dateFilter === 'moveDate' ? (r.data?.moveDate || r.createdAt) : r.createdAt
-        
-        // Si es moveDate y viene en formato MM/DD/YYYY, convertirlo a formato parseable
-        if (dateFilter === 'moveDate' && val && typeof val === 'string' && val.includes('/') && !val.includes('T')) {
-          const dateStr = val.split(' ')[0] // Quitar la hora si existe
-          const parts = dateStr.split('/')
-          if (parts.length === 3) {
-            const [month, day, year] = parts
-            // Convertir MM/DD/YYYY a YYYY-MM-DD para que Date lo parsee correctamente
-            val = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
-          }
-        }
-        
-        const d = new Date(val)
-        return d >= s && d <= e
-      })
-    }
-    
-    return list
-  }, [trasiegoRecords, search, statusFilter, clientFilter, isUsingPeriodFilter, startDate, endDate, dateFilter, clients])
-
-  // Obtener clientes únicos de los registros visibles
   const uniqueClients = useMemo(() => {
     const clientNames = new Set<string>()
-    
-    trasiegoRecords.forEach((rec: any) => {
-      const clientName = (() => {
-        const d = rec?.data || {}
-        const byId = d.clientId || rec?.clientId
-        if (byId) {
-          const c = clients.find((x: any) => (x._id || x.id) === byId)
-          if (c) return c.type === 'natural' ? c.fullName : c.companyName
-        }
-        const bySap = d.clientSapCode || rec?.clientSapCode
-        if (bySap) {
-          const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
-          if (c) return c.type === 'natural' ? c.fullName : c.companyName
-        }
-        return 'PTY SHIP SUPPLIERS, S.A.'
-      })()
-      clientNames.add(clientName)
-    })
-    
+    visibleRecords.forEach((rec: any) => clientNames.add(getClientNameForRecord(rec)))
     return Array.from(clientNames).sort()
-  }, [trasiegoRecords, clients])
+  }, [visibleRecords, getClientNameForRecord])
 
-  const groupedByClient = useMemo(() => {
-    const groups = new Map<string, IndividualExcelRecord[]>()
-    visibleRecords.forEach((rec: any) => {
-      const d = rec?.data || {}
-      let name = 'PTY SHIP SUPPLIERS, S.A.'
-      const byId = d.clientId || rec?.clientId
-      if (byId) {
-        const c = clients.find((x: any) => (x._id || x.id) === byId)
-        if (c) name = c.type === 'natural' ? c.fullName : c.companyName
-      } else {
-        const bySap = d.clientSapCode || rec?.clientSapCode
-        if (bySap) {
-          const c = clients.find((x: any) => (x.sapCode || '').toLowerCase() === String(bySap).toLowerCase())
-          if (c) name = c.type === 'natural' ? c.fullName : c.companyName
-        }
-      }
-      if (!groups.has(name)) groups.set(name, [])
-      groups.get(name)!.push(rec)
-    })
-    return groups
-  }, [visibleRecords])
 
   const normalizeName = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '').trim()
   const getClient = (name: string) => {
@@ -422,8 +382,8 @@ export function TruckingPrefactura() {
   }
 
   const selectedRecords = useMemo(
-    () => allTruckingRecords.filter((r: any) => selectedRecordIds.includes(r._id || r.id)),
-    [allTruckingRecords, selectedRecordIds]
+    () => selectedRecordIds.map(id => selectedRecordsCache.get(id)).filter(Boolean),
+    [selectedRecordIds, selectedRecordsCache]
   )
 
   // Generar PDF automáticamente cuando se pase al paso 2
@@ -589,10 +549,11 @@ export function TruckingPrefactura() {
   }
 
   // KPI summary (solo trasiego): mostrar total, trasiego y prefacturados
-  const totalDb = trasiegoRecords.length
-  const trasiegoCount = trasiegoRecords.length
-  const pendingCount = trasiegoRecords.filter((r: any) => !((r?.data?.matchedPrice || 0) > 0 || r?.data?.isMatched === true)).length
-  const prefacturadosCount = allTruckingRecords.filter((r: any) => (r.status || '').toLowerCase() === 'prefacturado').length
+  const totalDb = pagination.total
+  const trasiegoCount = visibleRecords.length
+  const totalPages = pagination.pages
+  const paginatedRecords = visibleRecords
+  const prefacturadosCount = records.filter((r: any) => (r.status || '').toLowerCase() === 'prefacturado').length
 
   const handleNextStep = () => {
     if (step === 'select') {
@@ -623,9 +584,13 @@ export function TruckingPrefactura() {
     try {
       await dispatch(deleteRecordAsync(recordId)).unwrap()
       setSelectedRecordIds(prev => prev.filter(id => id !== recordId))
+      setSelectedRecordsCache(prev => {
+        const next = new Map(prev)
+        next.delete(recordId)
+        return next
+      })
       toast({ title: "Registro eliminado", description: "El registro ha sido eliminado exitosamente" })
-      dispatch(fetchPendingRecordsByModule("trucking"))
-      dispatch(fetchRecordsByModule("trucking"))
+      handleRefresh()
     } catch (error: any) {
       toast({ title: "Error al eliminar registro", description: error?.message || "No se pudo eliminar el registro", variant: "destructive" })
     }
@@ -661,12 +626,9 @@ export function TruckingPrefactura() {
         }
       }
       
-      // Limpiar selección
       setSelectedRecordIds([])
-      
-      // Recargar datos
-      dispatch(fetchPendingRecordsByModule("trucking"))
-      dispatch(fetchRecordsByModule("trucking"))
+      setSelectedRecordsCache(new Map())
+      handleRefresh()
       
       // Mostrar resultado
       if (successCount > 0 && errorCount === 0) {
@@ -1078,13 +1040,21 @@ export function TruckingPrefactura() {
           invoiceId: createdId,
         })).unwrap()
 
-        // refrescar y resetear
-        dispatch(fetchPendingRecordsByModule('trucking'))
         setSelectedRecordIds([])
+        setSelectedRecordsCache(new Map())
         setPrefacturaData({ prefacturaNumber: `TRK-PRE-${Date.now().toString().slice(-5)}`, notes: '' })
         setSelectedAdditionalServices([])
-        setDiscountAmount(0) // Reset descuento
+        setDiscountAmount(0)
         setStep('select')
+        setCurrentPage(1)
+        fetchRecords(1, {
+          status: statusFilter,
+          search,
+          clientId: clientIdFromFilter,
+          startDate: isUsingPeriodFilter ? startDate : undefined,
+          endDate: isUsingPeriodFilter ? endDate : undefined,
+          dateField: dateFilter
+        })
 
         toast({ title: 'Prefactura creada', description: `Prefactura ${newPrefactura.invoiceNumber} creada con ${selectedRecords.length} registros.` })
       } else {
@@ -1097,20 +1067,16 @@ export function TruckingPrefactura() {
     }
   }
 
-  // Estados de paginación para la tabla de registros (Paso 1)
-  const [currentPage, setCurrentPage] = useState(1)
-  const recordsPerPage = 10 // Cambiado de 15 a 10
-  const totalPages = Math.ceil(visibleRecords.length / recordsPerPage)
-  const paginatedRecords = useMemo(() => {
-    const start = (currentPage - 1) * recordsPerPage
-    const end = start + recordsPerPage
-    return visibleRecords.slice(start, end)
-  }, [visibleRecords, currentPage, recordsPerPage])
-
-  // Resetear página cuando cambien los filtros
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [search, statusFilter, clientFilter, isUsingPeriodFilter, startDate, endDate, dateFilter])
+  const handleRefresh = () => {
+    fetchRecords(currentPage, {
+      status: statusFilter,
+      search,
+      clientId: clientIdFromFilter,
+      startDate: isUsingPeriodFilter ? startDate : undefined,
+      endDate: isUsingPeriodFilter ? endDate : undefined,
+      dateField: dateFilter
+    })
+  }
 
   // Cerrar el filtro de cliente cuando se hace clic fuera
   useEffect(() => {
@@ -1144,7 +1110,11 @@ export function TruckingPrefactura() {
                 </div>
               </div>
                   <div className="flex items-center gap-3">
-                <div className="text-sm opacity-90">{selectedRecordIds.length} de {visibleRecords.length} seleccionados</div>
+                <div className="text-sm opacity-90">{selectedRecordIds.length} seleccionados</div>
+                <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading} className="bg-white/10 hover:bg-white/20 border-white/30 text-white">
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  <span className="ml-1">Actualizar</span>
+                </Button>
                 <Button 
                   variant="outline" 
                   disabled={selectedRecordIds.length === 0} 
@@ -1564,16 +1534,30 @@ export function TruckingPrefactura() {
                       <TableRow>
                         <TableHead>
                           <Checkbox
-                            checked={selectedRecordIds.length > 0 && selectedRecordIds.length === visibleRecords.length}
+                            checked={visibleRecords.length > 0 && visibleRecords.every((r: any) => isSelected(r._id || r.id))}
                             onCheckedChange={(c: boolean) => {
-                              if (c) setSelectedRecordIds(visibleRecords.map((r: any) => r._id || r.id))
-                              else setSelectedRecordIds([])
+                              const pageIds = visibleRecords.map((r: any) => r._id || r.id)
+                              if (c) {
+                                setSelectedRecordIds(prev => [...new Set([...prev, ...pageIds])])
+                                setSelectedRecordsCache(prev => {
+                                  const next = new Map(prev)
+                                  visibleRecords.forEach((r: any) => next.set(r._id || r.id, r))
+                                  return next
+                                })
+                              } else {
+                                setSelectedRecordIds(prev => prev.filter(id => !pageIds.includes(id)))
+                                setSelectedRecordsCache(prev => {
+                                  const next = new Map(prev)
+                                  pageIds.forEach(id => next.delete(id))
+                                  return next
+                                })
+                              }
                             }}
                           />
                         </TableHead>
                         <TableHead>Contenedor</TableHead>
                         <TableHead>Fecha Movimiento</TableHead>
-                        <TableHead>Tipo</TableHead>
+                        <TableHead>Fecha creación</TableHead>
                         <TableHead>F/E</TableHead>
                         <TableHead>
                           <div className="flex items-center justify-between relative" data-client-filter>
@@ -1641,7 +1625,18 @@ export function TruckingPrefactura() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {visibleRecords.length === 0 ? (
+                      {loading ? (
+                        <TableRow>
+                          <TableCell colSpan={12} className="text-center py-8">
+                            <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+                            <p className="text-sm text-muted-foreground mt-2">Cargando registros...</p>
+                          </TableCell>
+                        </TableRow>
+                      ) : error ? (
+                        <TableRow>
+                          <TableCell colSpan={12} className="text-center text-destructive py-8">{error}</TableCell>
+                        </TableRow>
+                      ) : visibleRecords.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={12} className="text-center text-muted-foreground py-8">No hay registros que coincidan con los filtros</TableCell>
                         </TableRow>
@@ -1666,12 +1661,14 @@ export function TruckingPrefactura() {
                           return (
                             <TableRow key={(rec as any)._id || rec.id}>
                               <TableCell>
-                                <Checkbox checked={isSelected((rec as any)._id || rec.id)} onCheckedChange={(c: boolean) => toggleRecord((rec as any)._id || rec.id, !!c)} />
+                                <Checkbox checked={isSelected((rec as any)._id || rec.id)} onCheckedChange={(c: boolean) => toggleRecord((rec as any)._id || rec.id, !!c, rec)} />
                               </TableCell>
                               <TableCell className="font-mono text-sm">{(rec as any).data?.container || ''}</TableCell>
                               <TableCell>{convertExcelDateToReadable((rec as any).data?.moveDate || (rec as any).createdAt) || '-'}</TableCell>
-                              <TableCell>
-                                <Badge variant="secondary">Trasiego</Badge>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {(rec as any).createdAt
+                                  ? new Date((rec as any).createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                                  : '—'}
                               </TableCell>
                               <TableCell>{(rec as any).data?.fe || '-'}</TableCell>
                               <TableCell>{clientName}</TableCell>
@@ -1699,9 +1696,11 @@ export function TruckingPrefactura() {
                                   <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-600 hover:text-slate-800 hover:bg-slate-100" onClick={() => handleViewRecord(rec)} title="Ver">
                                     <EyeIcon className="h-4 w-4" />
                                   </Button>
-                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDeleteRecord(rec as any)} title="Eliminar">
-                                    <TrashIcon className="h-4 w-4" />
-                                  </Button>
+                                  {isAdmin && (
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDeleteRecord(rec as any)} title="Eliminar">
+                                      <TrashIcon className="h-4 w-4" />
+                                    </Button>
+                                  )}
                                 </div>
                               </TableCell>
                             </TableRow>

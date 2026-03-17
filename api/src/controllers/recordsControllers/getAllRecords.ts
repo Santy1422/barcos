@@ -13,8 +13,8 @@ const getAllRecords = async (req: Request, res: Response) => {
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
     
-    // Construir filtros
-    const filters: any = {};
+    // Construir filtros (excluir soft-deleted)
+    const filters: any = { deletedAt: null };
     if (module) filters.module = module;
     if (status) filters.status = status;
     if (source) filters.source = source;

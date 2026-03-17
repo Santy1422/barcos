@@ -71,6 +71,13 @@ const excelRecordSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'users',
     required: true
+  },
+
+  // Soft delete: si existe, el registro se considera eliminado y no se lista
+  deletedAt: {
+    type: Date,
+    required: false,
+    default: null
   }
 }, {
   timestamps: true
@@ -87,6 +94,7 @@ excelRecordSchema.index({ createdAt: -1 });
 excelRecordSchema.index({ sapCode: 1 });
 excelRecordSchema.index({ containerConsecutive: 1 });
 excelRecordSchema.index({ orderNumber: 1 });
+excelRecordSchema.index({ deletedAt: 1 });
 // Índice único compuesto para evitar duplicados de containerConsecutive en el mismo módulo
 excelRecordSchema.index({ module: 1, containerConsecutive: 1 }, { unique: true, sparse: true });
 
