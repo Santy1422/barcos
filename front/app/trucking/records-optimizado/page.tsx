@@ -271,11 +271,16 @@ export default function TruckingRecordsOptimizadoPage() {
     }
   }
 
-  // Helper functions
+  // Misma lógica que el modal "Ver registro" para identificar Gastos de Autoridades vs Trasiego
+  const isAuthInvoice = (inv: { invoiceNumber?: string; details?: { documentType?: string } }) =>
+    (inv?.invoiceNumber || '').toString().toUpperCase().startsWith('AUTH-')
+    || (inv?.invoiceNumber || '').toString().toUpperCase().endsWith(' AUT')
+    || inv?.details?.documentType === 'gastos-autoridades'
+
   const getContainersForInvoice = (invoice: Invoice) => {
     if (!invoice.relatedRecordIds || invoice.relatedRecordIds.length === 0) return "N/A"
 
-    const isAuth = (invoice.invoiceNumber || '').toString().toUpperCase().startsWith('AUTH-')
+    const isAuth = isAuthInvoice(invoice)
 
     if (isAuth) {
       if (autoridadesRecords.length === 0) return "N/A"
@@ -317,7 +322,7 @@ export default function TruckingRecordsOptimizadoPage() {
   }
 
   const getClientForInvoice = (invoice: Invoice) => {
-    const isAuth = (invoice.invoiceNumber || '').toString().toUpperCase().startsWith('AUTH-')
+    const isAuth = isAuthInvoice(invoice)
 
     if (!isAuth) {
       return invoice.clientName || 'N/A'
@@ -462,7 +467,7 @@ export default function TruckingRecordsOptimizadoPage() {
       toast({ title: "Factura eliminada", description: `Se eliminó ${invoice.invoiceNumber}` })
       handleRefresh()
 
-      if (invoice.invoiceNumber?.startsWith('AUTH-')) {
+      if (isAuthInvoice(invoice)) {
         dispatch(fetchAutoridadesRecords())
       }
     } catch (e: any) {
@@ -874,7 +879,7 @@ export default function TruckingRecordsOptimizadoPage() {
                     </TableRow>
                   ) : (
                     filteredInvoices.map((inv: Invoice) => {
-                      const isAuth = (inv.invoiceNumber || '').toString().toUpperCase().startsWith('AUTH-')
+                      const isAuth = isAuthInvoice(inv)
                       return (
                         <TableRow key={inv._id || inv.id}>
                           <TableCell className="font-mono text-sm">{inv.invoiceNumber}</TableCell>
@@ -1028,11 +1033,7 @@ export default function TruckingRecordsOptimizadoPage() {
                 }
               })).unwrap()
 
-              const isAuthInvoice = facturarInvoice.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-')
-                || facturarInvoice.invoiceNumber?.toString().toUpperCase().endsWith(' AUT')
-                || facturarInvoice.details?.documentType === 'gastos-autoridades'
-
-              if (isAuthInvoice) {
+              if (isAuthInvoice(facturarInvoice)) {
                 await dispatch(updateMultipleAutoridadesStatusAsync({
                   recordIds: facturarInvoice.relatedRecordIds,
                   status: 'facturado',

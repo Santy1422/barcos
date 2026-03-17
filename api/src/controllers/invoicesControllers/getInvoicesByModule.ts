@@ -27,12 +27,20 @@ export default async (req, res) => {
       query.status = status;
     }
 
-    // Type filter (auth vs normal)
+    // Type filter (auth = gastos autoridades vs normal = trasiego)
+    // Misma lógica que el modal "Ver registro": AUTH- al inicio, " AUT" al final, o details.documentType
     if (type && type !== 'all') {
+      const isAuthCondition = {
+        $or: [
+          { invoiceNumber: { $regex: /^AUTH-/i } },
+          { invoiceNumber: { $regex: / AUT$/i } },
+          { 'details.documentType': 'gastos-autoridades' }
+        ]
+      };
       if (type === 'auth') {
-        query.invoiceNumber = { $regex: /^AUTH-/i };
+        Object.assign(query, isAuthCondition);
       } else if (type === 'normal') {
-        query.invoiceNumber = { $not: { $regex: /^AUTH-/i } };
+        query.$nor = isAuthCondition.$or;
       }
     }
 
@@ -45,16 +53,16 @@ export default async (req, res) => {
       ];
     }
 
-    // Date range filter
+    // Date range filter (por fecha de emisión, igual que lo que ve el usuario en la tabla)
     if (startDate || endDate) {
-      query.createdAt = {};
+      query.issueDate = {};
       if (startDate) {
-        query.createdAt.$gte = new Date(startDate as string);
+        // YYYY-MM-DD → inicio del día en UTC
+        query.issueDate.$gte = new Date((startDate as string) + 'T00:00:00.000Z');
       }
       if (endDate) {
-        const endDateObj = new Date(endDate as string);
-        endDateObj.setHours(23, 59, 59, 999);
-        query.createdAt.$lte = endDateObj;
+        // YYYY-MM-DD → fin del día en UTC
+        query.issueDate.$lte = new Date((endDate as string) + 'T23:59:59.999Z');
       }
     }
 
