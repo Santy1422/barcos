@@ -421,7 +421,7 @@ export function TruckingPrefactura() {
   // Estado para el loading de crear prefactura
   const [isCreatingPrefactura, setIsCreatingPrefactura] = useState(false)
 
-  // Regenerar PDF cuando cambien los servicios adicionales (colocado después de declarar selectedAdditionalServices)
+  // Regenerar PDF cuando cambien los servicios adicionales o el descuento (colocado después de declarar selectedAdditionalServices)
   useEffect(() => {
     if (step === 'services' && selectedRecords.length > 0 && prefacturaData.prefacturaNumber) {
       const timeoutId = setTimeout(() => {
@@ -430,7 +430,7 @@ export function TruckingPrefactura() {
       
       return () => clearTimeout(timeoutId)
     }
-  }, [selectedAdditionalServices, step, selectedRecords, prefacturaData.prefacturaNumber])
+  }, [selectedAdditionalServices, step, selectedRecords, prefacturaData.prefacturaNumber, discountAmount])
 
   const addService = () => {
     if (!additionalServiceId || additionalServiceAmount <= 0) return
@@ -854,12 +854,30 @@ export function TruckingPrefactura() {
     // Asegurar color de texto negro para secciones posteriores a la tabla
     doc.setTextColor(0, 0, 0)
 
-    // TOTAL alineado a la derecha
+    // Descuento (igual que en trucking-pdf-viewer / records-optimizado ver PDF)
+    const discountForPdf = Math.max(0, discountAmount)
+    if (discountForPdf > 0) {
+      const subtotalBeforeDiscount = totalSelected
+      const totalWithDiscount = Math.max(0, totalSelected - discountForPdf)
+      doc.setFont(undefined, 'normal')
+      doc.setFontSize(10)
+      doc.text('Subtotal:', 120, y)
+      doc.text(`$${subtotalBeforeDiscount.toFixed(2)}`, 195, y, { align: 'right' })
+      y += 6
+      doc.text('Descuento:', 120, y)
+      doc.setTextColor(180, 0, 0)
+      doc.text(`-$${discountForPdf.toFixed(2)}`, 195, y, { align: 'right' })
+      doc.setTextColor(0, 0, 0)
+      y += 8
+    }
+
+    // TOTAL alineado a la derecha (con descuento aplicado si existe)
+    const totalToShow = discountForPdf > 0 ? Math.max(0, totalSelected - discountForPdf) : totalSelected
     doc.setFont(undefined, 'bold')
     doc.setFontSize(12)
     doc.text('TOTAL:', 120, y)
     doc.setFontSize(16)
-    doc.text(`$${totalSelected.toFixed(2)}`, 195, y, { align: 'right' })
+    doc.text(`$${totalToShow.toFixed(2)}`, 195, y, { align: 'right' })
     y += 14
 
     // Términos y condiciones (banda azul + texto)
