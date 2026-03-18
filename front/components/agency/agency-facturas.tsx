@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAgencyServices } from '@/lib/features/agencyServices/useAgencyServices';
+import { useAgencyCatalogs } from '@/lib/features/agencyServices/useAgencyCatalogs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,6 +49,9 @@ export function AgencyFacturas() {
     facturarInvoice,
     deleteInvoice,
   } = useAgencyServices();
+  const { groupedCatalogs, fetchGroupedCatalogs } = useAgencyCatalogs();
+  const waitingTimeConfig = groupedCatalogs?.taulia_code?.find((c: any) => c.code === 'WAITING_TIME_RATE');
+  const waitingTimeHourlyRate = waitingTimeConfig?.metadata?.price != null ? Number(waitingTimeConfig.metadata.price) : 10;
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'prefactura' | 'facturada' | 'nota_de_credito'>('all');
   const [dateFilter, setDateFilter] = useState<'createdAt' | 'issueDate'>('issueDate');
@@ -73,6 +77,10 @@ export function AgencyFacturas() {
   useEffect(() => {
     fetchInvoices({ page: 1, limit: 100, filters: {} });
   }, []);
+
+  useEffect(() => {
+    fetchGroupedCatalogs();
+  }, [fetchGroupedCatalogs]);
 
   useEffect(() => {
     const filters: any = {};
@@ -195,6 +203,19 @@ export function AgencyFacturas() {
     }
     return [];
   };
+
+  // Mismo total que Ver PDF: precio + waiting time (waitingTimePrice o calculado con tarifa horaria)
+  const getWaitingAmount = useCallback((svc: any) => {
+    if (!svc?.waitingTime || Number(svc.waitingTime) <= 0) return 0;
+    if (svc.waitingTimePrice != null && Number(svc.waitingTimePrice) > 0) return Number(svc.waitingTimePrice);
+    return Math.round((Number(svc.waitingTime) / 60) * waitingTimeHourlyRate * 100) / 100;
+  }, [waitingTimeHourlyRate]);
+
+  const getInvoiceTotal = useCallback((inv: any) => {
+    const related = getRelatedServicesForInvoice(inv);
+    if (related.length === 0) return inv.totalAmount ?? 0;
+    return related.reduce((sum: number, svc: any) => sum + (Number(svc?.price) || 0) + getWaitingAmount(svc), 0);
+  }, [getWaitingAmount]);
 
   const handleOpenPdf = async (invoice: any) => {
     let invoiceToUse = invoice;
@@ -397,7 +418,7 @@ export function AgencyFacturas() {
                       <TableCell className="font-mono text-sm">{inv.invoiceNumber}</TableCell>
                       <TableCell>{inv.clientName || 'N/A'}</TableCell>
                       <TableCell>{formatDate(inv.issueDate || inv.createdAt)}</TableCell>
-                      <TableCell>${(inv.totalAmount || 0).toFixed(2)}</TableCell>
+                      <TableCell>${getInvoiceTotal(inv).toFixed(2)}</TableCell>
                       <TableCell>
                         {inv.status === 'prefactura' && <Badge variant="outline" className="text-blue-600 border-blue-600">Prefactura</Badge>}
                         {inv.status === 'facturada' && <Badge variant="outline" className="text-green-600 border-green-600">Facturada</Badge>}

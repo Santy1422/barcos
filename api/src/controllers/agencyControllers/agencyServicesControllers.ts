@@ -304,6 +304,25 @@ export const updateAgencyService = async (req: Request, res: Response) => {
       updateData.notes = updateData.comments;
     }
 
+    // Calcular y persistir waitingTimePrice cuando se actualiza waitingTime (minutos)
+    if (updateData.waitingTime !== undefined) {
+      const waitingTimeMinutes = Number(updateData.waitingTime) || 0;
+      if (waitingTimeMinutes <= 0) {
+        updateData.waitingTimePrice = 0;
+      } else {
+        const waitingTimeConfig = await AgencyCatalog.findOne({
+          type: 'taulia_code',
+          code: 'WAITING_TIME_RATE',
+          isActive: true
+        });
+        const hourlyRate = waitingTimeConfig?.metadata?.price != null
+          ? Number(waitingTimeConfig.metadata.price)
+          : 10;
+        const hours = waitingTimeMinutes / 60;
+        updateData.waitingTimePrice = Math.round(hours * hourlyRate * 100) / 100;
+      }
+    }
+
     // Update metadata
     updateData.updatedBy = (req as any).user?._id;
 

@@ -4,6 +4,7 @@ import { LocalService } from '../../database/schemas/localServiceSchema'
 interface GetLocalServicesRequest extends Request {
   query: {
     module?: string
+    category?: string
   }
   user?: {
     _id: string
@@ -12,7 +13,7 @@ interface GetLocalServicesRequest extends Request {
 
 const getLocalServices = async (req: GetLocalServicesRequest, res: Response) => {
   try {
-    const { module } = req.query
+    const { module, category } = req.query
     const userId = req.user?._id
 
     if (!userId) {
@@ -22,10 +23,13 @@ const getLocalServices = async (req: GetLocalServicesRequest, res: Response) => 
       })
     }
 
-    // Construir filtro
+    // Construir filtro (category se guarda en el campo type)
     const filter: any = {}
     if (module) {
       filter.module = module
+    }
+    if (category) {
+      filter.type = category
     }
 
     // Obtener servicios locales

@@ -9,6 +9,7 @@ interface UpdateLocalServiceRequest extends Request {
     module?: string
     isActive?: boolean
     sapCode?: string
+    category?: string
   }
   params: {
     id: string
@@ -21,7 +22,7 @@ interface UpdateLocalServiceRequest extends Request {
 const updateLocalService = async (req: UpdateLocalServiceRequest, res: Response) => {
   try {
     const { id } = req.params
-    const { name, description, price, module, isActive, sapCode } = req.body
+    const { name, description, price, module, isActive, sapCode, category } = req.body
     const userId = req.user?._id
 
     if (!userId) {
@@ -65,7 +66,7 @@ const updateLocalService = async (req: UpdateLocalServiceRequest, res: Response)
       }
     }
 
-    // Actualizar el servicio
+    // Actualizar el servicio (category se persiste en type)
     const updatedService = await LocalService.findByIdAndUpdate(
       id,
       {
@@ -75,6 +76,7 @@ const updateLocalService = async (req: UpdateLocalServiceRequest, res: Response)
         ...(module && { module }),
         ...(typeof isActive === 'boolean' && { isActive }),
         ...(sapCode !== undefined && { sapCode: typeof sapCode === 'string' ? sapCode.trim() : sapCode }),
+        ...(category !== undefined && { type: category }),
         updatedBy: userId,
         updatedAt: new Date()
       },

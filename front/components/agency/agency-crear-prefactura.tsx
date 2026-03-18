@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgencyPdfViewer } from './agency-pdf-viewer';
+import { useAgencyCatalogs } from '@/lib/features/agencyServices/useAgencyCatalogs';
 
 const formatDateToLocalString = (date: Date): string => {
   const y = date.getFullYear();
@@ -45,6 +46,7 @@ export function AgencyCrearPrefactura() {
     fetchServices,
     createInvoice,
   } = useAgencyServices();
+  const { groupedCatalogs, fetchGroupedCatalogs } = useAgencyCatalogs();
 
   const [step, setStep] = useState<1 | 2>(1);
   const [clientFilter, setClientFilter] = useState('all');
@@ -70,7 +72,8 @@ export function AgencyCrearPrefactura() {
   useEffect(() => {
     dispatch(fetchClients());
     fetchServices({ page: 1, limit: 500 });
-  }, [dispatch]);
+    fetchGroupedCatalogs();
+  }, [dispatch, fetchGroupedCatalogs]);
 
   const getTodayDates = () => {
     const today = new Date();
@@ -231,9 +234,18 @@ export function AgencyCrearPrefactura() {
     return (services || []).filter((s: any) => selectedServices.includes(s._id || s.id));
   }, [services, selectedServices]);
 
+  const waitingTimeConfig = groupedCatalogs?.taulia_code?.find((c: any) => c.code === 'WAITING_TIME_RATE');
+  const waitingTimeHourlyRate = waitingTimeConfig?.metadata?.price != null ? Number(waitingTimeConfig.metadata.price) : 10;
+
+  const getServiceWaitingAmount = (s: any) => {
+    if (!s?.waitingTime || s.waitingTime <= 0) return 0;
+    if (s.waitingTimePrice != null && s.waitingTimePrice > 0) return s.waitingTimePrice;
+    return Math.round((s.waitingTime / 60) * waitingTimeHourlyRate * 100) / 100;
+  };
+
   const totalSelected = useMemo(() => {
-    return selectedServicesData.reduce((sum: number, s: any) => sum + (s.price || 0), 0);
-  }, [selectedServicesData]);
+    return selectedServicesData.reduce((sum: number, s: any) => sum + (s.price || 0) + getServiceWaitingAmount(s), 0);
+  }, [selectedServicesData, waitingTimeHourlyRate]);
 
   const canGoToStep2 = selectedServices.length > 0;
 
@@ -478,7 +490,7 @@ export function AgencyCrearPrefactura() {
                             <TableCell>{getCrewMembersForService(service)}</TableCell>
                             <TableCell>{service.vessel || 'N/A'}</TableCell>
                             <TableCell className="text-xs">{(service.pickupLocation || '')} → {(service.dropoffLocation || '')}</TableCell>
-                            <TableCell>${(service.price || 0).toFixed(2)}</TableCell>
+                            <TableCell>${((service.price || 0) + getServiceWaitingAmount(service)).toFixed(2)}</TableCell>
                           </TableRow>
                         );
                       })

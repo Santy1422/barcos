@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAgencyServices } from '@/lib/features/agencyServices/useAgencyServices';
 import { useAppDispatch, useAppSelector } from '@/lib/hooks';
 import { fetchClients, selectAllClients } from '@/lib/features/clients/clientsSlice';
@@ -36,11 +36,14 @@ import { AgencyServiceDetailModal } from './agency-service-detail-modal';
 import { AgencyServiceFacturarModal } from './agency-service-facturar-modal';
 import { AgencyServiceXmlModal } from './agency-service-xml-modal';
 import { AgencyPdfViewer } from './agency-pdf-viewer';
+import { useAgencyCatalogs } from '@/lib/features/agencyServices/useAgencyCatalogs';
 
 export const AgencySapInvoice: React.FC = () => {
   const dispatch = useAppDispatch();
   const clients = useAppSelector(selectAllClients);
-  
+  const { groupedCatalogs, fetchGroupedCatalogs } = useAgencyCatalogs();
+  const waitingTimeHourlyRate = (groupedCatalogs?.taulia_code?.find((c: any) => c.code === 'WAITING_TIME_RATE' && c.isActive && c.metadata?.price)?.metadata?.price) ?? 0;
+
   const { 
     services,
     loading,
@@ -49,6 +52,15 @@ export const AgencySapInvoice: React.FC = () => {
     deleteService,
     updateStatus
   } = useAgencyServices();
+
+  // Importe por servicio: price + waitingTimePrice (o calculado con tarifa si falta)
+  const getServiceAmount = useCallback((service: any) => {
+    const price = Number(service?.price) || 0;
+    const wtPrice = service?.waitingTimePrice != null ? Number(service.waitingTimePrice) : null;
+    const wtMinutes = Number(service?.waitingTime) || 0;
+    const effectiveWt = wtPrice ?? (wtMinutes > 0 && waitingTimeHourlyRate > 0 ? (wtMinutes / 60) * waitingTimeHourlyRate : 0);
+    return price + effectiveWt;
+  }, [waitingTimeHourlyRate]);
 
   // Filtros y búsqueda
   const [search, setSearch] = useState('');
@@ -87,6 +99,11 @@ export const AgencySapInvoice: React.FC = () => {
     dispatch(fetchClients());
     fetchServices({ page: 1, limit: 100 });
   }, [dispatch]); // Solo dispatch como dependencia, igual que trucking-records
+
+  // Cargar catálogos para tener tarifa de waiting time (WAITING_TIME_RATE) y mostrar total con waiting time en la lista
+  useEffect(() => {
+    fetchGroupedCatalogs();
+  }, [fetchGroupedCatalogs]);
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
@@ -826,6 +843,7 @@ export const AgencySapInvoice: React.FC = () => {
                   <TableHead>Crew</TableHead>
                       <TableHead>Vessel</TableHead>
                   <TableHead>Ruta</TableHead>
+                  <TableHead className="text-right">Importe</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>N° Factura</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
@@ -834,7 +852,7 @@ export const AgencySapInvoice: React.FC = () => {
                   <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-8 text-center">
+                    <TableCell colSpan={10} className="py-8 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         Cargando…
@@ -843,7 +861,7 @@ export const AgencySapInvoice: React.FC = () => {
                   </TableRow>
                 ) : filteredServices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
                       No hay servicios que coincidan con los filtros
                         </TableCell>
                   </TableRow>
@@ -854,7 +872,7 @@ export const AgencySapInvoice: React.FC = () => {
                       const isExpanded = expandedInvoices.has(invoiceNumber);
                       const firstService = invoiceServices[0];
                       const totalServices = invoiceServices.length;
-                      const totalAmount = invoiceServices.reduce((sum: number, s: any) => sum + (s.price || 0) + (s.waitingTimePrice || 0), 0);
+                      const totalAmount = invoiceServices.reduce((sum: number, s: any) => sum + getServiceAmount(s), 0);
                       
                       return (
                         <React.Fragment key={`invoice-${invoiceNumber}`}>
@@ -896,6 +914,9 @@ export const AgencySapInvoice: React.FC = () => {
                                 Múltiples rutas
                               </div>
                             </TableCell>
+                            <TableCell className="text-right font-medium">
+                              ${totalAmount.toFixed(2)}
+                            </TableCell>
                             <TableCell>
                               {firstService.status === 'facturado' ? (
                                 <Badge variant="outline" className="text-green-600 border-green-600">
@@ -910,9 +931,6 @@ export const AgencySapInvoice: React.FC = () => {
                             <TableCell>
                               <div className="font-medium text-blue-700">
                                 {invoiceNumber}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                ${totalAmount.toFixed(2)}
                               </div>
                             </TableCell>
                             <TableCell className="text-right">
@@ -1037,10 +1055,15 @@ export const AgencySapInvoice: React.FC = () => {
                                   </div>
                                 )}
                               </TableCell>
+                              <TableCell className="text-right font-medium">
+                                ${getServiceAmount(service).toFixed(2)}
+                              </TableCell>
                               <TableCell>
-                                <div className="text-xs text-muted-foreground">
-                                  ${((service.price || 0) + (service.waitingTimePrice || 0)).toFixed(2)}
-                                </div>
+                                {service.status === 'facturado' ? (
+                                  <Badge variant="outline" className="text-green-600 border-green-600 text-xs">Facturado</Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-orange-600 border-orange-600 text-xs">Nota de Crédito</Badge>
+                                )}
                               </TableCell>
                               <TableCell>
                                 <div className="text-xs text-muted-foreground">
@@ -1138,6 +1161,9 @@ export const AgencySapInvoice: React.FC = () => {
                             Return: {service.dropoffLocation} → {service.returnDropoffLocation}
                             </div>
                           )}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          ${getServiceAmount(service).toFixed(2)}
                         </TableCell>
                         <TableCell>
                         {service.status === 'completed' ? (
@@ -1254,7 +1280,7 @@ export const AgencySapInvoice: React.FC = () => {
 
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>Mostrando {filteredServices.length} servicio{filteredServices.length !== 1 ? 's' : ''}</span>
-            <span>Total: ${filteredServices.reduce((s: number, service: any) => s + (service.price || 0), 0).toFixed(2)}</span>
+            <span>Total: ${filteredServices.reduce((s: number, service: any) => s + getServiceAmount(service), 0).toFixed(2)}</span>
                 </div>
             </CardContent>
           </Card>

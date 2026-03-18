@@ -84,7 +84,7 @@ export function AgencyFacturacionModal({ open, onOpenChange, invoice, onFacturar
         throw new Error("No se encontraron servicios asociados a la factura");
       }
 
-      // Construir payload para generateAgencyInvoiceXML
+      // Construir payload para generateAgencyInvoiceXML (incluir waitingTime/waitingTimePrice para TRK137)
       const servicesForXml: AgencyServiceForXml[] = relatedServices.map((service: any) => ({
         _id: service._id,
         pickupDate: service.pickupDate,
@@ -94,7 +94,9 @@ export function AgencyFacturacionModal({ open, onOpenChange, invoice, onFacturar
         dropoffLocation: service.dropoffLocation,
         moveType: service.moveType || 'SINGLE',
         price: service.price || 0,
-        currency: service.currency || 'USD'
+        currency: service.currency || 'USD',
+        waitingTime: service.waitingTime ?? 0,
+        waitingTimePrice: service.waitingTimePrice ?? 0
       }));
 
       const xmlPayload: AgencyInvoiceForXml = {

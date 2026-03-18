@@ -67,12 +67,20 @@ export function AgencyServiceFacturarModal({
     }
   }, [groupedCatalogs]);
 
-  // Calculate waiting time price automatically based on hours and hourly rate
+  // Prefer service.waitingTimePrice from API; otherwise calculate from waitingTime and catalog rate
   useEffect(() => {
-    if (service && service.waitingTime > 0 && hourlyRate > 0) {
-      const hours = service.waitingTime / 60; // Convert minutes to hours
-      const calculatedPrice = hours * hourlyRate;
-      setWaitingTimePrice(calculatedPrice);
+    if (!service) {
+      setWaitingTimePrice(0);
+      return;
+    }
+    const fromApi = service.waitingTimePrice != null ? Number(service.waitingTimePrice) : null;
+    if (fromApi != null && fromApi > 0) {
+      setWaitingTimePrice(fromApi);
+      return;
+    }
+    const wtMinutes = Number(service.waitingTime) || 0;
+    if (wtMinutes > 0 && hourlyRate > 0) {
+      setWaitingTimePrice((wtMinutes / 60) * hourlyRate);
     } else {
       setWaitingTimePrice(0);
     }
@@ -302,19 +310,23 @@ export function AgencyServiceFacturarModal({
           invoiceNumber: invoiceNumber,
           invoiceDate: invoiceDate,
           clientSapNumber: clientSapNumber,
-          services: allServices.map(svc => ({
-            _id: svc._id || svc.id,
-            pickupDate: svc.pickupDate,
-            vessel: svc.vessel,
-            crewMembers: svc.crewMembers || [],
-            pickupLocation: svc.pickupLocation,
-            dropoffLocation: svc.dropoffLocation,
-            moveType: svc.moveType || 'SINGLE',
-            price: svc.price || 0,
-            currency: svc.currency || 'USD',
-            waitingTime: svc.waitingTime || 0,
-            waitingTimePrice: svc.waitingTimePrice || 0
-          }))
+          services: allServices.map(svc => {
+            const wtMinutes = svc.waitingTime || 0;
+            const wtPrice = svc.waitingTimePrice ?? (wtMinutes > 0 && hourlyRate > 0 ? (wtMinutes / 60) * hourlyRate : 0);
+            return {
+              _id: svc._id || svc.id,
+              pickupDate: svc.pickupDate,
+              vessel: svc.vessel,
+              crewMembers: svc.crewMembers || [],
+              pickupLocation: svc.pickupLocation,
+              dropoffLocation: svc.dropoffLocation,
+              moveType: svc.moveType || 'SINGLE',
+              price: svc.price || 0,
+              currency: svc.currency || 'USD',
+              waitingTime: wtMinutes,
+              waitingTimePrice: wtPrice
+            };
+          })
         };
         
         const xml = generateAgencyInvoiceXML(xmlPayload);
@@ -360,7 +372,7 @@ export function AgencyServiceFacturarModal({
             price: service.price || 0,
             currency: service.currency || 'USD',
             waitingTime: service.waitingTime || 0,
-            waitingTimePrice: waitingTimePrice || 0
+            waitingTimePrice: (service.waitingTimePrice != null ? Number(service.waitingTimePrice) : null) ?? waitingTimePrice ?? 0
           }]
         };
         

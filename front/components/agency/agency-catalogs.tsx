@@ -19,6 +19,13 @@ import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalo
 import { useToast } from "@/hooks/use-toast"
 import type { CatalogType, AgencyCatalog } from "@/lib/features/agencyServices/agencyCatalogsSlice"
 import { AgencyRoutesManagement } from "./agency-routes-management"
+import { createApiUrl } from "@/lib/api-config"
+
+interface WaitingTimeReason {
+  _id: string
+  name: string
+  description?: string
+}
 
 interface CatalogTypeConfig {
   key: CatalogType
@@ -160,6 +167,13 @@ export function AgencyCatalogs() {
   const [waitingTimeRate, setWaitingTimeRate] = useState(0)
   const [isSavingWaitingTime, setIsSavingWaitingTime] = useState(false)
 
+  // Waiting Time Reasons state
+  const [waitingTimeReasons, setWaitingTimeReasons] = useState<WaitingTimeReason[]>([])
+  const [waitingTimeReasonsLoading, setWaitingTimeReasonsLoading] = useState(false)
+  const [showWTReasonForm, setShowWTReasonForm] = useState(false)
+  const [editingWTReason, setEditingWTReason] = useState<WaitingTimeReason | null>(null)
+  const [wtReasonForm, setWtReasonForm] = useState({ name: '', description: '' })
+
   // Search state
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -179,6 +193,29 @@ export function AgencyCatalogs() {
       }
     }
   }, [groupedCatalogs])
+
+  // Load waiting time reasons (saved in DB, consumed elsewhere in agency)
+  useEffect(() => {
+    const fetchReasons = async () => {
+      setWaitingTimeReasonsLoading(true)
+      try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+        if (!token) return
+        const response = await fetch(createApiUrl('/api/local-services?module=agency&category=waitingTimeReasons'), {
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setWaitingTimeReasons(data.data?.services || [])
+        }
+      } catch (e) {
+        console.error('Error loading waiting time reasons:', e)
+      } finally {
+        setWaitingTimeReasonsLoading(false)
+      }
+    }
+    fetchReasons()
+  }, [])
 
   const getCurrentTypeConfig = () => 
     catalogTypes.find(type => type.key === selectedCatalogType) || catalogTypes[0]
@@ -401,6 +438,97 @@ export function AgencyCatalogs() {
     } finally {
       setIsSavingWaitingTime(false)
     }
+  }
+
+  const reloadWaitingTimeReasons = async () => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+      if (!token) return
+      const response = await fetch(createApiUrl('/api/local-services?module=agency&category=waitingTimeReasons'), {
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setWaitingTimeReasons(data.data?.services || [])
+      }
+    } catch (e) {
+      console.error('Error reloading waiting time reasons:', e)
+    }
+  }
+
+  const handleSaveWTReason = async () => {
+    if (!wtReasonForm.name.trim()) {
+      toast({ title: "Error", description: "El nombre del motivo es requerido", variant: "destructive" })
+      return
+    }
+    setWaitingTimeReasonsLoading(true)
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+      if (!token) throw new Error('No autenticado')
+      const url = editingWTReason
+        ? createApiUrl(`/api/local-services/${editingWTReason._id}`)
+        : createApiUrl('/api/local-services')
+      const response = await fetch(url, {
+        method: editingWTReason ? 'PUT' : 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: wtReasonForm.name.trim(),
+          description: wtReasonForm.description?.trim() || wtReasonForm.name.trim(),
+          module: 'agency',
+          category: 'waitingTimeReasons',
+          price: 0,
+          isActive: true
+        })
+      })
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.message || 'Error al guardar')
+      }
+      toast({
+        title: editingWTReason ? "Motivo actualizado" : "Motivo agregado",
+        description: `El motivo "${wtReasonForm.name}" ha sido ${editingWTReason ? 'actualizado' : 'agregado'} correctamente`
+      })
+      setWtReasonForm({ name: '', description: '' })
+      setEditingWTReason(null)
+      setShowWTReasonForm(false)
+      await reloadWaitingTimeReasons()
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message || "Error al guardar el motivo", variant: "destructive" })
+    } finally {
+      setWaitingTimeReasonsLoading(false)
+    }
+  }
+
+  const handleEditWTReason = (reason: WaitingTimeReason) => {
+    setEditingWTReason(reason)
+    setWtReasonForm({ name: reason.name, description: reason.description || '' })
+    setShowWTReasonForm(true)
+  }
+
+  const handleDeleteWTReason = async (reasonId: string) => {
+    if (!confirm('¿Estás seguro de eliminar este motivo?')) return
+    setWaitingTimeReasonsLoading(true)
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+      if (!token) throw new Error('No autenticado')
+      const response = await fetch(createApiUrl(`/api/local-services/${reasonId}`), {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+      })
+      if (!response.ok) throw new Error('Error al eliminar')
+      toast({ title: "Motivo eliminado", description: "El motivo ha sido eliminado correctamente" })
+      setWaitingTimeReasons(prev => prev.filter(r => r._id !== reasonId))
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message || "Error al eliminar el motivo", variant: "destructive" })
+    } finally {
+      setWaitingTimeReasonsLoading(false)
+    }
+  }
+
+  const handleCancelWTReasonForm = () => {
+    setWtReasonForm({ name: '', description: '' })
+    setEditingWTReason(null)
+    setShowWTReasonForm(false)
   }
 
   const handleSeedCatalogs = async () => {
@@ -634,39 +762,21 @@ export function AgencyCatalogs() {
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <Clock className="h-5 w-5" />
-                    Waiting Time Configuration
+                    Configuración de Waiting Time
                   </CardTitle>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Configure the hourly rate for waiting time calculation
+                    Tarifa por hora y motivos para registrar en los servicios
                   </p>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="max-w-2xl space-y-6">
-                <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <DollarSign className="h-5 w-5 text-blue-600 mt-0.5" />
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-blue-900 mb-2">How it works</h3>
-                      <p className="text-sm text-blue-800">
-                        When a service has waiting time, the system will automatically calculate the price:
-                      </p>
-                      <p className="text-sm text-blue-800 font-mono mt-2 bg-white/50 p-2 rounded">
-                        Waiting Time Price = (Hours × Hourly Rate)
-                      </p>
-                      <p className="text-xs text-blue-700 mt-2">
-                        Example: 2.5 hours × $50/hour = $125.00
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16">
+                {/* Columna izquierda: Tarifa por hora */}
                 <div className="space-y-4">
+                  <h3 className="font-semibold text-lg">Tarifa por hora</h3>
                   <div className="space-y-2">
-                    <Label htmlFor="hourly-rate" className="text-base font-semibold">
-                      Hourly Rate ($/hour)
-                    </Label>
+                    <Label htmlFor="hourly-rate">Tarifa ($/hora)</Label>
                     <div className="relative">
                       <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                       <Input
@@ -680,11 +790,7 @@ export function AgencyCatalogs() {
                         placeholder="0.00"
                       />
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      This rate will be used to calculate the waiting time price for all services
-                    </p>
                   </div>
-
                   <Button 
                     onClick={handleSaveWaitingTimeRate} 
                     disabled={isSavingWaitingTime || waitingTimeRate < 0}
@@ -693,32 +799,98 @@ export function AgencyCatalogs() {
                     {isSavingWaitingTime ? (
                       <>
                         <Save className="mr-2 h-4 w-4 animate-pulse" />
-                        Saving...
+                        Guardando...
                       </>
                     ) : (
                       <>
                         <Save className="mr-2 h-4 w-4" />
-                        Save Hourly Rate
+                        Guardar tarifa
                       </>
                     )}
                   </Button>
+                  {groupedCatalogs?.taulia_code?.find((c: any) => c.code === 'WAITING_TIME_RATE') && (
+                    <p className="text-xs text-muted-foreground">
+                      Tarifa actual: <span className="font-bold">${waitingTimeRate.toFixed(2)}/hora</span>
+                      {' · '}
+                      Última actualización: {new Date(groupedCatalogs.taulia_code.find((c: any) => c.code === 'WAITING_TIME_RATE')?.updatedAt || '').toLocaleString()}
+                    </p>
+                  )}
                 </div>
 
-                {/* Current Configuration */}
-                {groupedCatalogs?.taulia_code?.find((c: any) => c.code === 'WAITING_TIME_RATE') && (
-                  <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Save className="h-4 w-4 text-green-600" />
-                      <h4 className="font-semibold text-green-900">Current Configuration</h4>
+                {/* Columna derecha: Motivos de Waiting Time */}
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-lg">Motivos de Waiting Time</h3>
+                  {showWTReasonForm ? (
+                    <div className="bg-muted/50 p-4 rounded-lg space-y-3">
+                      <h4 className="font-medium">{editingWTReason ? "Editar motivo" : "Nuevo motivo"}</h4>
+                      <div className="grid gap-2">
+                        <Label htmlFor="wt-reason-name">Nombre *</Label>
+                        <Input
+                          id="wt-reason-name"
+                          value={wtReasonForm.name}
+                          onChange={(e) => setWtReasonForm(prev => ({ ...prev, name: e.target.value }))}
+                          placeholder="Ej: Espera en aduana"
+                        />
+                        <Label htmlFor="wt-reason-desc">Descripción (opcional)</Label>
+                        <Input
+                          id="wt-reason-desc"
+                          value={wtReasonForm.description}
+                          onChange={(e) => setWtReasonForm(prev => ({ ...prev, description: e.target.value }))}
+                          placeholder="Descripción del motivo"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button onClick={handleSaveWTReason} disabled={waitingTimeReasonsLoading}>
+                          {waitingTimeReasonsLoading ? "Guardando..." : (editingWTReason ? "Actualizar" : "Agregar")}
+                        </Button>
+                        <Button variant="outline" onClick={handleCancelWTReasonForm}>Cancelar</Button>
+                      </div>
                     </div>
-                    <div className="text-sm text-green-800">
-                      <p>Hourly Rate: <span className="font-bold">${waitingTimeRate.toFixed(2)}/hour</span></p>
-                      <p className="text-xs mt-1 text-green-700">
-                        Last updated: {new Date(groupedCatalogs.taulia_code.find((c: any) => c.code === 'WAITING_TIME_RATE')?.updatedAt || '').toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                )}
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setEditingWTReason(null); setWtReasonForm({ name: '', description: '' }); setShowWTReasonForm(true); }}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Agregar motivo
+                    </Button>
+                  )}
+                  {waitingTimeReasonsLoading && waitingTimeReasons.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Cargando motivos...</p>
+                  ) : waitingTimeReasons.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No hay motivos configurados.</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nombre</TableHead>
+                          <TableHead>Descripción</TableHead>
+                          <TableHead className="w-[100px]">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {waitingTimeReasons.map((reason) => (
+                          <TableRow key={reason._id}>
+                            <TableCell className="font-medium">{reason.name}</TableCell>
+                            <TableCell className="text-muted-foreground">{reason.description || '—'}</TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button variant="ghost" size="icon" onClick={() => handleEditWTReason(reason)} title="Editar">
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => handleDeleteWTReason(reason._id)} title="Eliminar">
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>

@@ -7,6 +7,7 @@ interface CreateLocalServiceRequest extends Request {
     description: string
     price: number
     module: string
+    category?: string
   }
   user?: {
     _id: string
@@ -15,7 +16,7 @@ interface CreateLocalServiceRequest extends Request {
 
 const createLocalService = async (req: CreateLocalServiceRequest, res: Response) => {
   try {
-    const { name, description, price, module } = req.body
+    const { name, description, price, module, category } = req.body
     const userId = req.user?._id
 
     if (!userId) {
@@ -41,8 +42,10 @@ const createLocalService = async (req: CreateLocalServiceRequest, res: Response)
       })
     }
 
-    // Verificar si ya existe un servicio con el mismo nombre en el mismo módulo
-    const existingService = await LocalService.findOne({ name, module })
+    // Filtro para duplicados: mismo nombre, módulo y tipo/categoría
+    const duplicateFilter: any = { name: name.trim(), module }
+    if (category) duplicateFilter.type = category
+    const existingService = await LocalService.findOne(duplicateFilter)
     if (existingService) {
       return res.status(400).json({
         success: false,
@@ -50,12 +53,13 @@ const createLocalService = async (req: CreateLocalServiceRequest, res: Response)
       })
     }
 
-    // Crear el nuevo servicio
+    // Crear el nuevo servicio (category se persiste en type)
     const newService = await LocalService.create({
       name: name.trim(),
       description: description.trim(),
       price: Number(price),
       module,
+      ...(category && { type: category }),
       createdBy: userId,
       isActive: true
     })

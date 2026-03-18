@@ -31,13 +31,16 @@ export function AgencyPdfViewer({ open = false, onOpenChange, service, services 
   const [isGenerating, setIsGenerating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const clients = useAppSelector(selectAllClients);
-  const { ranks, fetchGroupedCatalogs } = useAgencyCatalogs();
+  const { ranks, fetchGroupedCatalogs, groupedCatalogs } = useAgencyCatalogs();
 
   useEffect(() => {
     if (open) {
       fetchGroupedCatalogs();
     }
   }, [open, fetchGroupedCatalogs]);
+
+  const waitingTimeConfig = groupedCatalogs?.taulia_code?.find((c: any) => c.code === 'WAITING_TIME_RATE');
+  const waitingTimeHourlyRate = waitingTimeConfig?.metadata?.price != null ? Number(waitingTimeConfig.metadata.price) : 10;
 
   const normalizeName = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '').trim();
   const getClient = (name: string) => {
@@ -48,7 +51,7 @@ export function AgencyPdfViewer({ open = false, onOpenChange, service, services 
     });
   };
 
-  const generateAgencyInvoicePDF = (serviceData: any, pdfTitle: string, allServices?: any[], logoBase64?: string) => {
+  const generateAgencyInvoicePDF = (serviceData: any, pdfTitle: string, allServices?: any[], logoBase64?: string, hourlyRate: number = 10) => {
     const issuer = getClient('PTYSS')
     const doc = new jsPDF()
 
@@ -263,11 +266,14 @@ export function AgencyPdfViewer({ open = false, onOpenChange, service, services 
       
       rows.push([formattedDate, description, price.toFixed(2)])
       
-      // Agregar waiting time si existe
-      if (svc.waitingTime > 0 && svc.waitingTimePrice > 0) {
-        const hours = (svc.waitingTime / 60).toFixed(2)
-        const wtDescription = `Waiting Time (${hours} hours)`
-        rows.push(['', wtDescription, svc.waitingTimePrice.toFixed(2)])
+      // Agregar waiting time como ítem cuando hay tiempo de espera (para registros viejos sin waitingTimePrice, calcular con tarifa horaria)
+      if (svc.waitingTime > 0) {
+        const hours = svc.waitingTime / 60
+        const wtAmount = (svc.waitingTimePrice != null && svc.waitingTimePrice > 0)
+          ? svc.waitingTimePrice
+          : Math.round(hours * hourlyRate * 100) / 100
+        const wtDescription = `Waiting Time (${hours.toFixed(2)} hrs)`
+        rows.push(['', wtDescription, wtAmount.toFixed(2)])
       }
     };
 
@@ -323,12 +329,17 @@ export function AgencyPdfViewer({ open = false, onOpenChange, service, services 
 
     y += 5
 
-    // TOTAL alineado a la derecha - sumar todos los servicios si hay múltiples
+    // TOTAL: precio + waiting time (para registros viejos sin waitingTimePrice, calcular con tarifa horaria)
+    const getWaitingAmount = (svc: any) => {
+      if (!svc?.waitingTime || svc.waitingTime <= 0) return 0;
+      if (svc.waitingTimePrice != null && svc.waitingTimePrice > 0) return svc.waitingTimePrice;
+      return Math.round((svc.waitingTime / 60) * hourlyRate * 100) / 100;
+    };
     let totalAmount = 0;
     if (allServices && allServices.length > 0) {
-      totalAmount = allServices.reduce((sum, svc) => sum + (svc.price || 0) + (svc.waitingTimePrice || 0), 0);
+      totalAmount = allServices.reduce((sum, svc) => sum + (svc.price || 0) + getWaitingAmount(svc), 0);
     } else {
-      totalAmount = (serviceData.price || 0) + (serviceData.waitingTimePrice || 0);
+      totalAmount = (serviceData.price || 0) + getWaitingAmount(serviceData);
     }
     doc.setFont(undefined, 'bold')
     doc.setFontSize(12)
@@ -414,7 +425,7 @@ export function AgencyPdfViewer({ open = false, onOpenChange, service, services 
 
           const baseService = isMultipleServices && services.length > 0 ? services[0] : service;
           const pdfTitle = baseService?.status === 'facturado' ? 'INVOICE' : 'PRE-INVOICE'
-          const doc = generateAgencyInvoicePDF(baseService, pdfTitle, isMultipleServices ? services : undefined, logoBase64)
+          const doc = generateAgencyInvoicePDF(baseService, pdfTitle, isMultipleServices ? services : undefined, logoBase64, waitingTimeHourlyRate)
           const blob = doc.output('blob')
           setPdfBlob(blob)
         } catch (error) {
@@ -427,7 +438,7 @@ export function AgencyPdfViewer({ open = false, onOpenChange, service, services 
 
       loadLogoAndGenerate();
     }
-  }, [shouldGenerate, service, services, isMultipleServices, toast, ranks])
+  }, [shouldGenerate, service, services, isMultipleServices, toast, ranks, waitingTimeHourlyRate])
 
   // Mantener URL del blob para iframe y revocar al desmontar o cambiar blob
   useEffect(() => {

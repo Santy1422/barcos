@@ -775,9 +775,25 @@ export function AgencyPrefactura() {
     // Para otros registros, usar totalValue
     return sum + (record.totalValue || 0)
   }, 0)
+
+  // Helper: obtener importe de waiting time de un registro (data.waitingTimePrice, record.waitingTimePrice, o calcular desde data.waitingTime en minutos × tarifa/hora)
+  const getRecordWaitingTimeAmount = (record: IndividualExcelRecord, hourlyRateDefault = 10): number => {
+    const data = (record.data || {}) as Record<string, any>
+    const explicit = Number(data?.waitingTimePrice) || Number((record as any)?.waitingTimePrice) || Number(data?.waitingTimeCharge)
+    if (explicit > 0) return explicit
+    const wt = Number(data?.waitingTime)
+    if (!wt || wt <= 0) return 0
+    // waitingTime en minutos (agency services) -> horas = wt/60; si viene en horas (ej. < 24), wt/60 sería bajo
+    const hours = wt <= 24 ? wt : wt / 60
+    return hours * hourlyRateDefault
+  }
+
+  const waitingTimeTotal = selectedRecords.reduce((sum: number, record: IndividualExcelRecord) => {
+    return sum + getRecordWaitingTimeAmount(record)
+  }, 0)
   
   const additionalServicesTotal = selectedAdditionalServices.reduce((sum, service) => sum + service.amount, 0)
-  const subtotal = totalAmount + additionalServicesTotal
+  const subtotal = totalAmount + waitingTimeTotal + additionalServicesTotal
   const grandTotal = subtotal - discountAmount
   
   // Debug logs para verificar cálculos
@@ -1303,6 +1319,19 @@ export function AgencyPrefactura() {
         `$${itemData.total.toFixed(2)}` // Total del item
       ])
     })
+
+    // Waiting Time como ítem (usar mismo helper que en totales)
+    const pdfWaitingTimeTotal = selectedRecords.reduce((sum: number, record: IndividualExcelRecord) => {
+      return sum + getRecordWaitingTimeAmount(record)
+    }, 0)
+    if (pdfWaitingTimeTotal > 0) {
+      items.push([
+        '1',
+        'Waiting Time',
+        `$${pdfWaitingTimeTotal.toFixed(2)}`,
+        `$${pdfWaitingTimeTotal.toFixed(2)}`
+      ])
+    }
     
     // Agrupar servicios adicionales por tipo
     const groupedServices: { [key: string]: { total: number, count: number, name: string, unitPrice: number } } = {}
@@ -2889,6 +2918,12 @@ export function AgencyPrefactura() {
                   <span className="font-semibold text-slate-800">Subtotal Registros:</span>
                   <span className="font-bold text-lg text-slate-900">${totalAmount.toFixed(2)}</span>
                 </div>
+                {waitingTimeTotal > 0 && (
+                  <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
+                    <span className="font-semibold text-slate-800">Waiting Time:</span>
+                    <span className="font-bold text-lg text-slate-900">${waitingTimeTotal.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
                   <span className="font-semibold text-slate-800">Servicios Adicionales:</span>
                   <span className="font-bold text-lg text-slate-900">${additionalServicesTotal.toFixed(2)}</span>

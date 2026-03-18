@@ -64,6 +64,8 @@ export interface IAgencyService extends Document {
   // Service details
   waitingTime: number; // Stored in MINUTES
   waitingTimePrice?: number; // Price for waiting time (TRK137 in XML)
+  /** Motivo de waiting time (nombre del motivo del catálogo). Opcional; servicios antiguos pueden no tenerlo. */
+  waitingTimeReason?: string;
   comments?: string;
   notes?: string;
   serviceCode?: string;
@@ -300,6 +302,12 @@ const agencyServiceSchema = new Schema<IAgencyService>(
       default: 0,
       min: 0,
       // NOTE: Price for waiting time (used in TRK137 XML item)
+    },
+    
+    waitingTimeReason: {
+      type: String,
+      trim: true,
+      required: false,
     },
     
     comments: {

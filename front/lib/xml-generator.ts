@@ -1695,14 +1695,9 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
     throw new Error("Datos requeridos faltantes para generar XML de Agency")
   }
 
-  // Calcular el total de los servicios (CLG098 - antes SHP242)
+  // Total = suma de precios + suma de waiting time (debe coincidir con CLG098 + TRK137)
   const clg098Total = invoice.services.reduce((sum, service) => sum + (service.price || 0), 0)
-  
-  // Obtener el monto del servicio adicional (TRK137) - Waiting Time
-  // Sumar todos los waitingTimePrice de los servicios
-  const trk137Total = invoice.services.reduce((sum, service) => sum + (service.waitingTimePrice || 0), 0) || invoice.additionalService?.amount || 0
-  
-  // El total de la factura debe ser la suma de ambos
+  const trk137Total = invoice.services.reduce((sum, service) => sum + (service.waitingTimePrice || 0), 0)
   const totalAmount = clg098Total + trk137Total
 
   console.log('=== DEBUG: generateAgencyInvoiceXML ===')
@@ -1712,11 +1707,8 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
   console.log('Total Amount:', totalAmount)
   console.log('Services with waiting time:', invoice.services.filter(s => (s.waitingTime || 0) > 0).length)
   
-  // Crear array de OtherItems dinámicamente
-  const otherItems: any[] = [];
-  
-  // Agregar un CLG098 por cada servicio (antes era SHP242)
-  invoice.services.forEach((service, index) => {
+  const otherItems: any[] = []
+  invoice.services.forEach((service) => {
     otherItems.push({
       "IncomeRebateCode": "I",
       "AmntTransacCur": (-(service.price || 0)).toFixed(2),
@@ -1730,26 +1722,29 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
       "BUCountry": "PA",
       "ServiceCountry": "PA",
       "ClientType": "MSCGVA"
-    });
-    
-    // ACTUALIZADO: Waiting time también usa CLG098 con mismos valores fijos de Agency
-    if (service.waitingTimePrice && service.waitingTimePrice > 0) {
+    })
+    // TRK137: waiting time - incluir cuando hay minutos de espera o importe > 0
+    const wtMinutes = Number(service.waitingTime) || 0;
+    const wtPrice = Number(service.waitingTimePrice) || 0;
+    const hasWaitingTime = wtMinutes > 0 || wtPrice > 0;
+    if (hasWaitingTime) {
+      const wtAmount = wtPrice;
       otherItems.push({
         "IncomeRebateCode": "I",
-        "AmntTransacCur": (-(service.waitingTimePrice || 0)).toFixed(2),
+        "AmntTransacCur": (-wtAmount).toFixed(2),
         "BaseUnitMeasure": "EA",
         "Qty": "1.00",
         "ProfitCenter": "PAPANC440",
         "ReferencePeriod": formatReferencePeriod(invoice.invoiceDate),
-        "Service": "CLG098",
-        "Activity": "CLG",
-        "Pillar": "LOGS",
+        "Service": "TRK137",
+        "Activity": "TRK",
+        "Pillar": "TRSP",
         "BUCountry": "PA",
         "ServiceCountry": "PA",
         "ClientType": "MSCGVA"
-      });
+      })
     }
-  });
+  })
   
   console.log('Total OtherItems generated:', otherItems.length)
 

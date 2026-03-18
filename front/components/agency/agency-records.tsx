@@ -30,6 +30,7 @@ import { useAgencyRoutes } from "@/lib/features/agencyServices/useAgencyRoutes"
 import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import Link from "next/link"
+import { createApiUrl } from "@/lib/api-config"
 
 export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceClick?: () => void }) {
   const { hideHeader, onCreateServiceClick } = props || {}
@@ -164,7 +165,7 @@ export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceCli
     const fetchWaitingTimeReasons = async () => {
       try {
         const token = localStorage.getItem('token')
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/local-services?module=agency&category=waitingTimeReasons`, {
+        const response = await fetch(createApiUrl('/api/local-services?module=agency&category=waitingTimeReasons'), {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -1601,11 +1602,83 @@ export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceCli
 
       {/* Edit Service Modal */}
       <Dialog open={modals?.showEditModal} onOpenChange={closeModals}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Service</DialogTitle>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="sticky top-0 z-10 bg-background px-6 pt-6 pb-4 border-b shrink-0">
+            <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+              <DialogTitle className="mb-0">Edit Service</DialogTitle>
+              <div className="flex items-center gap-3 flex-wrap">
+                {selectedService && (() => {
+                  const isRoundTrip = editFormData.moveType === 'RT'
+                  const totalFields = isRoundTrip ? 9 : 8
+                  const completedFields = [
+                    editFormData.pickupDate,
+                    editFormData.pickupTime,
+                    editFormData.pickupLocation,
+                    editFormData.dropoffLocation,
+                    editFormData.vessel,
+                    editFormData.transportCompany,
+                    editFormData.driver,
+                    editFormData.crewMembers.length > 0,
+                    isRoundTrip ? editFormData.returnDropoffLocation : true
+                  ].filter(Boolean).length
+                  const actualCompletedFields = Math.min(completedFields, totalFields)
+                  const percentage = Math.round((actualCompletedFields / totalFields) * 100)
+                  const isComplete = actualCompletedFields === totalFields
+                  return (
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <div className={`w-2 h-2 rounded-full ${isComplete ? 'bg-green-500' : actualCompletedFields > totalFields / 2 ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                        <span className={`text-xs font-medium ${isComplete ? 'text-green-600' : actualCompletedFields > totalFields / 2 ? 'text-yellow-600' : 'text-red-600'}`}>
+                          {actualCompletedFields}/{totalFields} campos
+                        </span>
+                      </div>
+                      <div className="w-16 bg-gray-200 rounded-full h-1.5">
+                        <div
+                          className={`h-1.5 rounded-full transition-all duration-300 ${isComplete ? 'bg-green-500' : actualCompletedFields > totalFields / 2 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-gray-500">{percentage}%</span>
+                      <div className="group relative">
+                        <div className="w-4 h-4 rounded-full bg-gray-300 hover:bg-gray-400 cursor-help flex items-center justify-center text-xs text-gray-600">?</div>
+                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                          <div className="text-center">
+                            <div className="font-semibold mb-1">Campos incluidos:</div>
+                            <div className="text-left space-y-1">
+                              <div>• Fecha y hora</div>
+                              <div>• Ubicaciones (pickup/dropoff)</div>
+                              <div>• Vessel, transport, driver</div>
+                              <div>• Crew members</div>
+                              {isRoundTrip && <div>• Return dropoff (opcional)</div>}
+                            </div>
+                            <div className="mt-2 pt-1 border-t border-gray-600">
+                              <div className="font-semibold">No incluidos:</div>
+                              <div className="text-left">
+                                <div>• Comments, voyage</div>
+                                <div>• Waiting time</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800" />
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={closeModals}>
+                    <X className="mr-2 h-4 w-4" />
+                    Cancel
+                  </Button>
+                  <Button onClick={handleEditService} disabled={!selectedService}>
+                    <Save className="mr-2 h-4 w-4" />
+                    Save Changes
+                  </Button>
+                </div>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-6">
+          <div className="space-y-6 overflow-y-auto flex-1 min-h-0 px-6 pt-4 pb-6">
             {selectedService && (
               <>
                 {/* Service Info Section */}
@@ -2059,17 +2132,21 @@ export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceCli
                         max="24"
                         step="0.25"
                         value={editFormData.waitingTime}
-                        onChange={(e) => setEditFormData(prev => ({
-                          ...prev,
-                          waitingTime: parseFloat(e.target.value) || 0
-                        }))}
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value) || 0
+                          setEditFormData(prev => ({
+                            ...prev,
+                            waitingTime: value,
+                            ...(value <= 0 && { waitingTimeReason: '' })
+                          }))
+                        }}
                         className="pl-8"
                         placeholder="Enter waiting time in hours"
                       />
                     </div>
                   </div>
 
-                  {/* Waiting Time Reason */}
+                  {/* Waiting Time Reason - habilitado solo cuando hay waiting time */}
                   <div className="space-y-2">
                     <Label htmlFor="waitingTimeReason" className="text-sm font-medium">
                       Motivo de Waiting Time
@@ -2080,6 +2157,7 @@ export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceCli
                         ...prev,
                         waitingTimeReason: value === "__none__" ? "" : value
                       }))}
+                      disabled={!editFormData.waitingTime || Number(editFormData.waitingTime) <= 0}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Seleccionar motivo..." />
@@ -2377,95 +2455,6 @@ export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceCli
               </>
             )}
           </div>
-          <DialogFooter>
-            <div className="flex items-center justify-between w-full">
-              <div className="flex items-center gap-2 text-sm">
-                {(() => {
-                  // For Round Trip, return dropoff location is optional but counts if filled
-                  const isRoundTrip = editFormData.moveType === 'RT'
-                  
-                  // For Round Trip, always 9 fields total (8 basic + 1 optional return dropoff)
-                  // For Single and other types, 8 fields total
-                  const totalFields = isRoundTrip ? 9 : 8
-                  
-                  const completedFields = [
-                    editFormData.pickupDate,
-                    editFormData.pickupTime,
-                    editFormData.pickupLocation,
-                    editFormData.dropoffLocation,
-                    editFormData.vessel,
-                    editFormData.transportCompany,
-                    editFormData.driver,
-                    editFormData.crewMembers.length > 0,
-                    // For Round Trip, count return dropoff if it's filled (optional)
-                    isRoundTrip ? editFormData.returnDropoffLocation : true
-                  ].filter(Boolean).length
-                  
-                  // Cap the completed fields to the total to avoid percentages > 100%
-                  const actualCompletedFields = Math.min(completedFields, totalFields)
-                  
-                  const percentage = Math.round((actualCompletedFields / totalFields) * 100)
-                  const isComplete = actualCompletedFields === totalFields
-                  
-                  return (
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1">
-                        <div className={`w-2 h-2 rounded-full ${isComplete ? 'bg-green-500' : actualCompletedFields > totalFields / 2 ? 'bg-yellow-500' : 'bg-red-500'}`} />
-                        <span className={`text-xs font-medium ${isComplete ? 'text-green-600' : actualCompletedFields > totalFields / 2 ? 'text-yellow-600' : 'text-red-600'}`}>
-                          {actualCompletedFields}/{totalFields} campos
-                        </span>
-                      </div>
-                      <div className="w-16 bg-gray-200 rounded-full h-1.5">
-                        <div 
-                          className={`h-1.5 rounded-full transition-all duration-300 ${
-                            isComplete ? 'bg-green-500' : actualCompletedFields > totalFields / 2 ? 'bg-yellow-500' : 'bg-red-500'
-                          }`}
-                          style={{ width: `${percentage}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-gray-500">{percentage}%</span>
-                      <div className="group relative">
-                        <div className="w-4 h-4 rounded-full bg-gray-300 hover:bg-gray-400 cursor-help flex items-center justify-center text-xs text-gray-600">
-                          ?
-                        </div>
-                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-                          <div className="text-center">
-                            <div className="font-semibold mb-1">Campos incluidos:</div>
-                            <div className="text-left space-y-1">
-                              <div>• Fecha y hora</div>
-                              <div>• Ubicaciones (pickup/dropoff)</div>
-                              <div>• Vessel, transport, driver</div>
-                              <div>• Crew members</div>
-                              {isRoundTrip && <div>• Return dropoff (opcional)</div>}
-                            </div>
-                            <div className="mt-2 pt-1 border-t border-gray-600">
-                              <div className="font-semibold">No incluidos:</div>
-                              <div className="text-left">
-                                <div>• Comments, voyage</div>
-                                <div>• Waiting time</div>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800"></div>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })()}
-              </div>
-              
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={closeModals}>
-                  <X className="mr-2 h-4 w-4" />
-                  Cancel
-                </Button>
-                <Button onClick={handleEditService} disabled={!selectedService}>
-                  <Save className="mr-2 h-4 w-4" />
-                  Save Changes
-                </Button>
-              </div>
-            </div>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

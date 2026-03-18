@@ -12,6 +12,7 @@ import { createApiUrl } from "@/lib/api-config";
 import { generateAgencyInvoiceXML, generateXmlFileName } from "@/lib/xml-generator";
 import { useAppSelector } from "@/lib/hooks";
 import { selectAllClients } from "@/lib/features/clients/clientsSlice";
+import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs";
 
 interface AgencyServiceXmlModalProps {
   open: boolean;
@@ -24,7 +25,9 @@ interface AgencyServiceXmlModalProps {
 export function AgencyServiceXmlModal({ open, onOpenChange, service, services = [], onXmlSentToSap }: AgencyServiceXmlModalProps) {
   const { toast } = useToast();
   const clients = useAppSelector(selectAllClients);
-  
+  const { groupedCatalogs } = useAgencyCatalogs();
+  const hourlyRate = (groupedCatalogs?.taulia_code?.find((c: any) => c.code === 'WAITING_TIME_RATE' && c.isActive && c.metadata?.price)?.metadata?.price) ?? 0;
+
   const [isSendingToSap, setIsSendingToSap] = useState(false);
   const [isGeneratingXml, setIsGeneratingXml] = useState(false);
   const [sapLogs, setSapLogs] = useState<any[]>([]);
@@ -88,20 +91,24 @@ export function AgencyServiceXmlModal({ open, onOpenChange, service, services = 
       
       console.log('🔍 SAP Code del cliente:', clientSapNumber);
       
-      // Construir array de servicios para el XML
-      const servicesForXml = servicesToProcess.map(svc => ({
-        _id: svc._id || svc.id,
-        pickupDate: svc.pickupDate,
-        vessel: svc.vessel,
-        crewMembers: svc.crewMembers || [],
-        pickupLocation: svc.pickupLocation,
-        dropoffLocation: svc.dropoffLocation,
-        moveType: svc.moveType || 'SINGLE',
-        price: svc.price || 0,
-        currency: svc.currency || 'USD',
-        waitingTime: svc.waitingTime || 0,
-        waitingTimePrice: svc.waitingTimePrice || 0
-      }));
+      // Construir array de servicios para el XML (calcular waitingTimePrice si falta, p. ej. registros viejos)
+      const servicesForXml = servicesToProcess.map(svc => {
+        const wtMinutes = svc.waitingTime || 0;
+        const wtPrice = svc.waitingTimePrice ?? (wtMinutes > 0 && hourlyRate > 0 ? (wtMinutes / 60) * hourlyRate : 0);
+        return {
+          _id: svc._id || svc.id,
+          pickupDate: svc.pickupDate,
+          vessel: svc.vessel,
+          crewMembers: svc.crewMembers || [],
+          pickupLocation: svc.pickupLocation,
+          dropoffLocation: svc.dropoffLocation,
+          moveType: svc.moveType || 'SINGLE',
+          price: svc.price || 0,
+          currency: svc.currency || 'USD',
+          waitingTime: wtMinutes,
+          waitingTimePrice: wtPrice
+        };
+      });
       
       const xmlPayload = {
         invoiceNumber: service.invoiceNumber || `AGY-SERVICE-${service._id || service.id}`,
