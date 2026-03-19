@@ -155,6 +155,7 @@ export interface AgencyServiceInput {
 // Interface para filtros de búsqueda
 export interface AgencyServiceFilters {
   status?: string;
+  statusIn?: string[];
   clientId?: string;
   pickupLocation?: string;
   dropoffLocation?: string;
@@ -1153,7 +1154,7 @@ export const facturarAgencyInvoice = createAsyncThunk<AgencyInvoice, FacturarInv
       }
       
       const data = await response.json();
-      return data.invoice;
+      return data.payload?.invoice || data.invoice;
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
     }

@@ -75,7 +75,7 @@ export function AgencyFacturas() {
   const [servicesForXml, setServicesForXml] = useState<any[]>([]);
 
   useEffect(() => {
-    fetchInvoices({ page: 1, limit: 100, filters: {} });
+    fetchInvoices({ page: 1, limit: 5000, filters: {} });
   }, []);
 
   useEffect(() => {
@@ -92,7 +92,7 @@ export function AgencyFacturas() {
       filters.startDate = startDate;
       filters.endDate = endDate;
     }
-    fetchInvoices({ page: 1, limit: 100, filters });
+    fetchInvoices({ page: 1, limit: 5000, filters });
   }, [statusFilter, isUsingPeriodFilter, startDate, endDate, dateFilter]);
 
   const getTodayDates = () => {
@@ -254,7 +254,7 @@ export function AgencyFacturas() {
     try {
       await deleteInvoice(invoice._id || invoice.id);
       toast.success('Eliminada');
-      fetchInvoices({ page: 1, limit: 100, filters: {} });
+      fetchInvoices({ page: 1, limit: 5000, filters: {} });
     } catch (e: any) {
       toast.error(e?.message || 'Error al eliminar');
     }
@@ -272,7 +272,7 @@ export function AgencyFacturas() {
       toast.success(`Facturación completada: ${invoiceNumber}`);
       setFacturarModalOpen(false);
       setInvoiceToFacturar(null);
-      fetchInvoices({ page: 1, limit: 100, filters: {} });
+      fetchInvoices({ page: 1, limit: 5000, filters: {} });
     } catch (e: any) {
       toast.error(e?.message || 'Error al facturar');
       throw e;
@@ -468,7 +468,7 @@ export function AgencyFacturas() {
           onOpenChange={setXmlModalOpen}
           service={servicesForXml[0] ? { ...servicesForXml[0], xmlData: invoiceForXml?.xmlData } : undefined}
           services={servicesForXml}
-          onXmlSentToSap={() => fetchInvoices({ page: 1, limit: 100, filters: {} })}
+          onXmlSentToSap={() => fetchInvoices({ page: 1, limit: 5000, filters: {} })}
         />
       )}
 

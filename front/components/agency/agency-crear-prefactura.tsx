@@ -68,10 +68,15 @@ export function AgencyCrearPrefactura() {
   const [notes, setNotes] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [initialLoaded, setInitialLoaded] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   useEffect(() => {
     dispatch(fetchClients());
-    fetchServices({ page: 1, limit: 500 });
+    fetchServices({ page: 1, limit: 5000, filters: { statusIn: ['completed'] } })
+      .then(() => setInitialLoaded(true))
+      .catch(() => setInitialLoaded(true));
     fetchGroupedCatalogs();
   }, [dispatch, fetchGroupedCatalogs]);
 
@@ -199,6 +204,16 @@ export function AgencyCrearPrefactura() {
       return matchClient && matchVessel && matchCrew && matchRoute && matchDate;
     });
   }, [completedServices, clientFilter, vesselFilter, crewFilter, routeFilter, isUsingPeriodFilter, startDate, endDate, dateFilter, clients]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [clientFilter, vesselFilter, crewFilter, routeFilter, isUsingPeriodFilter, startDate, endDate, dateFilter]);
+
+  const totalPages = Math.ceil(filteredServices.length / pageSize);
+  const paginatedServices = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredServices.slice(start, start + pageSize);
+  }, [filteredServices, currentPage, pageSize]);
 
   const handleServiceSelection = (serviceId: string, clientId: string | null) => {
     if (!clientId) {
@@ -468,12 +483,12 @@ export function AgencyCrearPrefactura() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {loading ? (
+                    {loading || !initialLoaded ? (
                       <TableRow><TableCell colSpan={7} className="py-8 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>
                     ) : filteredServices.length === 0 ? (
                       <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">No hay servicios completados que coincidan con los filtros</TableCell></TableRow>
                     ) : (
-                      filteredServices.map((service: any) => {
+                      paginatedServices.map((service: any) => {
                         const id = service._id || service.id;
                         const clientId = getClientIdForService(service);
                         const checked = selectedServices.includes(id);
@@ -498,6 +513,69 @@ export function AgencyCrearPrefactura() {
                   </TableBody>
                 </Table>
               </div>
+
+              {/* Paginación */}
+              {filteredServices.length > 0 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <span>Mostrando {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, filteredServices.length)} de {filteredServices.length}</span>
+                    <span className="mx-1">|</span>
+                    <span>Filas:</span>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                      className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                    >
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                      <option value={200}>200</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={currentPage <= 1}
+                      onClick={() => setCurrentPage(1)}
+                      className="h-8 px-2 text-xs"
+                    >
+                      ««
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={currentPage <= 1}
+                      onClick={() => setCurrentPage(p => p - 1)}
+                      className="h-8 px-2 text-xs"
+                    >
+                      ‹ Anterior
+                    </Button>
+                    <span className="px-3 text-sm font-medium">
+                      {currentPage} / {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setCurrentPage(p => p + 1)}
+                      className="h-8 px-2 text-xs"
+                    >
+                      Siguiente ›
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setCurrentPage(totalPages)}
+                      className="h-8 px-2 text-xs"
+                    >
+                      »»
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-end mt-4">
                 <Button onClick={() => setStep(2)} disabled={!canGoToStep2} className="gap-2">
                   Paso 2: Configuración y PDF <ArrowRight className="h-4 w-4" />

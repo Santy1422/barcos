@@ -62,7 +62,7 @@ const validateServiceData = [
 // Validaciones para query params
 const validateQueryParams = [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('limit').optional().isInt({ min: 1, max: 10000 }).withMessage('Limit must be between 1 and 10000'),
   query('startDate').optional().isISO8601().withMessage('Start date must be valid ISO date'),
   query('endDate').optional().isISO8601().withMessage('End date must be valid ISO date'),
   query('clientId').optional().isMongoId().withMessage('Client ID must be valid MongoDB ID'),
