@@ -30,6 +30,7 @@ import { selectCurrentUser } from "@/lib/features/auth/authSlice"
 import { SectionGuard } from "@/components/section-guard"
 import { Skeleton } from "@/components/ui/skeleton"
 import { createApiUrl } from "@/lib/api-config"
+import { mergeBlGroupRecords, sumAutoridadesBLAmount, totalAutoridadesBL } from "@/lib/trucking-autoridades-totals"
 
 interface PaginationInfo {
   current: number
@@ -127,7 +128,9 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
       const token = localStorage.getItem('token')
       if (!token) throw new Error('No autenticado')
 
-      // Sin paginación - traer todos los registros
+      // Sin paginación - traer todos los registros **pendientes**.
+      // Backend (getAllAutoridadesRecords): sin query `status` excluye prefacturado/facturado.
+      // El XML en facturación (TruckingFacturacionModal) usa `?status=all` y filtra por relatedRecordIds.
       let url = createApiUrl(`/api/records/autoridades`)
 
       // Agregar filtros con el separador correcto
@@ -344,17 +347,15 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
     }
   }
 
-  // Get all selected records
+  // Registros seleccionados: unión tabla + caché (el caché solo a veces es incompleto)
   const selectedRecords = useMemo(() => {
     const selected: any[] = []
     selectedBLNumbers.forEach(blNumber => {
-      const cached = selectedRecordsCache.get(blNumber)
-      if (cached) {
-        selected.push(...cached)
-      } else {
-        const groupRecords = groupedByBL.get(blNumber) || []
-        selected.push(...groupRecords)
-      }
+      const merged = mergeBlGroupRecords(
+        groupedByBL.get(blNumber),
+        selectedRecordsCache.get(blNumber)
+      )
+      selected.push(...merged)
     })
     return selected
   }, [selectedBLNumbers, selectedRecordsCache, groupedByBL])
@@ -439,59 +440,15 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
     return 'Período personalizado'
   }
 
-  // Calculate total
+  // Calculate total (misma regla que el XML: NOTF sumado por línea con order + notf; SEAL por contenedor)
   const totalSelected = useMemo(() => {
     let total = 0
     selectedBLNumbers.forEach(blNumber => {
-      const groupRecords = selectedRecordsCache.get(blNumber) || groupedByBL.get(blNumber) || []
-
-      // NOTF: charge once per BL Number
-      let notfRecord = groupRecords
-        .filter((r: any) => {
-          const hasValidOrder = r.order && !isNaN(parseFloat(r.order))
-          if (!hasValidOrder) return false
-          const notfStr = r.notf ? String(r.notf).trim() : ''
-          if (!notfStr || notfStr === 'N/A' || notfStr === '') return false
-          const parsed = parseFloat(notfStr)
-          return !isNaN(parsed) && parsed > 0
-        })
-        .sort((a: any, b: any) => parseFloat(a.order) - parseFloat(b.order))[0]
-
-      if (!notfRecord) {
-        notfRecord = groupRecords.find((r: any) => {
-          const notfStr = r.notf ? String(r.notf).trim() : ''
-          if (!notfStr || notfStr === 'N/A' || notfStr === '') return false
-          const parsed = parseFloat(notfStr)
-          return !isNaN(parsed) && parsed > 0
-        })
-      }
-
-      let notfValue = 0
-      if (notfRecord?.notf) {
-        const notfStr = String(notfRecord.notf).trim()
-        if (notfStr && notfStr !== 'N/A' && notfStr !== '') {
-          const parsed = parseFloat(notfStr)
-          if (!isNaN(parsed) && parsed > 0) {
-            notfValue = parsed
-          }
-        }
-      }
-
-      // SEAL: charge per container
-      const sealTotal = groupRecords.reduce((sum: number, r: any) => {
-        if (r.seal) {
-          const sealStr = String(r.seal).trim()
-          if (sealStr && sealStr !== 'N/A' && sealStr !== '') {
-            const parsed = parseFloat(sealStr)
-            if (!isNaN(parsed) && parsed > 0) {
-              return sum + parsed
-            }
-          }
-        }
-        return sum
-      }, 0)
-
-      total += notfValue + sealTotal
+      const groupRecords = mergeBlGroupRecords(
+        groupedByBL.get(blNumber),
+        selectedRecordsCache.get(blNumber)
+      )
+      total += totalAutoridadesBL(groupRecords)
     })
     return total
   }, [selectedBLNumbers, selectedRecordsCache, groupedByBL])
@@ -837,61 +794,19 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
     let grandTotal = 0
 
     selectedBLNumbers.forEach(blNumber => {
-      const groupRecords = selectedRecordsCache.get(blNumber) || groupedByBL.get(blNumber) || []
+      const groupRecords = mergeBlGroupRecords(
+        groupedByBL.get(blNumber),
+        selectedRecordsCache.get(blNumber)
+      )
       const containers = groupRecords.map((r: any) => r.container).join(', ')
       const auth = groupRecords[0]?.auth || ''
 
-      // NOTF: once per BL Number
-      let notfRecord = groupRecords
-        .filter((r: any) => {
-          const hasValidOrder = r.order && !isNaN(parseFloat(r.order))
-          if (!hasValidOrder) return false
-          const notfStr = r.notf ? String(r.notf).trim() : ''
-          if (!notfStr || notfStr === 'N/A' || notfStr === '') return false
-          const parsed = parseFloat(notfStr)
-          return !isNaN(parsed) && parsed > 0
-        })
-        .sort((a: any, b: any) => parseFloat(a.order) - parseFloat(b.order))[0]
-
-      if (!notfRecord) {
-        notfRecord = groupRecords.find((r: any) => {
-          const notfStr = r.notf ? String(r.notf).trim() : ''
-          if (!notfStr || notfStr === 'N/A' || notfStr === '') return false
-          const parsed = parseFloat(notfStr)
-          return !isNaN(parsed) && parsed > 0
-        })
-      }
-
-      let notfValue = 0
-      if (notfRecord?.notf) {
-        const notfStr = String(notfRecord.notf).trim()
-        if (notfStr && notfStr !== 'N/A' && notfStr !== '') {
-          const parsed = parseFloat(notfStr)
-          if (!isNaN(parsed) && parsed > 0) {
-            notfValue = parsed
-          }
-        }
-      }
-
-      // SEAL: per container
-      const sealTotal = groupRecords.reduce((sum: number, r: any) => {
-        if (r.seal) {
-          const sealStr = String(r.seal).trim()
-          if (sealStr && sealStr !== 'N/A' && sealStr !== '') {
-            const parsed = parseFloat(sealStr)
-            if (!isNaN(parsed) && parsed > 0) {
-              return sum + parsed
-            }
-          }
-        }
-        return sum
-      }, 0)
-
-      const blTotal = notfValue + sealTotal
+      const { notfTotal, sealTotal } = sumAutoridadesBLAmount(groupRecords)
+      const blTotal = notfTotal + sealTotal
       grandTotal += blTotal
 
       const priceDescription = []
-      if (notfValue > 0) priceDescription.push(`NOTF: $${notfValue.toFixed(2)}`)
+      if (notfTotal > 0) priceDescription.push(`NOTF: $${notfTotal.toFixed(2)}`)
       if (sealTotal > 0) priceDescription.push(`SEAL: $${sealTotal.toFixed(2)}`)
 
       bodyRows.push([
@@ -1241,29 +1156,13 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
                       </TableRow>
                     ) : (
                       Array.from(groupedByBL.entries()).map(([blNumber, blRecords]) => {
-                        const firstRecord = blRecords[0]
+                        const mergedRows = mergeBlGroupRecords(blRecords, selectedRecordsCache.get(blNumber))
+                        const firstRecord = mergedRows[0] || blRecords[0]
                         const customer = firstRecord.customer || 'N/A'
                         const auth = firstRecord.auth || 'N/A'
-                        const containerCount = blRecords.length
+                        const containerCount = mergedRows.length
 
-                        // Calculate total for this BL
-                        let blTotal = 0
-                        const notfRecord = blRecords.find((r: any) => {
-                          const notfStr = r.notf ? String(r.notf).trim() : ''
-                          if (!notfStr || notfStr === 'N/A') return false
-                          const parsed = parseFloat(notfStr)
-                          return !isNaN(parsed) && parsed > 0
-                        })
-                        if (notfRecord?.notf) {
-                          const parsed = parseFloat(String(notfRecord.notf))
-                          if (!isNaN(parsed)) blTotal += parsed
-                        }
-                        blRecords.forEach((r: any) => {
-                          if (r.seal) {
-                            const parsed = parseFloat(String(r.seal))
-                            if (!isNaN(parsed)) blTotal += parsed
-                          }
-                        })
+                        const blTotal = totalAutoridadesBL(mergedRows)
 
                         return (
                           <React.Fragment key={blNumber}>
@@ -1310,7 +1209,7 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
-                                        {blRecords.map((record: any) => (
+                                        {mergedRows.map((record: any) => (
                                           <TableRow key={record._id || record.id}>
                                             <TableCell className="font-mono text-sm">{record.container || 'N/A'}</TableCell>
                                             <TableCell>{record.noInvoice || 'N/A'}</TableCell>

@@ -757,6 +757,7 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
             if (isAuthInvoice) {
               // Gastos de autoridades: agrupar registros y otherItems como antes
               const recordItems = (function() {
+                const authAggregateServices = new Set(["TRK182", "TRK175", "TRK009"])
                 const groupedRecords = new Map<string, { record: InvoiceLineItemForXml; count: number; totalPrice: number }>()
                 invoice.records.forEach((record: InvoiceLineItemForXml) => {
                   const key = `${record.serviceCode || "TRK002"}-${record.unitPrice}-${record.containerType || "DV"}-${record.containerSize || "40"}-${record.ctrCategory || "D"}-${record.fullEmptyStatus || "FULL"}-${record.businessType || "IMPORT"}`
@@ -769,7 +770,22 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                     groupedRecords.set(key, { record, count: recordQuantity, totalPrice: record.totalPrice || 0 })
                   }
                 })
-                return Array.from(groupedRecords.values()).map((group) => {
+                const groupedValues = Array.from(groupedRecords.values())
+
+                let authAggregateQty = 0
+                let authAggregateAmount = 0
+
+                const nonAggregateItems = groupedValues
+                  .filter((group) => {
+                    const serviceCode = (group.record.serviceCode || "TRK002").toUpperCase()
+                    if (authAggregateServices.has(serviceCode)) {
+                      authAggregateQty += group.count
+                      authAggregateAmount += group.totalPrice || 0
+                      return false
+                    }
+                    return true
+                  })
+                  .map((group) => {
                   const record = group.record
                   const businessTypeXmlValue = record.businessType === "IMPORT" ? "I" : "E"
                   const isAuthTaxService = ['TRK182', 'TRK175', 'TRK009'].includes(record.serviceCode || '')
@@ -813,6 +829,31 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
                     "CtrCategory": finalCtrCategory
                   }
                 })
+
+                const aggregateItem = authAggregateQty > 0
+                  ? [{
+                      "IncomeRebateCode": "I",
+                      "AmntTransacCur": (-authAggregateAmount).toFixed(3),
+                      "BaseUnitMeasure": "EA",
+                      "Qty": authAggregateQty.toString(),
+                      "ProfitCenter": "PAPANB110",
+                      "ReferencePeriod": formatReferencePeriod(invoice.date),
+                      "Service": "TRK009",
+                      "Activity": "TRK",
+                      "Pillar": "TRSP",
+                      "BUCountry": "PA",
+                      "ServiceCountry": "PA",
+                      "ClientType": "MSCGVA",
+                      "BusinessType": "I",
+                      "FullEmpty": "FULL",
+                      "CtrISOcode": "42G1",
+                      "CtrType": "DV",
+                      "CtrSize": "40",
+                      "CtrCategory": "A"
+                    }]
+                  : []
+
+                return [...nonAggregateItems, ...aggregateItem]
               })()
               const taxItems = (function() {
                 if (!invoice.otherItems || invoice.otherItems.length === 0) return []
