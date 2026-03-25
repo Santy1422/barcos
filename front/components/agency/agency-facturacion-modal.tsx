@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { FileText, Code, AlertTriangle, CheckCircle, Calendar, DollarSign, User, Eye, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices";
+import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs";
 import { generateAgencyInvoiceXML, type AgencyInvoiceForXml, type AgencyServiceForXml } from "@/lib/xml-generator";
 import { saveAs } from "file-saver";
 import { createApiUrl } from "@/lib/api-config";
@@ -25,6 +26,7 @@ interface AgencyFacturacionModalProps {
 export function AgencyFacturacionModal({ open, onOpenChange, invoice, onFacturar }: AgencyFacturacionModalProps) {
   const { toast } = useToast();
   const { services, fetchServices } = useAgencyServices();
+  const { groupedCatalogs, fetchGroupedCatalogs } = useAgencyCatalogs();
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [newInvoiceNumber, setNewInvoiceNumber] = useState("");
@@ -46,6 +48,7 @@ export function AgencyFacturacionModal({ open, onOpenChange, invoice, onFacturar
     
     if (open) {
       fetchServices({ page: 1, limit: 1000 });
+      fetchGroupedCatalogs();
       
       // Generar número de factura sugerido
       const now = new Date();
@@ -60,7 +63,14 @@ export function AgencyFacturacionModal({ open, onOpenChange, invoice, onFacturar
     const today = new Date();
     setInvoiceDate(today.toLocaleDateString('en-CA'));
     setActions({ sendToSAP: false });
-  }, [invoice?.id, open, fetchServices]);
+  }, [invoice?.id, open, fetchServices, fetchGroupedCatalogs]);
+
+  const waitingTimeHourlyRate = (() => {
+    const cfg = groupedCatalogs?.taulia_code?.find(
+      (c: any) => c.code === "WAITING_TIME_RATE" && c.isActive && c.metadata?.price != null,
+    );
+    return cfg?.metadata?.price != null ? Number(cfg.metadata.price) : 10;
+  })();
 
   const getRelatedServices = () => {
     if (!invoice?.relatedServiceIds) return [];
@@ -104,6 +114,7 @@ export function AgencyFacturacionModal({ open, onOpenChange, invoice, onFacturar
         invoiceDate: invoiceDate,
         clientSapNumber: invoice.clientSapNumber,
         services: servicesForXml,
+        waitingTimeHourlyRate,
         additionalService: invoice.details?.trk137Amount ? {
           amount: invoice.details.trk137Amount,
           description: invoice.details.trk137Description || 'Tiempo de Espera'

@@ -114,7 +114,8 @@ export function AgencyServiceXmlModal({ open, onOpenChange, service, services = 
         invoiceNumber: service.invoiceNumber || `AGY-SERVICE-${service._id || service.id}`,
         invoiceDate: service.invoiceDate || new Date().toISOString().split('T')[0],
         clientSapNumber: clientSapNumber,
-        services: servicesForXml
+        services: servicesForXml,
+        waitingTimeHourlyRate: hourlyRate > 0 ? hourlyRate : undefined,
       };
       
       console.log('📦 XML Payload completo:', JSON.stringify(xmlPayload, null, 2));

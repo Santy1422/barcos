@@ -37,6 +37,25 @@ const formatDateToLocalString = (date: Date): string => {
   return `${y}-${m}-${d}`;
 };
 
+function getRankValuesForService(service: any): string[] {
+  const ranks: string[] = [];
+  if (service.crewMembers?.length) {
+    for (const m of service.crewMembers) {
+      const r = String(m?.crewRank ?? '').trim();
+      if (r) ranks.push(r);
+    }
+  }
+  const legacy = String(service.crewRank ?? '').trim();
+  if (legacy) ranks.push(legacy);
+  return [...new Set(ranks)];
+}
+
+function getServiceRanksLabel(service: any): string {
+  const ranks = getRankValuesForService(service);
+  if (ranks.length === 0) return 'N/A';
+  return ranks.join(', ');
+}
+
 export function AgencyCrearPrefactura() {
   const dispatch = useAppDispatch();
   const clients = useAppSelector(selectAllClients);
@@ -51,10 +70,11 @@ export function AgencyCrearPrefactura() {
   const [step, setStep] = useState<1 | 2>(1);
   const [clientFilter, setClientFilter] = useState('all');
   const [vesselFilter, setVesselFilter] = useState('');
-  const [crewFilter, setCrewFilter] = useState('');
+  const [rankFilter, setRankFilter] = useState('all');
   const [routeFilter, setRouteFilter] = useState('');
   const [openFilterColumn, setOpenFilterColumn] = useState<string | null>(null);
   const [clientFilterSearch, setClientFilterSearch] = useState('');
+  const [rankFilterSearch, setRankFilterSearch] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [dateFilter, setDateFilter] = useState<'createdAt' | 'pickupDate'>('createdAt');
@@ -142,11 +162,6 @@ export function AgencyCrearPrefactura() {
     return service.clientId || null;
   };
 
-  const getCrewMembersForService = (service: any) => {
-    if (service.crewMembers?.length) return service.crewMembers.length === 1 ? service.crewMembers[0].name : `${service.crewMembers[0].name} +${service.crewMembers.length - 1}`;
-    return service.crewName || 'N/A';
-  };
-
   const completedServices = useMemo(() => {
     return (services || []).filter((s: any) => s.status === 'completed');
   }, [services]);
@@ -166,6 +181,20 @@ export function AgencyCrearPrefactura() {
     return options.sort((a, b) => a.name.localeCompare(b.name));
   }, [completedServices, clients]);
 
+  const uniqueRankOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: string[] = [];
+    completedServices.forEach((s: any) => {
+      getRankValuesForService(s).forEach((r) => {
+        if (!seen.has(r)) {
+          seen.add(r);
+          options.push(r);
+        }
+      });
+    });
+    return options.sort((a, b) => a.localeCompare(b));
+  }, [completedServices]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (openFilterColumn) {
@@ -181,14 +210,8 @@ export function AgencyCrearPrefactura() {
     return completedServices.filter((service: any) => {
       const matchClient = clientFilter === 'all' || getClientIdForService(service) === clientFilter;
       const matchVessel = !vesselFilter || (service.vessel || '').toLowerCase().includes(vesselFilter.toLowerCase());
-      const matchCrew = !crewFilter || (() => {
-        const term = crewFilter.toLowerCase();
-        const crewStr = getCrewMembersForService(service).toLowerCase();
-        const byMembers = service.crewMembers?.some((m: any) =>
-          (m?.name || '').toLowerCase().includes(term) || (m?.crewRank || '').toLowerCase().includes(term)
-        );
-        return byMembers || crewStr.includes(term);
-      })();
+      const matchRank =
+        rankFilter === 'all' || getRankValuesForService(service).includes(rankFilter);
       const matchRoute = !routeFilter || (() => {
         const q = routeFilter.toLowerCase();
         const pickup = (service.pickupLocation || '').toLowerCase();
@@ -201,13 +224,13 @@ export function AgencyCrearPrefactura() {
         const sd = (dateValue || '').toString().split('T')[0];
         matchDate = sd >= startDate && sd <= endDate;
       }
-      return matchClient && matchVessel && matchCrew && matchRoute && matchDate;
+      return matchClient && matchVessel && matchRank && matchRoute && matchDate;
     });
-  }, [completedServices, clientFilter, vesselFilter, crewFilter, routeFilter, isUsingPeriodFilter, startDate, endDate, dateFilter, clients]);
+  }, [completedServices, clientFilter, vesselFilter, rankFilter, routeFilter, isUsingPeriodFilter, startDate, endDate, dateFilter, clients]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [clientFilter, vesselFilter, crewFilter, routeFilter, isUsingPeriodFilter, startDate, endDate, dateFilter]);
+  }, [clientFilter, vesselFilter, rankFilter, routeFilter, isUsingPeriodFilter, startDate, endDate, dateFilter]);
 
   const totalPages = Math.ceil(filteredServices.length / pageSize);
   const paginatedServices = useMemo(() => {
@@ -485,18 +508,24 @@ export function AgencyCrearPrefactura() {
                       </TableHead>
                       <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider px-2 relative" data-column-filter>
                         <div className="flex items-center gap-1">
-                          <span>Crew</span>
+                          <span>Rank</span>
                           <div className="flex items-center gap-0.5 shrink-0">
-                            {crewFilter && (
-                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" title="Borrar filtro" onClick={(e) => { e.stopPropagation(); setCrewFilter(''); setOpenFilterColumn(null); }}><X className="h-3 w-3" /></Button>
+                            {rankFilter !== 'all' && (
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" title="Borrar filtro" onClick={(e) => { e.stopPropagation(); setRankFilter('all'); setOpenFilterColumn(null); setRankFilterSearch(''); }}><X className="h-3 w-3" /></Button>
                             )}
-                            <Button variant="ghost" size="sm" onClick={() => setOpenFilterColumn(openFilterColumn === 'crew' ? null : 'crew')} className={`h-6 w-6 p-0 ${crewFilter ? 'text-blue-600' : 'text-muted-foreground'}`} title="Filtrar"><Filter className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="sm" onClick={() => { setOpenFilterColumn(openFilterColumn === 'rank' ? null : 'rank'); setRankFilterSearch(''); }} className={`h-6 w-6 p-0 ${rankFilter !== 'all' ? 'text-blue-600' : 'text-muted-foreground'}`} title="Filtrar"><Filter className="h-3.5 w-3.5" /></Button>
                           </div>
                         </div>
-                        {openFilterColumn === 'crew' && (
-                          <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-52">
-                            <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Filtrar por crew:</div>
-                            <Input placeholder="Buscar..." value={crewFilter} onChange={(e) => setCrewFilter(e.target.value)} className="h-8 text-xs" />
+                        {openFilterColumn === 'rank' && (
+                          <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-64">
+                            <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Filtrar por rank:</div>
+                            <Input placeholder="Buscar rank..." value={rankFilterSearch} onChange={(e) => setRankFilterSearch(e.target.value)} className="h-8 text-xs mb-2" />
+                            <div className="max-h-48 overflow-y-auto space-y-0.5">
+                              <div className={`px-2 py-1.5 text-xs cursor-pointer rounded hover:bg-gray-100 dark:hover:bg-slate-800 ${rankFilter === 'all' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 font-medium' : ''}`} onClick={() => { setRankFilter('all'); setOpenFilterColumn(null); setRankFilterSearch(''); }}>Todos los ranks</div>
+                              {uniqueRankOptions.filter((opt) => !rankFilterSearch || opt.toLowerCase().includes(rankFilterSearch.toLowerCase())).map((opt) => (
+                                <div key={opt} className={`px-2 py-1.5 text-xs cursor-pointer rounded hover:bg-gray-100 dark:hover:bg-slate-800 ${rankFilter === opt ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 font-medium' : ''}`} onClick={() => { setRankFilter(opt); setOpenFilterColumn(null); setRankFilterSearch(''); }}>{opt}</div>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </TableHead>
@@ -557,7 +586,7 @@ export function AgencyCrearPrefactura() {
                             </TableCell>
                             <TableCell className="text-xs">{(service.pickupDate || service.createdAt || '').toString().split('T')[0]}</TableCell>
                             <TableCell>{getClientForService(service)}</TableCell>
-                            <TableCell>{getCrewMembersForService(service)}</TableCell>
+                            <TableCell className="text-xs max-w-[14rem]">{getServiceRanksLabel(service)}</TableCell>
                             <TableCell>{service.vessel || 'N/A'}</TableCell>
                             <TableCell className="text-xs">{(service.pickupLocation || '')} → {(service.dropoffLocation || '')}</TableCell>
                             <TableCell>${((service.price || 0) + getServiceWaitingAmount(service)).toFixed(2)}</TableCell>

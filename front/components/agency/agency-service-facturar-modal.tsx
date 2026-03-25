@@ -310,6 +310,7 @@ export function AgencyServiceFacturarModal({
           invoiceNumber: invoiceNumber,
           invoiceDate: invoiceDate,
           clientSapNumber: clientSapNumber,
+          waitingTimeHourlyRate: hourlyRate > 0 ? hourlyRate : undefined,
           services: allServices.map(svc => {
             const wtMinutes = svc.waitingTime || 0;
             const wtPrice = svc.waitingTimePrice ?? (wtMinutes > 0 && hourlyRate > 0 ? (wtMinutes / 60) * hourlyRate : 0);
@@ -361,6 +362,7 @@ export function AgencyServiceFacturarModal({
           invoiceNumber: invoiceNumber,
           invoiceDate: invoiceDate,
           clientSapNumber: clientSapNumber,
+          waitingTimeHourlyRate: hourlyRate > 0 ? hourlyRate : undefined,
           services: [{
             _id: service._id || service.id,
             pickupDate: service.pickupDate,

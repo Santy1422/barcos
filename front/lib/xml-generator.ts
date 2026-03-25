@@ -1723,10 +1723,24 @@ export interface AgencyInvoiceForXml {
   invoiceDate: string
   clientSapNumber: string
   services: AgencyServiceForXml[]
+  /** Tarifa horaria WAITING_TIME_RATE; si se omite se usa 10 (mismo fallback que PDF agency). Si se envía 0, no se calcula por minutos. */
+  waitingTimeHourlyRate?: number
   additionalService?: {
     amount: number
     description: string
   }
+}
+
+/** Importe TRK137 por servicio: prioriza waitingTimePrice > 0; si no, (minutos/60)*tarifa (como prefactura/PDF). */
+function agencyServiceTrk137Amount(service: AgencyServiceForXml, hourlyRate: number): number {
+  const wtMinutes = Number(service.waitingTime) || 0
+  const raw = service.waitingTimePrice
+  const fromApi = raw != null && raw !== '' ? Number(raw) : NaN
+  if (!Number.isNaN(fromApi) && fromApi > 0) return fromApi
+  if (wtMinutes > 0 && hourlyRate > 0) {
+    return Math.round((wtMinutes / 60) * hourlyRate * 100) / 100
+  }
+  return 0
 }
 
 // Función para generar XML de Agency (Crew)
@@ -1736,9 +1750,15 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
     throw new Error("Datos requeridos faltantes para generar XML de Agency")
   }
 
-  // Total = suma de precios + suma de waiting time (debe coincidir con CLG098 + TRK137)
+  const hourlyForWaiting =
+    invoice.waitingTimeHourlyRate != null ? invoice.waitingTimeHourlyRate : 10
+
+  // Total = suma de precios + suma de waiting time efectivo (CLG098 + TRK137)
   const clg098Total = invoice.services.reduce((sum, service) => sum + (service.price || 0), 0)
-  const trk137Total = invoice.services.reduce((sum, service) => sum + (service.waitingTimePrice || 0), 0)
+  const trk137Total = invoice.services.reduce(
+    (sum, service) => sum + agencyServiceTrk137Amount(service, hourlyForWaiting),
+    0,
+  )
   const totalAmount = clg098Total + trk137Total
 
   console.log('=== DEBUG: generateAgencyInvoiceXML ===')
@@ -1746,48 +1766,53 @@ export function generateAgencyInvoiceXML(invoice: AgencyInvoiceForXml): string {
   console.log('CLG098 Total:', clg098Total)
   console.log('TRK137 Total (Waiting Time):', trk137Total)
   console.log('Total Amount:', totalAmount)
-  console.log('Services with waiting time:', invoice.services.filter(s => (s.waitingTime || 0) > 0).length)
-  
+  const waitingTimeLineCount = invoice.services.filter((s) => {
+    const wtMinutes = Number(s.waitingTime) || 0
+    const wtPrice = Number(s.waitingTimePrice) || 0
+    return wtMinutes > 0 || wtPrice > 0
+  }).length
+
+  console.log('Services with waiting time:', waitingTimeLineCount)
+
+  // Un solo OtherItem CLG098 (trayecto) y uno TRK137 (waiting), con montos y cantidades acumuladas
   const otherItems: any[] = []
-  invoice.services.forEach((service) => {
+  const refPeriod = formatReferencePeriod(invoice.invoiceDate)
+
+  if (invoice.services.length > 0) {
     otherItems.push({
-      "IncomeRebateCode": "I",
-      "AmntTransacCur": (-(service.price || 0)).toFixed(2),
-      "BaseUnitMeasure": "EA",
-      "Qty": "1.00",
-      "ProfitCenter": "PAPANC440",
-      "ReferencePeriod": formatReferencePeriod(invoice.invoiceDate),
-      "Service": "CLG098",
-      "Activity": "CLG",
-      "Pillar": "LOGS",
-      "BUCountry": "PA",
-      "ServiceCountry": "PA",
-      "ClientType": "MSCGVA"
+      IncomeRebateCode: 'I',
+      AmntTransacCur: (-clg098Total).toFixed(2),
+      BaseUnitMeasure: 'EA',
+      Qty: invoice.services.length.toFixed(2),
+      ProfitCenter: 'PAPANC440',
+      ReferencePeriod: refPeriod,
+      Service: 'CLG098',
+      Activity: 'CLG',
+      Pillar: 'LOGS',
+      BUCountry: 'PA',
+      ServiceCountry: 'PA',
+      ClientType: 'MSCGVA',
     })
-    // TRK137: waiting time - incluir cuando hay minutos de espera o importe > 0
-    const wtMinutes = Number(service.waitingTime) || 0;
-    const wtPrice = Number(service.waitingTimePrice) || 0;
-    const hasWaitingTime = wtMinutes > 0 || wtPrice > 0;
-    if (hasWaitingTime) {
-      const wtAmount = wtPrice;
-      otherItems.push({
-        "IncomeRebateCode": "I",
-        "AmntTransacCur": (-wtAmount).toFixed(2),
-        "BaseUnitMeasure": "EA",
-        "Qty": "1.00",
-        "ProfitCenter": "PAPANC440",
-        "ReferencePeriod": formatReferencePeriod(invoice.invoiceDate),
-        "Service": "TRK137",
-        "Activity": "TRK",
-        "Pillar": "TRSP",
-        "BUCountry": "PA",
-        "ServiceCountry": "PA",
-        "ClientType": "MSCGVA"
-      })
-    }
-  })
-  
-  console.log('Total OtherItems generated:', otherItems.length)
+  }
+
+  if (waitingTimeLineCount > 0) {
+    otherItems.push({
+      IncomeRebateCode: 'I',
+      AmntTransacCur: (-trk137Total).toFixed(2),
+      BaseUnitMeasure: 'EA',
+      Qty: waitingTimeLineCount.toFixed(2),
+      ProfitCenter: 'PAPANC440',
+      ReferencePeriod: refPeriod,
+      Service: 'TRK137',
+      Activity: 'TRK',
+      Pillar: 'TRSP',
+      BUCountry: 'PA',
+      ServiceCountry: 'PA',
+      ClientType: 'MSCGVA',
+    })
+  }
+
+  console.log('Total OtherItems generated:', otherItems.length, '(CLG098 + TRK137 agregados)')
 
   const xmlObject = {
     "ns1:LogisticARInvoices": {

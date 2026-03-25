@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +32,19 @@ export function AgencyPdfViewer({ open = false, onOpenChange, service, services 
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const clients = useAppSelector(selectAllClients);
   const { ranks, fetchGroupedCatalogs, groupedCatalogs } = useAgencyCatalogs();
+
+  /** Con varios servicios el primer ítem de `services` no trae invoiceNumber/invoiceDate del paso 2; vienen en `service`. */
+  const baseServiceForPdf = useMemo(() => {
+    const baseFromList = isMultipleServices && services.length > 0 ? services[0] : service;
+    if (isMultipleServices && services.length > 0 && service) {
+      return {
+        ...baseFromList,
+        invoiceNumber: service.invoiceNumber ?? baseFromList?.invoiceNumber,
+        invoiceDate: service.invoiceDate ?? baseFromList?.invoiceDate,
+      };
+    }
+    return baseFromList;
+  }, [isMultipleServices, services, service]);
 
   useEffect(() => {
     if (open) {
@@ -423,9 +436,8 @@ export function AgencyPdfViewer({ open = false, onOpenChange, service, services 
             console.warn("No se pudo cargar el logo PTYSS, usando texto fallback");
           }
 
-          const baseService = isMultipleServices && services.length > 0 ? services[0] : service;
-          const pdfTitle = baseService?.status === 'facturado' ? 'INVOICE' : 'PRE-INVOICE'
-          const doc = generateAgencyInvoicePDF(baseService, pdfTitle, isMultipleServices ? services : undefined, logoBase64, waitingTimeHourlyRate)
+          const pdfTitle = baseServiceForPdf?.status === 'facturado' ? 'INVOICE' : 'PRE-INVOICE'
+          const doc = generateAgencyInvoicePDF(baseServiceForPdf, pdfTitle, isMultipleServices ? services : undefined, logoBase64, waitingTimeHourlyRate)
           const blob = doc.output('blob')
           setPdfBlob(blob)
         } catch (error) {
@@ -438,7 +450,7 @@ export function AgencyPdfViewer({ open = false, onOpenChange, service, services 
 
       loadLogoAndGenerate();
     }
-  }, [shouldGenerate, service, services, isMultipleServices, toast, ranks, waitingTimeHourlyRate])
+  }, [shouldGenerate, baseServiceForPdf, service, services, isMultipleServices, toast, ranks, waitingTimeHourlyRate])
 
   // Mantener URL del blob para iframe y revocar al desmontar o cambiar blob
   useEffect(() => {
@@ -456,9 +468,8 @@ export function AgencyPdfViewer({ open = false, onOpenChange, service, services 
 
   const handleDownload = () => {
     if (!pdfBlob) return
-    const baseService = isMultipleServices && services.length > 0 ? services[0] : service;
-    if (!baseService) return;
-    const fileName = `agency_invoice_${baseService.invoiceNumber || baseService._id}.pdf`
+    if (!baseServiceForPdf) return;
+    const fileName = `agency_invoice_${baseServiceForPdf.invoiceNumber || baseServiceForPdf._id}.pdf`
     saveAs(pdfBlob, fileName)
     toast({ title: "PDF descargado", description: `El archivo ${fileName} ha sido descargado` })
   }
