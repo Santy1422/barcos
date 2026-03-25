@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useCallback } from "react"
+import { useEffect, useMemo, useState, useCallback, useRef } from "react"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
 import {
   type ExcelRecord as IndividualExcelRecord,
@@ -113,6 +113,39 @@ const convertExcelDateToReadable = (excelDate: string | number): string => {
 }
 
 const ITEMS_PER_PAGE = 20
+
+const isTrasiegoRecord = (r: any) => !!(r?.data?.leg || r?.data?.matchedPrice || r?.data?.line)
+
+type PrefacturaListFilters = {
+  status?: string
+  search?: string
+  clientId?: string
+  startDate?: string
+  endDate?: string
+  dateField?: 'createdAt' | 'moveDate'
+}
+
+function buildTruckingPrefacturaListUrl(page: number, limit: number, filters?: PrefacturaListFilters) {
+  let url = createApiUrl(`/api/records/module/trucking?page=${page}&limit=${limit}`)
+  if (filters?.status && filters.status !== 'all') url += `&status=${encodeURIComponent(filters.status)}`
+  if (filters?.search?.trim()) url += `&search=${encodeURIComponent(filters.search.trim())}`
+  if (filters?.clientId) url += `&clientId=${encodeURIComponent(filters.clientId)}`
+  if (filters?.startDate) {
+    const startVal = filters.dateField === 'createdAt'
+      ? new Date(filters.startDate + 'T00:00:00.000').toISOString()
+      : filters.startDate
+    url += `&startDate=${encodeURIComponent(startVal)}`
+  }
+  if (filters?.endDate) {
+    const endVal = filters.dateField === 'createdAt'
+      ? new Date(filters.endDate + 'T23:59:59.999').toISOString()
+      : filters.endDate
+    url += `&endDate=${encodeURIComponent(endVal)}`
+  }
+  if (filters?.dateField) url += `&dateField=${encodeURIComponent(filters.dateField)}`
+  return url
+}
+
 interface PaginationInfo {
   current: number
   pages: number
@@ -143,6 +176,9 @@ export function TruckingPrefactura() {
   // Selección: IDs + cache para mantener selección al cambiar de página
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([])
   const [selectedRecordsCache, setSelectedRecordsCache] = useState<Map<string, any>>(new Map())
+  const [isBulkSelecting, setIsBulkSelecting] = useState(false)
+  const [bulkSelectIdsForFilters, setBulkSelectIdsForFilters] = useState<string[] | null>(null)
+  const bulkSelectAbortRef = useRef<AbortController | null>(null)
 
   const getClientNameForRecord = useCallback((rec: any) => {
     const d = rec?.data || {}
@@ -159,62 +195,47 @@ export function TruckingPrefactura() {
     return 'PTY SHIP SUPPLIERS, S.A.'
   }, [clients])
 
-  const fetchRecords = useCallback(async (page: number, filters?: {
-    status?: string
-    search?: string
-    clientId?: string
-    startDate?: string
-    endDate?: string
-    dateField?: 'createdAt' | 'moveDate'
-  }) => {
+  const fetchTruckingListPage = useCallback(async (
+    page: number,
+    limit: number,
+    filters?: PrefacturaListFilters,
+    signal?: AbortSignal
+  ) => {
+    const token = localStorage.getItem('token')
+    if (!token) throw new Error('No autenticado')
+    const url = buildTruckingPrefacturaListUrl(page, limit, filters)
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      signal
+    })
+    if (!response.ok) throw new Error('Error al cargar registros')
+    const data = await response.json()
+    let recordsData: any[] = []
+    let paginationData: PaginationInfo = { current: page, pages: 1, total: 0 }
+    if (data.payload) {
+      recordsData = data.payload.data || data.payload.records || []
+      paginationData = data.payload.pagination || paginationData
+    } else {
+      recordsData = data.data || data.records || []
+      paginationData = data.pagination || paginationData
+    }
+    return { records: recordsData.filter(isTrasiegoRecord), pagination: paginationData }
+  }, [])
+
+  const fetchRecords = useCallback(async (page: number, filters?: PrefacturaListFilters) => {
     setLoading(true)
     setError(null)
     try {
-      const token = localStorage.getItem('token')
-      if (!token) throw new Error('No autenticado')
-      let url = createApiUrl(`/api/records/module/trucking?page=${page}&limit=${ITEMS_PER_PAGE}`)
-      if (filters?.status && filters.status !== 'all') url += `&status=${encodeURIComponent(filters.status)}`
-      if (filters?.search?.trim()) url += `&search=${encodeURIComponent(filters.search.trim())}`
-      if (filters?.clientId) url += `&clientId=${encodeURIComponent(filters.clientId)}`
-      // Para createdAt enviar inicio/fin del día en hora local (ISO) para evitar desfase por timezone
-      if (filters?.startDate) {
-        const startVal = filters.dateField === 'createdAt'
-          ? new Date(filters.startDate + 'T00:00:00.000').toISOString()
-          : filters.startDate
-        url += `&startDate=${encodeURIComponent(startVal)}`
-      }
-      if (filters?.endDate) {
-        const endVal = filters.dateField === 'createdAt'
-          ? new Date(filters.endDate + 'T23:59:59.999').toISOString()
-          : filters.endDate
-        url += `&endDate=${encodeURIComponent(endVal)}`
-      }
-      if (filters?.dateField) url += `&dateField=${encodeURIComponent(filters.dateField)}`
-
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-      })
-      if (!response.ok) throw new Error('Error al cargar registros')
-      const data = await response.json()
-      let recordsData: any[] = []
-      let paginationData: PaginationInfo = { current: page, pages: 1, total: 0 }
-      if (data.payload) {
-        recordsData = data.payload.data || data.payload.records || []
-        paginationData = data.payload.pagination || paginationData
-      } else {
-        recordsData = data.data || data.records || []
-        paginationData = data.pagination || paginationData
-      }
-      const isTrasiego = (r: any) => !!(r?.data?.leg || r?.data?.matchedPrice || r?.data?.line)
-      setRecords(recordsData.filter(isTrasiego))
-      setPagination(paginationData)
+      const { records, pagination } = await fetchTruckingListPage(page, ITEMS_PER_PAGE, filters)
+      setRecords(records)
+      setPagination(pagination)
     } catch (err) {
       console.error('Error fetching records:', err)
       setError(err instanceof Error ? err.message : 'Error desconocido')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fetchTruckingListPage])
 
   useEffect(() => {
     dispatch(fetchClients())
@@ -246,6 +267,7 @@ export function TruckingPrefactura() {
   const clearSelection = () => {
     setSelectedRecordIds([])
     setSelectedRecordsCache(new Map())
+    setBulkSelectIdsForFilters(null)
   }
 
   // Filtros estilo PTYSS
@@ -275,16 +297,93 @@ export function TruckingPrefactura() {
     return c?._id || c?.id
   }, [clientFilter, clients])
 
+  const listFilterParams = useMemo((): PrefacturaListFilters => ({
+    status: statusFilter,
+    search,
+    clientId: clientIdFromFilter,
+    startDate: isUsingPeriodFilter ? startDate : undefined,
+    endDate: isUsingPeriodFilter ? endDate : undefined,
+    dateField: dateFilter
+  }), [statusFilter, search, clientIdFromFilter, isUsingPeriodFilter, startDate, endDate, dateFilter])
+
+  const prefacturaFiltersKey = useMemo(() => JSON.stringify(listFilterParams), [listFilterParams])
+
   useEffect(() => {
-    fetchRecords(currentPage, {
-      status: statusFilter,
-      search,
-      clientId: clientIdFromFilter,
-      startDate: isUsingPeriodFilter ? startDate : undefined,
-      endDate: isUsingPeriodFilter ? endDate : undefined,
-      dateField: dateFilter
-    })
-  }, [currentPage, statusFilter, search, isUsingPeriodFilter, startDate, endDate, dateFilter, clientIdFromFilter, fetchRecords])
+    setBulkSelectIdsForFilters(null)
+  }, [prefacturaFiltersKey])
+
+  useEffect(() => {
+    fetchRecords(currentPage, listFilterParams)
+  }, [currentPage, listFilterParams, fetchRecords])
+
+  const cancelBulkSelection = useCallback(() => {
+    bulkSelectAbortRef.current?.abort()
+  }, [])
+
+  const selectAllMatchingFilters = useCallback(async () => {
+    bulkSelectAbortRef.current?.abort()
+    const ac = new AbortController()
+    bulkSelectAbortRef.current = ac
+    const signal = ac.signal
+    setIsBulkSelecting(true)
+    try {
+      const first = await fetchTruckingListPage(1, ITEMS_PER_PAGE, listFilterParams, signal)
+      if (signal.aborted) return
+      const pages = Math.max(1, first.pagination.pages || 1)
+      const byId = new Map<string, any>()
+      for (const r of first.records) {
+        const id = String((r as any)._id || (r as any).id || '')
+        if (id) byId.set(id, r)
+      }
+      for (let p = 2; p <= pages; p++) {
+        if (signal.aborted) return
+        const batch = await fetchTruckingListPage(p, ITEMS_PER_PAGE, listFilterParams, signal)
+        for (const r of batch.records) {
+          const id = String((r as any)._id || (r as any).id || '')
+          if (id) byId.set(id, r)
+        }
+      }
+      if (signal.aborted) return
+      const allRecords = Array.from(byId.values())
+      const ids = allRecords.map(r => String((r as any)._id || (r as any).id))
+      if (ids.length === 0) {
+        toast({
+          title: 'Sin registros',
+          description: 'No hay registros de trasiego que coincidan con los filtros',
+          variant: 'destructive'
+        })
+        return
+      }
+      setBulkSelectIdsForFilters(ids)
+      setSelectedRecordIds(prev => [...new Set([...prev, ...ids])])
+      setSelectedRecordsCache(prev => {
+        const next = new Map(prev)
+        allRecords.forEach(r => next.set(String((r as any)._id || (r as any).id), r))
+        return next
+      })
+      toast({
+        title: 'Selección actualizada',
+        description: `Se seleccionaron ${ids.length} registro(s) según los filtros actuales.`
+      })
+    } catch (e: any) {
+      const aborted = signal.aborted || e?.name === 'AbortError'
+      if (aborted) {
+        toast({
+          title: 'Selección cancelada',
+          description: 'Se detuvo la selección masiva. Los registros no fueron actualizados.'
+        })
+        return
+      }
+      toast({
+        title: 'Error',
+        description: e?.message || 'No se pudo seleccionar todos los registros',
+        variant: 'destructive'
+      })
+    } finally {
+      bulkSelectAbortRef.current = null
+      setIsBulkSelecting(false)
+    }
+  }, [fetchTruckingListPage, listFilterParams, toast])
 
   useEffect(() => {
     setCurrentPage(1)
@@ -553,6 +652,21 @@ export function TruckingPrefactura() {
   const trasiegoCount = visibleRecords.length
   const totalPages = pagination.pages
   const paginatedRecords = visibleRecords
+
+  const bulkAllMatchingSelected =
+    (bulkSelectIdsForFilters?.length ?? 0) > 0 &&
+    bulkSelectIdsForFilters!.every(id => selectedRecordIds.includes(id))
+
+  const singlePageFullySelected =
+    totalPages <= 1 &&
+    visibleRecords.length > 0 &&
+    visibleRecords.every((r: any) => isSelected(String((r as any)._id || r.id)))
+
+  const headerSelectAllChecked = bulkAllMatchingSelected || singlePageFullySelected
+
+  const headerSelectAllIndeterminate =
+    !headerSelectAllChecked && selectedRecordIds.length > 0
+
   const prefacturadosCount = records.filter((r: any) => (r.status || '').toLowerCase() === 'prefacturado').length
 
   const handleNextStep = () => {
@@ -628,6 +742,7 @@ export function TruckingPrefactura() {
       
       setSelectedRecordIds([])
       setSelectedRecordsCache(new Map())
+      setBulkSelectIdsForFilters(null)
       handleRefresh()
       
       // Mostrar resultado
@@ -1060,19 +1175,13 @@ export function TruckingPrefactura() {
 
         setSelectedRecordIds([])
         setSelectedRecordsCache(new Map())
+        setBulkSelectIdsForFilters(null)
         setPrefacturaData({ prefacturaNumber: `TRK-PRE-${Date.now().toString().slice(-5)}`, notes: '' })
         setSelectedAdditionalServices([])
         setDiscountAmount(0)
         setStep('select')
         setCurrentPage(1)
-        fetchRecords(1, {
-          status: statusFilter,
-          search,
-          clientId: clientIdFromFilter,
-          startDate: isUsingPeriodFilter ? startDate : undefined,
-          endDate: isUsingPeriodFilter ? endDate : undefined,
-          dateField: dateFilter
-        })
+        fetchRecords(1, listFilterParams)
 
         toast({ title: 'Prefactura creada', description: `Prefactura ${newPrefactura.invoiceNumber} creada con ${selectedRecords.length} registros.` })
       } else {
@@ -1086,14 +1195,7 @@ export function TruckingPrefactura() {
   }
 
   const handleRefresh = () => {
-    fetchRecords(currentPage, {
-      status: statusFilter,
-      search,
-      clientId: clientIdFromFilter,
-      startDate: isUsingPeriodFilter ? startDate : undefined,
-      endDate: isUsingPeriodFilter ? endDate : undefined,
-      dateField: dateFilter
-    })
+    fetchRecords(currentPage, listFilterParams)
   }
 
   // Cerrar el filtro de cliente cuando se hace clic fuera
@@ -1546,30 +1648,65 @@ export function TruckingPrefactura() {
                     <Input placeholder="Buscar por contenedor, cliente o orden..." value={search} onChange={(e) => setSearch(e.target.value)} />
                   </div>
                 </div>
-                <div className="rounded-md border overflow-auto">
+                <div className={`rounded-md border overflow-auto ${isBulkSelecting ? 'relative min-h-[200px]' : ''}`}>
+                  {isBulkSelecting && (
+                    <div
+                      className="absolute inset-0 z-10 flex items-start justify-center bg-background/70 pt-12 backdrop-blur-[1px]"
+                      aria-live="polite"
+                      aria-busy="true"
+                    >
+                      <div className="mx-3 flex max-w-md flex-col gap-3 rounded-lg border bg-card px-4 py-3 text-sm text-card-foreground shadow-md">
+                        <div className="flex items-start gap-3">
+                          <Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary" aria-hidden />
+                          <span>
+                            Seleccionando todos los registros que coinciden con los filtros. Esto puede tardar unos segundos si hay muchos resultados.
+                          </span>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="self-end shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            cancelBulkSelection()
+                          }}
+                        >
+                          Cancelar selección
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>
+                        <TableHead className="w-[52px]">
                           <Checkbox
-                            checked={visibleRecords.length > 0 && visibleRecords.every((r: any) => isSelected(r._id || r.id))}
-                            onCheckedChange={(c: boolean) => {
-                              const pageIds = visibleRecords.map((r: any) => r._id || r.id)
-                              if (c) {
-                                setSelectedRecordIds(prev => [...new Set([...prev, ...pageIds])])
-                                setSelectedRecordsCache(prev => {
-                                  const next = new Map(prev)
-                                  visibleRecords.forEach((r: any) => next.set(r._id || r.id, r))
-                                  return next
-                                })
-                              } else {
-                                setSelectedRecordIds(prev => prev.filter(id => !pageIds.includes(id)))
-                                setSelectedRecordsCache(prev => {
-                                  const next = new Map(prev)
-                                  pageIds.forEach(id => next.delete(id))
-                                  return next
-                                })
+                            checked={headerSelectAllIndeterminate ? 'indeterminate' : headerSelectAllChecked}
+                            disabled={loading || isBulkSelecting || visibleRecords.length === 0}
+                            onCheckedChange={(c) => {
+                              if (c === true) {
+                                void selectAllMatchingFilters()
+                                return
                               }
+                              if (bulkSelectIdsForFilters && bulkSelectIdsForFilters.length > 0) {
+                                const drop = new Set(bulkSelectIdsForFilters)
+                                setSelectedRecordIds(prev => prev.filter(id => !drop.has(id)))
+                                setSelectedRecordsCache(prev => {
+                                  const next = new Map(prev)
+                                  bulkSelectIdsForFilters.forEach(id => next.delete(id))
+                                  return next
+                                })
+                                setBulkSelectIdsForFilters(null)
+                                return
+                              }
+                              const pageIds = visibleRecords.map((r: any) => String((r as any)._id || r.id))
+                              setSelectedRecordIds(prev => prev.filter(id => !pageIds.includes(id)))
+                              setSelectedRecordsCache(prev => {
+                                const next = new Map(prev)
+                                pageIds.forEach(id => next.delete(id))
+                                return next
+                              })
                             }}
                           />
                         </TableHead>
@@ -1730,7 +1867,13 @@ export function TruckingPrefactura() {
                   </div>
                   <div className="flex items-center justify-between mt-6">
                     <div className="text-sm">
-                      Seleccionados: {selectedRecords.length} de {visibleRecords.length} | Total: <span className="font-semibold">${totalSelected.toFixed(2)}</span>
+                      Seleccionados: {selectedRecords.length}
+                      {selectedRecords.length > 0 &&
+                      bulkSelectIdsForFilters &&
+                      bulkSelectIdsForFilters.length > 0
+                        ? ` (${bulkSelectIdsForFilters.length} según filtros)`
+                        : ''}{' '}
+                      | Total: <span className="font-semibold">${totalSelected.toFixed(2)}</span>
                     </div>
                     <div className="flex gap-2 items-center">
                       <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
