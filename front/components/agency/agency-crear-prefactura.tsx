@@ -215,6 +215,48 @@ export function AgencyCrearPrefactura() {
     return filteredServices.slice(start, start + pageSize);
   }, [filteredServices, currentPage, pageSize]);
 
+  const filteredServiceIds = useMemo(
+    () => filteredServices.map((s: any) => s._id || s.id).filter(Boolean) as string[],
+    [filteredServices],
+  );
+
+  const canBulkSelectAll = clientFilter !== 'all' && filteredServiceIds.length > 0;
+
+  const allFilteredSelected =
+    canBulkSelectAll &&
+    filteredServiceIds.length > 0 &&
+    filteredServiceIds.every((id) => selectedServices.includes(id));
+
+  const someFilteredSelected =
+    canBulkSelectAll && filteredServiceIds.some((id) => selectedServices.includes(id));
+
+  const headerSelectAllState: boolean | 'indeterminate' = !canBulkSelectAll
+    ? false
+    : allFilteredSelected
+      ? true
+      : someFilteredSelected
+        ? 'indeterminate'
+        : false;
+
+  const handleToggleSelectAllFiltered = (value: boolean | 'indeterminate') => {
+    if (clientFilter === 'all' || filteredServiceIds.length === 0) return;
+    const checked = value === true;
+    const ids = filteredServiceIds;
+    if (checked) {
+      if (selectedClientId && selectedClientId !== clientFilter) {
+        toast.error('Solo puedes seleccionar servicios del mismo cliente');
+        return;
+      }
+      setSelectedClientId(clientFilter);
+      setSelectedServices((prev) => Array.from(new Set([...prev, ...ids])));
+    } else {
+      const idSet = new Set(ids);
+      const next = selectedServices.filter((id) => !idSet.has(id));
+      setSelectedServices(next);
+      if (next.length === 0) setSelectedClientId(null);
+    }
+  };
+
   const handleServiceSelection = (serviceId: string, clientId: string | null) => {
     if (!clientId) {
       toast.error('No se puede determinar el cliente para este servicio');
@@ -403,7 +445,20 @@ export function AgencyCrearPrefactura() {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
-                      <TableHead className="w-12 py-3">Sel.</TableHead>
+                      <TableHead className="w-12 py-3 align-middle">
+                        <Checkbox
+                          checked={headerSelectAllState}
+                          disabled={!canBulkSelectAll}
+                          onCheckedChange={handleToggleSelectAllFiltered}
+                          title={
+                            canBulkSelectAll
+                              ? 'Seleccionar o quitar todos los servicios filtrados (todas las páginas)'
+                              : 'Filtra por un único cliente en la columna Cliente para seleccionar todos de una vez'
+                          }
+                          aria-label="Seleccionar todos los servicios filtrados"
+                          className="translate-y-[1px]"
+                        />
+                      </TableHead>
                       <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider">Fecha</TableHead>
                       <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider px-2 relative" data-column-filter>
                         <div className="flex items-center gap-1">
