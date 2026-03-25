@@ -178,6 +178,7 @@ export function TruckingPrefactura() {
   const [selectedRecordsCache, setSelectedRecordsCache] = useState<Map<string, any>>(new Map())
   const [isBulkSelecting, setIsBulkSelecting] = useState(false)
   const [bulkSelectIdsForFilters, setBulkSelectIdsForFilters] = useState<string[] | null>(null)
+  const [selectableTotalForFilters, setSelectableTotalForFilters] = useState<number | null>(null)
   const bulkSelectAbortRef = useRef<AbortController | null>(null)
 
   const getClientNameForRecord = useCallback((rec: any) => {
@@ -268,6 +269,7 @@ export function TruckingPrefactura() {
     setSelectedRecordIds([])
     setSelectedRecordsCache(new Map())
     setBulkSelectIdsForFilters(null)
+    setSelectableTotalForFilters(null)
   }
 
   // Filtros estilo PTYSS
@@ -310,6 +312,7 @@ export function TruckingPrefactura() {
 
   useEffect(() => {
     setBulkSelectIdsForFilters(null)
+    setSelectableTotalForFilters(null)
   }, [prefacturaFiltersKey])
 
   useEffect(() => {
@@ -355,6 +358,7 @@ export function TruckingPrefactura() {
         return
       }
       setBulkSelectIdsForFilters(ids)
+      setSelectableTotalForFilters(ids.length)
       setSelectedRecordIds(prev => [...new Set([...prev, ...ids])])
       setSelectedRecordsCache(prev => {
         const next = new Map(prev)
@@ -649,6 +653,7 @@ export function TruckingPrefactura() {
 
   // KPI summary (solo trasiego): mostrar total, trasiego y prefacturados
   const totalDb = pagination.total
+  const totalSelectable = selectableTotalForFilters
   const trasiegoCount = visibleRecords.length
   const totalPages = pagination.pages
   const paginatedRecords = visibleRecords
@@ -743,6 +748,7 @@ export function TruckingPrefactura() {
       setSelectedRecordIds([])
       setSelectedRecordsCache(new Map())
       setBulkSelectIdsForFilters(null)
+      setSelectableTotalForFilters(null)
       handleRefresh()
       
       // Mostrar resultado
@@ -1176,6 +1182,7 @@ export function TruckingPrefactura() {
         setSelectedRecordIds([])
         setSelectedRecordsCache(new Map())
         setBulkSelectIdsForFilters(null)
+        setSelectableTotalForFilters(null)
         setPrefacturaData({ prefacturaNumber: `TRK-PRE-${Date.now().toString().slice(-5)}`, notes: '' })
         setSelectedAdditionalServices([])
         setDiscountAmount(0)
@@ -1225,7 +1232,9 @@ export function TruckingPrefactura() {
                 <div>
                   <div className="text-lg font-semibold">Paso 1: Selección de Registros</div>
                   <div>
-                    <Badge variant="secondary" className="text-slate-900 bg-white/90">{totalDb} disponibles</Badge>
+                    <Badge variant="secondary" className="text-slate-900 bg-white/90">
+                      {totalSelectable ?? totalDb} disponibles para seleccionar
+                    </Badge>
                   </div>
                 </div>
               </div>
@@ -1305,8 +1314,13 @@ export function TruckingPrefactura() {
                   </div>
                   <div className="flex-1">
                     <span className="text-sm font-semibold text-slate-900">
-                      Total de registros mostrados: {totalDb}
+                      Total según API: {totalDb}
                     </span>
+                    {totalSelectable !== null && (
+                      <div className="text-xs text-slate-700 mt-0.5">
+                        Disponibles para selección (trasiego): {totalSelectable}
+                      </div>
+                    )}
                   </div>
                   <div className="flex gap-4 text-xs">
                     <div className="bg-white/60 px-3 py-1 rounded-md">
@@ -1698,6 +1712,7 @@ export function TruckingPrefactura() {
                                   return next
                                 })
                                 setBulkSelectIdsForFilters(null)
+                                setSelectableTotalForFilters(null)
                                 return
                               }
                               const pageIds = visibleRecords.map((r: any) => String((r as any)._id || r.id))
