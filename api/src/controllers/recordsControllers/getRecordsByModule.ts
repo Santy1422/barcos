@@ -88,7 +88,8 @@ const getRecordsByModule = async (req: Request, res: Response) => {
           const skip = (pageNum - 1) * limitNum;
           const countResult = await records.aggregate([...pipeline, { $count: 'total' }]);
           const total = countResult[0]?.total ?? 0;
-          pipeline.push({ $sort: { createdAt: -1 } }, { $skip: skip }, { $limit: limitNum });
+          // Orden estable: mismos createdAt (p. ej. carga masiva) sin _id hacían que skip/limit perdiera filas al paginar
+          pipeline.push({ $sort: { createdAt: -1, _id: -1 } }, { $skip: skip }, { $limit: limitNum });
           const ids = await records.aggregate([...pipeline, { $project: { _id: 1 } }]);
           const idList = ids.map((r: any) => r._id);
           const found = idList.length
@@ -144,7 +145,7 @@ const getRecordsByModule = async (req: Request, res: Response) => {
         .populate('clientId', 'companyName fullName email')
         .populate('excelId', 'filename originalName')
         .populate('createdBy', 'name lastName email')
-        .sort({ createdAt: -1 });
+        .sort({ createdAt: -1, _id: -1 });
       total = Array.isArray(recordsList) ? recordsList.length : 0;
       console.log("🔍 getRecordsByModule - Registros encontrados:", total);
     } else {
@@ -155,7 +156,7 @@ const getRecordsByModule = async (req: Request, res: Response) => {
         .populate('clientId', 'companyName fullName email')
         .populate('excelId', 'filename originalName')
         .populate('createdBy', 'name lastName email')
-        .sort({ createdAt: -1 })
+        .sort({ createdAt: -1, _id: -1 })
         .skip(skip)
         .limit(limitNum);
       total = await records.countDocuments(filters);

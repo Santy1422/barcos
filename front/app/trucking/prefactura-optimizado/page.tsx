@@ -254,7 +254,25 @@ export default function TruckingPrefacturaOptimizadoPage() {
 
       // Filter for trasiego records only (client-side for now since backend doesn't support this filter)
       // Note: Backend now excludes prefacturado/facturado by default
-      const isTrasiego = (rec: any) => !!(rec?.data?.leg || rec?.data?.matchedPrice || rec?.data?.line)
+      const isTrasiego = (rec: any) => {
+        const d = rec?.data ?? {}
+        const str = (v: unknown) => (v == null ? '' : String(v).trim())
+        if (str(d.line)) return true
+        if (str(d.leg)) return true
+        if (d.matchedPrice !== undefined && d.matchedPrice !== null && d.matchedPrice !== '') {
+          const n = Number(d.matchedPrice)
+          if (!Number.isNaN(n)) return true
+        }
+        const hasMove = str(d.from) || str(d.to)
+        const hasContainerish =
+          str(d.container) ||
+          str(d.containerConsecutive) ||
+          str(rec?.containerConsecutive) ||
+          str(d.order) ||
+          str(rec?.orderNumber)
+        if (hasMove && hasContainerish) return true
+        return false
+      }
 
       let filteredRecords = recordsData.filter(isTrasiego)
 

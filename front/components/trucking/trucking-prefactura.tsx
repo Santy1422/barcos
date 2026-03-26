@@ -114,7 +114,26 @@ const convertExcelDateToReadable = (excelDate: string | number): string => {
 
 const ITEMS_PER_PAGE = 20
 
-const isTrasiegoRecord = (r: any) => !!(r?.data?.leg || r?.data?.matchedPrice || r?.data?.line)
+/** Incluye filas listables como trasiego; matchedPrice 0 era excluido antes por usar !!0 === false */
+const isTrasiegoRecord = (r: any) => {
+  const d = r?.data ?? {}
+  const str = (v: unknown) => (v == null ? '' : String(v).trim())
+  if (str(d.line)) return true
+  if (str(d.leg)) return true
+  if (d.matchedPrice !== undefined && d.matchedPrice !== null && d.matchedPrice !== '') {
+    const n = Number(d.matchedPrice)
+    if (!Number.isNaN(n)) return true
+  }
+  const hasMove = str(d.from) || str(d.to)
+  const hasContainerish =
+    str(d.container) ||
+    str(d.containerConsecutive) ||
+    str((r as any)?.containerConsecutive) ||
+    str(d.order) ||
+    str((r as any)?.orderNumber)
+  if (hasMove && hasContainerish) return true
+  return false
+}
 
 type PrefacturaListFilters = {
   status?: string
@@ -332,7 +351,8 @@ export function TruckingPrefactura() {
     try {
       const first = await fetchTruckingListPage(1, ITEMS_PER_PAGE, listFilterParams, signal)
       if (signal.aborted) return
-      const pages = Math.max(1, first.pagination.pages || 1)
+      const totalCount = first.pagination.total ?? 0
+      const pages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE))
       const byId = new Map<string, any>()
       for (const r of first.records) {
         const id = String((r as any)._id || (r as any).id || '')
