@@ -247,7 +247,7 @@ export function PTYSSUpload() {
 
   // Cargar rutas al montar el componente - cargar todas las rutas para matching
   useEffect(() => {
-    dispatch(fetchPTYSSRoutes({ page: 1, limit: 10000 })) // Cargar hasta 10,000 rutas para matching
+    dispatch(fetchPTYSSRoutes({ page: 1, limit: 20000 })) // Cargar hasta 20,000 rutas para matching
   }, [dispatch])
 
   // Cargar rutas locales al montar el componente
