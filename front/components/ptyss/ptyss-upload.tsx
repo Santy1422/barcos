@@ -458,7 +458,7 @@ export function PTYSSUpload() {
       console.log("Rutas disponibles:", routes)
       
       // Aplicar matching con las rutas configuradas de PTYSS
-      const matchedData = matchTruckingDataWithPTYSSRoutes(realData, routes)
+      const matchedData = await matchTruckingDataWithPTYSSRoutes(realData, routes)
       
       console.log("Datos después del re-matching:", matchedData)
       
@@ -1433,122 +1433,99 @@ export function PTYSSUpload() {
   }
 
   // Función para hacer matching de datos de trucking con rutas de PTYSS
-  const matchTruckingDataWithPTYSSRoutes = (truckingData: TruckingExcelData[], ptyssRoutes: Array<{_id: string, name: string, from: string, to: string, containerType: string, routeType: "single" | "RT", status: string, cliente: string, routeArea: string, price: number}>): TruckingExcelData[] => {
+  // Procesa en bloques para ceder el hilo al navegador y evitar "página no responde".
+  const matchTruckingDataWithPTYSSRoutes = async (
+    truckingData: TruckingExcelData[],
+    ptyssRoutes: Array<{_id: string, name: string, from: string, to: string, containerType: string, routeType: "single" | "RT", status: string, cliente: string, routeArea: string, price: number}>
+  ): Promise<TruckingExcelData[]> => {
     console.log("=== INICIANDO MATCHING PTYSS CON DATOS TRUCKING ===")
-    console.log("Rutas PTYSS disponibles:", ptyssRoutes)
-    console.log("")
-    
-    return truckingData.map((record, index) => {
-      console.log(`Procesando registro PTYSS ${index + 1}:`)
-      console.log(`  Leg: "${record.leg}"`)
-      console.log(`  MoveType: "${record.moveType}"`)
-      console.log(`  Type: "${record.type}"`)
-      console.log(`  Associate: "${record.associate}"`)
-      console.log(`  Driver Name: "${record.driverName}"`)
-      console.log(`  Route: "${record.route}"`)
-      
+    console.log(`Registros a procesar: ${truckingData.length} | Rutas disponibles: ${ptyssRoutes.length}`)
+
+    const CHUNK_SIZE = 50
+    const matchedResults: TruckingExcelData[] = []
+
+    for (let i = 0; i < truckingData.length; i++) {
+      const record = truckingData[i]
+
       // Extraer from y to del campo leg (separado por "/")
-      const legParts = record.leg?.split('/').map(part => part.trim()) || [];
-      const from = legParts[0] || '';
-      const to = legParts[1] || '';
-      
-      console.log(`  From extraído: "${from}"`)
-      console.log(`  To extraído: "${to}"`)
-      console.log(`  Route Area extraído: "${record.route}"`)
-      
-      // Buscar coincidencia basada en los criterios de PTYSS:
-      // 1. from y to extraídos del leg
-      // 2. moveType (routeType de la ruta) - case insensitive
-      // 3. type (containerType de la ruta) - mapear tipos
-      // 4. fe (status de la ruta) - FULL/EMPTY
-      // 5. line (cliente de la ruta) - opcional para matching más preciso
-      // 6. route (routeArea de la ruta) - área de ruta
-      
+      const legParts = record.leg?.split('/').map(part => part.trim()) || []
+      const from = legParts[0] || ''
+      const to = legParts[1] || ''
+
+      const normalizedMoveType = record.moveType?.trim().toLowerCase() || ''
+      const normalizedType = record.type?.trim().toUpperCase() || ''
+      const normalizedFE = record.fe?.trim().toUpperCase() || ''
+      const recordClientName = record.driverName?.trim().toUpperCase() || ''
+      const normalizedRoute = record.route?.trim().toUpperCase() || ''
+
       const matchedRoute = ptyssRoutes.find(route => {
-        // Matching por from y to extraídos del leg
-        const fromMatch = route.from?.toUpperCase() === from.toUpperCase();
-        const toMatch = route.to?.toUpperCase() === to.toUpperCase();
-        
-        // Matching por moveType (routeType de la ruta) - case insensitive
-        const normalizedMoveType = record.moveType?.trim().toLowerCase() || '';
-        const moveTypeMatch = 
+        const fromMatch = route.from?.toUpperCase() === from.toUpperCase()
+        const toMatch = route.to?.toUpperCase() === to.toUpperCase()
+
+        const moveTypeMatch =
           (normalizedMoveType === 's' && route.routeType === 'single') ||
           (normalizedMoveType === 'single' && route.routeType === 'single') ||
-          (normalizedMoveType === 'rt' && route.routeType === 'RT') ||
-          (normalizedMoveType === 'rt' && route.routeType === 'RT');
-        
-        // Matching por type (containerType de la ruta) - mapear tipos de PTYSS
-        const normalizedType = record.type?.trim().toUpperCase() || '';
-        const containerTypeMatch = route.containerType?.toUpperCase() === normalizedType;
-        
-        // Matching por fe (status de la ruta) - FULL/EMPTY
-        const normalizedFE = record.fe?.trim().toUpperCase() || '';
-        const statusMatch = 
-          !normalizedFE || // Si no hay FE, hacer match con cualquier status
+          (normalizedMoveType === 'rt' && route.routeType === 'RT')
+
+        const containerTypeMatch = route.containerType?.toUpperCase() === normalizedType
+
+        const statusMatch =
+          !normalizedFE ||
           route.status?.toUpperCase() === normalizedFE ||
           (normalizedFE === 'F' && route.status?.toUpperCase() === 'FULL') ||
           (normalizedFE === 'E' && route.status?.toUpperCase() === 'EMPTY') ||
           (normalizedFE === 'FULL' && route.status?.toUpperCase() === 'FULL') ||
-          (normalizedFE === 'EMPTY' && route.status?.toUpperCase() === 'EMPTY');
-        
-        // Matching por cliente - usar el cliente del Driver Name del registro
-        const recordClientName = record.driverName?.trim().toUpperCase() || ''
+          (normalizedFE === 'EMPTY' && route.status?.toUpperCase() === 'EMPTY')
+
         const routeCliente = route.cliente?.trim().toUpperCase() || ''
-        const clienteMatch = 
-          !recordClientName || // Si no hay cliente en el registro, hacer match con cualquier ruta
+        const clienteMatch =
+          !recordClientName ||
           routeCliente === recordClientName ||
           routeCliente.includes(recordClientName) ||
-          recordClientName.includes(routeCliente);
-        
-        // Matching por route (routeArea de la ruta) - área de ruta
-        const normalizedRoute = record.route?.trim().toUpperCase() || '';
-        const routeAreaMatch = 
-          !normalizedRoute || // Si no hay route, hacer match con cualquier área
+          recordClientName.includes(routeCliente)
+
+        const routeAreaMatch =
+          !normalizedRoute ||
           route.routeArea?.toUpperCase() === normalizedRoute ||
           route.routeArea?.toUpperCase().includes(normalizedRoute) ||
-          normalizedRoute.includes(route.routeArea?.toUpperCase() || '');
-        
-        console.log(`  Comparando con ruta PTYSS "${route.name}":`)
-        console.log(`    From: "${from}" vs "${route.from}" = ${fromMatch}`)
-        console.log(`    To: "${to}" vs "${route.to}" = ${toMatch}`)
-        console.log(`    MoveType normalizado: "${normalizedMoveType}" vs "${route.routeType}" = ${moveTypeMatch}`)
-        console.log(`    Type normalizado: "${normalizedType}" vs "${route.containerType}" = ${containerTypeMatch}`)
-        console.log(`    FE normalizado: "${normalizedFE}" vs "${route.status}" = ${statusMatch}`)
-        console.log(`    Cliente "${recordClientName}" vs "${routeCliente}" = ${clienteMatch}`)
-        console.log(`    Route normalizado: "${normalizedRoute}" vs "${route.routeArea}" = ${routeAreaMatch}`)
-        console.log(`    Match total: ${fromMatch && toMatch && moveTypeMatch && containerTypeMatch && statusMatch && clienteMatch && routeAreaMatch}`)
-        
-        return fromMatch && toMatch && moveTypeMatch && containerTypeMatch && statusMatch && clienteMatch && routeAreaMatch;
-      });
-      
+          normalizedRoute.includes(route.routeArea?.toUpperCase() || '')
+
+        return fromMatch && toMatch && moveTypeMatch && containerTypeMatch && statusMatch && clienteMatch && routeAreaMatch
+      })
+
       if (matchedRoute) {
-        console.log(`  ✅ MATCH ENCONTRADO: ${matchedRoute.name} - $${matchedRoute.price}`)
-        return {
+        matchedResults.push({
           ...record,
-          from: from, // Agregar from extraído del leg
-          to: to, // Agregar to extraído del leg
-          operationType: 'import', // Siempre import para registros de trasiego
-          associate: record.driverName || record.associate, // Usar driverName como cliente principal para trasiegos
+          from,
+          to,
+          operationType: 'import',
+          associate: record.driverName || record.associate,
           matchedPrice: matchedRoute.price,
           matchedRouteId: matchedRoute._id || '',
           matchedRouteName: matchedRoute.name || '',
           isMatched: true,
           sapCode: 'PTYSS001'
-        };
+        })
       } else {
-        console.log(`  ❌ NO SE ENCONTRÓ MATCH`)
-        return {
+        matchedResults.push({
           ...record,
-          from: from, // Agregar from extraído del leg
-          to: to, // Agregar to extraído del leg
-          operationType: 'import', // Siempre import para registros de trasiego
-          associate: record.driverName || record.associate, // Usar driverName como cliente principal para trasiegos
+          from,
+          to,
+          operationType: 'import',
+          associate: record.driverName || record.associate,
           matchedPrice: 0,
           isMatched: false,
           sapCode: 'PTYSS001'
-        };
+        })
       }
-    });
+
+      if (i > 0 && i % CHUNK_SIZE === 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      }
+    }
+
+    console.log(`Matching completado: ${matchedResults.filter(r => r.isMatched).length}/${matchedResults.length} con match`)
+    return matchedResults
   }
 
   // Función para convertir datos de trucking a PTYSS
@@ -1629,7 +1606,7 @@ export function PTYSSUpload() {
         console.log("")
         
         // Aplicar matching con las rutas configuradas de PTYSS
-        const matchedData = matchTruckingDataWithPTYSSRoutes(realData, routes)
+        const matchedData = await matchTruckingDataWithPTYSSRoutes(realData, routes)
         
         console.log("Datos después del matching:", matchedData)
         console.log("")
