@@ -711,10 +711,19 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
     return sum + (taxItem.totalPrice || 0)
   }, 0)
 
-  // Usar el total de la factura (con descuento aplicado si lo hay); si no viene, calcular desde registros e ítems
-  const totalAmount = typeof invoice.total === 'number' && invoice.total >= 0
-    ? Number(invoice.total)
-    : routeAmountTotal + taxesAmountTotal
+  // CustomerOpenItem / AmntTransactCur: debe ser el total a cobrar (neto), **el mismo** que `totalAmount` en factura/PDF.
+  // Aquí NO se resta el descuento otra vez; si viniera mal el payload, el XML se vería "con doble descuento" solo en el encabezado.
+  // Aceptamos `total` o `totalAmount` y números como string (p. ej. desde JSON), para no caer al fallback por error de tipo.
+  const parseHeaderTotal = (inv: InvoiceForXmlPayload): number | null => {
+    const raw = (inv as any).total ?? (inv as any).totalAmount
+    if (raw === undefined || raw === null || raw === "") return null
+    const n = typeof raw === "number" ? raw : Number(String(raw).replace(/,/g, "").trim())
+    if (!Number.isFinite(n) || n < 0) return null
+    return n
+  }
+  const parsedHeaderTotal = parseHeaderTotal(invoice)
+  const totalAmount =
+    parsedHeaderTotal !== null ? parsedHeaderTotal : routeAmountTotal + taxesAmountTotal
 
   const xmlObject = {
     "ns1:LogisticARInvoices": {
@@ -922,11 +931,16 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
             })
 
             // Descuento de prefactura: se aplica al OtherItem TRK002 con BusinessType I (línea que proviene de TRK130 / admin fee).
-            // Luego se reconcilia con invoice.total por si hubiera centavos o casos límite.
+            // Solo restamos hasta el "hueco" entre suma bruta de líneas y invoice.total, para no aplicar el descuento dos veces
+            // si los importes de registros ya venían alineados con el total neto.
             const discountRaw = (invoice as any).discountAmount ?? (invoice as any).details?.discountAmount ?? 0
             const discountAmount = Math.max(0, Number(discountRaw) || 0)
+            const grossSum = trk002Amt + trk130Amt + trk135Amt
+            const shortfallVsTotal = Math.max(0, grossSum - totalAmount)
+            const discountToApply =
+              discountAmount > 0 ? Math.min(discountAmount, shortfallVsTotal) : 0
             let trk002ForXml = trk002Amt
-            let trk130ForXml = Math.max(0, trk130Amt - discountAmount)
+            let trk130ForXml = Math.max(0, trk130Amt - discountToApply)
             let sumLines = trk002ForXml + trk130ForXml + trk135Amt
             let gap = sumLines - totalAmount
             if (Math.abs(gap) > 0.001) {
