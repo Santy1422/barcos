@@ -418,6 +418,8 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
         dueDate: invoiceDate,
         currency: 'USD',
         total: invoice.totalAmount,
+        discountAmount: invoice.discountAmount,
+        details: invoice.details,
         records: relatedRecords.map((r: any) => {
           const d = r.data || {}
           console.log(`Record ${r._id || r.id}:`, r)

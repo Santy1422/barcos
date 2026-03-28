@@ -920,10 +920,28 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
               if (code === "TRK130") { trk130Qty += qty; trk130Amt += amt }
               else if (code === "TRK135") { trk135Qty += qty; trk135Amt += amt }
             })
+
+            // Descuento de prefactura: se aplica al OtherItem TRK002 con BusinessType I (línea que proviene de TRK130 / admin fee).
+            // Luego se reconcilia con invoice.total por si hubiera centavos o casos límite.
+            const discountRaw = (invoice as any).discountAmount ?? (invoice as any).details?.discountAmount ?? 0
+            const discountAmount = Math.max(0, Number(discountRaw) || 0)
+            let trk002ForXml = trk002Amt
+            let trk130ForXml = Math.max(0, trk130Amt - discountAmount)
+            let sumLines = trk002ForXml + trk130ForXml + trk135Amt
+            let gap = sumLines - totalAmount
+            if (Math.abs(gap) > 0.001) {
+              trk130ForXml = Math.max(0, trk130ForXml - gap)
+              sumLines = trk002ForXml + trk130ForXml + trk135Amt
+              gap = sumLines - totalAmount
+            }
+            if (Math.abs(gap) > 0.001) {
+              trk002ForXml = Math.max(0, trk002ForXml - gap)
+            }
+
             return [
               {
                 "IncomeRebateCode": "I",
-                "AmntTransacCur": (-trk002Amt).toFixed(3),
+                "AmntTransacCur": (-trk002ForXml).toFixed(3),
                 "BaseUnitMeasure": "CTR",
                 "Qty": trk002Qty.toString(),
                 "ProfitCenter": "PAPANB110",
@@ -943,7 +961,7 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
               },
               {
                 "IncomeRebateCode": "I",
-                "AmntTransacCur": (-trk130Amt).toFixed(3),
+                "AmntTransacCur": (-trk130ForXml).toFixed(3),
                 "BaseUnitMeasure": "CTR",
                 "Qty": trk130Qty.toString(),
                 "ProfitCenter": "PAPANB110",

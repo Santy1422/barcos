@@ -599,6 +599,8 @@ export function TruckingRecords() {
           dueDate: invoice.dueDate,
           currency: invoice.currency || 'USD', // Valor por defecto
           total: invoice.totalAmount || 0, // Valor por defecto
+          discountAmount: invoice.discountAmount,
+          details: invoice.details,
           records: recordsForXml,
           otherItems: otherItems, // Agregar los impuestos PTG
           status: 'finalized' as const, // Status requerido por InvoiceForXmlPayload

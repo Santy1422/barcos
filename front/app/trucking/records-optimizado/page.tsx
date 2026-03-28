@@ -637,6 +637,7 @@ export default function TruckingRecordsOptimizadoPage() {
       date: invoiceDate,
       currency: 'USD',
       total: invoice.totalAmount || 0,
+      discountAmount: invoice.discountAmount,
       records: recordsForXml,
       otherItems,
       status: 'finalized' as const,
