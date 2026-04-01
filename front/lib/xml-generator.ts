@@ -1170,70 +1170,47 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
               return [singleOtherItem]
             }
 
-            // Trasiegos (o mixto): convertir grupos a OtherItems (cada grupo = una línea)
-            const recordItems = Array.from(groupedRecords.entries()).map(([groupKey, group]) => {
-              const parts = groupKey.split('|')
-              const totalPrice = group.price * group.count
+            // Solo trasiegos (no hay facturas mixtas trasiego+local): un OtherItem TRK002 agregado.
+            const trasiegoEntries = Array.from(groupedRecords.entries()).filter(([key]) =>
+              key.startsWith('TRASIEGO|')
+            )
+            const recordItems: any[] = []
 
-              // Usar el primer registro del grupo para obtener los datos
-              const firstRecord = group.records[0]
-              const data = firstRecord.data
-
-              // Determinar si es trasiego o local basándose en la clave del grupo
-              const isTrasiego = parts[0] === 'TRASIEGO'
-
-              // Para trasiego siempre usar TRK002, para local usar TRK001
-              const serviceCode = isTrasiego ? 'TRK002' : 'TRK001'
-
-              // Extraer información del contenedor
-              let containerSize = "40"
-              let originalContainerType = "DV"
-              // CtrCategory siempre es "A" para PTYSS (trasiegos y locales)
-              let ctrCategory = "A"
-
-              if (isTrasiego) {
-                // Para trasiego: usar valores fijos según requerimiento
-                containerSize = "40"
-                originalContainerType = "DV"
-              } else {
-                containerSize = parts[2] || "40" // containerSize
-                originalContainerType = parts[3] || "DV" // containerType
-              }
-
-              // Homologar el containerType al sapCode usando el mapa de container types
-              const containerType = isTrasiego ? "DV" : getContainerTypeSapCode(originalContainerType)
-
-              // Calcular CtrISOcode: para trasiego usar 42G0, para locales calcular dinámicamente
-              const ctrISOcode = isTrasiego ? '42G0' : getCtrISOcode(containerType, containerSize)
-
-              // Determinar FullEmpty
-              const fullEmpty = isTrasiego ? 'FULL' : 'FULL'
-
-              // ACTUALIZADO: Valores fijos para PTYSS según requerimiento SAP
-              // Primer OtherItem = ruta: Service TRK002 (trasiego) o TRK001 (local)
-              return {
+            if (trasiegoEntries.length > 0) {
+              const totalTrasiegoAmount = trasiegoEntries.reduce(
+                (sum, [, g]) => sum + g.price * g.count,
+                0
+              )
+              const totalTrasiegoQty = trasiegoEntries.reduce((sum, [, g]) => sum + g.count, 0)
+              console.log(
+                '🔍 PTYSS XML - Trasiego agregado: un TRK002, monto:',
+                totalTrasiegoAmount,
+                'Qty:',
+                totalTrasiegoQty
+              )
+              recordItems.push({
                 "IncomeRebateCode": "I",
-                "AmntTransacCur": (-totalPrice).toFixed(3),
+                "AmntTransacCur": (-totalTrasiegoAmount).toFixed(3),
                 "BaseUnitMeasure": "CTR",
-                "Qty": group.count.toString(),
+                "Qty": totalTrasiegoQty.toString(),
                 "ProfitCenter": "PAPANC110",
                 "ReferencePeriod": formatReferencePeriod(invoice.date),
-                "Service": serviceCode,
+                "Service": "TRK002",
                 "Activity": "TRK",
                 "Pillar": "TRSP",
                 "BUCountry": "PA",
                 "ServiceCountry": "PA",
                 "ClientType": "MEDLOG",
-                "BusinessType": "I",
+                "BusinessType": "E",
                 "FullEmpty": "FULL",
                 "CtrISOcode": "42H0",
                 "CtrType": "RE",
                 "CtrSize": "40",
                 "CtrCategory": "A"
-              }
-            })
-            
-            // Agregar servicios locales fijos como otheritem adicionales (solo para trasiegos/mixto)
+              })
+            }
+
+            // Agregar servicios adicionales (trasiego)
             const localFixedServiceItems: any[] = []
             const localFixedServiceCodes = [...FIXED_LOCAL_ALL_CODES, 'CLG096', 'PESAJE']
 
@@ -1293,7 +1270,7 @@ export function generatePTYSSInvoiceXML(invoice: PTYSSInvoiceForXml): string {
             console.log(`🔍 PTYSS XML - Total record items: ${recordItems.length}`)
             console.log(`🔍 PTYSS XML - Total local fixed service items: ${localFixedServiceItems.length}`)
             
-    // Combinar registros y servicios locales fijos (solo para trasiegos/mixto)
+    // Línea TRK002 + servicios adicionales (solo facturas trasiego)
     return [...recordItems, ...localFixedServiceItems]
   }
   

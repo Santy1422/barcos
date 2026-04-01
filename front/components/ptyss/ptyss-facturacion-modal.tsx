@@ -260,7 +260,7 @@ export function PTYSSFacturacionModal({
       console.log("🔍 generateXMLForInvoice - clientSapNumber final:", clientSapNumber)
 
       // Preparar datos para XML - pasar los registros originales para que el generador haga la agrupación.
-      // Locales → un solo OtherItem. Trasiego → varios OtherItems (por grupo + servicios adicionales).
+      // Locales → un solo OtherItem TRK001. Trasiego → un OtherItem TRK002 agregado + servicios adicionales.
       // localRecordsOnly = true solo cuando hay al menos un registro local y ninguno trasiego.
       const anyRecordIsTrasiego = relatedRecords.some((r: any) => {
         const d = r.data || {}
