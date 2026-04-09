@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Calendar, History, Search, Filter, Download, Eye, FileText } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
+import { AgencyServiceDetailDialog } from '@/components/agency/agency-service-detail-dialog';
 
 export default function AgencyHistorialPage() {
   const {
@@ -22,7 +23,10 @@ export default function AgencyHistorialPage() {
     fetchServices,
     setFilters,
     clearFilters,
-    openViewModal
+    openViewModal,
+    closeModals,
+    modals,
+    selectedService,
   } = useAgencyServices();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -454,6 +458,14 @@ export default function AgencyHistorialPage() {
           </CardContent>
         </Card>
       )}
+
+      <AgencyServiceDetailDialog
+        open={modals.showViewModal}
+        onOpenChange={(open) => {
+          if (!open) closeModals();
+        }}
+        service={selectedService}
+      />
     </div>
     </SectionGuard>
   );
