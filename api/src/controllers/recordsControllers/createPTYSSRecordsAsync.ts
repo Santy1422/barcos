@@ -116,23 +116,48 @@ async function processRecordsInBackground(
       }
     });
 
-    // Verificar duplicados contra la BD
-    let duplicateContainerConsecutives: string[] = [];
+    const activeDupSet = new Set<string>();
+    const softDeletedCcSet = new Set<string>();
+
     if (containerConsecutives.length > 0) {
       const existingRecords = await records.find({
         module: 'ptyss',
         containerConsecutive: { $in: containerConsecutives }
       });
 
-      const existingContainerConsecutives = existingRecords.map(r => r.containerConsecutive);
-      duplicateContainerConsecutives = containerConsecutives.filter(cc =>
-        existingContainerConsecutives.includes(cc)
-      );
+      for (const r of existingRecords) {
+        const ccVal = r.containerConsecutive;
+        if (!ccVal) continue;
+        if (r.deletedAt == null) {
+          activeDupSet.add(ccVal);
+        } else {
+          softDeletedCcSet.add(ccVal);
+        }
+      }
     }
+
+    const duplicateContainerConsecutives = containerConsecutives.filter(cc => activeDupSet.has(cc));
 
     const allDuplicates = Array.from(new Set([...duplicateContainerConsecutives, ...duplicatesInBatch]));
 
-    // Actualizar job con info de duplicados
+    const softDeletedSkippedCCs = new Set<string>();
+    const processedCCs = new Set<string>();
+    const recordsToProcess = recordsData.filter(record => {
+      const data = record.data || {};
+      const cc = getContainerConsecutive(data);
+
+      if (!cc) return true;
+      if (activeDupSet.has(cc)) return false;
+      if (softDeletedCcSet.has(cc)) {
+        softDeletedSkippedCCs.add(cc);
+        return false;
+      }
+      if (processedCCs.has(cc)) return false;
+
+      processedCCs.add(cc);
+      return true;
+    });
+
     await uploadJobs.updateOne(
       { _id: jobId },
       {
@@ -141,21 +166,14 @@ async function processRecordsInBackground(
       }
     );
 
-    // Filtrar registros duplicados y mantener solo la primera aparición
-    const processedCCs = new Set<string>();
-    const recordsToProcess = recordsData.filter(record => {
-      const data = record.data || {};
-      const cc = getContainerConsecutive(data);
-
-      if (!cc) return true;
-      if (duplicateContainerConsecutives.includes(cc)) return false;
-      if (processedCCs.has(cc)) return false;
-
-      processedCCs.add(cc);
-      return true;
-    });
-
     if (recordsToProcess.length === 0) {
+      const softPart = softDeletedSkippedCCs.size > 0
+        ? `${softDeletedSkippedCCs.size} filas con orden/clave en registros eliminados (recuperar desde registro individual). `
+        : '';
+      const dupPart =
+        allDuplicates.length > 0
+          ? `${allDuplicates.length} duplicados activos o repetidos en el archivo.`
+          : '';
       await uploadJobs.updateOne(
         { _id: jobId },
         {
@@ -165,12 +183,12 @@ async function processRecordsInBackground(
           createdRecords: 0,
           result: {
             success: true,
-            message: `Todos los ${allDuplicates.length} registros ya existen o son duplicados`,
+            message: `Sin registros nuevos. ${softPart}${dupPart}`.trim(),
             recordIds: []
           }
         }
       );
-      console.log(`✅ Job ${jobId} completado - todos duplicados`);
+      console.log(`✅ Job ${jobId} completado - sin filas procesables`);
       return;
     }
 

@@ -2,6 +2,18 @@ import { records, getNextOrderNumber } from "../../database";
 import { response } from "../../utils";
 import mongoose from "mongoose";
 
+const serializePTYSSRecord = (record: any) => {
+  const recordObj = record.toObject ? record.toObject() : { ...record };
+  return {
+    ...recordObj,
+    _id: recordObj._id?.toString?.() ?? String(recordObj._id),
+    excelId: recordObj.excelId?.toString?.() ?? recordObj.excelId,
+    createdBy: recordObj.createdBy?.toString?.() ?? recordObj.createdBy,
+    clientId: recordObj.clientId?.toString?.() ?? recordObj.clientId,
+    invoiceId: recordObj.invoiceId?.toString?.() ?? recordObj.invoiceId
+  };
+};
+
 interface PTYSSRecordData {
   clientId: string;
   order: string;
@@ -99,56 +111,77 @@ export default async (req, res) => {
       console.log("⚠️ Duplicados encontrados DENTRO del mismo batch:", duplicatesInBatch.length);
     }
 
-    // 2. Verificar duplicados contra la base de datos
+    // 2. Duplicados en BD: solo registros activos (deletedAt null). Soft-deleted permite recuperación.
+    const activeDuplicateCCs = new Set<string>();
+    const softDeletedByCc = new Map<string, any>();
+
     if (containerConsecutives.length > 0) {
-      // Buscar registros existentes con los mismos containerConsecutive en el módulo ptyss
       const existingRecords = await records.find({
         module: 'ptyss',
         containerConsecutive: { $in: containerConsecutives }
       });
 
-      const existingContainerConsecutives = existingRecords.map(r => r.containerConsecutive);
+      for (const r of existingRecords) {
+        const ccVal = r.containerConsecutive;
+        if (!ccVal) continue;
+        if (r.deletedAt == null) {
+          activeDuplicateCCs.add(ccVal);
+        } else if (!softDeletedByCc.has(ccVal)) {
+          softDeletedByCc.set(ccVal, r);
+        }
+      }
+
       duplicateContainerConsecutives = containerConsecutives.filter(cc =>
-        existingContainerConsecutives.includes(cc)
+        activeDuplicateCCs.has(cc)
       );
 
       console.log("📊 Resultado de verificación de duplicados:");
       console.log("  - Registros existentes encontrados:", existingRecords.length);
-      console.log("  - ContainerConsecutives duplicados en DB:", duplicateContainerConsecutives.length);
+      console.log("  - Claves duplicadas activas en DB:", activeDuplicateCCs.size);
+      console.log("  - Claves ocupadas por soft-deleted (recuperables):", softDeletedByCc.size);
     } else {
       console.log("📊 No hay containerConsecutives para verificar");
     }
 
-    // Combinar duplicados de batch y DB
+    const seenRecoverCc = new Set<string>();
+    const softDeletedRecoverableList: Array<{ containerConsecutive: string; record: any }> = [];
+    for (const record of recordsData) {
+      const cc = getContainerConsecutive(record.data || {});
+      if (!cc || !softDeletedByCc.has(cc) || activeDuplicateCCs.has(cc)) continue;
+      if (seenRecoverCc.has(cc)) continue;
+      seenRecoverCc.add(cc);
+      softDeletedRecoverableList.push({
+        containerConsecutive: cc,
+        record: serializePTYSSRecord(softDeletedByCc.get(cc))
+      });
+    }
+
     const allDuplicates = Array.from(new Set([...duplicateContainerConsecutives, ...duplicatesInBatch]));
 
-    // Filtrar registros duplicados y mantener solo la primera aparición de cada containerConsecutive
     const processedCCs = new Set<string>();
     const recordsToProcess = recordsData.filter(record => {
       const data = record.data || {};
       const cc = getContainerConsecutive(data);
 
-      // Si no tiene containerConsecutive, procesarlo
       if (!cc) return true;
 
-      // Verificar que no sea duplicado en DB
-      if (duplicateContainerConsecutives.includes(cc)) return false;
+      if (activeDuplicateCCs.has(cc)) return false;
 
-      // Verificar que no hayamos procesado ya este containerConsecutive en este batch
+      if (softDeletedByCc.has(cc)) return false;
+
       if (processedCCs.has(cc)) return false;
 
-      // Marcar como procesado
       processedCCs.add(cc);
       return true;
     });
 
     console.log("📝 Registros a procesar después de filtrar duplicados:");
     console.log("  - Total original:", recordsData.length);
-    console.log("  - Duplicados en DB:", duplicateContainerConsecutives.length);
+    console.log("  - Duplicados activos en DB:", duplicateContainerConsecutives.length);
     console.log("  - Duplicados en batch:", duplicatesInBatch.length);
+    console.log("  - Recuperables (soft-deleted):", softDeletedRecoverableList.length);
     console.log("  - Registros válidos para procesar:", recordsToProcess.length);
 
-    // Si no hay registros válidos para procesar, retornar respuesta con 0 creados
     if (recordsToProcess.length === 0) {
       console.log('createPTYSSRecords - No hay registros válidos para procesar');
       const responseData: any = {
@@ -157,6 +190,13 @@ export default async (req, res) => {
         totalProcessed: recordsData.length
       };
 
+      if (softDeletedRecoverableList.length > 0) {
+        responseData.softDeletedRecoverableList = softDeletedRecoverableList;
+        responseData.softDeletedRecoverable = softDeletedRecoverableList[0];
+        responseData.message =
+          'Ya existe un registro con esa orden/clave pero fue eliminado. Se pueden cargar sus datos para recuperarlo al guardar.';
+      }
+
       if (allDuplicates.length > 0) {
         responseData.duplicates = {
           count: allDuplicates.length,
@@ -164,7 +204,11 @@ export default async (req, res) => {
           inDatabase: duplicateContainerConsecutives.length,
           inBatch: duplicatesInBatch.length
         };
-        responseData.message = `Todos los registros eran duplicados (${duplicateContainerConsecutives.length} en DB, ${duplicatesInBatch.length} en batch). 0 registros nuevos fueron creados.`;
+        if (!responseData.message) {
+          responseData.message = `Todos los registros eran duplicados (${duplicateContainerConsecutives.length} en DB, ${duplicatesInBatch.length} en batch). 0 registros nuevos fueron creados.`;
+        } else {
+          responseData.message += ` Además hay ${duplicateContainerConsecutives.length} duplicado(s) activo(s) en la base de datos.`;
+        }
       }
 
       return response(res, 201, responseData);
@@ -322,6 +366,13 @@ export default async (req, res) => {
         containerConsecutives: Array.from(new Set(allDuplicates))
       };
       responseData.message = `${serializedRecords.length} registros nuevos creados, ${allDuplicates.length} duplicados omitidos.`;
+    }
+
+    if (softDeletedRecoverableList.length > 0) {
+      responseData.softDeletedRecoverableList = softDeletedRecoverableList;
+      const extra =
+        ` ${softDeletedRecoverableList.length} fila(s) no se importaron: la orden/clave coincide con un registro eliminado (desde "Registro local individual" puede recuperarlo).`;
+      responseData.message = (responseData.message || '') + extra;
     }
     
     console.log("📤 Enviando respuesta al frontend:", responseData);

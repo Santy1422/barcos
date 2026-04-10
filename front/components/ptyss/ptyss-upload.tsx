@@ -99,6 +99,7 @@ interface PTYSSRecordData {
   // Campos para rutas locales
   localRouteId?: string // ID de la ruta local seleccionada
   localRoutePrice?: number // Precio de la ruta local
+  associate?: string
 }
 
 const initialRecordData: PTYSSRecordData = {
@@ -147,6 +148,8 @@ export function PTYSSUpload() {
   const [confirmSendDialogOpen, setConfirmSendDialogOpen] = useState(false)
   const [recordToSend, setRecordToSend] = useState<string | null>(null)
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null)
+  /** Tras detectar clave en soft-delete: el siguiente guardado debe limpiar deletedAt en el API */
+  const [pendingUndelete, setPendingUndelete] = useState(false)
   
   // Excel upload state
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -1169,17 +1172,22 @@ export function PTYSSUpload() {
           totalValue: calculateTotalValue(currentRecord)
         }
         
+        const wasRecoveringDeleted = pendingUndelete
         await dispatch(updateRecordAsync({
           id: editingRecordId,
           updates: {
             data: updatedRecord,
-            totalValue: updatedRecord.totalValue || 0
+            totalValue: updatedRecord.totalValue || 0,
+            ...(pendingUndelete ? { deletedAt: null } : {})
           }
         })).unwrap()
         
+        setPendingUndelete(false)
         toast({
-          title: "Registro actualizado",
-          description: "El registro ha sido actualizado exitosamente",
+          title: wasRecoveringDeleted ? "Registro recuperado" : "Registro actualizado",
+          description: wasRecoveringDeleted
+            ? "El registro eliminado fue restaurado y actualizado; vuelve a aparecer en el listado."
+            : "El registro ha sido actualizado exitosamente",
         })
       } else {
         // Modo creación: guardar nuevo registro
@@ -1199,6 +1207,48 @@ export function PTYSSUpload() {
           excelId: tempObjectId,
           recordsData
         })).unwrap()
+
+        const recoverable = result?.softDeletedRecoverable
+        if (recoverable?.record) {
+          await dispatch(fetchPTYSSLocalRoutes())
+          const rec = recoverable.record as Record<string, any>
+          const data = rec.data as Record<string, any>
+          setCurrentRecord({
+            clientId: data.clientId || "",
+            associate: data.associate || "",
+            order: data.order || "",
+            container: data.container || "",
+            naviera: data.naviera || "",
+            from: data.from || "",
+            to: data.to || "",
+            operationType: data.operationType || "",
+            containerSize: data.containerSize || "",
+            containerType: data.containerType || "",
+            estadia: data.estadia || "",
+            genset: data.genset || "",
+            retencion: data.retencion || "",
+            pesaje: data.pesaje || "",
+            ti: data.ti || "",
+            matriculaCamion: data.matriculaCamion || "",
+            conductor: data.conductor || "",
+            numeroChasisPlaca: data.numeroChasisPlaca || "",
+            moveDate: data.moveDate || "",
+            endDate: data.endDate || "",
+            notes: data.notes || "",
+            totalValue: data.totalValue ?? rec.totalValue ?? 0,
+            recordType: "local",
+            localRouteId: data.localRouteId || "",
+            localRoutePrice: data.localRoutePrice || 0
+          })
+          setEditingRecordId(String(rec._id || rec.id || ""))
+          setPendingUndelete(true)
+          toast({
+            title: "Registro eliminado con la misma orden",
+            description:
+              "Se cargaron los datos guardados anteriormente. Revise el formulario, ajústelo si lo necesita y pulse «Actualizar registro» para recuperarlo (quitará el borrado suave).",
+          })
+          return
+        }
         
         // Verificar que realmente se crearon registros
         if (!result || !result.records || result.records.length === 0) {
@@ -1225,6 +1275,7 @@ export function PTYSSUpload() {
       })
       setIsDialogOpen(false)
       setEditingRecordId(null)
+      setPendingUndelete(false)
       
     } catch (error) {
       console.error("Error al guardar:", error)
@@ -1239,6 +1290,7 @@ export function PTYSSUpload() {
   }
 
   const handleEditRecord = async (record: ExcelRecord) => {
+    setPendingUndelete(false)
     const data = record.data as Record<string, any>
     
     // Precargar los datos en el formulario
@@ -1262,6 +1314,7 @@ export function PTYSSUpload() {
       conductor: data.conductor || "",
       numeroChasisPlaca: data.numeroChasisPlaca || "",
       moveDate: data.moveDate || "",
+      endDate: data.endDate || "",
       notes: data.notes || "",
       totalValue: data.totalValue || 0,
       recordType: "local",
@@ -2289,6 +2342,7 @@ export function PTYSSUpload() {
         if (!open) {
           // Al cerrar el modal, resetear el modo de edición
           setEditingRecordId(null)
+          setPendingUndelete(false)
           setCurrentRecord({
             ...initialRecordData,
             localRouteId: "",
