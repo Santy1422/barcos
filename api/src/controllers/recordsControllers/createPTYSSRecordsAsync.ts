@@ -1,4 +1,4 @@
-import { records, uploadJobs, getNextOrderNumber } from "../../database";
+import { records, uploadJobs, getNextOrderNumber, ensurePTYSSLocalDisplayOrderOnData } from "../../database";
 import { response } from "../../utils";
 import mongoose from "mongoose";
 
@@ -100,8 +100,14 @@ async function processRecordsInBackground(
       }
     );
 
+    const preparedRecordsData: any[] = [];
+    for (const record of recordsData) {
+      const data = await ensurePTYSSLocalDisplayOrderOnData(record.data || {});
+      preparedRecordsData.push({ ...record, data });
+    }
+
     // Obtener containerConsecutives para verificar duplicados
-    const containerConsecutives = recordsData
+    const containerConsecutives = preparedRecordsData
       .map(record => getContainerConsecutive(record.data))
       .filter(Boolean);
 
@@ -142,7 +148,7 @@ async function processRecordsInBackground(
 
     const softDeletedSkippedCCs = new Set<string>();
     const processedCCs = new Set<string>();
-    const recordsToProcess = recordsData.filter(record => {
+    const recordsToProcess = preparedRecordsData.filter(record => {
       const data = record.data || {};
       const cc = getContainerConsecutive(data);
 
@@ -179,7 +185,7 @@ async function processRecordsInBackground(
         {
           status: 'completed',
           completedAt: new Date(),
-          processedRecords: recordsData.length,
+          processedRecords: preparedRecordsData.length,
           createdRecords: 0,
           result: {
             success: true,
@@ -286,7 +292,7 @@ async function processRecordsInBackground(
       {
         status: uploadErrors.length > 0 && createdIds.length === 0 ? 'failed' : 'completed',
         completedAt: new Date(),
-        processedRecords: recordsData.length,
+        processedRecords: preparedRecordsData.length,
         createdRecords: createdIds.length,
         errorRecords: uploadErrors.length,
         uploadErrors: uploadErrors.slice(0, 50),

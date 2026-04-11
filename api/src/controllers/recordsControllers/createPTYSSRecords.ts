@@ -1,4 +1,4 @@
-import { records, getNextOrderNumber } from "../../database";
+import { records, getNextOrderNumber, ensurePTYSSLocalDisplayOrderOnData } from "../../database";
 import { response } from "../../utils";
 import mongoose from "mongoose";
 
@@ -76,6 +76,12 @@ export default async (req, res) => {
       });
     }
 
+    const preparedRecordsData = [];
+    for (const record of recordsData) {
+      const data = await ensurePTYSSLocalDisplayOrderOnData(record.data || {});
+      preparedRecordsData.push({ ...record, data });
+    }
+
     // Helper para obtener containerConsecutive de un registro
     const getContainerConsecutive = (data: any): string | null => {
       const isTrasiego = data?.containerConsecutive || data?.leg || data?.moveType || data?.associate;
@@ -87,7 +93,7 @@ export default async (req, res) => {
     // Verificar duplicados por containerConsecutive en el módulo ptyss
     // Para registros de trasiego: usar containerConsecutive
     // Para registros locales: usar order como containerConsecutive
-    const containerConsecutives = recordsData.map(record => {
+    const containerConsecutives = preparedRecordsData.map(record => {
       return getContainerConsecutive(record.data);
     }).filter(Boolean); // Solo incluir valores truthy (no null, undefined, o vacío)
 
@@ -145,7 +151,7 @@ export default async (req, res) => {
 
     const seenRecoverCc = new Set<string>();
     const softDeletedRecoverableList: Array<{ containerConsecutive: string; record: any }> = [];
-    for (const record of recordsData) {
+    for (const record of preparedRecordsData) {
       const cc = getContainerConsecutive(record.data || {});
       if (!cc || !softDeletedByCc.has(cc) || activeDuplicateCCs.has(cc)) continue;
       if (seenRecoverCc.has(cc)) continue;
@@ -159,7 +165,7 @@ export default async (req, res) => {
     const allDuplicates = Array.from(new Set([...duplicateContainerConsecutives, ...duplicatesInBatch]));
 
     const processedCCs = new Set<string>();
-    const recordsToProcess = recordsData.filter(record => {
+    const recordsToProcess = preparedRecordsData.filter(record => {
       const data = record.data || {};
       const cc = getContainerConsecutive(data);
 

@@ -14,6 +14,7 @@ import createAgencyRecordsAsync from '../controllers/recordsControllers/createAg
 import createShipChandlerRecordsAsync from '../controllers/recordsControllers/createShipChandlerRecordsAsync';
 import { getJobStatus, getUserPendingJobs, getUserJobHistory } from '../controllers/recordsControllers/getUploadJobStatus';
 import getRecordsByIds from '../controllers/recordsControllers/getRecordsByIds';
+import reserveNextPTYSSLocalOrder from '../controllers/recordsControllers/reserveNextPTYSSLocalOrder';
 
 const { catchedAsync } = require('../utils');
 
@@ -32,6 +33,15 @@ router.post('/trucking/bulk-async', jwtUtils, catchedAsync(createTruckingRecords
 router.get('/jobs/pending', jwtUtils, catchedAsync(getUserPendingJobs));
 router.get('/jobs/history', jwtUtils, catchedAsync(getUserJobHistory));
 router.get('/jobs/:jobId', jwtUtils, catchedAsync(getJobStatus));
+
+// Siguiente orden local PTYSS (MESaa-NNN), contador atómico en BD
+router.post(
+  '/ptyss/next-local-order',
+  jwtUtils,
+  requirePtyssModule,
+  requireAnyRole,
+  catchedAsync(reserveNextPTYSSLocalOrder)
+);
 
 // Crear múltiples registros de PTYSS desde entrada manual (síncrono - legacy)
 router.post('/ptyss/bulk', jwtUtils, requirePtyssModule, requireAnyRole, catchedAsync(recordsControllers.createPTYSSRecords));

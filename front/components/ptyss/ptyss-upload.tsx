@@ -150,6 +150,7 @@ export function PTYSSUpload() {
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null)
   /** Tras detectar clave en soft-delete: el siguiente guardado debe limpiar deletedAt en el API */
   const [pendingUndelete, setPendingUndelete] = useState(false)
+  const [localOrderLoading, setLocalOrderLoading] = useState(false)
   
   // Excel upload state
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -267,6 +268,52 @@ export function PTYSSUpload() {
   useEffect(() => {
     dispatch(fetchRecordsByModule("ptyss"))
   }, [dispatch])
+
+  // Reservar correlativo de orden local (MESaa-NNN) al abrir el modal de creación
+  useEffect(() => {
+    if (!isDialogOpen || editingRecordId) return
+    let cancelled = false
+    setLocalOrderLoading(true)
+    ;(async () => {
+      try {
+        const token = localStorage.getItem("token")
+        const res = await fetch("/api/records/ptyss/next-local-order", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token || ""}`,
+            "Content-Type": "application/json",
+          },
+        })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          const msg =
+            (body.payload && typeof body.payload.error === "string" && body.payload.error) ||
+            (typeof body.payload === "string" ? body.payload : null) ||
+            body.error ||
+            `Error ${res.status}`
+          throw new Error(msg)
+        }
+        const order = body.payload?.order as string | undefined
+        if (!cancelled && order) {
+          setCurrentRecord((prev) => ({ ...prev, order }))
+        }
+      } catch (e: unknown) {
+        if (!cancelled) {
+          const message = e instanceof Error ? e.message : "Error desconocido"
+          toast({
+            title: "No se pudo asignar la orden",
+            description: `${message} Puede escribir la orden manualmente.`,
+            variant: "destructive",
+          })
+        }
+      } finally {
+        if (!cancelled) setLocalOrderLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isDialogOpen, editingRecordId, toast])
 
   // Polling para monitorear el estado del job de upload
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -2578,10 +2625,16 @@ export function PTYSSUpload() {
                   <Input
                     id="order"
                     value={currentRecord.order}
-                    onChange={(e) => setCurrentRecord({...currentRecord, order: e.target.value})}
-                    placeholder="Número de orden"
+                    onChange={(e) => setCurrentRecord({ ...currentRecord, order: e.target.value })}
+                    placeholder={localOrderLoading ? "Obteniendo número…" : "Ej. FEB26-061"}
                     required
+                    disabled={localOrderLoading}
                   />
+                  {!editingRecordId && (
+                    <p className="text-xs text-muted-foreground">
+                      Se asigna automáticamente (mes + año en Panamá + correlativo de 3 dígitos). Si cierra sin guardar, ese número queda consumido.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

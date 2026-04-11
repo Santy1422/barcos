@@ -19,6 +19,12 @@ import { ContainerType } from './schemas/containerTypesSchema';
 import { ErrorLog } from './schemas/errorLogSchema';
 import { UploadJob } from './schemas/uploadJobSchema';
 import { OrderCounter, getNextOrderNumber } from './schemas/orderCounterSchema';
+import {
+  PtyssLocalDisplayOrderCounter,
+  getNextPTYSSLocalDisplayOrder,
+  ensurePTYSSLocalDisplayOrderOnData,
+  getPTYSSLocalOrderPeriodKey,
+} from './schemas/ptyssLocalDisplayOrderCounterSchema';
 
 mongoose.set('strictQuery', false);
 
@@ -55,7 +61,13 @@ export const containerTypes = ContainerType;
 export const errorLogs = ErrorLog;
 export const uploadJobs = UploadJob;
 export const orderCounters = OrderCounter;
-export { getNextOrderNumber };
+export const ptyssLocalDisplayOrderCounters = PtyssLocalDisplayOrderCounter;
+export {
+  getNextOrderNumber,
+  getNextPTYSSLocalDisplayOrder,
+  ensurePTYSSLocalDisplayOrderOnData,
+  getPTYSSLocalOrderPeriodKey,
+};
 
 // Manejo de eventos de conexión
 mongoose.connection.on('connected', () => {
