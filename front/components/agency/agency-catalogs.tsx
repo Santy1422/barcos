@@ -13,12 +13,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea"
 import { 
   MapPin, Flag, Users, Ship, Building, User, Code, Plus, Edit, 
-  Trash2, Search, AlertCircle, Save, X, RotateCcw, Route, DollarSign, Building2, Clock
+  Trash2, Search, AlertCircle, Save, X, RotateCcw, Route, DollarSign, Building2, Clock, Car
 } from "lucide-react"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
 import { useToast } from "@/hooks/use-toast"
 import type { CatalogType, AgencyCatalog } from "@/lib/features/agencyServices/agencyCatalogsSlice"
 import { AgencyRoutesManagement } from "./agency-routes-management"
+import { AgencyVehicleTypesManagement } from "./agency-vehicle-types-management"
 import { createApiUrl } from "@/lib/api-config"
 
 interface WaitingTimeReason {
@@ -26,6 +27,9 @@ interface WaitingTimeReason {
   name: string
   description?: string
 }
+
+type AgencyCatalogsSpecialTab = 'waiting_time' | 'routes' | 'vehicle_types'
+type AgencyCatalogsTab = CatalogType | AgencyCatalogsSpecialTab
 
 interface CatalogTypeConfig {
   key: CatalogType
@@ -151,7 +155,16 @@ export function AgencyCatalogs() {
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
+  const [activeTab, setActiveTab] = useState<AgencyCatalogsTab>('location')
   const [selectedCatalogType, setSelectedCatalogType] = useState<CatalogType>('location')
+
+  const handleCatalogsTabChange = (value: string) => {
+    const tab = value as AgencyCatalogsTab
+    setActiveTab(tab)
+    if (catalogTypes.some((t) => t.key === tab)) {
+      setSelectedCatalogType(tab as CatalogType)
+    }
+  }
   const [editingCatalog, setEditingCatalog] = useState<AgencyCatalog | null>(null)
 
   // Form states
@@ -237,6 +250,7 @@ export function AgencyCatalogs() {
   }
 
   const handleCreateCatalog = (type: CatalogType) => {
+    setActiveTab(type)
     setSelectedCatalogType(type)
     setFormData({
       name: '',
@@ -250,6 +264,7 @@ export function AgencyCatalogs() {
 
   const handleEditCatalog = (catalog: AgencyCatalog) => {
     setEditingCatalog(catalog)
+    setActiveTab(catalog.type)
     setSelectedCatalogType(catalog.type)
     setFormData({
       name: catalog.name,
@@ -614,8 +629,8 @@ export function AgencyCatalogs() {
       </Card>
 
       {/* Catalog Tabs */}
-      <Tabs value={selectedCatalogType} onValueChange={(value) => setSelectedCatalogType(value as CatalogType)}>
-        <TabsList className="grid w-full grid-cols-10">
+      <Tabs value={activeTab} onValueChange={handleCatalogsTabChange}>
+        <TabsList className="flex w-full flex-wrap h-auto min-h-10 gap-1 justify-start">
           {catalogTypes.map((type) => (
             <TabsTrigger key={type.key} value={type.key} className="text-xs">
               <type.icon className="h-3 w-3 mr-1" />
@@ -629,6 +644,10 @@ export function AgencyCatalogs() {
           <TabsTrigger value="routes" className="text-xs">
             <Route className="h-3 w-3 mr-1" />
             Routes
+          </TabsTrigger>
+          <TabsTrigger value="vehicle_types" className="text-xs">
+            <Car className="h-3 w-3 mr-1" />
+            Vehicle Types
           </TabsTrigger>
         </TabsList>
 
@@ -899,6 +918,10 @@ export function AgencyCatalogs() {
         {/* Routes Tab - Special handling */}
         <TabsContent value="routes">
           <AgencyRoutesManagement />
+        </TabsContent>
+
+        <TabsContent value="vehicle_types">
+          <AgencyVehicleTypesManagement />
         </TabsContent>
       </Tabs>
 

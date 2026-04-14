@@ -15,6 +15,7 @@ import agencyServicesReducer from './features/agencyServices/agencyServicesSlice
 import agencyCatalogsReducer from './features/agencyServices/agencyCatalogsSlice'
 import agencyPricingConfigReducer from './features/agencyServices/agencyPricingConfigSlice'
 import agencyRoutesReducer from './features/agencyServices/agencyRoutesSlice'
+import agencyVehicleTypesReducer from './features/agencyServices/agencyVehicleTypesSlice'
 import containerTypesReducer from './features/containerTypes/containerTypesSlice'
 import analyticsReducer from './features/analytics/analyticsSlice'
 import { loadState, saveState } from './storage'
@@ -41,6 +42,7 @@ export const makeStore = () => {
       agencyCatalogs: agencyCatalogsReducer,
       agencyPricingConfig: agencyPricingConfigReducer,
       agencyRoutes: agencyRoutesReducer,
+      agencyVehicleTypes: agencyVehicleTypesReducer,
       containerTypes: containerTypesReducer,
       analytics: analyticsReducer,
     },
