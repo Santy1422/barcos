@@ -13,6 +13,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
   FileText,
   Plus,
   AlertCircle,
@@ -104,6 +111,17 @@ interface PTYSSRecordData {
 }
 
 type LocalRecordStatus = "pendiente" | "en_progreso" | "completado" | "cancelado"
+
+const normalizeLocalRecordStatus = (status?: string): LocalRecordStatus | null => {
+  if (!status) return null
+
+  if (status === "pendiente") return "pendiente"
+  if (status === "en_progreso" || status === "en progreso" || status === "in_progress") return "en_progreso"
+  if (status === "completado") return "completado"
+  if (status === "cancelado" || status === "anulado") return "cancelado"
+
+  return null
+}
 
 const initialRecordData: PTYSSRecordData = {
   clientId: "",
@@ -211,8 +229,6 @@ export function PTYSSUpload() {
 
   // Estado para filtro de estado de registros locales (multi-seleccion)
   const [statusFilters, setStatusFilters] = useState<LocalRecordStatus[]>(["pendiente", "en_progreso"])
-  const [openLocalStatusFilter, setOpenLocalStatusFilter] = useState(false)
-  const localStatusFilterRef = useRef<HTMLTableCellElement | null>(null)
   
   // Estado para filtro por cliente
   const [clientFilter, setClientFilter] = useState<string>('all')
@@ -230,6 +246,27 @@ export function PTYSSUpload() {
     { value: "completado", label: "Completado" },
     { value: "cancelado", label: "Cancelado" },
   ]
+
+  const localStatusCounts = useMemo<Record<LocalRecordStatus, number>>(() => {
+    const counts: Record<LocalRecordStatus, number> = {
+      pendiente: 0,
+      en_progreso: 0,
+      completado: 0,
+      cancelado: 0,
+    }
+
+    ptyssRecords.forEach((record: ExcelRecord) => {
+      const data = record.data as Record<string, any>
+      if (data.recordType !== "local" || record.invoiceId) return
+
+      const normalizedStatus = normalizeLocalRecordStatus(record.status)
+      if (normalizedStatus) {
+        counts[normalizedStatus] += 1
+      }
+    })
+
+    return counts
+  }, [ptyssRecords])
 
   // Estado para crear rutas desde registros sin match
   const [showCreateRouteModal, setShowCreateRouteModal] = useState(false)
@@ -404,37 +441,26 @@ export function PTYSSUpload() {
     }
   }, [uploadJob.jobId, uploadJob.status, pollJobStatus])
 
-  // Cerrar dropdown de filtro de estado al hacer click fuera
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        openLocalStatusFilter &&
-        localStatusFilterRef.current &&
-        !localStatusFilterRef.current.contains(event.target as Node)
-      ) {
-        setOpenLocalStatusFilter(false)
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [openLocalStatusFilter])
-
   // Filtrar registros locales (pendientes, completados y cancelados)
   const pendingLocalRecords = useMemo(() => {
     const filtered = ptyssRecords.filter((record: ExcelRecord) => {
       const data = record.data as Record<string, any>
       // Filtrar solo registros locales (tienen recordType = "local")
       // Mostrar pendientes, completados y cancelados (excluir solo los que ya tienen factura)
+      const normalizedStatus = normalizeLocalRecordStatus(record.status)
+
       return data.recordType === "local" &&
-             (record.status === "pendiente" || record.status === "en_progreso" || record.status === "completado" || record.status === "cancelado") &&
+             !!normalizedStatus &&
              !record.invoiceId
     })
     
     // Aplicar filtro de estado (multi-seleccion)
     let result = filtered
     if (statusFilters.length > 0) {
-      result = result.filter((record: ExcelRecord) => statusFilters.includes(record.status as LocalRecordStatus))
+      result = result.filter((record: ExcelRecord) => {
+        const normalizedStatus = normalizeLocalRecordStatus(record.status)
+        return normalizedStatus ? statusFilters.includes(normalizedStatus) : false
+      })
     }
     
     // Aplicar filtro por cliente
@@ -2069,22 +2095,13 @@ export function PTYSSUpload() {
               </span>
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-orange-600 border-orange-600 text-xs">
-                  {ptyssRecords.filter((r: ExcelRecord) => {
-                    const data = r.data as Record<string, any>
-                    return data.recordType === "local" && r.status === "pendiente" && !r.invoiceId
-                  }).length} Pendientes
+                  {localStatusCounts.pendiente} Pendientes
                 </Badge>
                 <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
-                  {ptyssRecords.filter((r: ExcelRecord) => {
-                    const data = r.data as Record<string, any>
-                    return data.recordType === "local" && r.status === "completado" && !r.invoiceId
-                  }).length} Completados
+                  {localStatusCounts.completado} Completados
                 </Badge>
                 <Badge variant="outline" className="text-red-600 border-red-600 text-xs">
-                  {ptyssRecords.filter((r: ExcelRecord) => {
-                    const data = r.data as Record<string, any>
-                    return data.recordType === "local" && r.status === "cancelado" && !r.invoiceId
-                  }).length} Cancelados
+                  {localStatusCounts.cancelado} Cancelados
                 </Badge>
               </div>
             </CardTitle>
@@ -2205,7 +2222,6 @@ export function PTYSSUpload() {
                     size="sm"
                     onClick={() => {
                       setStatusFilters([])
-                      setOpenLocalStatusFilter(false)
                       setClientFilter('all')
                       setMoveDateStart('')
                       setMoveDateEnd('')
@@ -2229,7 +2245,7 @@ export function PTYSSUpload() {
                     <TableHead className="font-semibold">Ruta</TableHead>
                     <TableHead className="font-semibold">Operación</TableHead>
                     <TableHead className="font-semibold">Fecha Inicial</TableHead>
-                    <TableHead className="font-semibold px-2 relative" ref={localStatusFilterRef}>
+                    <TableHead className="font-semibold px-2">
                       <div className="flex items-center gap-1">
                         <span>Estado</span>
                         <div className="flex items-center gap-0.5 shrink-0">
@@ -2242,66 +2258,61 @@ export function PTYSSUpload() {
                               onClick={(e) => {
                                 e.stopPropagation()
                                 setStatusFilters([])
-                                setOpenLocalStatusFilter(false)
                               }}
                             >
                               <X className="h-3 w-3" />
                             </Button>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className={`h-6 w-6 p-0 ${statusFilters.length > 0 ? 'text-blue-600' : 'text-muted-foreground'}`}
-                            title="Filtrar estado"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setOpenLocalStatusFilter((prev) => !prev)
-                            }}
-                          >
-                            <Filter className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                      {openLocalStatusFilter && (
-                        <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-52">
-                          <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center justify-between">
-                            <span>Estado</span>
-                            {statusFilters.length > 0 && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-5 px-1 text-xs"
-                                onClick={() => setStatusFilters([])}
-                              >
-                                Limpiar
-                              </Button>
-                            )}
-                          </div>
-                          <div className="max-h-56 overflow-y-auto space-y-0.5">
-                            {localStatusOptions.map((option) => (
-                              <div
-                                key={option.value}
-                                className="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer rounded hover:bg-gray-100 dark:hover:bg-slate-800"
+                                className={`h-6 w-6 p-0 ${statusFilters.length > 0 ? 'text-blue-600' : 'text-muted-foreground'}`}
+                                title="Filtrar estado"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                <input
-                                  type="checkbox"
+                                <Filter className="h-3.5 w-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-52">
+                              <DropdownMenuLabel className="flex items-center justify-between text-xs">
+                                <span>Estado</span>
+                                {statusFilters.length > 0 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 px-1 text-xs"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setStatusFilters([])
+                                    }}
+                                  >
+                                    Limpiar
+                                  </Button>
+                                )}
+                              </DropdownMenuLabel>
+                              {localStatusOptions.map((option) => (
+                                <DropdownMenuCheckboxItem
+                                  key={option.value}
                                   checked={statusFilters.includes(option.value)}
-                                  onChange={() => {
+                                  onCheckedChange={() => {
                                     setStatusFilters((prev) =>
                                       prev.includes(option.value)
                                         ? prev.filter((status) => status !== option.value)
                                         : [...prev, option.value]
                                     )
                                   }}
-                                  className="rounded"
-                                />
-                                <span>{option.label}</span>
-                              </div>
-                            ))}
-                          </div>
+                                  onSelect={(e) => e.preventDefault()}
+                                  className="text-xs"
+                                >
+                                  {option.label} ({localStatusCounts[option.value]})
+                                </DropdownMenuCheckboxItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
-                      )}
+                      </div>
                     </TableHead>
                     <TableHead className="font-semibold text-center">Acciones</TableHead>
                   </TableRow>
@@ -2321,6 +2332,7 @@ export function PTYSSUpload() {
                     const client = clients.find((c: any) => (c._id || c.id) === data?.clientId)
                     const clientName = client ? (client.type === "natural" ? client.fullName : client.companyName) : "N/A"
                     const naviera = navieras.find((n: any) => n._id === data.naviera)
+                    const normalizedStatus = normalizeLocalRecordStatus(record.status)
                     
                     return (
                       <TableRow key={record._id || record.id}>
@@ -2357,22 +2369,22 @@ export function PTYSSUpload() {
                           {formatDate(data.moveDate)}
                         </TableCell>
                         <TableCell>
-                          {record.status === "pendiente" && (
+                          {normalizedStatus === "pendiente" && (
                             <Badge variant="outline" className="text-orange-600 border-orange-600">
                               Pendiente
                             </Badge>
                           )}
-                          {record.status === "en_progreso" && (
+                          {normalizedStatus === "en_progreso" && (
                             <Badge variant="outline" className="text-blue-600 border-blue-600">
                               En progreso
                             </Badge>
                           )}
-                          {record.status === "completado" && (
+                          {normalizedStatus === "completado" && (
                             <Badge variant="outline" className="text-green-600 border-green-600">
                               Completado
                             </Badge>
                           )}
-                          {record.status === "cancelado" && (
+                          {normalizedStatus === "cancelado" && (
                             <Badge variant="outline" className="text-red-600 border-red-600">
                               Cancelado
                             </Badge>
@@ -2381,7 +2393,7 @@ export function PTYSSUpload() {
                         <TableCell>
                           <div className="flex items-center justify-center gap-2">
                             {/* Botón Editar - Solo para pendientes */}
-                            {record.status === "pendiente" && (
+                            {normalizedStatus === "pendiente" && (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -2395,7 +2407,7 @@ export function PTYSSUpload() {
                             )}
                             
                             {/* Botón Acciones - Para pendientes y en progreso (Completar, En progreso, Cancelar) */}
-                            {(record.status === "pendiente" || record.status === "en_progreso") && (
+                            {(normalizedStatus === "pendiente" || normalizedStatus === "en_progreso") && (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -2409,7 +2421,7 @@ export function PTYSSUpload() {
                             )}
                             
                             {/* Botón Eliminar - Para todos los estados excepto completado */}
-                            {record.status !== "completado" && (
+                            {normalizedStatus !== "completado" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
