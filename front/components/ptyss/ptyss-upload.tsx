@@ -27,7 +27,8 @@ import {
   Send,
   X,
   Search,
-  Play
+  Play,
+  Filter
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
@@ -101,6 +102,8 @@ interface PTYSSRecordData {
   localRoutePrice?: number // Precio de la ruta local
   associate?: string
 }
+
+type LocalRecordStatus = "pendiente" | "en_progreso" | "completado" | "cancelado"
 
 const initialRecordData: PTYSSRecordData = {
   clientId: "",
@@ -206,8 +209,10 @@ export function PTYSSUpload() {
   // Obtener registros PTYSS desde Redux (para mostrar registros pendientes)
   const ptyssRecords = useAppSelector((state) => selectRecordsByModule(state, "ptyss"))
 
-  // Estado para filtro de estado de registros locales
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pendiente' | 'en_progreso' | 'completado' | 'cancelado'>('all')
+  // Estado para filtro de estado de registros locales (multi-seleccion)
+  const [statusFilters, setStatusFilters] = useState<LocalRecordStatus[]>(["pendiente", "en_progreso"])
+  const [openLocalStatusFilter, setOpenLocalStatusFilter] = useState(false)
+  const localStatusFilterRef = useRef<HTMLTableCellElement | null>(null)
   
   // Estado para filtro por cliente
   const [clientFilter, setClientFilter] = useState<string>('all')
@@ -218,6 +223,13 @@ export function PTYSSUpload() {
 
   // Estado para búsqueda de registros locales
   const [localRecordSearchTerm, setLocalRecordSearchTerm] = useState<string>('')
+
+  const localStatusOptions: Array<{ value: LocalRecordStatus; label: string }> = [
+    { value: "pendiente", label: "Pendiente" },
+    { value: "en_progreso", label: "En progreso" },
+    { value: "completado", label: "Completado" },
+    { value: "cancelado", label: "Cancelado" },
+  ]
 
   // Estado para crear rutas desde registros sin match
   const [showCreateRouteModal, setShowCreateRouteModal] = useState(false)
@@ -392,6 +404,22 @@ export function PTYSSUpload() {
     }
   }, [uploadJob.jobId, uploadJob.status, pollJobStatus])
 
+  // Cerrar dropdown de filtro de estado al hacer click fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        openLocalStatusFilter &&
+        localStatusFilterRef.current &&
+        !localStatusFilterRef.current.contains(event.target as Node)
+      ) {
+        setOpenLocalStatusFilter(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [openLocalStatusFilter])
+
   // Filtrar registros locales (pendientes, completados y cancelados)
   const pendingLocalRecords = useMemo(() => {
     const filtered = ptyssRecords.filter((record: ExcelRecord) => {
@@ -403,10 +431,10 @@ export function PTYSSUpload() {
              !record.invoiceId
     })
     
-    // Aplicar filtro de estado si no es 'all'
+    // Aplicar filtro de estado (multi-seleccion)
     let result = filtered
-    if (statusFilter !== 'all') {
-      result = result.filter(record => record.status === statusFilter)
+    if (statusFilters.length > 0) {
+      result = result.filter((record: ExcelRecord) => statusFilters.includes(record.status as LocalRecordStatus))
     }
     
     // Aplicar filtro por cliente
@@ -473,7 +501,7 @@ export function PTYSSUpload() {
     }
 
     return result
-  }, [ptyssRecords, statusFilter, clientFilter, moveDateStart, moveDateEnd, localRecordSearchTerm, clients])
+  }, [ptyssRecords, statusFilters, clientFilter, moveDateStart, moveDateEnd, localRecordSearchTerm, clients])
 
   // Función para re-procesar el Excel (simula el handleFileChange pero sin seleccionar archivo)
   const reprocessExcel = useCallback(async () => {
@@ -2033,9 +2061,9 @@ export function PTYSSUpload() {
               <span className="flex items-center gap-2">
                 <Database className="h-5 w-5" />
                 Registros Locales
-                {statusFilter !== 'all' && (
+                {statusFilters.length > 0 && (
                   <Badge variant="secondary" className="ml-2">
-                    {pendingLocalRecords.length} {statusFilter}
+                    {pendingLocalRecords.length} filtrados
                   </Badge>
                 )}
               </span>
@@ -2089,61 +2117,8 @@ export function PTYSSUpload() {
                 )}
               </div>
 
-              {/* Filtros de Estado y Cliente en la misma fila */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Filtro de Estado */}
-                <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border">
-                  <Label htmlFor="status-filter" className="text-sm font-medium whitespace-nowrap">Filtrar por estado:</Label>
-                  <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as 'all' | 'pendiente' | 'en_progreso' | 'completado' | 'cancelado')}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Seleccionar estado" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        Todos ({ptyssRecords.filter((r: ExcelRecord) => {
-                          const data = r.data as Record<string, any>
-                          return data.recordType === "local" && !r.invoiceId
-                        }).length})
-                      </SelectItem>
-                      <SelectItem value="pendiente">
-                        Pendientes ({ptyssRecords.filter((r: ExcelRecord) => {
-                          const data = r.data as Record<string, any>
-                          return data.recordType === "local" && r.status === "pendiente" && !r.invoiceId
-                        }).length})
-                      </SelectItem>
-                      <SelectItem value="en_progreso">
-                        En Progreso ({ptyssRecords.filter((r: ExcelRecord) => {
-                          const data = r.data as Record<string, any>
-                          return data.recordType === "local" && r.status === "en_progreso" && !r.invoiceId
-                        }).length})
-                      </SelectItem>
-                      <SelectItem value="completado">
-                        Completados ({ptyssRecords.filter((r: ExcelRecord) => {
-                          const data = r.data as Record<string, any>
-                          return data.recordType === "local" && r.status === "completado" && !r.invoiceId
-                        }).length})
-                      </SelectItem>
-                      <SelectItem value="cancelado">
-                        Cancelados ({ptyssRecords.filter((r: ExcelRecord) => {
-                          const data = r.data as Record<string, any>
-                          return data.recordType === "local" && r.status === "cancelado" && !r.invoiceId
-                        }).length})
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {statusFilter !== 'all' && (
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => setStatusFilter('all')}
-                      className="text-xs"
-                    >
-                      Limpiar
-                    </Button>
-                  )}
-                </div>
-                
-                {/* Filtro por Cliente */}
+              {/* Filtro por Cliente */}
+              <div className="grid grid-cols-1 gap-4">
                 <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border">
                   <Label htmlFor="client-filter" className="text-sm font-medium whitespace-nowrap">Filtrar por cliente:</Label>
                   <Select value={clientFilter} onValueChange={setClientFilter}>
@@ -2223,13 +2198,14 @@ export function PTYSSUpload() {
               </div>
               
               {/* Botón para limpiar todos los filtros */}
-              {(statusFilter !== 'all' || clientFilter !== 'all' || moveDateStart || moveDateEnd || localRecordSearchTerm) && (
+              {(statusFilters.length > 0 || clientFilter !== 'all' || moveDateStart || moveDateEnd || localRecordSearchTerm) && (
                 <div className="flex justify-end">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      setStatusFilter('all')
+                      setStatusFilters([])
+                      setOpenLocalStatusFilter(false)
                       setClientFilter('all')
                       setMoveDateStart('')
                       setMoveDateEnd('')
@@ -2253,7 +2229,80 @@ export function PTYSSUpload() {
                     <TableHead className="font-semibold">Ruta</TableHead>
                     <TableHead className="font-semibold">Operación</TableHead>
                     <TableHead className="font-semibold">Fecha Inicial</TableHead>
-                    <TableHead className="font-semibold">Estado</TableHead>
+                    <TableHead className="font-semibold px-2 relative" ref={localStatusFilterRef}>
+                      <div className="flex items-center gap-1">
+                        <span>Estado</span>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          {statusFilters.length > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                              title="Borrar filtro"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setStatusFilters([])
+                                setOpenLocalStatusFilter(false)
+                              }}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={`h-6 w-6 p-0 ${statusFilters.length > 0 ? 'text-blue-600' : 'text-muted-foreground'}`}
+                            title="Filtrar estado"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setOpenLocalStatusFilter((prev) => !prev)
+                            }}
+                          >
+                            <Filter className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                      {openLocalStatusFilter && (
+                        <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-52">
+                          <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center justify-between">
+                            <span>Estado</span>
+                            {statusFilters.length > 0 && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-5 px-1 text-xs"
+                                onClick={() => setStatusFilters([])}
+                              >
+                                Limpiar
+                              </Button>
+                            )}
+                          </div>
+                          <div className="max-h-56 overflow-y-auto space-y-0.5">
+                            {localStatusOptions.map((option) => (
+                              <div
+                                key={option.value}
+                                className="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer rounded hover:bg-gray-100 dark:hover:bg-slate-800"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={statusFilters.includes(option.value)}
+                                  onChange={() => {
+                                    setStatusFilters((prev) =>
+                                      prev.includes(option.value)
+                                        ? prev.filter((status) => status !== option.value)
+                                        : [...prev, option.value]
+                                    )
+                                  }}
+                                  className="rounded"
+                                />
+                                <span>{option.label}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </TableHead>
                     <TableHead className="font-semibold text-center">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
