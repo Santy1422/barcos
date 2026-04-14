@@ -135,6 +135,7 @@ export const createAgencyService = async (req: Request, res: Response) => {
       moveType,
       transportCompany,
       driver,
+      vehicleType,
       approve,
       comments,
       crewMembers,
@@ -218,6 +219,7 @@ export const createAgencyService = async (req: Request, res: Response) => {
       passengerCount: passengerCount || (crewMembers ? crewMembers.length : 1),
       approve: approve || false,
       driver,
+      vehicleType: typeof vehicleType === 'string' && vehicleType.trim() ? vehicleType.trim() : undefined,
       
       // Legacy fields (mantener para compatibilidad)
       crewName,

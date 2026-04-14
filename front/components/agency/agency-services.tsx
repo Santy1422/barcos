@@ -16,6 +16,7 @@ import { TimeInput } from "@/components/ui/time-input"
 import { useAgencyServices } from "@/lib/features/agencyServices/useAgencyServices"
 import { useAgencyCatalogs } from "@/lib/features/agencyServices/useAgencyCatalogs"
 import { useAgencyRoutes } from "@/lib/features/agencyServices/useAgencyRoutes"
+import { useAgencyVehicleTypes } from "@/lib/features/agencyServices/useAgencyVehicleTypes"
 import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { useAppDispatch, useAppSelector } from "@/lib/hooks"
@@ -42,6 +43,7 @@ interface ServiceFormData {
   moveType: 'RT' | 'SINGLE' | 'INTERNAL' | 'BAGS_CLAIM' | 'DOCUMENTATION' | 'NO_SHOW'
   transportCompany: string
   driver: string
+  vehicleType: string
   approve: boolean
   comments: string
   crewMembers: CrewMember[]
@@ -64,6 +66,7 @@ const initialFormData: ServiceFormData = {
   moveType: 'SINGLE',
   transportCompany: '',
   driver: '',
+  vehicleType: '',
   approve: false,              // No se muestra en formulario
   comments: '',
   crewMembers: [],
@@ -126,6 +129,11 @@ export function AgencyServices(props?: { embeddedInModal?: boolean; onSuccess?: 
     findRouteByLocations
   } = useAgencyRoutes()
 
+  const {
+    vehicleTypes,
+    fetchVehicleTypes
+  } = useAgencyVehicleTypes()
+
   // Form state
   const [formData, setFormData] = useState<ServiceFormData>(initialFormData)
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
@@ -135,10 +143,11 @@ export function AgencyServices(props?: { embeddedInModal?: boolean; onSuccess?: 
   // Load data on mount
   useEffect(() => {
     fetchGroupedCatalogs()
+    fetchVehicleTypes()
     fetchActiveRoutes()
     fetchServices({ page: 1, limit: 10 })
     dispatch(fetchClients())
-  }, [fetchGroupedCatalogs, fetchActiveRoutes, fetchServices, dispatch])
+  }, [fetchGroupedCatalogs, fetchVehicleTypes, fetchActiveRoutes, fetchServices, dispatch])
 
   // Get locations with site types only
   const getLocationsWithSiteType = () => {
@@ -742,6 +751,7 @@ export function AgencyServices(props?: { embeddedInModal?: boolean; onSuccess?: 
         moveType: formData.moveType,
         transportCompany: formData.transportCompany,
         driver: formData.driver,
+        vehicleType: formData.vehicleType || undefined,
         approve: false, // Always false in creation
         comments: formData.comments,
         crewMembers: formData.crewMembers,
@@ -1344,6 +1354,31 @@ export function AgencyServices(props?: { embeddedInModal?: boolean; onSuccess?: 
                   )}
                 </div>
 
+                {/* Vehicle Type */}
+                <div className="space-y-2">
+                  <Label htmlFor="vehicleType" className="text-sm font-medium">
+                    Vehicle Type
+                  </Label>
+                  <Select
+                    value={formData.vehicleType || "__none__"}
+                    onValueChange={(value) => handleInputChange('vehicleType', value === "__none__" ? '' : value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select vehicle type (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Not specified</SelectItem>
+                      {vehicleTypes
+                        .filter((vehicleType) => vehicleType.isActive)
+                        .map((vehicleType) => (
+                          <SelectItem key={vehicleType._id} value={vehicleType.name}>
+                            {vehicleType.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Client */}
                 <div className="space-y-2">
                   <Label htmlFor="client" className="text-sm font-medium">
@@ -1357,7 +1392,7 @@ export function AgencyServices(props?: { embeddedInModal?: boolean; onSuccess?: 
                       <SelectValue placeholder="Select client" />
                     </SelectTrigger>
                     <SelectContent>
-                      {clients.filter(c => c.isActive && c.sapCode).map((client) => (
+                      {clients.filter((c: any) => c.isActive && c.sapCode).map((client: any) => (
                         <SelectItem key={client._id || client.id} value={client._id || client.id || ''}>
                           <div className="flex flex-col">
                             <span className="font-medium">

@@ -60,6 +60,7 @@ export interface IAgencyService extends Document {
   // Transport information
   transportCompany?: string;
   driver?: string;
+  vehicleType?: string;
   driverName?: string;
   flightInfo?: string;
   
@@ -283,6 +284,11 @@ const agencyServiceSchema = new Schema<IAgencyService>(
     },
     
     driver: {
+      type: String,
+      trim: true
+    },
+
+    vehicleType: {
       type: String,
       trim: true
     },

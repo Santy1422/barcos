@@ -65,6 +65,7 @@ export interface AgencyService {
   // Información del transporte
   transportCompany?: string;
   driver?: string;
+  vehicleType?: string;
   driverName?: string;
   flightInfo?: string;
   
@@ -142,6 +143,7 @@ export interface AgencyServiceInput {
   // Transport
   transportCompany?: string;
   driver?: string;
+  vehicleType?: string;
   driverName?: string;
   flightInfo?: string;
   approve?: boolean;

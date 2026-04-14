@@ -1375,6 +1375,12 @@ export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceCli
                               <span>{service.driver}</span>
                             </div>
                           )}
+                          {service.vehicleType && (
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                              <Car className="h-3 w-3" />
+                              <span>{service.vehicleType}</span>
+                            </div>
+                          )}
                         </div>
                       </TableCell>
 
