@@ -30,6 +30,8 @@ export interface AgencyService {
   serviceDate: string;
   pickupDate: string;
   pickupTime: string;
+  /** Opcional; registros antiguos pueden no tenerlo. */
+  dropoffTime?: string;
   
   // Ubicaciones
   pickupLocation: string;
@@ -68,6 +70,7 @@ export interface AgencyService {
   
   // Detalles del servicio
   waitingTime: number;
+  waitingTimeReason?: string;
   comments?: string;
   notes?: string;
   serviceCode?: string;
@@ -106,6 +109,7 @@ export interface AgencyService {
 export interface AgencyServiceInput {
   pickupDate: string;
   pickupTime: string;
+  dropoffTime?: string;
   pickupLocation: string;
   dropoffLocation: string;
   returnDropoffLocation?: string; // For Round Trip
@@ -144,6 +148,7 @@ export interface AgencyServiceInput {
   
   // Service details
   waitingTime?: number;
+  waitingTimeReason?: string;
   comments?: string;
   serviceCode?: string;
   

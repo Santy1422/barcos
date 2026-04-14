@@ -113,6 +113,7 @@ export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceCli
     // Basic service info
     pickupDate: '',
     pickupTime: '',
+    dropoffTime: '',
     pickupLocation: '',
     dropoffLocation: '',
     returnDropoffLocation: '',
@@ -205,6 +206,7 @@ export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceCli
           }
         })() : '',
         pickupTime: selectedService.pickupTime || '',
+        dropoffTime: selectedService.dropoffTime || '',
         pickupLocation: selectedService.pickupLocation || '',
         dropoffLocation: selectedService.dropoffLocation || '',
         returnDropoffLocation: selectedService.returnDropoffLocation || '',
@@ -716,6 +718,7 @@ export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceCli
           // Basic service info
           pickupDate: editFormData.pickupDate,
           pickupTime: editFormData.pickupTime,
+          dropoffTime: editFormData.dropoffTime.trim(),
           pickupLocation: editFormData.pickupLocation,
           dropoffLocation: editFormData.dropoffLocation,
           returnDropoffLocation: editFormData.moveType === 'RT' ? editFormData.returnDropoffLocation : undefined,
@@ -1689,7 +1692,7 @@ export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceCli
                 </div>
 
                 {/* Basic Service Information */}
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   <div className="space-y-2">
                     <Label htmlFor="pickupDate" className="text-sm font-medium">
                       Pickup Date *
@@ -1728,6 +1731,24 @@ export function AgencyRecords(props?: { hideHeader?: boolean; onCreateServiceCli
                     )}
                     <p className="text-xs text-muted-foreground">
                       Formato 24 horas (ej: 14:30 para 2:30 PM)
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="dropoffTime" className="text-sm font-medium">
+                      Drop-off Time
+                    </Label>
+                    <TimeInput
+                      id="dropoffTime"
+                      value={editFormData.dropoffTime}
+                      onChange={(value) => setEditFormData(prev => ({
+                        ...prev,
+                        dropoffTime: value
+                      }))}
+                      placeholder="HH:MM (opcional)"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Opcional. Hora estimada de llegada al destino.
                     </p>
                   </div>
                 </div>

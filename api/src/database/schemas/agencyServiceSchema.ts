@@ -28,6 +28,8 @@ export interface IAgencyService extends Document {
   serviceDate: Date;
   pickupDate: Date;
   pickupTime: string;
+  /** Hora de llegada al destino; opcional, se completa al editar el servicio. */
+  dropoffTime?: string;
   
   // Locations
   pickupLocation: string;
@@ -158,6 +160,12 @@ const agencyServiceSchema = new Schema<IAgencyService>(
       type: String,
       required: true,
       trim: true
+    },
+    
+    dropoffTime: {
+      type: String,
+      trim: true,
+      required: false
     },
     
     // Locations

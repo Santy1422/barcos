@@ -158,7 +158,12 @@ export function AgencyServicesViewModal({ open, onOpenChange, invoice }: AgencyS
                           <Calendar className="h-3 w-3" /> Fecha de Servicio
                         </Label>
                         <p className="text-sm font-medium">{formatDate(service.pickupDate)}</p>
-                        <p className="text-xs text-muted-foreground">Hora: {service.pickupTime || 'N/A'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Pick-up: {service.pickupTime || 'N/A'}
+                          {service.dropoffTime ? (
+                            <span className="block mt-0.5">Drop-off: {service.dropoffTime}</span>
+                          ) : null}
+                        </p>
                       </div>
 
                       <div className="space-y-2">

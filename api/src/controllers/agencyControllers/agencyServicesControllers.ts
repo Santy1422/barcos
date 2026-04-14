@@ -304,6 +304,21 @@ export const updateAgencyService = async (req: Request, res: Response) => {
       updateData.notes = updateData.comments;
     }
 
+    // dropoffTime: opcional; si viene vacío se quita del documento (sin borrar otros datos)
+    if (Object.prototype.hasOwnProperty.call(updateData, 'dropoffTime')) {
+      const raw = updateData.dropoffTime;
+      const trimmed = typeof raw === 'string' ? raw.trim() : '';
+      if (trimmed) {
+        updateData.dropoffTime = trimmed;
+      } else {
+        delete updateData.dropoffTime;
+        if (!updateData.$unset || typeof updateData.$unset !== 'object') {
+          updateData.$unset = {} as Record<string, 1>;
+        }
+        (updateData.$unset as Record<string, 1>).dropoffTime = 1;
+      }
+    }
+
     // Calcular y persistir waitingTimePrice cuando se actualiza waitingTime (minutos)
     if (updateData.waitingTime !== undefined) {
       const waitingTimeMinutes = Number(updateData.waitingTime) || 0;
