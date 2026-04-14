@@ -103,11 +103,27 @@ export function PTYSSHistory() {
     return naviera ? naviera.name : navieraId
   }
 
+  /** Misma lógica que en upload / vista de registro: orden operativa (local) o correlativo trasiego; ORD-XXXXXX como respaldo. */
+  const getDisplayOrderNumber = (record: IndividualExcelRecord): string => {
+    const data = record.data as Record<string, unknown> | undefined
+    const orderRaw = data?.order
+    const order = typeof orderRaw === 'string' ? orderRaw.trim() : orderRaw != null ? String(orderRaw).trim() : ''
+    if (order) return order
+    const ccRaw = data?.containerConsecutive
+    const cc =
+      typeof ccRaw === 'string' ? ccRaw.trim() : ccRaw != null ? String(ccRaw).trim() : ''
+    if (cc) return cc
+    const internal = (record as IndividualExcelRecord & { orderNumber?: string }).orderNumber
+    if (typeof internal === 'string' && internal.trim()) return internal.trim()
+    return 'N/A'
+  }
+
   // Filtrar registros
   const filteredRecords = records.filter(record => {
     const matchesSearch =
       ((record as any).orderNumber?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-      (record.data?.order?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (record.data?.order?.toString().toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (record.data?.containerConsecutive?.toString().toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (record.data?.container?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (getRecordNaviera(record).toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
       (record.data?.associate?.toLowerCase() || '').includes(searchTerm.toLowerCase())
@@ -143,7 +159,7 @@ export function PTYSSHistory() {
   // Exportar a Excel
   const exportToExcel = () => {
     const exportData = filteredRecords.map(record => ({
-      'No. Orden': (record as any).orderNumber || 'N/A',
+      'No. Orden': getDisplayOrderNumber(record),
       'Contenedor': record.data?.container || 'N/A',
       'Cliente': getRecordClient(record),
       'Naviera': getRecordNaviera(record),
@@ -398,7 +414,7 @@ export function PTYSSHistory() {
                   {filteredRecords.map((record) => (
                     <TableRow key={record._id}>
                       <TableCell className="font-medium font-mono text-sm">
-                        {(record as any).orderNumber || 'N/A'}
+                        {getDisplayOrderNumber(record)}
                       </TableCell>
                       <TableCell>{record.data?.container || 'N/A'}</TableCell>
                       <TableCell>{getRecordClient(record)}</TableCell>
@@ -465,7 +481,7 @@ export function PTYSSHistory() {
                     <div>
                       <Label className="text-sm font-medium">No. Orden</Label>
                       <p className="text-sm text-gray-600 font-mono font-bold">
-                        {(selectedRecord as any).orderNumber || 'N/A'}
+                        {getDisplayOrderNumber(selectedRecord)}
                       </p>
                     </div>
                     <div>
