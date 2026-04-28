@@ -598,8 +598,9 @@ export function PTYSSPrefactura() {
         
         // Agregar los servicios locales fijos a selectedAdditionalServices
         setSelectedAdditionalServices(prev => {
-          // Mantener servicios que no son locales fijos
+          // Mantener servicios adicionales de trasiego y servicios locales adicionales (config, fromRecord === false)
           const nonLocalServices = prev.filter(s => !s.isLocalService)
+          const manualLocalAdditional = prev.filter(s => s.isLocalService && s.fromRecord === false)
           
           // Obtener todos los registros locales seleccionados usando selectedRecordIds
           const selectedLocalRecords = ptyssRecords.filter((record: IndividualExcelRecord) => {
@@ -680,7 +681,7 @@ export function PTYSSPrefactura() {
             }
           })
           
-          return [...nonLocalServices, ...allLocalServices]
+          return [...nonLocalServices, ...manualLocalAdditional, ...allLocalServices]
         })
       }
     } else {
@@ -765,7 +766,8 @@ export function PTYSSPrefactura() {
 
           setSelectedAdditionalServices(prev => {
             const nonLocalServices = prev.filter(s => !s.isLocalService)
-            return [...nonLocalServices, ...allLocalServices]
+            const manualLocalAdditional = prev.filter(s => s.isLocalService && s.fromRecord === false)
+            return [...nonLocalServices, ...manualLocalAdditional, ...allLocalServices]
           })
         }, 0)
         
@@ -988,10 +990,11 @@ export function PTYSSPrefactura() {
     console.log('🔍 useEffect recalcular servicios - allLocalServices encontrados:', allLocalServices)
     console.log('🔍 useEffect recalcular servicios - cantidad:', allLocalServices.length)
 
-    // Actualizar selectedAdditionalServices manteniendo servicios no locales
+    // Actualizar selectedAdditionalServices manteniendo servicios no locales y locales adicionales (config)
     setSelectedAdditionalServices(prev => {
       const nonLocalServices = prev.filter(s => !s.isLocalService)
-      const updated = [...nonLocalServices, ...allLocalServices]
+      const manualLocalAdditional = prev.filter(s => s.isLocalService && s.fromRecord === false)
+      const updated = [...nonLocalServices, ...manualLocalAdditional, ...allLocalServices]
       console.log('🔍 useEffect recalcular servicios - selectedAdditionalServices actualizado:', updated)
       return updated
     })
@@ -1816,7 +1819,7 @@ export function PTYSSPrefactura() {
       
       return () => clearTimeout(timeoutId)
     }
-  }, [prefacturaData.prefacturaNumber, selectedRecords.length, selectedAdditionalServices.length, currentStep])
+  }, [prefacturaData.prefacturaNumber, selectedRecords.length, selectedAdditionalServices, currentStep])
 
   // Cargar clientes cuando se necesiten para el PDF
   useEffect(() => {
@@ -3081,19 +3084,39 @@ export function PTYSSPrefactura() {
                     <div className="space-y-4 mt-6">
                       <Label className="text-sm font-semibold text-slate-700">Servicios Locales Seleccionados</Label>
                       {selectedAdditionalServices.filter(s => s.isLocalService && !s.fromRecord).map((service) => (
-                        <div key={service.serviceId} className="flex items-center gap-4 p-4 bg-white/70 border border-slate-200 rounded-lg shadow-sm">
-                          <div className="flex-1">
+                        <div key={service.serviceId} className="flex flex-col gap-3 p-4 bg-white/70 border border-slate-200 rounded-lg shadow-sm sm:flex-row sm:items-center sm:gap-4">
+                          <div className="flex-1 min-w-0">
                             <div className="font-semibold text-sm text-slate-900">{service.name}</div>
                             <div className="text-xs text-slate-600">{service.description}</div>
-                            <div className="text-xs text-slate-500">Precio fijo configurado</div>
+                            <div className="text-xs text-slate-500">Importe por defecto desde configuración; puedes cambiarlo para esta prefactura.</div>
                           </div>
-                          <div className="flex items-center gap-4">
-                            <span className="text-lg font-bold text-slate-900 bg-slate-100 px-3 py-1 rounded-full">${service.amount.toFixed(2)}</span>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <div className="space-y-1">
+                              <Label className="text-xs font-medium text-slate-600">Importe (USD)</Label>
+                              <Input
+                                type="text"
+                                inputMode="decimal"
+                                value={service.amount === 0 ? "" : service.amount.toString()}
+                                onChange={(e) => {
+                                  const value = e.target.value
+                                  if (value === "" || value === "0") {
+                                    handleUpdateLocalServiceAmount(service.serviceId, 0)
+                                  } else {
+                                    const numValue = parseFloat(value)
+                                    if (!isNaN(numValue) && numValue >= 0) {
+                                      handleUpdateLocalServiceAmount(service.serviceId, numValue)
+                                    }
+                                  }
+                                }}
+                                placeholder="0.00"
+                                className="w-[140px] h-10 text-base font-semibold bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
+                            </div>
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => handleRemoveLocalService(service.serviceId)}
-                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full"
+                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full self-end sm:self-center"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
