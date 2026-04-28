@@ -761,7 +761,7 @@ export function generateInvoiceXML(invoice: InvoiceForXmlPayload): string {
         "OtherItems": {
           "OtherItem": (function(): any[] {
             const invNum = (invoice.invoiceNumber || '').toString().toUpperCase()
-            const isAuthInvoice = invNum.startsWith('AUTH-') || invNum.endsWith(' AUT') || (invoice as any).details?.documentType === 'gastos-autoridades'
+            const isAuthInvoice = invNum.startsWith('AUTH-') || invNum.endsWith(' AUT') || invNum.endsWith('AUT') || (invoice as any).details?.documentType === 'gastos-autoridades'
 
             if (isAuthInvoice) {
               // Gastos de autoridades: agrupar registros y otherItems como antes

@@ -44,14 +44,23 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
 
   const services = useAppSelector(selectAllServices)
   const containerTypes = useAppSelector(selectAllContainerTypes)
+  const normalizeAuthInvoiceNumber = (value: string) => {
+    const normalized = (value || "").toUpperCase().trim().replace(/\s+/g, " ")
+    if (!normalized) return "AUT"
+    let base = normalized.replace(/\s*AUT$/i, "").trim()
+    if (base.startsWith("AUTH-")) base = base.slice(5).trim()
+    else if (base.startsWith("AUTH")) base = base.slice(4).trim()
+    return `${base ? `${base} ` : ""}AUT`
+  }
 
   // Detectar si es una factura AUTH (por prefijo AUTH-, sufijo AUT, o documentType gastos-autoridades)
   const isAuthInvoice = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-')
     || invoice?.invoiceNumber?.toString().toUpperCase().endsWith(' AUT')
+    || invoice?.invoiceNumber?.toString().toUpperCase().endsWith('AUT')
     || invoice?.details?.documentType === 'gastos-autoridades'
 
-  // Solo requerir prefijo AUTH- si el original lo tiene
-  const requiresAuthPrefix = invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-')
+  // Cualquier factura AUTH debe conservar AUT al final en facturación
+  const requiresAuthSuffix = isAuthInvoice
 
   useEffect(() => {
     setGeneratedXml("")
@@ -72,14 +81,20 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
       dispatch(fetchContainerTypes())
     }
     
-    // Pre-rellenar el número de factura para prefacturas AUTH
-    if (invoice?.invoiceNumber?.toString().toUpperCase().startsWith('AUTH-')) {
-      const invoiceNum = invoice.invoiceNumber.toString()
-      const suggestedNumber = invoiceNum.replace(/^AUTH-/, `AUTH-FAC-${Date.now().toString().slice(-6)}-`)
-      setNewInvoiceNumber(suggestedNumber)
+    // Pre-rellenar el número para cualquier factura AUTH, normalizado al sufijo AUT
+    if (isAuthInvoice) {
+      const invoiceNum = invoice?.invoiceNumber?.toString() || ''
+      let baseNumber = invoiceNum.replace(/\s*AUT$/i, '').trim()
+      if (baseNumber.toUpperCase().startsWith('AUTH-')) {
+        baseNumber = baseNumber.slice(5).trim()
+      } else if (baseNumber.toUpperCase().startsWith('AUTH')) {
+        baseNumber = baseNumber.slice(4).trim()
+      }
+      const generatedBase = baseNumber || `FAC-${Date.now().toString().slice(-6)}`
+      setNewInvoiceNumber(`${generatedBase.toUpperCase()} AUT`)
     }
     const today = new Date(); setInvoiceDate(today.toLocaleDateString('en-CA'))
-  }, [invoice?.id, open, dispatch])
+  }, [invoice?.id, open, dispatch, isAuthInvoice, invoice?.invoiceNumber])
 
   // Cargar registros de autoridades cuando se abre el modal (TODOS los estados)
   useEffect(() => {
@@ -669,18 +684,23 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
   }
 
   const handleFacturar = async () => {
-    if (!newInvoiceNumber.trim()) { toast({ title: "Error", description: "Debe ingresar un número de factura", variant: "destructive" }); return }
+    const normalizedInvoiceNumber = requiresAuthSuffix
+      ? normalizeAuthInvoiceNumber(newInvoiceNumber)
+      : newInvoiceNumber.trim().toUpperCase()
+
+    if (!normalizedInvoiceNumber.trim()) { toast({ title: "Error", description: "Debe ingresar un número de factura", variant: "destructive" }); return }
     if (!invoiceDate) { toast({ title: "Error", description: "Debe seleccionar la fecha de factura", variant: "destructive" }); return }
     
-    // Validación específica para facturas AUTH (solo si el original tiene prefijo AUTH-)
-    if (requiresAuthPrefix && !newInvoiceNumber.toUpperCase().startsWith('AUTH-')) {
+    // Validación específica para facturas AUTH: debe terminar en AUT
+    if (requiresAuthSuffix && !normalizedInvoiceNumber.endsWith('AUT')) {
       toast({
         title: "Error en número de factura",
-        description: "Las facturas de Gastos de Autoridades deben mantener el prefijo 'AUTH-'",
+        description: "Las facturas de Gastos de Autoridades deben terminar con 'AUT'",
         variant: "destructive"
       });
       return;
     }
+    setNewInvoiceNumber(normalizedInvoiceNumber)
     setIsProcessing(true)
     try {
       console.log("=== DEBUG: handleFacturar iniciado ===")
@@ -698,9 +718,9 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
       console.log("XmlData a pasar:", xmlData)
       
       // Llamar al callback (con XML para trasiego, null para AUTH)
-      await onFacturar(newInvoiceNumber, xmlData, invoiceDate, poNumber)
+      await onFacturar(normalizedInvoiceNumber, xmlData, invoiceDate, poNumber)
       
-      toast({ title: "Facturación completada", description: `La prefactura ha sido facturada como ${newInvoiceNumber}.` })
+      toast({ title: "Facturación completada", description: `La prefactura ha sido facturada como ${normalizedInvoiceNumber}.` })
     } catch (error: any) {
       console.error("=== ERROR en handleFacturar ===")
       console.error("Error completo:", error)
@@ -726,9 +746,15 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
     
     const invoiceNum = invoice.invoiceNumber.toString()
     
-    // Si es una prefactura AUTH, mantener el prefijo AUTH- pero cambiarlo por el número de factura
-    if (invoiceNum.toUpperCase().startsWith('AUTH-')) {
-      return invoiceNum.replace(/^AUTH-/, `AUTH-FAC-${Date.now().toString().slice(-6)}-`)
+    // Si es una prefactura AUTH, normalizar al formato con AUT al final
+    if (isAuthInvoice) {
+      let base = invoiceNum.replace(/\s*AUT$/i, '').trim()
+      if (base.toUpperCase().startsWith('AUTH-')) {
+        base = base.slice(5).trim()
+      } else if (base.toUpperCase().startsWith('AUTH')) {
+        base = base.slice(4).trim()
+      }
+      return `${(base || `FAC-${Date.now().toString().slice(-6)}`).toUpperCase()} AUT`
     }
     
     // Para facturas normales de trasiego
@@ -754,9 +780,9 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
           <div className="space-y-2">
             <Label htmlFor="invoice-number" className="text-sm font-semibold">
               Número de Factura *
-              {requiresAuthPrefix && (
+              {requiresAuthSuffix && (
                 <span className="ml-2 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded">
-                  Debe mantener el prefijo AUTH-
+                  Debe terminar con AUT
                 </span>
               )}
             </Label>
@@ -765,26 +791,21 @@ export function TruckingFacturacionModal({ open, onOpenChange, invoice, onFactur
               value={newInvoiceNumber}
               onChange={(e) => {
                 const value = e.target.value.toUpperCase()
-
-                // Si es una factura AUTH con prefijo, prevenir que se borre el prefijo AUTH-
-                if (requiresAuthPrefix && !value.startsWith('AUTH-')) {
-                  // Si el usuario intenta borrar AUTH-, mantener al menos AUTH-
-                  if (value.length < 5) {
-                    setNewInvoiceNumber('AUTH-')
-                  } else {
-                    // Si tienen texto pero no empieza con AUTH-, agregarlo
-                    setNewInvoiceNumber('AUTH-' + value)
-                  }
+                setNewInvoiceNumber(value)
+              }}
+              onBlur={(e) => {
+                if (requiresAuthSuffix) {
+                  setNewInvoiceNumber(normalizeAuthInvoiceNumber(e.target.value))
                 } else {
-                  setNewInvoiceNumber(value)
+                  setNewInvoiceNumber(e.target.value.trim().toUpperCase())
                 }
               }}
               placeholder={defaultInvoiceNumber}
               className={`font-mono ${isAuthInvoice ? 'border-orange-200 focus:border-orange-400' : ''}`}
             />
-            {requiresAuthPrefix && (
+            {requiresAuthSuffix && (
               <p className="text-xs text-muted-foreground">
-                El prefijo "AUTH-" es obligatorio para facturas de Gastos de Autoridades
+                El sufijo "AUT" es obligatorio para facturas de Gastos de Autoridades
               </p>
             )}
           </div>

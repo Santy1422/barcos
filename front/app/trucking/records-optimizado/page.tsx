@@ -275,6 +275,7 @@ export default function TruckingRecordsOptimizadoPage() {
   const isAuthInvoice = (inv: { invoiceNumber?: string; details?: { documentType?: string } }) =>
     (inv?.invoiceNumber || '').toString().toUpperCase().startsWith('AUTH-')
     || (inv?.invoiceNumber || '').toString().toUpperCase().endsWith(' AUT')
+    || (inv?.invoiceNumber || '').toString().toUpperCase().endsWith('AUT')
     || inv?.details?.documentType === 'gastos-autoridades'
 
   const getContainersForInvoice = (invoice: Invoice) => {

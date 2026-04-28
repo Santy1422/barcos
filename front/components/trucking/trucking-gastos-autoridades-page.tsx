@@ -31,6 +31,14 @@ import { sumAutoridadesBLAmount, totalAutoridadesBL } from "@/lib/trucking-autor
 export function TruckingGastosAutoridadesPage() {
   const { toast } = useToast();
   const dispatch = useAppDispatch();
+  const normalizeAuthInvoiceNumber = (value: string) => {
+    const normalized = (value || "").toUpperCase().trim().replace(/\s+/g, " ")
+    if (!normalized) return "AUT"
+    let base = normalized.replace(/\s*AUT$/i, "").trim()
+    if (base.startsWith("AUTH-")) base = base.slice(5).trim()
+    else if (base.startsWith("AUTH")) base = base.slice(4).trim()
+    return `${base ? `${base} ` : ""}AUT`
+  }
   
   // Estados para el manejo de pasos
   type Step = 'select' | 'pdf'
@@ -61,7 +69,7 @@ export function TruckingGastosAutoridadesPage() {
   const recordsPerPage = 10
   
   // Estados para PDF
-  const [documentData, setDocumentData] = useState({ number: `AUTH-${Date.now().toString().slice(-5)}`, notes: "" })
+  const [documentData, setDocumentData] = useState({ number: `${Date.now().toString().slice(-5)} AUT`, notes: "" })
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null)
   const [showPdfPreview, setShowPdfPreview] = useState(false)
   const [modalPdfUrl, setModalPdfUrl] = useState<string | null>(null)
@@ -766,10 +774,12 @@ export function TruckingGastosAutoridadesPage() {
         ? (typeof customer.address === 'string' ? customer.address : `${customer.address?.district || ''}, ${customer.address?.province || ''}`)
         : (typeof (customer as any).fiscalAddress === 'string' ? (customer as any).fiscalAddress : `${(customer as any).fiscalAddress?.district || ''}, ${(customer as any).fiscalAddress?.province || ''}`)
 
+      const normalizedInvoiceNumber = normalizeAuthInvoiceNumber(documentData.number)
+
       const newPrefactura: PersistedInvoiceRecord = {
         id: `AUTH-PRE-${Date.now().toString().slice(-6)}`,
         module: 'trucking',
-        invoiceNumber: documentData.number,
+        invoiceNumber: normalizedInvoiceNumber,
         clientName: displayName || customerName,
         clientRuc: displayRuc || '',
         clientSapNumber: customer.sapCode || '',
@@ -804,7 +814,7 @@ export function TruckingGastosAutoridadesPage() {
         // Refrescar y resetear
         dispatch(fetchAutoridadesRecords())
         setSelectedBLNumbers([])
-        setDocumentData({ number: `AUTH-${Date.now().toString().slice(-5)}`, notes: '' })
+        setDocumentData({ number: `${Date.now().toString().slice(-5)} AUT`, notes: '' })
         setSelectedClientId("")
         setStep('select')
 
@@ -1223,9 +1233,10 @@ export function TruckingGastosAutoridadesPage() {
                         id="doc-number"
                         value={documentData.number}
                         onChange={(e) => {
-                          setDocumentData({...documentData, number: e.target.value})
+                          setDocumentData({...documentData, number: e.target.value.toUpperCase()})
                         }}
-                        placeholder="AUTH-00001"
+                        onBlur={(e) => setDocumentData({...documentData, number: normalizeAuthInvoiceNumber(e.target.value)})}
+                        placeholder="00001 AUT"
                         className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
                       />
                     </div>

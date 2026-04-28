@@ -43,6 +43,14 @@ const ITEMS_PER_PAGE = 20
 export default function TruckingGastosAutoridadesOptimizadoPage() {
   const { toast } = useToast()
   const dispatch = useAppDispatch()
+  const normalizeAuthInvoiceNumber = (value: string) => {
+    const normalized = (value || "").toUpperCase().trim().replace(/\s+/g, " ")
+    if (!normalized) return "AUT"
+    let base = normalized.replace(/\s*AUT$/i, "").trim()
+    if (base.startsWith("AUTH-")) base = base.slice(5).trim()
+    else if (base.startsWith("AUTH")) base = base.slice(4).trim()
+    return `${base ? `${base} ` : ""}AUT`
+  }
 
   // Step state
   type Step = 'select' | 'pdf'
@@ -77,7 +85,7 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
   const [currentPage, setCurrentPage] = useState(1)
 
   // PDF states
-  const [documentData, setDocumentData] = useState({ number: `AUTH-${Date.now().toString().slice(-5)}`, notes: "" })
+  const [documentData, setDocumentData] = useState({ number: `${Date.now().toString().slice(-5)} AUT`, notes: "" })
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null)
   const [isCreatingPrefactura, setIsCreatingPrefactura] = useState(false)
   const [selectedClientId, setSelectedClientId] = useState<string>("")
@@ -633,10 +641,12 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
         ? (typeof client.address === 'string' ? client.address : `${client.address?.district || ''}, ${client.address?.province || ''}`)
         : 'N/A'
 
+      const normalizedInvoiceNumber = normalizeAuthInvoiceNumber(documentData.number)
+
       const newPrefactura: PersistedInvoiceRecord = {
         id: `AUTH-${Date.now().toString().slice(-6)}`,
         module: 'trucking',
-        invoiceNumber: documentData.number,
+        invoiceNumber: normalizedInvoiceNumber,
         clientName: displayName,
         clientRuc: displayRuc,
         clientSapNumber: client?.sapCode || '',
@@ -675,14 +685,14 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
 
         toast({
           title: 'Prefactura creada',
-          description: `Se creó la prefactura ${documentData.number}`
+          description: `Se creó la prefactura ${normalizedInvoiceNumber}`
         })
 
         // Reset
         clearSelection()
         setStep('select')
         setDocumentData({
-          number: `AUTH-${Date.now().toString().slice(-5)}`,
+          number: `${Date.now().toString().slice(-5)} AUT`,
           notes: ''
         })
         handleRefresh()
@@ -1386,8 +1396,9 @@ export default function TruckingGastosAutoridadesOptimizadoPage() {
                         <Label className="text-sm font-semibold text-slate-700">Número de Prefactura *</Label>
                         <Input
                           value={documentData.number}
-                          onChange={(e) => setDocumentData(prev => ({ ...prev, number: e.target.value }))}
-                          placeholder="AUTH-00001"
+                          onChange={(e) => setDocumentData(prev => ({ ...prev, number: e.target.value.toUpperCase() }))}
+                          onBlur={(e) => setDocumentData(prev => ({ ...prev, number: normalizeAuthInvoiceNumber(e.target.value) }))}
+                          placeholder="00001 AUT"
                           className="bg-white border-slate-300"
                         />
                       </div>
