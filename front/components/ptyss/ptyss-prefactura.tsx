@@ -1557,13 +1557,15 @@ export function PTYSSPrefactura() {
     const groupedServices: { [key: string]: { total: number, count: number, name: string, unitPrice: number } } = {}
     
     selectedAdditionalServices.forEach((service) => {
-      const serviceKey = service.name // Usar el nombre como clave para agrupar
+      // Mostrar descripción en PDF; usar nombre solo como fallback
+      const serviceLabel = (service.description && service.description.trim()) ? service.description : service.name
+      const serviceKey = serviceLabel
       
       if (!groupedServices[serviceKey]) {
         groupedServices[serviceKey] = { 
           total: 0, 
           count: 0, 
-          name: service.name, 
+          name: serviceLabel, 
           unitPrice: service.amount 
         }
       }

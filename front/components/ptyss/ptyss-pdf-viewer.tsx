@@ -283,9 +283,12 @@ export function PTYSSPdfViewer({ open, onOpenChange, invoice, clients, allRecord
     // Agregar servicios adicionales
     const additionalServices = invoiceData.details?.additionalServices || []
     additionalServices.forEach((service: any) => {
+      const serviceLabel = (service.description && String(service.description).trim())
+        ? service.description
+        : service.name
       items.push([
         '1',
-        service.name,
+        serviceLabel,
         `$${service.amount.toFixed(2)}`,
         `$${service.amount.toFixed(2)}`
       ])
