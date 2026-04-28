@@ -3088,9 +3088,8 @@ export function PTYSSPrefactura() {
                           <div className="flex-1 min-w-0">
                             <div className="font-semibold text-sm text-slate-900">{service.name}</div>
                             <div className="text-xs text-slate-600">{service.description}</div>
-                            <div className="text-xs text-slate-500">Importe por defecto desde configuración; puedes cambiarlo para esta prefactura.</div>
                           </div>
-                          <div className="flex items-center gap-3 shrink-0">
+                          <div className="flex items-end gap-3 shrink-0">
                             <div className="space-y-1">
                               <Label className="text-xs font-medium text-slate-600">Importe (USD)</Label>
                               <Input
@@ -3116,7 +3115,7 @@ export function PTYSSPrefactura() {
                               variant="ghost"
                               size="sm"
                               onClick={() => handleRemoveLocalService(service.serviceId)}
-                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full self-end sm:self-center"
+                              className="h-10 w-10 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
