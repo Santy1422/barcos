@@ -1210,7 +1210,7 @@ export function AgencyConfig() {
                 </div>
               </CardTitle>
               <CardDescription>
-                Servicios para cálculo automático en registros locales (TI, Estadia, Retención, Genset)
+                Servicios para cálculo automático al crear registros locales (TI, Estadia, Retención, Genset)
               </CardDescription>
             </CardHeader>
             <CardContent>

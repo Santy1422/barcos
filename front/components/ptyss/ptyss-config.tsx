@@ -1694,7 +1694,7 @@ export function PTYSSConfig() {
                 </Button>
               </CardTitle>
               <CardDescription>
-                Servicios para cálculo automático en registros locales (TI, Estadia, Retención, Genset)
+                Servicios para cálculo automático al crear registros locales (TI, Estadia, Retención, Genset)
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1949,7 +1949,7 @@ export function PTYSSConfig() {
               <CardTitle className="flex items-center justify-between">
                 <div className="flex items-center">
                   <Settings2 className="mr-2 h-5 w-5" />
-                  Servicios Locales
+                  Servicios Locales Adicionales
                 </div>
                 <Button onClick={() => setShowAddServiceForm(!showAddServiceForm)}>
                   <Plus className="h-4 w-4 mr-2" />
