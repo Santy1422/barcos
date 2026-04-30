@@ -451,6 +451,7 @@ export function PTYSSRecords() {
         open={isEditModalOpen}
         onOpenChange={setIsEditModalOpen}
         invoice={editInvoice}
+        allRecords={allRecords}
         onClose={() => setIsEditModalOpen(false)}
         onEditSuccess={handleEditSuccess}
       />
