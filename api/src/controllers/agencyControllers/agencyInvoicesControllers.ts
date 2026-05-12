@@ -7,6 +7,8 @@ import { response } from '../../utils';
  * @desc    Get all agency invoices with filters
  * @access  Private
  */
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 export const getAllAgencyInvoices = async (req: Request, res: Response) => {
   try {
     const { 
@@ -14,6 +16,9 @@ export const getAllAgencyInvoices = async (req: Request, res: Response) => {
       clientId, 
       startDate, 
       endDate,
+      dateField,
+      invoiceNumber,
+      clientName,
       page = 1,
       limit = 100
     } = req.query;
@@ -22,23 +27,44 @@ export const getAllAgencyInvoices = async (req: Request, res: Response) => {
     const filter: any = { module: 'AGENCY' };
 
     if (status && status !== 'all') {
-      filter.status = status;
+      if (status === 'nota_de_credito') {
+        filter.status = { $in: ['nota_de_credito', 'anulada'] };
+      } else {
+        filter.status = status;
+      }
     }
 
     if (clientId && clientId !== 'all') {
       filter.clientId = clientId;
     }
 
+    const rangeField =
+      (dateField as string) === 'createdAt' ? 'createdAt' : 'issueDate';
+
     if (startDate || endDate) {
-      filter.issueDate = {};
+      filter[rangeField] = {};
       if (startDate) {
-        filter.issueDate.$gte = new Date(startDate as string);
+        filter[rangeField].$gte = new Date(startDate as string);
       }
       if (endDate) {
         const end = new Date(endDate as string);
         end.setHours(23, 59, 59, 999);
-        filter.issueDate.$lte = end;
+        filter[rangeField].$lte = end;
       }
+    }
+
+    if (invoiceNumber && String(invoiceNumber).trim()) {
+      filter.invoiceNumber = {
+        $regex: escapeRegex(String(invoiceNumber).trim()),
+        $options: 'i',
+      };
+    }
+
+    if (clientName && String(clientName).trim()) {
+      filter.clientName = {
+        $regex: escapeRegex(String(clientName).trim()),
+        $options: 'i',
+      };
     }
 
     // Pagination
@@ -65,7 +91,7 @@ export const getAllAgencyInvoices = async (req: Request, res: Response) => {
       invoices,
       pagination: {
         currentPage: pageNum,
-        totalPages: Math.ceil(totalCount / limitNum),
+        totalPages: Math.max(1, Math.ceil(totalCount / limitNum) || 1),
         totalInvoices: totalCount,
         limit: limitNum
       }

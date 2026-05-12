@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Database, Code, X, Edit, SearchX, FileX } from "lucide-react"
+import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Database, Code, X, Edit, SearchX, FileX, ChevronLeft, ChevronRight } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { useToast } from "@/hooks/use-toast"
@@ -20,6 +20,7 @@ import { PTYSSFacturacionModal } from "./ptyss-facturacion-modal"
 import { PTYSSRecordsViewModal } from "./ptyss-records-view-modal"
 import { PTYSSXmlViewerModal } from "./ptyss-xml-viewer-modal"
 import { fetchClients } from "@/lib/features/clients/clientsSlice"
+import { store } from "@/lib/store"
 import saveAs from "file-saver"
 import { generateXmlFileName } from "@/lib/xml-generator"
 import * as XLSX from "xlsx"
@@ -51,6 +52,10 @@ export function PTYSSRecords() {
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [isDateModalOpen, setIsDateModalOpen] = useState(false)
+
+  const INVOICES_TABLE_PAGE_SIZE = 15
+  const [invoiceTablePage, setInvoiceTablePage] = useState(1)
+  const [isExporting, setIsExporting] = useState(false)
 
   // Obtener prefacturas PTYSS del store
   const ptyssInvoices = useAppSelector((state) => selectInvoicesByModule(state, "ptyss"))
@@ -154,44 +159,6 @@ export function PTYSSRecords() {
         variant: "destructive"
       })
     }
-  }
-
-  // Función para exportar a Excel
-  const exportToExcel = () => {
-    const exportData = filteredInvoices.map((invoice: any) => {
-      const containers = getContainersForInvoice(invoice)
-      const invoiceType = getInvoiceType(invoice)
-      
-      return {
-        'Número de Factura': invoice.invoiceNumber || 'N/A',
-        'Cliente': invoice.clientName || 'N/A',
-        'Contenedores': containers,
-        'Fecha Emisión': formatDate(invoice.issueDate),
-        'Fecha Creación': formatDate(invoice.createdAt),
-        'Total': invoice.totalAmount || 0,
-        'Estado': invoice.status === 'prefactura' ? 'Prefactura' : 
-                  invoice.status === 'facturada' ? 'Facturada' : 
-                  invoice.status === 'anulada' ? 'Anulada' : invoice.status,
-        'Tipo': invoiceType === 'local' ? 'Local' : 'Trasiego',
-        'XML Generado': invoice.xmlData ? 'Sí' : 'No',
-                 'XML Enviado a SAP': invoice.sentToSap ? 'Sí' : 'No',
-         'Fecha Envío SAP': invoice.sentToSapAt ? new Date(invoice.sentToSapAt).toLocaleDateString('es-ES') : 'N/A',
-        'Notas': invoice.notes || '',
-        'Registros Asociados': invoice.relatedRecordIds?.length || 0
-      }
-    })
-
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Facturas PTYSS')
-    
-    const fileName = `facturas_ptyss_${new Date().toISOString().split('T')[0]}.xlsx`
-    XLSX.writeFile(wb, fileName)
-
-    toast({
-      title: "Exportación exitosa",
-      description: `Se exportaron ${exportData.length} facturas a ${fileName}`,
-    })
   }
 
   // Funciones para filtros de fecha
@@ -389,31 +356,64 @@ export function PTYSSRecords() {
     }
   }
 
-  const filteredInvoices = ptyssInvoices.filter((invoice: any) => {
-    const containers = getContainersForInvoice(invoice)
-    const matchesSearch = 
-      invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      invoice.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      containers.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = statusFilter === "all" || invoice.status === statusFilter
-    
-         // Filtro por tipo de registro
-     const invoiceType = getInvoiceType(invoice)
-     const matchesType = recordTypeFilter === "all" || invoiceType === recordTypeFilter
-    
-    // Filtro por fecha (solo fecha de creación/issue)
-    let matchesDate = true
-    if (isUsingPeriodFilter && startDate && endDate) {
-      const invoiceDate = new Date(invoice.issueDate || invoice.createdAt)
-      const filterStartDate = new Date(startDate)
-      const filterEndDate = new Date(endDate)
-      filterEndDate.setHours(23, 59, 59, 999) // Incluir todo el día
-      
-      matchesDate = invoiceDate >= filterStartDate && invoiceDate <= filterEndDate
-    }
-    
-    return matchesSearch && matchesStatus && matchesType && matchesDate
-  })
+  const computeFilteredPtyssInvoices = useCallback(
+    (invoicesList: any[]) =>
+      invoicesList.filter((invoice: any) => {
+        const containers = getContainersForInvoice(invoice)
+        const matchesSearch =
+          invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          invoice.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          containers.toLowerCase().includes(searchTerm.toLowerCase())
+        const matchesStatus = statusFilter === "all" || invoice.status === statusFilter
+
+        const invoiceType = getInvoiceType(invoice)
+        const matchesType = recordTypeFilter === "all" || invoiceType === recordTypeFilter
+
+        let matchesDate = true
+        if (isUsingPeriodFilter && startDate && endDate) {
+          const invoiceDate = new Date(invoice.issueDate || invoice.createdAt)
+          const filterStartDate = new Date(startDate)
+          const filterEndDate = new Date(endDate)
+          filterEndDate.setHours(23, 59, 59, 999)
+
+          matchesDate = invoiceDate >= filterStartDate && invoiceDate <= filterEndDate
+        }
+
+        return matchesSearch && matchesStatus && matchesType && matchesDate
+      }),
+    [
+      searchTerm,
+      statusFilter,
+      recordTypeFilter,
+      isUsingPeriodFilter,
+      startDate,
+      endDate,
+      allRecords,
+    ]
+  )
+
+  const filteredInvoices = useMemo(
+    () => computeFilteredPtyssInvoices(ptyssInvoices),
+    [computeFilteredPtyssInvoices, ptyssInvoices]
+  )
+
+  useEffect(() => {
+    setInvoiceTablePage(1)
+  }, [searchTerm, statusFilter, recordTypeFilter, isUsingPeriodFilter, startDate, endDate])
+
+  const invoiceTableTotalPages = Math.max(
+    1,
+    Math.ceil(filteredInvoices.length / INVOICES_TABLE_PAGE_SIZE) || 1
+  )
+
+  useEffect(() => {
+    setInvoiceTablePage((p) => Math.min(p, invoiceTableTotalPages))
+  }, [invoiceTableTotalPages])
+
+  const paginatedInvoices = useMemo(() => {
+    const start = (invoiceTablePage - 1) * INVOICES_TABLE_PAGE_SIZE
+    return filteredInvoices.slice(start, start + INVOICES_TABLE_PAGE_SIZE)
+  }, [filteredInvoices, invoiceTablePage])
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -442,6 +442,58 @@ export function PTYSSRecords() {
     const year = date.getFullYear()
     if (year < 1900 || year > 2100) return 'N/A'
     return date.toLocaleDateString('es-ES')
+  }
+
+  const exportToExcel = async () => {
+    setIsExporting(true)
+    try {
+      await dispatch(fetchInvoicesAsync("ptyss")).unwrap()
+      const latest = selectInvoicesByModule(store.getState(), "ptyss")
+      const rows = computeFilteredPtyssInvoices(latest)
+
+      const exportData = rows.map((invoice: any) => {
+        const containers = getContainersForInvoice(invoice)
+        const invoiceType = getInvoiceType(invoice)
+
+        return {
+          'Número de Factura': invoice.invoiceNumber || 'N/A',
+          'Cliente': invoice.clientName || 'N/A',
+          'Contenedores': containers,
+          'Fecha Emisión': formatDate(invoice.issueDate),
+          'Fecha Creación': formatDate(invoice.createdAt),
+          'Total': invoice.totalAmount || 0,
+          'Estado': invoice.status === 'prefactura' ? 'Prefactura' :
+                    invoice.status === 'facturada' ? 'Facturada' :
+                    invoice.status === 'anulada' ? 'Anulada' : invoice.status,
+          'Tipo': invoiceType === 'local' ? 'Local' : 'Trasiego',
+          'XML Generado': invoice.xmlData ? 'Sí' : 'No',
+          'XML Enviado a SAP': invoice.sentToSap ? 'Sí' : 'No',
+          'Fecha Envío SAP': invoice.sentToSapAt ? new Date(invoice.sentToSapAt).toLocaleDateString('es-ES') : 'N/A',
+          'Notas': invoice.notes || '',
+          'Registros Asociados': invoice.relatedRecordIds?.length || 0
+        }
+      })
+
+      const ws = XLSX.utils.json_to_sheet(exportData)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Facturas PTYSS')
+
+      const fileName = `facturas_ptyss_${new Date().toISOString().split('T')[0]}.xlsx`
+      XLSX.writeFile(wb, fileName)
+
+      toast({
+        title: "Exportación exitosa",
+        description: `Se exportaron ${exportData.length} factura${exportData.length !== 1 ? 's' : ''} (todas las que cumplen los filtros actuales) a ${fileName}`,
+      })
+    } catch (e: any) {
+      toast({
+        title: "Error al exportar",
+        description: e?.message || "No se pudieron cargar o exportar las facturas",
+        variant: "destructive"
+      })
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   return (
@@ -619,8 +671,12 @@ export function PTYSSRecords() {
                   <SelectItem value="facturada">Facturada</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" onClick={exportToExcel}>
-                <Download className="h-4 w-4 mr-2" />
+              <Button variant="outline" onClick={exportToExcel} disabled={isExporting || isLoading}>
+                {isExporting ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
                 Exportar
               </Button>
             </div>
@@ -826,7 +882,7 @@ export function PTYSSRecords() {
                     </TableCell>
                   </TableRow>
                                  ) : filteredInvoices.length > 0 ? (
-                   filteredInvoices.map((invoice: any) => {
+                   paginatedInvoices.map((invoice: any) => {
                      const containers = getContainersForInvoice(invoice)
                     
                     return (
@@ -1024,9 +1080,38 @@ export function PTYSSRecords() {
             </Table>
           </div>
 
-          <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
-            <span>Mostrando {filteredInvoices.length} de {ptyssInvoices.length} prefacturas</span>
-            <span>Total: ${filteredInvoices.reduce((sum: number, invoice: any) => sum + invoice.totalAmount, 0).toFixed(2)}</span>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-muted-foreground">
+            <span>
+              {filteredInvoices.length > 0
+                ? `Filas ${(invoiceTablePage - 1) * INVOICES_TABLE_PAGE_SIZE + 1}–${(invoiceTablePage - 1) * INVOICES_TABLE_PAGE_SIZE + paginatedInvoices.length} de ${filteredInvoices.length} filtradas (${ptyssInvoices.length} cargadas)`
+                : `Sin resultados con los filtros (${ptyssInvoices.length} prefacturas cargadas)`}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={invoiceTablePage <= 1}
+                onClick={() => setInvoiceTablePage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="tabular-nums min-w-[5.5rem] text-center">
+                Página {invoiceTablePage} / {invoiceTableTotalPages}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={invoiceTablePage >= invoiceTableTotalPages}
+                onClick={() => setInvoiceTablePage((p) => Math.min(invoiceTableTotalPages, p + 1))}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <span className="sm:text-right">
+              Total filtrado: ${filteredInvoices.reduce((sum: number, invoice: any) => sum + invoice.totalAmount, 0).toFixed(2)}
+            </span>
           </div>
         </CardContent>
       </Card>

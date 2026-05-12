@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Code, X, Edit, SearchX, FileX } from "lucide-react"
+import { Ship, Search, Filter, Download, Eye, FileText, Calendar, DollarSign, User, Loader2, Trash2, Code, X, Edit, SearchX, FileX, ChevronLeft, ChevronRight } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAppSelector, useAppDispatch } from "@/lib/hooks"
 import { useToast } from "@/hooks/use-toast"
@@ -474,6 +474,25 @@ export function ShipChandlerRecords() {
     return matchesSearch && matchesStatus && matchesClient && matchesVessel && matchesDate
   })
 
+  const SHIP_INVOICES_PAGE_SIZE = 25
+  const [invoiceTablePage, setInvoiceTablePage] = useState(1)
+
+  useEffect(() => {
+    setInvoiceTablePage(1)
+  }, [searchTerm, statusFilter, clientFilter, vesselFilter, isUsingPeriodFilter, startDate, endDate])
+
+  const shipInvoiceTotalPages = Math.max(
+    1,
+    Math.ceil(filteredInvoices.length / SHIP_INVOICES_PAGE_SIZE) || 1
+  )
+
+  useEffect(() => {
+    setInvoiceTablePage((p) => Math.min(p, shipInvoiceTotalPages))
+  }, [shipInvoiceTotalPages])
+
+  const start = (invoiceTablePage - 1) * SHIP_INVOICES_PAGE_SIZE
+  const paginatedInvoices = filteredInvoices.slice(start, start + SHIP_INVOICES_PAGE_SIZE)
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "prefactura":
@@ -839,8 +858,8 @@ export function ShipChandlerRecords() {
                       </div>
                     </TableCell>
                   </TableRow>
-                ) : filteredInvoices.length > 0 ? (
-                  filteredInvoices.map((invoice: any) => {
+                                 ) : filteredInvoices.length > 0 ? (
+                   paginatedInvoices.map((invoice: any) => {
                     const vessels = getVesselsForInvoice(invoice)
                     
                     return (
@@ -994,9 +1013,38 @@ export function ShipChandlerRecords() {
             </Table>
           </div>
 
-          <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
-            <span>Mostrando {filteredInvoices.length} de {shipchandlerInvoices.length} prefacturas</span>
-            <span>Total: ${filteredInvoices.reduce((sum: number, invoice: any) => sum + invoice.totalAmount, 0).toFixed(2)}</span>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-muted-foreground">
+            <span>
+              {filteredInvoices.length > 0
+                ? `Filas ${(invoiceTablePage - 1) * SHIP_INVOICES_PAGE_SIZE + 1}–${(invoiceTablePage - 1) * SHIP_INVOICES_PAGE_SIZE + paginatedInvoices.length} de ${filteredInvoices.length} filtradas (${shipchandlerInvoices.length} cargadas)`
+                : `Sin resultados con los filtros (${shipchandlerInvoices.length} prefacturas cargadas)`}
+            </span>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={invoiceTablePage <= 1}
+                onClick={() => setInvoiceTablePage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="tabular-nums min-w-[5.5rem] text-center">
+                Página {invoiceTablePage} / {shipInvoiceTotalPages}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={invoiceTablePage >= shipInvoiceTotalPages}
+                onClick={() => setInvoiceTablePage((p) => Math.min(shipInvoiceTotalPages, p + 1))}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <span className="sm:text-right">
+              Total filtrado: ${filteredInvoices.reduce((sum: number, invoice: any) => sum + invoice.totalAmount, 0).toFixed(2)}
+            </span>
           </div>
         </CardContent>
       </Card>

@@ -627,29 +627,66 @@ export const fetchInvoicesAsync = createAsyncThunk(
       if (!token) {
         throw new Error('No se encontró token de autenticación')
       }
-      
-      const url = module ? `/api/invoices/module/${module}` : '/api/invoices'
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      } as const
+
+      // Sin módulo: el backend devuelve todas las facturas en una sola respuesta
+      if (!module) {
+        const response = await fetch(createApiUrl('/api/invoices'), {
+          method: 'GET',
+          headers,
+        })
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || `Error al obtener facturas (${response.status})`)
         }
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || `Error al obtener facturas (${response.status})`)
-      }
-      
-      const data = await response.json()
-      
-      // El backend devuelve { error: false, payload:[object Object] invoices: [...] } }
-      if (data.payload && data.payload.invoices) {
-        return data.payload.invoices
-      } else {
+        const data = await response.json()
+        if (data.payload?.invoices) {
+          return data.payload.invoices
+        }
         return []
       }
+
+      // Con módulo: getInvoicesByModule pagina (default limit 50). Pedemos varias páginas hasta cubrir el total.
+      const pageLimit = 100
+      const allInvoices: any[] = []
+      let page = 1
+
+      while (true) {
+        const url = createApiUrl(
+          `/api/invoices/module/${module}?page=${page}&limit=${pageLimit}`
+        )
+        const response = await fetch(url, {
+          method: 'GET',
+          headers,
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || `Error al obtener facturas (${response.status})`)
+        }
+
+        const data = await response.json()
+        const payload = data.payload
+        const batch = payload?.invoices ?? payload?.data ?? []
+
+        if (batch.length === 0) {
+          break
+        }
+
+        allInvoices.push(...batch)
+
+        const pages = payload?.pagination?.pages ?? 1
+        if (page >= pages) {
+          break
+        }
+        page += 1
+      }
+
+      return allInvoices
     } catch (error) {
       console.error("Error en fetchInvoicesAsync:", error)
       return rejectWithValue(error instanceof Error ? error.message : 'Error desconocido')

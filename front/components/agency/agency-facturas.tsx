@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAgencyServices } from '@/lib/features/agencyServices/useAgencyServices';
 import { useAgencyCatalogs } from '@/lib/features/agencyServices/useAgencyCatalogs';
@@ -23,11 +23,15 @@ import {
   X,
   Info,
   Filter,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgencyPdfViewer } from './agency-pdf-viewer';
 import { AgencyFacturacionModal } from './agency-facturacion-modal';
 import { AgencyServiceXmlModal } from './agency-service-xml-modal';
+
+const INVOICES_PAGE_SIZE = 20;
 
 const formatDate = (dateString: string) => {
   if (!dateString) return 'N/A';
@@ -44,6 +48,7 @@ export function AgencyFacturas() {
   const {
     invoices,
     invoicesLoading,
+    invoicesPagination,
     fetchInvoices,
     fetchInvoiceById,
     facturarInvoice,
@@ -74,26 +79,57 @@ export function AgencyFacturas() {
   const [invoiceForXml, setInvoiceForXml] = useState<any>(null);
   const [servicesForXml, setServicesForXml] = useState<any[]>([]);
 
-  useEffect(() => {
-    fetchInvoices({ page: 1, limit: 5000, filters: {} });
-  }, []);
+  const [invoicesPage, setInvoicesPage] = useState(1);
+  const invoiceFiltersSigRef = useRef<string>('');
 
   useEffect(() => {
     fetchGroupedCatalogs();
   }, [fetchGroupedCatalogs]);
 
+  const buildAgencyInvoiceFilters = useCallback((): Record<string, string> => {
+    const f: Record<string, string> = {};
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'nota_de_credito') {
+        f.status = 'nota_de_credito';
+      } else {
+        f.status = statusFilter;
+      }
+    }
+    if (isUsingPeriodFilter && startDate && endDate) {
+      f.startDate = startDate;
+      f.endDate = endDate;
+      f.dateField = dateFilter;
+    }
+    if (numberFilter.trim()) {
+      f.invoiceNumber = numberFilter.trim();
+    }
+    if (clientNameFilter.trim()) {
+      f.clientName = clientNameFilter.trim();
+    }
+    return f;
+  }, [
+    statusFilter,
+    isUsingPeriodFilter,
+    startDate,
+    endDate,
+    dateFilter,
+    numberFilter,
+    clientNameFilter,
+  ]);
+
   useEffect(() => {
-    const filters: any = {};
-    if (statusFilter !== 'all' && statusFilter !== 'nota_de_credito') filters.status = statusFilter;
-    if (statusFilter === 'nota_de_credito') {
-      filters.status = 'anulada';
+    const filters = buildAgencyInvoiceFilters();
+    const sig = JSON.stringify(filters);
+    let pageToFetch = invoicesPage;
+    if (invoiceFiltersSigRef.current !== sig) {
+      invoiceFiltersSigRef.current = sig;
+      pageToFetch = 1;
+      if (invoicesPage !== 1) {
+        setInvoicesPage(1);
+      }
     }
-    if (isUsingPeriodFilter && startDate && endDate && dateFilter === 'issueDate') {
-      filters.startDate = startDate;
-      filters.endDate = endDate;
-    }
-    fetchInvoices({ page: 1, limit: 5000, filters });
-  }, [statusFilter, isUsingPeriodFilter, startDate, endDate, dateFilter]);
+    fetchInvoices({ page: pageToFetch, limit: INVOICES_PAGE_SIZE, filters });
+  }, [invoicesPage, buildAgencyInvoiceFilters, fetchInvoices]);
 
   const getTodayDates = () => {
     const t = new Date();
@@ -167,33 +203,6 @@ export function AgencyFacturas() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [openFilterColumn]);
 
-  const filteredInvoices = useMemo(() => {
-    let list = invoices || [];
-    if (statusFilter !== 'all') {
-      list = list.filter((inv: any) =>
-        statusFilter === 'nota_de_credito' ? (inv.status === 'nota_de_credito' || inv.status === 'anulada') : inv.status === statusFilter
-      );
-    }
-    if (isUsingPeriodFilter && startDate && endDate) {
-      list = list.filter((inv: any) => {
-        const dateVal = dateFilter === 'issueDate' ? (inv.issueDate || inv.createdAt) : (inv.createdAt || inv.issueDate);
-        const d = (dateVal || '').toString().split('T')[0];
-        if (d < startDate) return false;
-        if (d > endDate) return false;
-        return true;
-      });
-    }
-    if (numberFilter.trim()) {
-      const q = numberFilter.toLowerCase().trim();
-      list = list.filter((inv: any) => (inv.invoiceNumber || '').toLowerCase().includes(q));
-    }
-    if (clientNameFilter.trim()) {
-      const q = clientNameFilter.toLowerCase().trim();
-      list = list.filter((inv: any) => (inv.clientName || '').toLowerCase().includes(q));
-    }
-    return list;
-  }, [invoices, statusFilter, isUsingPeriodFilter, startDate, endDate, dateFilter, numberFilter, clientNameFilter]);
-
   const getRelatedServicesForInvoice = (invoice: any): any[] => {
     const ids = invoice?.relatedServiceIds || [];
     if (ids.length === 0) return [];
@@ -254,7 +263,8 @@ export function AgencyFacturas() {
     try {
       await deleteInvoice(invoice._id || invoice.id);
       toast.success('Eliminada');
-      fetchInvoices({ page: 1, limit: 5000, filters: {} });
+      setInvoicesPage(1);
+      fetchInvoices({ page: 1, limit: INVOICES_PAGE_SIZE, filters: buildAgencyInvoiceFilters() });
     } catch (e: any) {
       toast.error(e?.message || 'Error al eliminar');
     }
@@ -272,12 +282,23 @@ export function AgencyFacturas() {
       toast.success(`Facturación completada: ${invoiceNumber}`);
       setFacturarModalOpen(false);
       setInvoiceToFacturar(null);
-      fetchInvoices({ page: 1, limit: 5000, filters: {} });
+      setInvoicesPage(1);
+      fetchInvoices({ page: 1, limit: INVOICES_PAGE_SIZE, filters: buildAgencyInvoiceFilters() });
     } catch (e: any) {
       toast.error(e?.message || 'Error al facturar');
       throw e;
     }
   };
+
+  const invPagination = invoicesPagination as {
+    currentPage?: number;
+    totalPages?: number;
+    totalInvoices?: number;
+    limit?: number;
+  } | null;
+
+  const totalInvPages = Math.max(1, invPagination?.totalPages ?? 1);
+  const totalInvoicesCount = invPagination?.totalInvoices ?? invoices?.length ?? 0;
 
   const pdfService = useMemo(() => {
     if (!invoiceForPdf) return null;
@@ -314,7 +335,10 @@ export function AgencyFacturas() {
       <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
         <Info className="h-5 w-5 text-blue-600" />
         <div className="flex-1">
-          <p className="text-sm font-medium text-blue-800">Mostrando {filteredInvoices.length} prefacturas/facturas</p>
+          <p className="text-sm font-medium text-blue-800">
+            Página {invPagination?.currentPage ?? invoicesPage} de {totalInvPages} — {totalInvoicesCount} factura
+            {totalInvoicesCount !== 1 ? 's' : ''} con los filtros actuales
+          </p>
           <p className="text-xs text-blue-600">Para crear nuevas prefacturas, ve a Crear Prefactura y selecciona servicios completados.</p>
         </div>
       </div>
@@ -410,10 +434,10 @@ export function AgencyFacturas() {
               <TableBody>
                 {invoicesLoading ? (
                   <TableRow><TableCell colSpan={6} className="py-8 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>
-                ) : filteredInvoices.length === 0 ? (
+                ) : (invoices || []).length === 0 ? (
                   <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">No hay facturas que coincidan con los filtros</TableCell></TableRow>
                 ) : (
-                  filteredInvoices.map((inv: any) => (
+                  (invoices || []).map((inv: any) => (
                     <TableRow key={inv._id || inv.id}>
                       <TableCell className="font-mono text-sm">{inv.invoiceNumber}</TableCell>
                       <TableCell>{inv.clientName || 'N/A'}</TableCell>
@@ -442,6 +466,39 @@ export function AgencyFacturas() {
               </TableBody>
             </Table>
           </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t">
+            <span className="text-sm text-muted-foreground">
+              {(invoices || []).length > 0 && totalInvoicesCount > 0
+                ? `${(invoicesPage - 1) * INVOICES_PAGE_SIZE + 1}–${(invoicesPage - 1) * INVOICES_PAGE_SIZE + (invoices || []).length} de ${totalInvoicesCount}`
+                : totalInvoicesCount === 0
+                  ? 'Sin facturas con estos filtros'
+                  : 'Sin filas en esta página'}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={invoicesPage <= 1 || invoicesLoading}
+                onClick={() => setInvoicesPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm tabular-nums text-muted-foreground min-w-[5rem] text-center">
+                Página {invoicesPage} / {totalInvPages}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={invoicesPage >= totalInvPages || invoicesLoading}
+                onClick={() => setInvoicesPage((p) => Math.min(totalInvPages, p + 1))}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -468,7 +525,10 @@ export function AgencyFacturas() {
           onOpenChange={setXmlModalOpen}
           service={servicesForXml[0] ? { ...servicesForXml[0], xmlData: invoiceForXml?.xmlData } : undefined}
           services={servicesForXml}
-          onXmlSentToSap={() => fetchInvoices({ page: 1, limit: 5000, filters: {} })}
+          onXmlSentToSap={() => {
+            setInvoicesPage(1);
+            fetchInvoices({ page: 1, limit: INVOICES_PAGE_SIZE, filters: buildAgencyInvoiceFilters() });
+          }}
         />
       )}
 
