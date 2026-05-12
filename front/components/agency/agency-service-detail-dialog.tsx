@@ -179,6 +179,13 @@ export function AgencyServiceDetailDialog({
                           <span className="text-green-600 font-medium">${selectedService.price}</span>
                         </div>
                       )}
+                      <div>
+                        <strong>Service Code:</strong>{" "}
+                        {typeof selectedService.serviceCode === "string" &&
+                        selectedService.serviceCode.trim()
+                          ? selectedService.serviceCode.trim()
+                          : "N/A"}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

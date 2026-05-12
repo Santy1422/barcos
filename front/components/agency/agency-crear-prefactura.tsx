@@ -72,6 +72,7 @@ export function AgencyCrearPrefactura() {
   const [vesselFilter, setVesselFilter] = useState('');
   const [rankFilter, setRankFilter] = useState('all');
   const [routeFilter, setRouteFilter] = useState('');
+  const [serviceCodeFilter, setServiceCodeFilter] = useState('');
   const [openFilterColumn, setOpenFilterColumn] = useState<string | null>(null);
   const [clientFilterSearch, setClientFilterSearch] = useState('');
   const [rankFilterSearch, setRankFilterSearch] = useState('');
@@ -218,19 +219,24 @@ export function AgencyCrearPrefactura() {
         const dropoff = (service.dropoffLocation || '').toLowerCase();
         return pickup.includes(q) || dropoff.includes(q);
       })();
+      const matchServiceCode =
+        !serviceCodeFilter ||
+        (String(service.serviceCode ?? '')
+          .toLowerCase()
+          .includes(serviceCodeFilter.toLowerCase().trim()));
       let matchDate = true;
       if (isUsingPeriodFilter && startDate && endDate) {
         const dateValue = dateFilter === 'pickupDate' ? (service.pickupDate || service.createdAt) : (service.createdAt || service.pickupDate);
         const sd = (dateValue || '').toString().split('T')[0];
         matchDate = sd >= startDate && sd <= endDate;
       }
-      return matchClient && matchVessel && matchRank && matchRoute && matchDate;
+      return matchClient && matchVessel && matchRank && matchRoute && matchServiceCode && matchDate;
     });
-  }, [completedServices, clientFilter, vesselFilter, rankFilter, routeFilter, isUsingPeriodFilter, startDate, endDate, dateFilter, clients]);
+  }, [completedServices, clientFilter, vesselFilter, rankFilter, routeFilter, serviceCodeFilter, isUsingPeriodFilter, startDate, endDate, dateFilter, clients]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [clientFilter, vesselFilter, rankFilter, routeFilter, isUsingPeriodFilter, startDate, endDate, dateFilter]);
+  }, [clientFilter, vesselFilter, rankFilter, routeFilter, serviceCodeFilter, isUsingPeriodFilter, startDate, endDate, dateFilter]);
 
   const totalPages = Math.ceil(filteredServices.length / pageSize);
   const paginatedServices = useMemo(() => {
@@ -506,6 +512,23 @@ export function AgencyCrearPrefactura() {
                           </div>
                         )}
                       </TableHead>
+                      <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider px-2 relative min-w-[7rem]" data-column-filter>
+                        <div className="flex items-center gap-1">
+                          <span>Service code</span>
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            {serviceCodeFilter && (
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" title="Borrar filtro" onClick={(e) => { e.stopPropagation(); setServiceCodeFilter(''); setOpenFilterColumn(null); }}><X className="h-3 w-3" /></Button>
+                            )}
+                            <Button variant="ghost" size="sm" onClick={() => setOpenFilterColumn(openFilterColumn === 'serviceCode' ? null : 'serviceCode')} className={`h-6 w-6 p-0 ${serviceCodeFilter ? 'text-blue-600' : 'text-muted-foreground'}`} title="Filtrar"><Filter className="h-3.5 w-3.5" /></Button>
+                          </div>
+                        </div>
+                        {openFilterColumn === 'serviceCode' && (
+                          <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg p-3 min-w-52">
+                            <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Filtrar por service code:</div>
+                            <Input placeholder="Buscar..." value={serviceCodeFilter} onChange={(e) => setServiceCodeFilter(e.target.value)} className="h-8 text-xs" />
+                          </div>
+                        )}
+                      </TableHead>
                       <TableHead className="py-3 font-semibold text-xs uppercase tracking-wider px-2 relative" data-column-filter>
                         <div className="flex items-center gap-1">
                           <span>Rank</span>
@@ -568,9 +591,9 @@ export function AgencyCrearPrefactura() {
                   </TableHeader>
                   <TableBody>
                     {loading || !initialLoaded ? (
-                      <TableRow><TableCell colSpan={7} className="py-8 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>
+                      <TableRow><TableCell colSpan={8} className="py-8 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>
                     ) : filteredServices.length === 0 ? (
-                      <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">No hay servicios completados que coincidan con los filtros</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">No hay servicios completados que coincidan con los filtros</TableCell></TableRow>
                     ) : (
                       paginatedServices.map((service: any) => {
                         const id = service._id || service.id;
@@ -586,6 +609,13 @@ export function AgencyCrearPrefactura() {
                             </TableCell>
                             <TableCell className="text-xs">{(service.pickupDate || service.createdAt || '').toString().split('T')[0]}</TableCell>
                             <TableCell>{getClientForService(service)}</TableCell>
+                            <TableCell className="text-xs max-w-[10rem]">
+                              {service.serviceCode && String(service.serviceCode).trim() ? (
+                                <span className="font-mono" title={String(service.serviceCode).trim()}>{String(service.serviceCode).trim()}</span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
                             <TableCell className="text-xs max-w-[14rem]">{getServiceRanksLabel(service)}</TableCell>
                             <TableCell>{service.vessel || 'N/A'}</TableCell>
                             <TableCell className="text-xs">{(service.pickupLocation || '')} → {(service.dropoffLocation || '')}</TableCell>
