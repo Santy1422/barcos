@@ -25,6 +25,7 @@ import {
   Eye,
   Database,
   Filter,
+  DollarSign,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgencyPdfViewer } from './agency-pdf-viewer';
@@ -329,9 +330,15 @@ export function AgencyCrearPrefactura() {
     return Math.round((s.waitingTime / 60) * waitingTimeHourlyRate * 100) / 100;
   };
 
-  const totalSelected = useMemo(() => {
-    return selectedServicesData.reduce((sum: number, s: any) => sum + (s.price || 0) + getServiceWaitingAmount(s), 0);
+  const subtotalServicios = useMemo(() => {
+    return selectedServicesData.reduce((sum: number, s: any) => sum + (s.price || 0), 0);
+  }, [selectedServicesData]);
+
+  const totalWaiting = useMemo(() => {
+    return selectedServicesData.reduce((sum: number, s: any) => sum + getServiceWaitingAmount(s), 0);
   }, [selectedServicesData, waitingTimeHourlyRate]);
+
+  const totalSelected = useMemo(() => subtotalServicios + totalWaiting, [subtotalServicios, totalWaiting]);
 
   const canGoToStep2 = selectedServices.length > 0;
 
@@ -796,6 +803,30 @@ export function AgencyCrearPrefactura() {
                     {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
                     Crear prefactura
                   </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Detalles de la Prefactura (mismo patrón que PTYSS / invoice paso 2) */}
+            <div className="bg-gradient-to-r from-slate-100 to-blue-100 border border-slate-300 p-3 rounded-lg shadow-sm">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 bg-slate-600 rounded-lg">
+                  <DollarSign className="h-5 w-5 text-white" />
+                </div>
+                <h4 className="font-bold text-slate-900 text-lg">Detalles de la Prefactura</h4>
+              </div>
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
+                  <span className="font-semibold text-slate-800">Subtotal servicios:</span>
+                  <span className="font-bold text-lg text-slate-900">${subtotalServicios.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center bg-white/60 p-3 rounded-lg">
+                  <span className="font-semibold text-slate-800">Tiempo de espera:</span>
+                  <span className="font-bold text-lg text-slate-900">${totalWaiting.toFixed(2)}</span>
+                </div>
+                <div className="border-t-2 border-slate-300 pt-3 flex justify-between items-center bg-gradient-to-r from-slate-200 to-blue-200 p-4 rounded-lg">
+                  <span className="font-bold text-lg text-slate-900">Total:</span>
+                  <span className="font-bold text-2xl text-slate-900">${totalSelected.toFixed(2)}</span>
                 </div>
               </div>
             </div>
