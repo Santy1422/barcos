@@ -305,11 +305,13 @@ export function AgencyFacturas() {
     const related = getRelatedServicesForInvoice(invoiceForPdf);
     if (related.length === 0) return null;
     const first = related[0];
+    const invNotes = invoiceForPdf.details?.notes != null ? String(invoiceForPdf.details.notes).trim() : '';
     return {
       ...first,
       clientName: first.clientName ?? invoiceForPdf.clientName,
       invoiceNumber: invoiceForPdf.invoiceNumber,
       invoiceDate: (invoiceForPdf.issueDate || invoiceForPdf.createdAt || '').toString().split('T')[0],
+      prefacturaNotes: invNotes || undefined,
     };
   }, [invoiceForPdf]);
 

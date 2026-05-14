@@ -22,10 +22,10 @@ import {
   ArrowRight,
   ArrowLeft,
   CheckCircle,
-  Eye,
   Database,
   Filter,
   DollarSign,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgencyPdfViewer } from './agency-pdf-viewer';
@@ -87,7 +87,9 @@ export function AgencyCrearPrefactura() {
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [prefacturaNumber, setPrefacturaNumber] = useState(`AGY-PRE-${Date.now().toString().slice(-6)}`);
-  const [notes, setNotes] = useState('');
+  /** Borrador en el textarea; el PDF usa solo `appliedNotesForPdf` (botón) para no regenerar en cada tecla. */
+  const [notesDraft, setNotesDraft] = useState('');
+  const [appliedNotesForPdf, setAppliedNotesForPdf] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [initialLoaded, setInitialLoaded] = useState(false);
@@ -355,12 +357,13 @@ export function AgencyCrearPrefactura() {
         clientId: selectedClientId,
         relatedServiceIds: selectedServices,
         issueDate,
-        details: notes.trim() ? { notes: notes.trim() } : undefined,
+        details: notesDraft.trim() ? { notes: notesDraft.trim() } : undefined,
       });
       toast.success(`Prefactura ${prefacturaNumber} creada con ${selectedServices.length} servicio(s)`);
       clearSelection();
       setPrefacturaNumber(`AGY-PRE-${Date.now().toString().slice(-6)}`);
-      setNotes('');
+      setNotesDraft('');
+      setAppliedNotesForPdf('');
       setStep(1);
       fetchServices({ page: 1, limit: 500 });
     } catch (e: any) {
@@ -377,8 +380,9 @@ export function AgencyCrearPrefactura() {
       ...first,
       invoiceNumber: prefacturaNumber,
       invoiceDate: formatDateToLocalString(new Date()),
+      prefacturaNotes: appliedNotesForPdf.trim() || undefined,
     };
-  }, [selectedServicesData, prefacturaNumber]);
+  }, [selectedServicesData, prefacturaNumber, appliedNotesForPdf]);
 
   return (
     <div className="space-y-6">
@@ -762,15 +766,33 @@ export function AgencyCrearPrefactura() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="notes" className="text-sm font-semibold text-slate-700">Notas (Opcional)</Label>
+                      <Label htmlFor="notes-draft" className="text-sm font-semibold text-slate-700">Notas adicionales (opcional)</Label>
                       <Textarea
-                        id="notes"
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
+                        id="notes-draft"
+                        value={notesDraft}
+                        onChange={(e) => setNotesDraft(e.target.value)}
                         placeholder="Notas adicionales para la prefactura..."
                         rows={4}
                         className="bg-white border-slate-300 focus:border-slate-500 focus:ring-slate-500"
                       />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() => {
+                            setAppliedNotesForPdf(notesDraft);
+                            toast.success('Notas aplicadas al PDF');
+                          }}
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          Aplicar notas al PDF
+                        </Button>
+                        {notesDraft.trim() !== appliedNotesForPdf.trim() && (
+                          <span className="text-xs font-bold text-red-600">Hay cambios sin aplicar al PDF</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

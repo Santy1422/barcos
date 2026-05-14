@@ -41,6 +41,8 @@ export function AgencyPdfViewer({ open = false, onOpenChange, service, services 
         ...baseFromList,
         invoiceNumber: service.invoiceNumber ?? baseFromList?.invoiceNumber,
         invoiceDate: service.invoiceDate ?? baseFromList?.invoiceDate,
+        prefacturaNotes: (service as any).prefacturaNotes ?? (baseFromList as any)?.prefacturaNotes,
+        details: (service as any).details ?? (baseFromList as any)?.details,
       };
     }
     return baseFromList;
@@ -330,14 +332,41 @@ export function AgencyPdfViewer({ open = false, onOpenChange, service, services 
     
     y += 5
 
-    // Notes (del campo notes del servicio)
-    if (serviceData.notes) {
+    // Debajo de VESSEL: NOTES: = notas adicionales de prefactura; SERVICE NOTES: = comentario del servicio al crearlo
+    const prefNotes = String(
+      (serviceData as any).prefacturaNotes ?? (serviceData as any).details?.notes ?? ''
+    ).trim()
+    const svcNotes = serviceData.notes != null ? String(serviceData.notes).trim() : ''
+
+    /** Etiqueta y primera línea en la misma fila; x del texto se ajusta al ancho real del label. */
+    const printNoteBlockSameLine = (label: string, text: string) => {
+      doc.setFontSize(9)
+      if (!text.trim()) return
+      const labelX = 15
+      const minTextX = 35
       doc.setFont(undefined, 'bold')
-      doc.text('NOTES:', 15, y)
+      const textX = Math.max(minTextX, labelX + doc.getTextWidth(label) + 2)
+      const maxTextWidth = Math.max(40, 195 - textX)
+      const lines = doc.splitTextToSize(text, maxTextWidth)
+      if (lines.length === 0) return
+      doc.setFont(undefined, 'bold')
+      doc.text(label, labelX, y)
       doc.setFont(undefined, 'normal')
-      const notesLines = doc.splitTextToSize(serviceData.notes, 160)
-      doc.text(notesLines, 35, y)
-      y += (notesLines.length * 4) + 5
+      doc.text(lines[0], textX, y)
+      const lineHeight = 5.2
+      let yy = y + lineHeight
+      for (let i = 1; i < lines.length; i++) {
+        doc.text(lines[i], textX, yy)
+        yy += lineHeight
+      }
+      y = yy + 4
+    }
+
+    if (prefNotes) {
+      printNoteBlockSameLine('NOTES:', prefNotes)
+    }
+    if (svcNotes && svcNotes !== prefNotes) {
+      printNoteBlockSameLine('SERVICE NOTES:', svcNotes)
     }
 
     y += 5
